@@ -118,6 +118,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check failed: {e}")
     
+    # Initialize default admin user
+    try:
+        import subprocess
+        import sys
+        result = subprocess.run([sys.executable, '/app/init_admin.py'], 
+                              capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            logger.info("Default admin user initialization completed")
+        else:
+            logger.error(f"Admin initialization failed: {result.stderr}")
+    except Exception as e:
+        logger.error(f"Error running admin initialization: {e}")
+    
     # Start background monitoring worker
     try:
         from .workers.monitoring_worker import start_monitoring_worker
