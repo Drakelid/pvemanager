@@ -18,8 +18,8 @@ connection_cache = {}
 class ProxmoxClient:
     """Клиент для работы с Proxmox VE API с кешированием соединений"""
     
-    def __init__(self, host: str, user: str = "root@pam", password: str = None, 
-                 token_name: str = None, token_value: str = None, verify_ssl: bool = False,
+    def __init__(self, host: str, user: str = "root@pam", password: str = None,
+                 token_name: str = None, token_value: str = None, verify_ssl: bool = True,
                  timeout: int = 30):
         """
         Инициализация Proxmox клиента
@@ -994,7 +994,7 @@ class ProxmoxClient:
                             'is_template': is_template,
                             'status': status
                         }
-                except:
+                except Exception:
                     continue
             
             return None

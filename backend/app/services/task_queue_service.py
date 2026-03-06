@@ -291,7 +291,7 @@ class TaskQueueProcessor:
                 task.error_message = str(e)
                 task.completed_at = utcnow()
                 db.commit()
-            except:
+            except Exception:
                 pass
         finally:
             db.close()
@@ -325,7 +325,7 @@ class TaskQueueProcessor:
         finally:
             try:
                 db.close()
-            except:
+            except Exception:
                 pass
 
 

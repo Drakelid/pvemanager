@@ -17,7 +17,9 @@ def create_default_admin():
     """Create admin user with default credentials and full RBAC permissions"""
     username = "admin"
     email = "admin@example.com"
-    password = "admin123"
+    password = os.environ.get("ADMIN_PASSWORD", "admin123")
+    if password == "admin123":
+        print("⚠️  WARNING: Using default password 'admin123'. Set ADMIN_PASSWORD env var in production!")
     
     db = next(get_db())
     

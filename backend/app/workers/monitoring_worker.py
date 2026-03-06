@@ -971,6 +971,20 @@ def start_monitoring_worker():
         name='Clean up expired notifications',
         replace_existing=True
     )
+
+    # Cleanup expired Proxmox connection cache - every hour
+    try:
+        from app.proxmox_client import cleanup_expired_connections
+        scheduler.add_job(
+            cleanup_expired_connections,
+            trigger=IntervalTrigger(hours=1),
+            id='proxmox_cache_cleanup',
+            name='Cleanup expired Proxmox connections',
+            replace_existing=True
+        )
+        logger.info("Proxmox cache cleanup task registered")
+    except ImportError as e:
+        logger.warning(f"Proxmox cache cleanup not available: {e}")
     
     # Run initial VM cache sync on startup
     try:

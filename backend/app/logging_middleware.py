@@ -76,11 +76,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             auth_header = request.headers.get("authorization", "")
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
-                # Extract session ID from token (first 16 chars of hash)
                 import hashlib
                 session_id = hashlib.sha256(token.encode()).hexdigest()[:16]
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not extract session ID from token: {e}")
         
         # Capture request body for important operations
         request_body = None
@@ -91,10 +90,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 if len(body_bytes) <= self.MAX_BODY_SIZE:
                     try:
                         request_body = json.loads(body_bytes)
-                    except:
+                    except Exception:
                         request_body = {"_raw": body_bytes.decode('utf-8', errors='replace')[:1000]}
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"Could not read request body: {e}")
         
         # Get query params
         query_params = str(request.query_params) if request.query_params else None
@@ -174,22 +173,30 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         
         return response
     
+    @staticmethod
+    def _is_valid_ip(ip: str) -> bool:
+        import ipaddress
+        try:
+            ipaddress.ip_address(ip)
+            return True
+        except ValueError:
+            return False
+
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP from request, considering proxies"""
-        # Check X-Forwarded-For header (from reverse proxy)
+        """Extract client IP from request, validating proxy headers to prevent spoofing."""
         forwarded_for = request.headers.get("x-forwarded-for")
         if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-        
-        # Check X-Real-IP header
-        real_ip = request.headers.get("x-real-ip")
-        if real_ip:
+            candidate = forwarded_for.split(",")[0].strip()
+            if self._is_valid_ip(candidate):
+                return candidate
+
+        real_ip = request.headers.get("x-real-ip", "").strip()
+        if real_ip and self._is_valid_ip(real_ip):
             return real_ip
-        
-        # Fall back to direct client IP
+
         if request.client:
             return request.client.host
-        
+
         return "unknown"
     
     def _get_action_from_request(self, method: str, path: str) -> str:

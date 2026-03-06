@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     DEFAULT_SSH_USER: str = Field(default="root", env="DEFAULT_SSH_USER")
     DEFAULT_SSH_PORT: int = Field(default=22, env="DEFAULT_SSH_PORT")
     
+    # CORS — comma-separated list of allowed origins; "*" is insecure in production
+    CORS_ORIGINS: str = Field(default="*", env="CORS_ORIGINS")
+
+    # Default admin password — MUST be changed via env var in production
+    ADMIN_PASSWORD: str = Field(default="admin123", env="ADMIN_PASSWORD")
+
     # Timezone
     TZ: str = Field(default="UTC", env="TZ")
 

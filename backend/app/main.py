@@ -163,24 +163,47 @@ def create_app() -> FastAPI:
     )
 
     # Add CORS middleware
+    cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+    # allow_credentials=True is incompatible with allow_origins=["*"] per the CORS spec.
+    # Disable credentials when wildcard origin is configured.
+    allow_credentials = cors_origins != ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # In production, specify exact origins
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
     # Add request logging middleware
     app.add_middleware(RequestLoggingMiddleware, enable_api_logging=True)
-    
+
     # Add language detection middleware
     app.add_middleware(LanguageMiddleware)
-    
+
     # Templates
     templates = Jinja2Templates(directory="app/templates")
 
-
+    # Security headers middleware
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self' wss: ws:; "
+            "font-src 'self' data:; "
+            "frame-ancestors 'self';"
+        )
+        if not settings.DEBUG:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
 
     # Custom exception handler
     @app.exception_handler(Exception)

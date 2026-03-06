@@ -382,7 +382,7 @@ class ProxmoxServer(Base):
     password = Column(String(255), nullable=True)  # Encrypted in production
 
     # SSL/TLS verification
-    verify_ssl = Column(Boolean, nullable=False, default=False)
+    verify_ssl = Column(Boolean, nullable=False, default=True)
 
     # Metadata
     description = Column(Text, nullable=True)

@@ -179,22 +179,35 @@ def require_permission(user: User, permission: str) -> None:
     PermissionEngine.check_permission(user, permission)
 
 
+def _validate_ip(ip: str) -> bool:
+    """Return True if ip is a valid IPv4 or IPv6 address."""
+    import ipaddress
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+
 def get_client_ip(request: Request) -> str:
-    """Get client IP from request, handling proxies"""
-    # Try X-Forwarded-For first (from nginx/proxy)
+    """Get client IP from request, handling proxies.
+
+    Only X-Forwarded-For / X-Real-IP values that parse as valid IP addresses
+    are trusted, preventing header-injection / IP-spoofing attacks.
+    """
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
-    
-    # Try X-Real-IP
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
+        candidate = forwarded.split(",")[0].strip()
+        if _validate_ip(candidate):
+            return candidate
+
+    real_ip = request.headers.get("x-real-ip", "").strip()
+    if real_ip and _validate_ip(real_ip):
         return real_ip
-    
-    # Fall back to direct client
+
     if request.client:
         return request.client.host
-    
+
     return "unknown"
 
 

@@ -328,7 +328,7 @@ def migrate_all_roles_to_new_format(conn) -> int:
         if isinstance(permissions, str):
             try:
                 permissions = json.loads(permissions)
-            except:
+            except Exception:
                 continue
         
         # Check if already migrated (has : in keys)
@@ -382,7 +382,7 @@ def ensure_default_roles_new_format(conn) -> None:
             if isinstance(current_perms, str):
                 try:
                     current_perms = json.loads(current_perms)
-                except:
+                except Exception:
                     current_perms = {}
             
             # Check if needs update
