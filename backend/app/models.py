@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from .db import Base
+from .crypto import EncryptedString
 
 
 def utcnow() -> datetime:
@@ -379,7 +380,7 @@ class ProxmoxServer(Base):
 
     # Optional: Password authentication (less secure)
     use_password = Column(Boolean, nullable=False, default=False)
-    password = Column(String(255), nullable=True)  # Encrypted in production
+    password = Column(EncryptedString(255), nullable=True)
 
     # SSL/TLS verification
     verify_ssl = Column(Boolean, nullable=False, default=True)
@@ -461,7 +462,7 @@ class VMInstance(Base):
     
     # Cloud-init configuration
     cloud_init_user = Column(String(100), nullable=True)
-    cloud_init_password = Column(String(255), nullable=True)  # Should be encrypted
+    cloud_init_password = Column(EncryptedString(255), nullable=True)
     ssh_keys = Column(Text, nullable=True)  # SSH public keys
     
     # Template info

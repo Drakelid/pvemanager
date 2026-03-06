@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # Default admin password — MUST be changed via env var in production
     ADMIN_PASSWORD: str = Field(default="admin123", env="ADMIN_PASSWORD")
 
+    # Fernet key for encrypting sensitive DB fields (Proxmox passwords, cloud-init passwords).
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # If not set, values are stored as plaintext (backward-compatible but insecure).
+    FERNET_KEY: Optional[str] = Field(default=None, env="FERNET_KEY")
+
     # Timezone
     TZ: str = Field(default="UTC", env="TZ")
 

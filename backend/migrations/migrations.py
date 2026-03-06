@@ -924,6 +924,66 @@ def migrate_git_repository_setting(conn):
 
 # ==================== Main Migration Function ====================
 
+def migrate_encrypt_passwords(conn):
+    """Migration 14: Encrypt plaintext passwords stored in ProxmoxServer and VMInstance.
+
+    Idempotent: already-encrypted values (valid Fernet tokens) are skipped.
+    Skipped entirely when FERNET_KEY env var is not set.
+    """
+    import os
+    try:
+        from cryptography.fernet import Fernet, InvalidToken
+    except ImportError:
+        logger.warning("Migration 14: cryptography package not available, skipping")
+        return
+
+    fernet_key = os.environ.get("FERNET_KEY")
+    if not fernet_key:
+        logger.info("Migration 14: FERNET_KEY not set, skipping password encryption")
+        return
+
+    f = Fernet(fernet_key.encode())
+
+    def _is_encrypted(value: str) -> bool:
+        try:
+            f.decrypt(value.encode())
+            return True
+        except (InvalidToken, Exception):
+            return False
+
+    # --- ProxmoxServer.password ---
+    rows = conn.execute(
+        text("SELECT id, password FROM proxmox_servers WHERE password IS NOT NULL AND password != ''")
+    ).fetchall()
+    count = 0
+    for row in rows:
+        if not _is_encrypted(row.password):
+            encrypted = f.encrypt(row.password.encode()).decode()
+            conn.execute(
+                text("UPDATE proxmox_servers SET password = :p WHERE id = :id"),
+                {"p": encrypted, "id": row.id}
+            )
+            count += 1
+    if count:
+        logger.info(f"Migration 14: Encrypted {count} Proxmox server password(s)")
+
+    # --- VMInstance.cloud_init_password ---
+    rows = conn.execute(
+        text("SELECT id, cloud_init_password FROM vm_instances WHERE cloud_init_password IS NOT NULL AND cloud_init_password != ''")
+    ).fetchall()
+    count = 0
+    for row in rows:
+        if not _is_encrypted(row.cloud_init_password):
+            encrypted = f.encrypt(row.cloud_init_password.encode()).decode()
+            conn.execute(
+                text("UPDATE vm_instances SET cloud_init_password = :p WHERE id = :id"),
+                {"p": encrypted, "id": row.id}
+            )
+            count += 1
+    if count:
+        logger.info(f"Migration 14: Encrypted {count} VM cloud-init password(s)")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1041,7 +1101,15 @@ def run_all_migrations(engine, db_session=None):
             except Exception as e:
                 logger.warning(f"Git repository setting migration: {e}")
                 conn.rollback()
-        
+
+            # Migration 14: Encrypt plaintext passwords (idempotent, skipped if FERNET_KEY not set)
+            try:
+                migrate_encrypt_passwords(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Password encryption migration: {e}")
+                conn.rollback()
+
         logger.info("=" * 50)
         logger.info("✓ All migrations completed successfully")
         logger.info("=" * 50)

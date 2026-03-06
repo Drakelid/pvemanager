@@ -418,6 +418,10 @@ def delete_user(
 
 
 @router.post("/api/auth/change-password")
+# Note: no explicit CSRF token needed here.
+# This endpoint is protected by JWT Bearer token (Authorization header).
+# Browsers cannot automatically include the Authorization header in cross-site requests,
+# so CSRF attacks are not possible — the attacker cannot obtain or inject the token.
 def change_password(
     old_password: str = Form(...),
     new_password: str = Form(...),
