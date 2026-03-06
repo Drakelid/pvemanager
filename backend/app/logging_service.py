@@ -3,6 +3,7 @@ Logging Service for PVEmanager
 Provides centralized logging functionality for audit, system, and API events
 """
 
+import json
 import uuid
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -74,7 +75,6 @@ class LoggingService:
                 return data[:max_size] + f"... (truncated, {len(data)} total chars)"
             return data
         if isinstance(data, dict):
-            import json
             json_str = json.dumps(data)
             if len(json_str) > max_size:
                 return {"_truncated": True, "_size": len(json_str), "_preview": json_str[:500]}

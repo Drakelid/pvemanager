@@ -190,7 +190,7 @@ async def auto_setup_proxmox_server(
     port = data.get('port', 8006)
     api_user = data.get('api_user', 'root@pam')
     password = data.get('password')
-    verify_ssl = data.get('verify_ssl', False)
+    verify_ssl = data.get('verify_ssl', True)
     description = data.get('description')
     
     if not all([name, ip_address, password]):
@@ -2065,7 +2065,7 @@ def control_vm(
         try:
             vm_status = client.get_vm_status(node, vmid)
             vm_name = vm_status.get('name') if isinstance(vm_status, dict) else None
-        except:
+        except Exception:
             pass
         
         if action == 'start':
@@ -3733,7 +3733,7 @@ async def vnc_websocket_proxy(
             await proxmox_ws.close()
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass
         logger.info(f"VNC WebSocket connection closed for {vmtype}/{vmid}")
 
@@ -5202,7 +5202,7 @@ async def terminal_websocket_fixed(
     
     try:
         # Шаг 1: Получаем auth ticket через Proxmox API
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+        async with httpx.AsyncClient(verify=server.verify_ssl, timeout=10) as client:
             auth_url = f"https://{server.ip_address}:8006/api2/json/access/ticket"
             
             # Используем пароль если есть, иначе API token
@@ -5327,7 +5327,7 @@ async def terminal_websocket_fixed(
         logger.error(traceback.format_exc())
         try:
             await websocket.close(code=1011, reason=str(e))
-        except:
+        except Exception:
             pass
     finally:
         logger.info(f"Terminal session closed for container {vmid}")

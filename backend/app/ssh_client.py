@@ -46,7 +46,7 @@ class SSHClient:
                     transport = client.get_transport()
                     if transport and transport.is_active():
                         return client
-                except:
+                except Exception:
                     pass
             
             # Remove invalid connection
@@ -64,7 +64,7 @@ class SSHClient:
         if self.connection_key in self._connections:
             try:
                 self._connections[self.connection_key].close()
-            except:
+            except Exception:
                 pass
             del self._connections[self.connection_key]
             del self._connection_times[self.connection_key]
@@ -82,7 +82,8 @@ class SSHClient:
         for attempt in range(self.max_retries):
             try:
                 client = paramiko.SSHClient()
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                client.load_system_host_keys()
+                client.set_missing_host_key_policy(paramiko.WarningPolicy())
                 
                 connect_kwargs = {
                     'hostname': self.hostname,
@@ -169,7 +170,7 @@ class SSHClient:
         try:
             transport = self.client.get_transport()
             return transport and transport.is_active()
-        except:
+        except Exception:
             return False
     
     def close(self):
@@ -235,7 +236,7 @@ class SSHClient:
         for key in list(cls._connections.keys()):
             try:
                 cls._connections[key].close()
-            except:
+            except Exception:
                 pass
         cls._connections.clear()
         cls._connection_times.clear()
@@ -409,7 +410,7 @@ async def cleanup_ssh_connections():
                 if key in SSHClient._connections:
                     try:
                         SSHClient._connections[key].close()
-                    except:
+                    except Exception:
                         pass
                     del SSHClient._connections[key]
                     del SSHClient._connection_times[key]
