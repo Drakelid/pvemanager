@@ -95,26 +95,10 @@ async def lifespan(app: FastAPI):
     
     # Run database migrations automatically
     try:
-        import sys
-        from pathlib import Path
-        import importlib.util
-        
-        # Add migrations directory to path
-        migrations_path = Path(__file__).parent.parent / 'migrations'
-        sys.path.insert(0, str(migrations_path))
-        
         from .db import engine
-        
-        # Load and run unified migrations
-        spec = importlib.util.spec_from_file_location(
-            "migrations", 
-            migrations_path / "migrations.py"
-        )
-        migrations_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(migrations_module)
-        migrations_module.run_all_migrations(engine)
+        from migrations.migrations import run_all_migrations
+        run_all_migrations(engine)
         logger.info("Database migrations completed")
-        
     except Exception as e:
         logger.warning(f"Migration check failed: {e}")
     
