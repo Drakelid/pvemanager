@@ -8,7 +8,7 @@ import logging
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 
 from .models import IPAMNetwork, IPAMPool, IPAMAllocation, IPAMHistory
 
@@ -183,31 +183,32 @@ class IPAMService:
             logger.warning(f"No active auto-assign pools found for network {network_id}")
             return None
         
-        # Get all allocated IPs in this network
-        allocated_ips = set(
-            a.ip_address for a in 
-            self.db.query(IPAMAllocation).filter(
-                IPAMAllocation.network_id == network_id,
-                IPAMAllocation.status.in_(['allocated', 'reserved'])
-            ).all()
-        )
-        
         # Also exclude gateway
-        if network.gateway:
-            allocated_ips.add(network.gateway)
-        
-        # Search through pools for available IP
+        gateway_ip = network.gateway if network.gateway else None
+
+        # Search through pools for available IP — query only per-pool allocated IPs
         for pool in pools:
             try:
                 start_ip = ipaddress.ip_address(pool.range_start)
                 end_ip = ipaddress.ip_address(pool.range_end)
-                
+
+                # Load only allocated IPs for this specific pool (much smaller set)
+                pool_allocated = set(
+                    a.ip_address for a in
+                    self.db.query(IPAMAllocation.ip_address).filter(
+                        IPAMAllocation.pool_id == pool.id,
+                        IPAMAllocation.status.in_(['allocated', 'reserved'])
+                    ).all()
+                )
+                if gateway_ip:
+                    pool_allocated.add(gateway_ip)
+
                 for ip_int in range(int(start_ip), int(end_ip) + 1):
                     ip = str(ipaddress.ip_address(ip_int))
-                    if ip not in allocated_ips:
+                    if ip not in pool_allocated:
                         logger.info(f"Found available IP: {ip} in pool {pool.name}")
                         return ip
-                        
+
             except ValueError as e:
                 logger.error(f"Invalid IP range in pool {pool.id}: {e}")
                 continue

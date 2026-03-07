@@ -18,6 +18,7 @@ try:
     from backend.app.db import SessionLocal
     from backend.app.models import User, ProxmoxServer, PanelSettings, VMInstance, IPAMAllocation, Notification
     from backend.app.services.notification_service import NotificationService
+    from backend.app.logging_service import LoggingService
     from backend.app.proxmox_client import ProxmoxClient
     from backend.app.schemas import NotificationCreate
     from backend.app.i18n import t
@@ -25,6 +26,7 @@ except ImportError:
     from app.db import SessionLocal
     from app.models import User, ProxmoxServer, PanelSettings, VMInstance, IPAMAllocation, Notification
     from app.services.notification_service import NotificationService
+    from app.logging_service import LoggingService
     from app.proxmox_client import ProxmoxClient
     from app.schemas import NotificationCreate
     from app.i18n import t
@@ -531,7 +533,7 @@ class MonitoringWorker:
             db.close()
     
     def run_cleanup_expired(self):
-        """Clean up expired notifications"""
+        """Clean up expired notifications and old audit logs"""
         db = SessionLocal()
         try:
             count = NotificationService.cleanup_expired(db)
@@ -539,6 +541,14 @@ class MonitoringWorker:
                 logger.info(f"Cleaned up {count} expired notifications")
         except Exception as e:
             logger.error(f"Error cleaning up notifications: {e}")
+        finally:
+            db.close()
+
+        db = SessionLocal()
+        try:
+            LoggingService.cleanup_old_logs(db, days=30)
+        except Exception as e:
+            logger.error(f"Error cleaning up old audit logs: {e}")
         finally:
             db.close()
     

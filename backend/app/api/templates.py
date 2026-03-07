@@ -3,14 +3,14 @@ API endpoints for OS Templates management
 Allows creating VM templates, groups, and deploying VMs from templates
 """
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from loguru import logger
 from typing import List
 
-from ..db import get_db
+from ..db import get_db, SessionLocal
 from ..models import ProxmoxServer, OSTemplateGroup, OSTemplate, VMInstance, User
 from ..schemas import (
     OSTemplateGroupCreate, OSTemplateGroupUpdate, OSTemplateGroupResponse,
@@ -413,23 +413,18 @@ def detect_os_group(template_name: str) -> dict:
     return OS_GROUP_MAPPING['other']
 
 
-@router.post("/api/auto-import/{server_id}")
-def auto_import_templates(
-    server_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.manage"))
-):
+def _do_auto_import(server_id: int, username: str):
     """
-    Автоматический импорт шаблонов с Proxmox сервера.
-    Автоматически определяет группу ОС и назначает порядок сортировки.
-    Глобальная сортировка: Ubuntu 0-3, CentOS 4-5 и т.д.
+    Background task: import Proxmox templates into DB.
+    Opens its own DB session so it can run after the request completes.
     """
-    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Proxmox сервер не найден")
-    
+    db = SessionLocal()
     try:
-        # Подключаемся к Proxmox
+        server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+        if not server:
+            logger.error(f"Auto-import: server {server_id} not found")
+            return
+
         if server.use_password:
             client = ProxmoxClient(
                 host=server.ip_address,
@@ -445,46 +440,33 @@ def auto_import_templates(
                 token_value=server.api_token_value,
                 verify_ssl=server.verify_ssl
             )
-        
+
         if not client.is_connected():
-            raise HTTPException(status_code=503, detail="Не удалось подключиться к Proxmox серверу")
-        
-        # Фильтруем по ноде если это кластер
+            logger.error(f"Auto-import: cannot connect to server {server.name}")
+            return
+
         node_filter = None
         if server.hostname and server.hostname != server.ip_address:
             node_filter = server.hostname
-        
-        # Получаем шаблоны только с этой ноды
+
         proxmox_templates = client.get_templates(node=node_filter)
-        
-        # Получаем уже добавленные шаблоны для ЭТОГО сервера
+
         existing_vmids = set(
             t.vmid for t in db.query(OSTemplate).filter(OSTemplate.server_id == server_id).all()
         )
-        
-        # Кеш групп: name -> group
-        groups_cache = {}
-        for group in db.query(OSTemplateGroup).all():
-            groups_cache[group.name] = group
-        
-        # Группируем шаблоны по ОС
-        templates_by_group = {}  # group_name -> [templates]
-        
+
+        groups_cache = {g.name: g for g in db.query(OSTemplateGroup).all()}
+
+        templates_by_group = {}
         for tpl in proxmox_templates:
             vmid = tpl.get('vmid')
             if vmid in existing_vmids:
-                continue  # Пропускаем уже добавленные
-            
+                continue
             template_name = tpl.get('name', f"Template-{vmid}")
             group_info = detect_os_group(template_name)
             group_name = group_info['name']
-            
             if group_name not in templates_by_group:
-                templates_by_group[group_name] = {
-                    'info': group_info,
-                    'templates': []
-                }
-            
+                templates_by_group[group_name] = {'info': group_info, 'templates': []}
             templates_by_group[group_name]['templates'].append({
                 'vmid': vmid,
                 'name': template_name,
@@ -492,49 +474,34 @@ def auto_import_templates(
                 'maxmem': tpl.get('maxmem', 0),
                 'maxdisk': tpl.get('maxdisk', 0),
             })
-        
-        # Создаём группы и шаблоны с ГЛОБАЛЬНОЙ сортировкой
+
         imported = []
-        global_sort_order = 0  # Глобальный счётчик для всех шаблонов
-        
-        # Сортируем группы по их порядку (Ubuntu=1, Debian=2, CentOS=3...)
-        sorted_groups = sorted(
-            templates_by_group.items(),
-            key=lambda x: x[1]['info']['order']
-        )
-        
+        global_sort_order = 0
+        sorted_groups = sorted(templates_by_group.items(), key=lambda x: x[1]['info']['order'])
+
         for group_name, group_data in sorted_groups:
             group_info = group_data['info']
             group_templates = group_data['templates']
-            
-            # Получаем или создаём группу
+
             if group_name not in groups_cache:
-                # Получаем максимальный sort_order для групп
-                max_group_order = db.query(OSTemplateGroup).count()
-                
                 new_group = OSTemplateGroup(
                     name=group_name,
                     icon=group_info['icon'],
                     description=f"Шаблоны {group_name}",
-                    sort_order=group_info['order'],  # Используем порядок из маппинга
+                    sort_order=group_info['order'],
                     is_active=True
                 )
                 db.add(new_group)
                 db.flush()
                 groups_cache[group_name] = new_group
-                logger.info(f"Created new group: {group_name}")
-            
+                logger.info(f"Auto-import: created group {group_name}")
+
             group = groups_cache[group_name]
-            
-            # Сортируем шаблоны по имени для консистентности
             group_templates.sort(key=lambda x: x['name'])
-            
-            # Добавляем шаблоны с ГЛОБАЛЬНЫМ sort_order
-            for idx, tpl in enumerate(group_templates):
-                # Определяем дефолтные значения из размера шаблона
+
+            for tpl in group_templates:
                 default_memory = max(1024, (tpl.get('maxmem', 0) // (1024 * 1024)) or 1024)
                 default_disk = max(10, (tpl.get('maxdisk', 0) // (1024 * 1024 * 1024)) or 10)
-                
                 template = OSTemplate(
                     group_id=group.id,
                     server_id=server_id,
@@ -549,37 +516,47 @@ def auto_import_templates(
                     min_memory=512,
                     min_disk=5,
                     is_active=True,
-                    sort_order=global_sort_order  # ГЛОБАЛЬНАЯ сортировка
+                    sort_order=global_sort_order
                 )
-                
                 db.add(template)
-                imported.append({
-                    'vmid': tpl['vmid'],
-                    'name': tpl['name'],
-                    'group': group_name,
-                    'sort_order': global_sort_order
-                })
-                global_sort_order += 1  # Увеличиваем глобальный счётчик
-        
+                imported.append({'vmid': tpl['vmid'], 'name': tpl['name'], 'group': group_name})
+                global_sort_order += 1
+
         db.commit()
-        
-        logger.info(f"User {current_user.username} auto-imported {len(imported)} templates from {server.name}")
-        
-        return JSONResponse(content={
-            'success': True,
-            'server_id': server_id,
-            'server_name': server.name,
-            'imported_count': len(imported),
-            'templates': imported,
-            'groups_created': [g for g in templates_by_group.keys() if g not in groups_cache]
-        })
-        
-    except HTTPException:
-        raise
+        logger.info(f"Auto-import by {username}: imported {len(imported)} templates from {server.name}")
+
     except Exception as e:
-        logger.error(f"Error auto-importing templates from {server.name}: {e}")
+        logger.error(f"Auto-import background task failed for server {server_id}: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Ошибка импорта шаблонов: {str(e)}")
+    finally:
+        db.close()
+
+
+@router.post("/api/auto-import/{server_id}")
+async def auto_import_templates(
+    server_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("templates.manage"))
+):
+    """
+    Автоматический импорт шаблонов с Proxmox сервера (в фоне).
+    Возвращает сразу, импорт выполняется асинхронно.
+    """
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox сервер не найден")
+
+    background_tasks.add_task(_do_auto_import, server_id, current_user.username)
+    logger.info(f"User {current_user.username} queued auto-import for server {server.name}")
+
+    return JSONResponse(content={
+        'success': True,
+        'status': 'queued',
+        'server_id': server_id,
+        'server_name': server.name,
+        'message': 'Импорт шаблонов запущен в фоне'
+    })
 
 
 # ==================== VM Deployment ====================
