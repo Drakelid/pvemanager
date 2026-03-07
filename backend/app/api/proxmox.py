@@ -75,6 +75,24 @@ def require_vm_access(db: Session, current_user: User, server_id: int, vmid: int
         )
 
 
+def _get_proxmox_client(server: ProxmoxServer) -> ProxmoxClient:
+    """Build a ProxmoxClient from a ProxmoxServer model (password or token auth)."""
+    if server.use_password:
+        return ProxmoxClient(
+            host=server.ip_address,
+            user=server.api_user,
+            password=server.password,
+            verify_ssl=server.verify_ssl
+        )
+    return ProxmoxClient(
+        host=server.ip_address,
+        user=server.api_user,
+        token_name=server.api_token_name,
+        token_value=server.api_token_value,
+        verify_ssl=server.verify_ssl
+    )
+
+
 # ==================== HTML Pages ====================
 
 @router.get("/vms", response_class=HTMLResponse, include_in_schema=False)
@@ -441,21 +459,7 @@ def get_server_cluster_info(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             return JSONResponse(content={
@@ -499,21 +503,7 @@ def get_sdn_status(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         is_available = client.sdn_is_available()
         pending = client.get_sdn_pending() if is_available else []
@@ -545,21 +535,7 @@ def get_sdn_zones(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         zones = client.get_sdn_zones()
         return JSONResponse(content={"zones": zones})
@@ -588,21 +564,7 @@ async def create_sdn_zone(
         raise HTTPException(status_code=400, detail="Zone name is required")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         # Pass additional options from request
         kwargs = {k: v for k, v in data.items() if k not in ['zone', 'type']}
@@ -633,21 +595,7 @@ def delete_sdn_zone(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.delete_sdn_zone(zone)
         
@@ -675,21 +623,7 @@ def get_sdn_vnets(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         vnets = client.get_sdn_vnets()
         return JSONResponse(content={"vnets": vnets})
@@ -721,21 +655,7 @@ async def create_sdn_vnet(
         raise HTTPException(status_code=400, detail="VNet name and zone are required")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.create_sdn_vnet(vnet_name, zone, tag=tag, alias=alias, vlanaware=vlanaware)
         
@@ -764,21 +684,7 @@ def delete_sdn_vnet(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.delete_sdn_vnet(vnet)
         
@@ -807,21 +713,7 @@ def get_sdn_subnets(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         subnets = client.get_sdn_subnets(vnet)
         return JSONResponse(content={"subnets": subnets})
@@ -853,21 +745,7 @@ async def create_sdn_subnet(
         raise HTTPException(status_code=400, detail="Subnet CIDR is required")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.create_sdn_subnet(vnet, subnet, gateway=gateway, snat=snat, dnszoneprefix=dnszoneprefix)
         
@@ -895,21 +773,7 @@ def apply_sdn_changes(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.apply_sdn_changes()
         
@@ -944,21 +808,7 @@ def get_vm_snapshots(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         snapshots = client.get_vm_snapshots(node, vmid)
         # Filter out 'current' pseudo-snapshot if present
@@ -995,21 +845,7 @@ async def create_vm_snapshot(
         raise HTTPException(status_code=400, detail="Snapshot name is required")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.create_vm_snapshot(node, vmid, snapname, description, vmstate)
         
@@ -1055,21 +891,7 @@ def delete_vm_snapshot(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.delete_vm_snapshot(node, vmid, snapname)
         
@@ -1116,21 +938,7 @@ def rollback_vm_snapshot(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.rollback_vm_snapshot(node, vmid, snapname, start)
         
@@ -1177,21 +985,7 @@ def get_container_snapshots(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         snapshots = client.get_container_snapshots(node, vmid)
         # Filter out 'current' pseudo-snapshot if present
@@ -1227,21 +1021,7 @@ async def create_container_snapshot(
         raise HTTPException(status_code=400, detail="Snapshot name is required")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.create_container_snapshot(node, vmid, snapname, description)
         
@@ -1287,21 +1067,7 @@ def delete_container_snapshot(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.delete_container_snapshot(node, vmid, snapname)
         
@@ -1348,21 +1114,7 @@ def rollback_container_snapshot(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         result = client.rollback_container_snapshot(node, vmid, snapname, start)
         
@@ -1579,21 +1331,7 @@ def test_proxmox_connection(
     
     try:
         # Determine auth method
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if client.is_connected():
             server.update_status(True)
@@ -1933,21 +1671,7 @@ def execute_vm_command(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -1981,21 +1705,7 @@ def execute_vm_script(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2041,21 +1751,7 @@ def control_vm(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2156,21 +1852,7 @@ async def delete_vm(
         raise HTTPException(status_code=404, detail=t("server_not_found", lang))
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail=t("failed_to_connect", lang))
@@ -2340,21 +2022,7 @@ def get_ha_status(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2394,21 +2062,7 @@ def get_resource_ha_status(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2462,21 +2116,7 @@ def add_resource_to_ha(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2539,21 +2179,7 @@ def remove_resource_from_ha(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2607,21 +2233,7 @@ async def delete_container(
         raise HTTPException(status_code=404, detail=t("server_not_found", lang))
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail=t("failed_to_connect", lang))
@@ -2717,21 +2329,7 @@ def get_vm_config(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2760,21 +2358,7 @@ async def update_vm_config(
     data = await request.json()
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2814,21 +2398,7 @@ async def resize_vm_disk(
         if not disk or not size:
             raise HTTPException(status_code=400, detail="Требуются параметры disk и size")
         
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2886,21 +2456,7 @@ async def resize_container_disk(
         if not size:
             raise HTTPException(status_code=400, detail="Требуется параметр size")
         
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2950,21 +2506,7 @@ def get_container_config(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -2993,21 +2535,7 @@ async def update_container_config(
     data = await request.json()
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3055,21 +2583,7 @@ def control_container(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3107,21 +2621,7 @@ def get_server_nodes(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3150,21 +2650,7 @@ def get_vm_status(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3190,21 +2676,7 @@ def get_container_status(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3230,21 +2702,7 @@ def get_vm_interfaces(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3270,21 +2728,7 @@ def get_container_interfaces(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3310,21 +2754,7 @@ def get_container_status_api(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3351,21 +2781,7 @@ def get_vm_rrddata(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3392,21 +2808,7 @@ def get_container_rrddata(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3754,21 +3156,7 @@ def get_storages(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3806,21 +3194,7 @@ def get_node_status(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3849,21 +3223,7 @@ def get_node_rrddata(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -3887,21 +3247,7 @@ def get_next_vmid(db: Session, server_id: int) -> int:
     
     try:
         # Create Proxmox client and get next VMID from Proxmox API
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         # Get next VMID from Proxmox (it returns sequential IDs)
         vmid = client.get_next_vmid()
@@ -4263,21 +3609,7 @@ def get_lxc_templates(
     
     try:
         # Determine auth method
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Cannot connect to Proxmox server")
@@ -4305,21 +3637,7 @@ def get_all_lxc_templates(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Cannot connect to Proxmox server")
@@ -4348,21 +3666,7 @@ def get_available_lxc_templates(
     
     try:
         # Determine auth method
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Cannot connect to Proxmox server")
@@ -4398,21 +3702,7 @@ async def download_lxc_template(
     
     try:
         # Determine auth method
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Cannot connect to Proxmox server")
@@ -4484,21 +3774,7 @@ async def create_lxc_container(
     
     try:
         # Determine auth method
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Cannot connect to Proxmox server")
@@ -4612,21 +3888,7 @@ async def create_lxc_container_smart(
         raise HTTPException(status_code=400, detail="Password or SSH keys are required")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Cannot connect to Proxmox server")
@@ -4787,21 +4049,7 @@ async def clone_lxc_container(
     
     try:
         # Determine auth method
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Cannot connect to Proxmox server")
@@ -5053,21 +4301,7 @@ async def exec_in_container(
         command = data.get('command', '/bin/bash')
         args = data.get('args', [])
         
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -5102,21 +4336,7 @@ def get_task_status(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
@@ -5146,21 +4366,7 @@ def get_task_log(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        if server.use_password:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        else:
-            client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
+        client = _get_proxmox_client(server)
         
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
