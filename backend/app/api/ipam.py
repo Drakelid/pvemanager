@@ -30,7 +30,7 @@ templates = Jinja2Templates(directory="app/templates")
 # ==================== HTML Pages ====================
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def ipam_dashboard(request: Request):
+def ipam_dashboard(request: Request):
     """IPAM Dashboard page"""
     from ..i18n import t
     lang = request.cookies.get("language", "en")
@@ -44,7 +44,7 @@ async def ipam_dashboard(request: Request):
 
 
 @router.get("/networks", response_class=HTMLResponse, include_in_schema=False)
-async def ipam_networks_page(request: Request):
+def ipam_networks_page(request: Request):
     """IPAM Networks management page"""
     from ..i18n import t
     lang = request.cookies.get("language", "en")
@@ -58,7 +58,7 @@ async def ipam_networks_page(request: Request):
 
 
 @router.get("/network/{network_id}", response_class=HTMLResponse, include_in_schema=False)
-async def ipam_network_detail(request: Request, network_id: int):
+def ipam_network_detail(request: Request, network_id: int):
     """IPAM Network detail page with IP grid"""
     from ..i18n import t
     lang = request.cookies.get("language", "en")
@@ -73,7 +73,7 @@ async def ipam_network_detail(request: Request, network_id: int):
 
 
 @router.get("/allocations", response_class=HTMLResponse, include_in_schema=False)
-async def ipam_allocations_page(request: Request):
+def ipam_allocations_page(request: Request):
     """IPAM Allocations page"""
     from ..i18n import t
     lang = request.cookies.get("language", "en")
@@ -87,7 +87,7 @@ async def ipam_allocations_page(request: Request):
 
 
 @router.get("/history", response_class=HTMLResponse, include_in_schema=False)
-async def ipam_history_page(request: Request):
+def ipam_history_page(request: Request):
     """IPAM History page"""
     from ..i18n import t
     lang = request.cookies.get("language", "en")
@@ -103,7 +103,7 @@ async def ipam_history_page(request: Request):
 # ==================== Network API ====================
 
 @router.get("/api/networks", response_model=List[IPAMNetworkResponse])
-async def get_networks(
+def get_networks(
     is_active: Optional[bool] = None,
     proxmox_server_id: Optional[int] = None,
     db: Session = Depends(get_db),
@@ -146,7 +146,7 @@ async def get_networks(
 
 
 @router.get("/api/networks/{network_id}", response_model=IPAMNetworkResponse)
-async def get_network(
+def get_network(
     network_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.view"))
@@ -169,7 +169,7 @@ async def get_network(
 
 
 @router.get("/api/networks/{network_id}/stats", response_model=IPAMNetworkStats)
-async def get_network_stats(
+def get_network_stats(
     network_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.view"))
@@ -185,7 +185,7 @@ async def get_network_stats(
 
 
 @router.get("/api/networks/{network_id}/ip-map")
-async def get_network_ip_map(
+def get_network_ip_map(
     network_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.view"))
@@ -203,7 +203,7 @@ async def get_network_ip_map(
 
 
 @router.post("/api/networks", response_model=IPAMNetworkResponse)
-async def create_network(
+def create_network(
     network_data: IPAMNetworkCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
@@ -224,7 +224,7 @@ async def create_network(
 
 
 @router.put("/api/networks/{network_id}", response_model=IPAMNetworkResponse)
-async def update_network(
+def update_network(
     network_id: int,
     network_data: IPAMNetworkUpdate,
     db: Session = Depends(get_db),
@@ -247,7 +247,7 @@ async def update_network(
 
 
 @router.delete("/api/networks/{network_id}")
-async def delete_network(
+def delete_network(
     network_id: int,
     force: bool = False,
     db: Session = Depends(get_db),
@@ -280,7 +280,7 @@ async def delete_network(
 # ==================== Pool API ====================
 
 @router.get("/api/pools", response_model=List[IPAMPoolResponse])
-async def get_pools(
+def get_pools(
     network_id: Optional[int] = None,
     is_active: Optional[bool] = None,
     db: Session = Depends(get_db),
@@ -314,7 +314,7 @@ async def get_pools(
 
 
 @router.post("/api/pools", response_model=IPAMPoolResponse)
-async def create_pool(
+def create_pool(
     pool_data: IPAMPoolCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
@@ -345,7 +345,7 @@ async def create_pool(
 
 
 @router.put("/api/pools/{pool_id}", response_model=IPAMPoolResponse)
-async def update_pool(
+def update_pool(
     pool_id: int,
     pool_data: IPAMPoolUpdate,
     db: Session = Depends(get_db),
@@ -380,7 +380,7 @@ async def update_pool(
 
 
 @router.delete("/api/pools/{pool_id}")
-async def delete_pool(
+def delete_pool(
     pool_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
@@ -402,7 +402,7 @@ async def delete_pool(
 # ==================== Allocation API ====================
 
 @router.get("/api/allocations", response_model=List[IPAMAllocationResponse])
-async def get_allocations(
+def get_allocations(
     network_id: Optional[int] = None,
     pool_id: Optional[int] = None,
     status: Optional[str] = None,
@@ -471,7 +471,7 @@ async def get_allocations(
 
 
 @router.get("/api/allocations/{allocation_id}", response_model=IPAMAllocationResponse)
-async def get_allocation(
+def get_allocation(
     allocation_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.view"))
@@ -492,7 +492,7 @@ async def get_allocation(
 
 
 @router.post("/api/allocations", response_model=IPAMAllocationResponse)
-async def create_allocation(
+def create_allocation(
     alloc_data: IPAMAllocationCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
@@ -525,7 +525,7 @@ async def create_allocation(
 
 
 @router.post("/api/allocations/auto", response_model=IPAMAllocationResponse)
-async def auto_allocate_ip(
+def auto_allocate_ip(
     request: IPAMAutoAllocateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
@@ -550,7 +550,7 @@ async def auto_allocate_ip(
 
 
 @router.put("/api/allocations/{allocation_id}", response_model=IPAMAllocationResponse)
-async def update_allocation(
+def update_allocation(
     allocation_id: int,
     alloc_data: IPAMAllocationUpdate,
     db: Session = Depends(get_db),
@@ -575,7 +575,7 @@ async def update_allocation(
 
 
 @router.delete("/api/allocations/{allocation_id}")
-async def delete_allocation(
+def delete_allocation(
     allocation_id: int,
     reason: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -600,7 +600,7 @@ async def delete_allocation(
 
 
 @router.get("/api/allocations/next-available/{network_id}")
-async def get_next_available_ip(
+def get_next_available_ip(
     network_id: int,
     pool_id: Optional[int] = None,
     db: Session = Depends(get_db),
@@ -619,7 +619,7 @@ async def get_next_available_ip(
 # ==================== History API ====================
 
 @router.get("/api/history", response_model=List[IPAMHistoryResponse])
-async def get_history(
+def get_history(
     network_id: Optional[int] = None,
     ip_address: Optional[str] = None,
     action: Optional[str] = None,
@@ -643,7 +643,7 @@ async def get_history(
 
 
 @router.get("/api/history/ip/{ip_address}", response_model=List[IPAMHistoryResponse])
-async def get_ip_history(
+def get_ip_history(
     ip_address: str,
     limit: int = Query(default=50, le=200),
     db: Session = Depends(get_db),
@@ -657,7 +657,7 @@ async def get_ip_history(
 # ==================== Utility API ====================
 
 @router.get("/api/conflicts")
-async def detect_conflicts(
+def detect_conflicts(
     network_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.view"))
@@ -669,7 +669,7 @@ async def detect_conflicts(
 
 
 @router.get("/api/summary")
-async def get_ipam_summary(
+def get_ipam_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.view"))
 ):
@@ -712,7 +712,7 @@ async def get_ipam_summary(
 # ==================== Maintenance API ====================
 
 @router.get("/api/orphans")
-async def get_orphan_allocations(
+def get_orphan_allocations(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
 ):
@@ -815,7 +815,7 @@ async def cleanup_orphan_allocations(
 
 
 @router.get("/api/unlinked")
-async def get_unlinked_allocations(
+def get_unlinked_allocations(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
 ):
@@ -860,7 +860,7 @@ async def get_unlinked_allocations(
 
 
 @router.post("/api/link-allocations")
-async def link_allocations_to_vms(
+def link_allocations_to_vms(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
 ):
