@@ -7,12 +7,22 @@ import time
 import asyncio
 import base64
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
 from app.ssh_client import SSHClient
 
 logger = logging.getLogger(__name__)
 
+# Thread pool for running blocking proxmoxer calls without blocking the event loop
+proxmox_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="proxmox_")
+
 # Connection cache for reusing Proxmox connections
 connection_cache = {}
+
+
+async def _run_in_executor(func, *args, **kwargs):
+    """Run a blocking function in the proxmox thread pool executor."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(proxmox_executor, lambda: func(*args, **kwargs))
 
 
 class ProxmoxClient:
@@ -754,10 +764,44 @@ class ProxmoxClient:
             logger.error(f"Ошибка получения хранилищ ноды {node}: {e}")
             return []
 
+    # ==================== Async wrappers (non-blocking) ====================
+
+    async def async_get_nodes(self) -> List[Dict]:
+        """Non-blocking version of get_nodes()."""
+        return await _run_in_executor(self.get_nodes)
+
+    async def async_get_vms(self, node: str = None) -> List[Dict]:
+        """Non-blocking version of get_vms()."""
+        return await _run_in_executor(self.get_vms, node)
+
+    async def async_get_containers(self, node: str = None) -> List[Dict]:
+        """Non-blocking version of get_containers()."""
+        return await _run_in_executor(self.get_containers, node)
+
+    async def async_get_node_status(self, node: str) -> Optional[Dict]:
+        """Non-blocking version of get_node_status()."""
+        return await _run_in_executor(self.get_node_status, node)
+
+    async def async_get_vm_status(self, node: str, vmid: int) -> Optional[Dict]:
+        """Non-blocking version of get_vm_status()."""
+        return await _run_in_executor(self.get_vm_status, node, vmid)
+
+    async def async_get_container_status(self, node: str, vmid: int) -> Optional[Dict]:
+        """Non-blocking version of get_container_status()."""
+        return await _run_in_executor(self.get_container_status, node, vmid)
+
+    async def async_get_storages(self, node: str) -> List[Dict]:
+        """Non-blocking version of get_storages()."""
+        return await _run_in_executor(self.get_storages, node)
+
+    async def async_get_all_resources(self, node: str = None) -> Dict[str, List[Dict]]:
+        """Non-blocking version of get_all_resources()."""
+        return await _run_in_executor(self.get_all_resources, node)
+
     def get_next_vmid(self) -> Optional[int]:
         """
         Получить следующий свободный VMID
-        
+
         Returns:
             Свободный VMID или None
         """

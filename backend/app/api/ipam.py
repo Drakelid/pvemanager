@@ -437,11 +437,27 @@ async def get_allocations(
         )
     
     allocations = query.order_by(IPAMAllocation.ip_address).offset(offset).limit(limit).all()
-    
-    # Add network/pool names
-    networks = {n.id: n.name for n in db.query(IPAMNetwork).all()}
-    pools = {p.id: p.name for p in db.query(IPAMPool).all()}
-    
+
+    # Resolve network/pool names with targeted queries (only IDs present in results)
+    network_ids = {a.network_id for a in allocations if a.network_id}
+    pool_ids = {a.pool_id for a in allocations if a.pool_id}
+
+    networks = {}
+    if network_ids:
+        networks = {
+            n.id: n.name for n in
+            db.query(IPAMNetwork.id, IPAMNetwork.name)
+              .filter(IPAMNetwork.id.in_(network_ids)).all()
+        }
+
+    pools = {}
+    if pool_ids:
+        pools = {
+            p.id: p.name for p in
+            db.query(IPAMPool.id, IPAMPool.name)
+              .filter(IPAMPool.id.in_(pool_ids)).all()
+        }
+
     result = []
     for alloc in allocations:
         alloc_dict = {
@@ -450,7 +466,7 @@ async def get_allocations(
             'pool_name': pools.get(alloc.pool_id) if alloc.pool_id else None
         }
         result.append(alloc_dict)
-    
+
     return result
 
 
