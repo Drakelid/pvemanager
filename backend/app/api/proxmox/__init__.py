@@ -4,6 +4,7 @@ from .sdn import router as sdn_router
 from .snapshots import router as snapshots_router
 from .vms import router as vms_router
 from .tasks import router as tasks_router
+from ._helpers import get_next_vmid, save_vm_instance, get_vm_instance
 
 router = APIRouter()
 router.include_router(servers_router)

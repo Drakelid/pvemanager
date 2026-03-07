@@ -788,7 +788,7 @@ async def cleanup_orphan_allocations(
     errors = []
     
     # Get orphans
-    orphans_result = await get_orphan_allocations(db, current_user)
+    orphans_result = get_orphan_allocations(db, current_user)
     orphans = orphans_result['orphans']
     
     for orphan in orphans:
