@@ -530,17 +530,38 @@ deploy_standalone() {
     print_success "Standalone deployment completed"
 }
 
+get_server_ip() {
+    local ip
+    # Try to get the primary non-loopback IP
+    ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -1)
+    if [ -z "$ip" ]; then
+        ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    if [ -z "$ip" ]; then
+        ip="localhost"
+    fi
+    echo "$ip"
+}
+
 show_deployment_info() {
     local mode=$1
     local domain=$2
     local use_ssl=$3
-    
+
+    # Get admin credentials
+    local admin_user="admin"
+    local admin_password
+    admin_password=$(grep "^ADMIN_PASSWORD=" backend/.env 2>/dev/null | cut -d'=' -f2)
+    if [ -z "$admin_password" ]; then
+        admin_password="admin123"
+    fi
+
     echo ""
     echo "=========================================="
     print_success "🎉 Deployment completed successfully!"
     echo "=========================================="
     echo ""
-    
+
     if [ "$mode" = "nginx" ]; then
         if [ "$use_ssl" = true ]; then
             echo "📍 Access URL: https://${domain}"
@@ -549,10 +570,16 @@ show_deployment_info() {
         fi
         echo "🔒 SSL: ${use_ssl}"
     else
-        echo "📍 Access URL: http://localhost:8000"
+        local server_ip
+        server_ip=$(get_server_ip)
+        echo "📍 Access URL: http://${server_ip}:8000"
         echo "🔒 SSL: Not configured (standalone mode)"
     fi
-    
+
+    echo ""
+    echo "👤 Admin credentials:"
+    echo "   Login:    ${admin_user}"
+    echo "   Password: ${admin_password}"
     echo ""
     echo "📊 Service Status:"
     docker compose ps
