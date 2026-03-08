@@ -74,11 +74,11 @@ async function loadProxmoxNodesStats() {
         
         // Собрать все данные сначала, потом отрисовать
         const chartsToRender = [];
-        // Глобальная дедупликация по имени ноды
-        // Это работает потому что имена нод в кластере уникальны
-        // Даже если разные серверы кластера видят разное количество нод
-        // (например, при временном отключении одной ноды),
-        // мы всё равно покажем каждую ноду только один раз
+        // Дедупликация по ключу "cluster_id::node".
+        // Члены одного кластера возвращают одинаковый cluster_id (имя кластера),
+        // поэтому общие ноды показываются один раз.
+        // Независимые серверы с одинаковым именем ноды получают разные cluster_id
+        // ("standalone-{server_id}"), поэтому отображаются отдельно.
         const seenNodes = new Set();
         
         // Загрузить данные для каждого сервера
@@ -93,22 +93,26 @@ async function loadProxmoxNodesStats() {
                 
                 const nodesData = await nodesResponse.json();
                 const nodes = nodesData.nodes || [];
-                
+                const clusterId = nodesData.cluster_id || `standalone-${server.id}`;
+
                 if (nodes.length === 0) {
                     console.warn(`No nodes found for ${server.name}`);
                     continue;
                 }
-                
+
                 // Обработать ВСЕ ноды этого сервера
                 for (const nodeInfo of nodes) {
                     const node = nodeInfo.node;
-                    
-                    // Глобальная дедупликация по имени ноды
-                    // Если нода с таким именем уже обработана - пропускаем
-                    if (seenNodes.has(node)) {
+
+                    // Дедупликация по кластеру: члены одного кластера имеют
+                    // одинаковый clusterId и одинаковые имена нод → пропускаем дубли.
+                    // Независимые серверы с одинаковым именем ноды имеют разные
+                    // clusterId → отображаются отдельно.
+                    const dedupeKey = `${clusterId}::${node}`;
+                    if (seenNodes.has(dedupeKey)) {
                         continue;
                     }
-                    seenNodes.add(node);
+                    seenNodes.add(dedupeKey);
                     
                     // Получить данные для графиков
                     const rrdResponse = await fetchWithAuth(`/proxmox/api/${server.id}/node/rrddata?node=${node}&timeframe=hour`);

@@ -1173,24 +1173,40 @@ def control_container(
 
 @router.get("/api/{server_id}/nodes")
 def get_server_nodes(
-    server_id: int, 
-    db: Session = Depends(get_db), 
+    server_id: int,
+    db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("proxmox.view"))
 ):
-    """Получить список нод Proxmox сервера"""
+    """Получить список нод Proxmox сервера вместе с идентификатором кластера"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Proxmox server not found")
-    
+
     try:
         client = _get_proxmox_client(server)
-        
+
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
-        
+
         nodes = client.get_nodes()
-        logger.info(f"Nodes for server {server_id} ({server.name}): {nodes}")
-        return JSONResponse(content={"nodes": nodes})
+
+        # Определяем идентификатор кластера для корректной дедупликации на фронте.
+        # Если сервер входит в кластер — используем имя кластера (все члены одного
+        # кластера вернут одинаковое значение). Для standalone — используем уникальный
+        # "standalone-{server_id}", чтобы независимые серверы с одинаковыми именами
+        # нод не скрывали друг друга.
+        cluster_id = f"standalone-{server_id}"
+        try:
+            cluster_status = client.proxmox.cluster.status.get()
+            for item in cluster_status:
+                if item.get('type') == 'cluster' and item.get('name'):
+                    cluster_id = item['name']
+                    break
+        except Exception:
+            pass
+
+        logger.info(f"Nodes for server {server_id} ({server.name}), cluster_id={cluster_id}: {nodes}")
+        return JSONResponse(content={"nodes": nodes, "cluster_id": cluster_id})
     except Exception as e:
         logger.error(f"Error getting nodes from {server.name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
