@@ -355,175 +355,58 @@ def get_update_status() -> Dict[str, Any]:
 
 async def perform_update() -> Dict[str, Any]:
     """
-    Выполнить обновление системы
-    1. Git pull
-    2. Docker compose build
-    3. Docker compose up
+    Выполнить обновление системы.
+
+    Записывает файл-триггер .update_trigger в PROJECT_ROOT.
+    Watchdog-сервис на хосте (pvemanager-update.service / update_host.sh)
+    обнаруживает триггер и выполняет:
+        git pull → docker compose down → docker compose build --no-cache app → docker compose up -d
+
+    Такой подход необходим, потому что «docker compose down» убивает сам контейнер
+    (и любой nohup-процесс внутри него) прежде, чем успевает завершиться rebuild.
     """
     global update_status
-    
+
     if update_status["is_updating"]:
         return {"success": False, "error": "Update already in progress"}
-    
-    # Проверяем доступность
-    if not is_git_available():
-        return {"success": False, "error": "Git not available"}
-    
+
     if not is_project_mounted():
-        return {"success": False, "error": "Project not mounted"}
-    
-    # Добавляем safe.directory для git
-    ensure_safe_directory()
-    
-    # Настраиваем git для публичного доступа
-    configure_git_for_public_access()
-    
-    # Получаем URL репозитория из настроек и устанавливаем remote
+        return {
+            "success": False,
+            "error": (
+                "Project directory not mounted. "
+                "Make sure the compose volume '.:/project:rw' is present "
+                "and pvemanager-update.service is running on the host."
+            ),
+        }
+
+    trigger_path = os.path.join(PROJECT_ROOT, ".update_trigger")
+
     try:
-        repo_url = get_repository_url_from_settings()
-        subprocess.run(
-            ["git", "remote", "set-url", "origin", repo_url],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            timeout=10
-        )
-        logger.info(f"Set git remote to: {repo_url}")
-    except Exception as e:
-        logger.warning(f"Could not set git remote: {e}")
-    
-    # Сбросить статус
+        with open(trigger_path, "w") as f:
+            f.write(datetime.now().isoformat())
+        logger.info(f"Update trigger written to {trigger_path}")
+    except OSError as e:
+        logger.error(f"Failed to write update trigger: {e}")
+        return {"success": False, "error": f"Cannot write update trigger: {e}"}
+
+    # Обновляем in-memory статус — UI-баннер будет показан сразу
     update_status = {
         "is_updating": True,
         "started_at": datetime.now().isoformat(),
-        "stage": "initializing",
-        "progress": 0,
+        "stage": "restarting",
+        "progress": 80,
         "error": None,
-        "completed": False
+        "completed": False,
     }
-    
-    # Persistent log file (survives via volume mount ./logs:/app/logs)
-    UPDATE_LOG = "/app/logs/update.log"
 
-    def _detect_branch() -> str:
-        """Detect current git branch, falling back to 'main'"""
-        try:
-            r = subprocess.run(
-                ["git", "symbolic-ref", "--short", "HEAD"],
-                cwd=PROJECT_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if r.returncode == 0 and r.stdout.strip():
-                return r.stdout.strip()
-        except Exception:
-            pass
-        return "main"
-
-    try:
-        # Stage 1: Git pull
-        update_status["stage"] = "pulling"
-        update_status["progress"] = 10
-
-        git_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
-        branch = _detect_branch()
-
-        pull_result = subprocess.run(
-            ["git", "pull", "origin", branch],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=git_env,
-        )
-        logger.info(f"git pull stdout: {pull_result.stdout}")
-        logger.info(f"git pull stderr: {pull_result.stderr}")
-
-        if pull_result.returncode != 0:
-            # Fallback: fetch + reset --hard
-            fetch_result = subprocess.run(
-                ["git", "fetch", "origin", branch],
-                cwd=PROJECT_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                env=git_env,
-            )
-
-            if fetch_result.returncode != 0:
-                raise Exception(f"Git fetch failed: {fetch_result.stderr}")
-
-            reset_result = subprocess.run(
-                ["git", "reset", "--hard", f"origin/{branch}"],
-                cwd=PROJECT_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-
-            if reset_result.returncode != 0:
-                raise Exception(f"Git reset failed: {reset_result.stderr}")
-
-        # Stage 2: Docker rebuild
-        update_status["stage"] = "building"
-        update_status["progress"] = 30
-
-        # Detect which compose command is available
-        compose_cmd = "docker compose"
-        try:
-            check = subprocess.run(
-                ["docker", "compose", "version"],
-                capture_output=True,
-                timeout=5,
-            )
-            if check.returncode != 0:
-                compose_cmd = "docker-compose"
-        except Exception:
-            compose_cmd = "docker-compose"
-
-        # Script runs after this process exits — writes logs to persistent volume
-        build_script = f"""#!/bin/sh
-set -e
-cd {PROJECT_ROOT}
-echo "[update] Starting docker rebuild at $(date)" >> {UPDATE_LOG}
-{compose_cmd} up -d --build app >> {UPDATE_LOG} 2>&1
-echo "[update] Docker rebuild finished at $(date)" >> {UPDATE_LOG}
-"""
-
-        script_path = "/tmp/update_panel.sh"
-        with open(script_path, "w") as f:
-            f.write(build_script)
-        os.chmod(script_path, 0o755)
-
-        with open(UPDATE_LOG, "a") as f:
-            f.write(f"[update] git pull done (branch={branch}), launching rebuild...\n")
-
-        # Launch detached so it survives container restart
-        subprocess.Popen(
-            ["nohup", "sh", script_path],
-            cwd=PROJECT_ROOT,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-
-        update_status["stage"] = "restarting"
-        update_status["progress"] = 80
-
-        return {
-            "success": True,
-            "message": "Update started. The panel will restart shortly.",
-        }
-
-    except subprocess.TimeoutExpired:
-        update_status["error"] = "Update timeout"
-        update_status["is_updating"] = False
-        return {"success": False, "error": "Update timeout"}
-    except Exception as e:
-        update_status["error"] = str(e)
-        update_status["is_updating"] = False
-        logger.error(f"Update failed: {e}")
-        return {"success": False, "error": str(e)}
+    return {
+        "success": True,
+        "message": (
+            "Update triggered. The host watchdog (pvemanager-update.service) "
+            "will now run git pull, rebuild and restart the panel."
+        ),
+    }
 
 
 def reset_update_status():

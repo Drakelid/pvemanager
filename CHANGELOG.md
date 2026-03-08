@@ -4,6 +4,22 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.1.1] - 2026-03-08
+
+### 🔧 Fix: Update System — Host-side Rebuild
+
+- **Root cause fixed**: `docker compose down` убивал cgroup контейнера вместе с `nohup`-скриптом внутри него — rebuild никогда не завершался, был виден только результат `git pull` (обновлённый `VERSION`)
+- **Новый подход**: нажатие «Обновить панель» теперь записывает файл-триггер `.update_trigger` в корень проекта
+- Host-side watchdog (`pvemanager-update.service` / `update_host.sh`) обнаруживает триггер и выполняет на хосте:
+  `git pull → docker compose down → docker compose build --no-cache app → docker compose up -d`
+- Watchdog работает как systemd-сервис на хосте — не зависит от жизни контейнера
+- `PROJECT_DIR` определяется динамически в момент установки (не хардкодится)
+- `User=` в systemd-юните совпадает с пользователем, запустившим `deploy.sh --watchdog`
+- Установка / переустановка watchdog: `sudo ./deploy.sh --watchdog`
+- Лог обновления: `./logs/update_host.log`
+
+---
+
 ## [v1.1.0] - 2026-03-08
 
 ### 🚀 New Features

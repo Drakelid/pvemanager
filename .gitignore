@@ -22,6 +22,12 @@ node_modules/
 *.swp
 *.swo
 
+# Update trigger (written by panel, consumed by pvemanager-update.service on host)
+.update_trigger
+
+# Generated systemd files (created by deploy.sh when not root)
+systemd/
+
 # Environment
 .env
 .env.local

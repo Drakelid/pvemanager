@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.1.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.1.1
 
 ---
 
@@ -1194,6 +1194,45 @@ The repository setting affects:
 
 > **Note:** Make sure the selected repository contains valid `VERSION` and `CHANGELOG.md` files.
 
+### How the Update Process Works
+
+Starting from v1.1.1, updates are executed by a **host-side watchdog** (`pvemanager-update.service`) instead of inside the container. This solves the fundamental problem where `docker compose down` would kill the in-container script before the rebuild could complete.
+
+```
+[UI: "Update Panel"] → perform_update() → writes .update_trigger
+                                                   ↓ (poll every 3 sec)
+                                [pvemanager-update.service on HOST]
+                                detects trigger → removes it → runs:
+                                  git pull
+                                  docker compose down
+                                  docker compose build --no-cache app
+                                  docker compose up -d
+```
+
+**Logs:** `./logs/update_host.log` (visible from the panel)
+
+### Installing the Update Watchdog
+
+The watchdog must be installed once on the host machine. It is automatically set up when you run `deploy.sh`, or you can install/reinstall it separately:
+
+```bash
+# Install or reinstall (requires root for systemd)
+sudo ./deploy.sh --watchdog
+
+# Verify it is running
+systemctl status pvemanager-update
+
+# Watch live update log
+tail -f logs/update_host.log
+```
+
+**Requirements:**
+- systemd on the host
+- The user who runs `deploy.sh --watchdog` (or `$SUDO_USER`) must be in the `docker` group (root is always allowed)
+- The `compose.yml` volume `.:/project:rw` must be present (it is by default)
+
+> **Note for non-root users:** If you run `./deploy.sh --watchdog` without sudo, it generates ready-to-use files in `./systemd/` and prints the exact `sudo` commands needed to install them.
+
 ### Notification Settings
 
 - In-App: Always enabled
@@ -1510,4 +1549,4 @@ A: Not yet, but planned for future versions.
 ---
 
 *Last updated: March 2026*
-*Version: 1.1.0*
+*Version: 1.1.1*

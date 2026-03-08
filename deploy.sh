@@ -598,6 +598,7 @@ main() {
     
     check_requirements
     create_env_file
+    install_update_watchdog
     
     # Ask deployment mode
     echo ""
@@ -761,8 +762,110 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 EOF
 }
 
+# Install the host-side update watchdog (systemd service)
+install_update_watchdog() {
+    local project_dir
+    project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local service_name="pvemanager-update"
+    local env_file="/etc/pvemanager-update.env"
+    local service_file="/etc/systemd/system/${service_name}.service"
+    local watchdog_script="$project_dir/update_host.sh"
+    local run_user="${SUDO_USER:-$USER}"
+
+    print_info "Installing update watchdog (systemd service)..."
+    print_info "  Project directory : $project_dir"
+    print_info "  Running as user   : $run_user"
+
+    # Make sure the watchdog script is executable
+    chmod +x "$watchdog_script"
+
+    # Check that the user is in the docker group (root always has access, skip check)
+    if [ "$run_user" != "root" ] && ! id -nG "$run_user" | grep -qw docker; then
+        print_warning "User '$run_user' is not in the 'docker' group."
+        print_warning "The watchdog needs docker access. Run:"
+        print_warning "  sudo usermod -aG docker $run_user  (then log out/in)"
+    fi
+
+    # Write environment file (stores PROJECT_DIR so systemd can pass it to the script)
+    if [ "$(id -u)" -eq 0 ]; then
+        cat > "$env_file" <<EOF
+PROJECT_DIR=$project_dir
+EOF
+        print_success "Wrote $env_file"
+
+        # Write the systemd unit
+        cat > "$service_file" <<EOF
+[Unit]
+Description=PVEmanager host-side update watchdog
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=$run_user
+WorkingDirectory=$project_dir
+EnvironmentFile=$env_file
+ExecStart=$watchdog_script
+Restart=always
+RestartSec=5
+StandardOutput=append:$project_dir/logs/update_host.log
+StandardError=append:$project_dir/logs/update_host.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        print_success "Wrote $service_file"
+
+        systemctl daemon-reload
+        systemctl enable  "$service_name"
+        systemctl restart "$service_name"
+
+        print_success "pvemanager-update.service is active and enabled"
+    else
+        # Not root — generate the files locally and show the user what to run with sudo
+        print_warning "Not running as root. Generating systemd files locally..."
+
+        mkdir -p "$project_dir/systemd"
+        local local_env="$project_dir/systemd/pvemanager-update.env"
+        local local_svc="$project_dir/systemd/pvemanager-update.service"
+
+        cat > "$local_env" <<EOF
+PROJECT_DIR=$project_dir
+EOF
+
+        cat > "$local_svc" <<EOF
+[Unit]
+Description=PVEmanager host-side update watchdog
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=$run_user
+WorkingDirectory=$project_dir
+EnvironmentFile=$env_file
+ExecStart=$watchdog_script
+Restart=always
+RestartSec=5
+StandardOutput=append:$project_dir/logs/update_host.log
+StandardError=append:$project_dir/logs/update_host.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        print_success "Files generated in $project_dir/systemd/"
+        print_info "Run the following commands with sudo to install the watchdog:"
+        echo ""
+        echo "  sudo cp \"$local_env\" \"$env_file\""
+        echo "  sudo cp \"$local_svc\" \"$service_file\""
+        echo "  sudo systemctl daemon-reload"
+        echo "  sudo systemctl enable $service_name"
+        echo "  sudo systemctl start $service_name"
+        echo ""
+    fi
+}
+
 show_help() {
-    echo "PVEmanager Deployment Tool v1.0"
     echo ""
     echo "Usage: $0 [OPTIONS]"
     echo ""
@@ -780,11 +883,13 @@ show_help() {
     echo "  $0 --stop                   Stop all services"
     echo "  $0 --restart                Restart all services"
     echo "  $0 --logs                   Show live logs"
+    echo "  $0 --watchdog               Install/reinstall the host-side update watchdog (systemd)"
     echo ""
     echo "Examples:"
     echo "  $0 --standalone"
     echo "  $0 --nginx example.com"
     echo "  $0 --nginx example.com admin@example.com"
+    echo "  sudo $0 --watchdog"
 }
 
 # Parse command line arguments
@@ -820,6 +925,10 @@ if [ $# -gt 0 ]; then
             ;;
         --logs)
             docker compose -f compose.yml -f compose.prod.yml logs -f 2>/dev/null || docker compose logs -f
+            exit 0
+            ;;
+        --watchdog)
+            install_update_watchdog
             exit 0
             ;;
         *)
