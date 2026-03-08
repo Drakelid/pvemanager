@@ -7,7 +7,7 @@
   <div class="page-header d-flex justify-content-between align-items-center mb-4">
     <div>
       <h1 class="page-title mb-0">
-        <svg class="material-icon me-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <i class="fa-solid fa-hard-drive me-2"></i>
         {{ t('nav_backups') }}
       </h1>
     </div>
@@ -25,19 +25,19 @@
   <ul class="nav nav-tabs mb-4" id="backupTabs">
     <li class="nav-item">
       <a class="nav-link active" id="tab-backups" href="#" onclick="showTab('backups',this)">
-        <svg class="material-icon me-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8L2 7h20z"/></svg>
+        <i class="fa-solid fa-box-archive me-1"></i>
         {{ t('backup_tab_backups') }}
       </a>
     </li>
     <li class="nav-item">
       <a class="nav-link" id="tab-storages" href="#" onclick="showTab('storages',this)">
-        <svg class="material-icon me-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+        <i class="fa-solid fa-database me-1"></i>
         {{ t('backup_tab_storages') }}
       </a>
     </li>
     <li class="nav-item">
       <a class="nav-link" id="tab-jobs" href="#" onclick="showTab('jobs',this)">
-        <svg class="material-icon me-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <i class="fa-solid fa-clock me-1"></i>
         {{ t('backup_tab_schedule') }}
       </a>
     </li>
@@ -54,7 +54,7 @@
           </select>
           <input type="number" id="filterVmid" class="form-control form-control-sm" placeholder="VMID" style="width:90px" oninput="loadBackups()">
           <button class="btn btn-primary btn-sm" onclick="openCreateBackupModal()">
-            <svg class="material-icon me-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <i class="fa-solid fa-plus me-1"></i>
             {{ t('backup_create') }}
           </button>
         </div>
@@ -86,7 +86,7 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">{{ t('backup_storages_title') }}</h5>
         <button class="btn btn-primary btn-sm" onclick="openAddStorageModal()">
-          <svg class="material-icon me-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <i class="fa-solid fa-plus me-1"></i>
           {{ t('backup_add_storage') }}
         </button>
       </div>
@@ -117,7 +117,7 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">{{ t('backup_jobs_title') }}</h5>
         <button class="btn btn-primary btn-sm" onclick="openAddJobModal()">
-          <svg class="material-icon me-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <i class="fa-solid fa-plus me-1"></i>
           {{ t('backup_add_job') }}
         </button>
       </div>
@@ -542,10 +542,10 @@ async function loadBackups() {
                 <td>${fmt}</td>
                 <td class="text-end">
                     <button class="btn btn-sm btn-outline-warning me-1" onclick='openRestoreModal(${JSON.stringify(b)}, "${node}", "${storage}")' title="{{ t('backup_restore_btn') }}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.9"/></svg>
+                        <i class="fa-solid fa-rotate-left"></i>
                     </button>
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteBackup(${JSON.stringify(b.volid)}, '${node}', '${storage}')" title="{{ t('delete') }}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                        <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
             </tr>`;
@@ -687,7 +687,7 @@ async function loadStorages() {
                 <td>${s.active ? '<span class="badge bg-success">active</span>' : '<span class="badge bg-danger">inactive</span>'}</td>
                 <td class="text-end">
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteStorage('${s.storage}')" title="{{ t('delete') }}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                        <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
             </tr>`;
@@ -750,8 +750,8 @@ async function loadJobs() {
             const lastRun = j.last_run_at ? new Date(j.last_run_at).toLocaleString() : '-';
             const statusBadge = j.last_status === 'success' ? 'bg-success' : j.last_status === 'failed' ? 'bg-danger' : j.last_status === 'running' ? 'bg-info' : 'bg-secondary';
             const enabledIcon = j.enabled
-                ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M20 6L9 17l-5-5"/></svg>'
-                : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+                ? '<i class="fa-solid fa-check"></i>'
+                : '<i class="fa-solid fa-xmark"></i>';
             return `<tr>
                 <td>${srvName}</td>
                 <td>${j.node}</td>
@@ -763,13 +763,13 @@ async function loadJobs() {
                 <td class="text-end d-flex gap-1 justify-content-end">
                     <button class="btn btn-sm ${j.enabled ? 'btn-outline-warning' : 'btn-outline-success'}" onclick="toggleJob(${j.id})" title="${j.enabled ? '{{ t("backup_job_disable") }}' : '{{ t("backup_job_enable") }}'}">${enabledIcon}</button>
                     <button class="btn btn-sm btn-outline-primary" onclick="runJobNow(${j.id})" title="{{ t('backup_run_now') }}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        <i class="fa-solid fa-play"></i>
                     </button>
                     <button class="btn btn-sm btn-outline-secondary" onclick='openEditJobModal(${JSON.stringify(j)})' title="{{ t('edit') }}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        <i class="fa-solid fa-pencil"></i>
                     </button>
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteJob(${j.id})" title="{{ t('delete') }}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                        <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
             </tr>`;
