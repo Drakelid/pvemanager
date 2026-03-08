@@ -1773,7 +1773,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Test SMTP settings
     document.getElementById('test-smtp-settings-btn').addEventListener('click', async function() {
-        const testEmail = prompt(t('enter_test_email') || 'Введите email для тестового письма:', currentUser?.email || '');
+        const testEmail = await showPrompt(
+            t('enter_test_email') || 'Введите email для тестового письма',
+            null,
+            { inputType: 'email', defaultValue: currentUser?.email || '', placeholder: 'test@example.com', confirmText: t('send') || 'Отправить' }
+        );
         if (!testEmail) return;
 
         const btn = this;
@@ -1803,7 +1807,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Test Telegram settings
     document.getElementById('test-telegram-settings-btn').addEventListener('click', async function() {
-        const chatId = prompt(t('enter_chat_id_for_test') || 'Введите Chat ID для тестового сообщения:');
+        const chatId = await showPrompt(
+            t('enter_chat_id_for_test') || 'Введите Chat ID для тестового сообщения',
+            null,
+            { placeholder: '123456789', confirmText: t('send') || 'Отправить' }
+        );
         if (!chatId) return;
 
         const btn = this;
@@ -2023,7 +2031,12 @@ async function checkForUpdates() {
 
 async function performUpdate() {
     // Confirm update
-    if (!confirm((t('update_warning') || 'Панель будет недоступна во время обновления') + '\n\nПродолжить?')) {
+    const confirmed = await showConfirm(
+        t('update_warning') || 'Панель будет недоступна во время обновления. Продолжить?',
+        t('update_now') || 'Обновить сейчас',
+        { type: 'warning', icon: '<i class="fas fa-download"></i>', confirmText: t('yes') || 'Да', confirmClass: 'warning' }
+    );
+    if (!confirmed) {
         return;
     }
     

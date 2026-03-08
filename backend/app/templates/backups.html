@@ -690,7 +690,8 @@ function formatSize(bytes) {
 }
 
 async function deleteBackup(volid, node, storage) {
-    if (!confirm('{{ t("backup_delete_confirm") }}')) return;
+    const confirmed = await showDeleteConfirm('{{ t("backup_delete_confirm") }}');
+    if (!confirmed) return;
     try {
         const r = await (await fetchWithAuth(`/proxmox/api/backups/${currentServerId}/backup`, {
             method: 'DELETE',
@@ -825,7 +826,8 @@ async function loadStorages() {
 }
 
 async function deleteStorage(storageId) {
-    if (!confirm('{{ t("backup_storage_delete_confirm") }}')) return;
+    const confirmed = await showDeleteConfirm('{{ t("backup_storage_delete_confirm") }}');
+    if (!confirmed) return;
     try {
         const r = await (await fetchWithAuth(`/proxmox/api/backups/storages/${currentServerId}/${storageId}`, { method: 'DELETE' })).json();
         if (r.success) { showToast('{{ t("success") }}', '{{ t("backup_storage_deleted") }}', 'success'); loadStorages(); }
@@ -1147,7 +1149,8 @@ async function runJobNow(jobId) {
 }
 
 async function deleteJob(jobId) {
-    if (!confirm('{{ t("backup_job_delete_confirm") }}')) return;
+    const confirmed = await showDeleteConfirm('{{ t("backup_job_delete_confirm") }}');
+    if (!confirmed) return;
     try {
         const r = await (await fetchWithAuth(`/proxmox/api/backups/jobs/${jobId}`, { method: 'DELETE' })).json();
         if (r.success) { showToast('{{ t("success") }}', '{{ t("deleted") }}', 'success'); loadJobs(); }
