@@ -10,14 +10,14 @@ import asyncio
 import httpx
 import websockets
 
-from ..db import get_db
-from ..models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
-from ..schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
-from ..proxmox_client import ProxmoxClient, get_proxmox_resources
-from ..auth import get_current_user, PermissionChecker, require_permission, check_permission
-from ..logging_service import LoggingService
-from ..template_helpers import add_i18n_context
-from ..ipam_service import IPAMService
+from ...db import get_db
+from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
+from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
+from ...proxmox_client import ProxmoxClient, get_proxmox_resources
+from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
+from ...logging_service import LoggingService
+from ...template_helpers import add_i18n_context
+from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         get_next_vmid, archive_and_delete_snapshots,
                         save_vm_instance, get_vm_instance, soft_delete_vm_instance,
@@ -25,8 +25,8 @@ from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
 
 router = APIRouter()
 
-from ..models import TaskQueue
-from ..services.task_queue_service import TaskQueueService, process_task_queue
+from ...models import TaskQueue
+from ...services.task_queue_service import TaskQueueService, process_task_queue
 from pydantic import BaseModel
 from typing import List as TypingList, Optional
 
@@ -54,7 +54,7 @@ def sync_vms_now(
     Useful when you create VMs directly in Proxmox and want them to appear in the panel immediately.
     """
     try:
-        from ..workers.monitoring_worker import MonitoringWorker
+        from ...workers.monitoring_worker import MonitoringWorker
         
         worker = MonitoringWorker()
         worker.sync_vm_cache()
@@ -86,7 +86,7 @@ def get_all_virtual_machines(
     
     Для пользователей с ролью 'user' возвращаются только их собственные инстансы.
     """
-    from ..models import VMInstance
+    from ...models import VMInstance
     
     # Get servers for name lookup
     servers = db.query(ProxmoxServer).all()
@@ -403,7 +403,7 @@ async def delete_vm(
     current_user: User = Depends(PermissionChecker("vms.delete"))
 ):
     """Удалить VM"""
-    from ..i18n import t
+    from ...i18n import t
     lang = request.cookies.get("language", "en")
     
     # VPS-style user isolation: check VM ownership for limited users
@@ -784,7 +784,7 @@ async def delete_container(
     current_user: User = Depends(PermissionChecker("vms.delete"))
 ):
     """Удалить LXC контейнер"""
-    from ..i18n import t
+    from ...i18n import t
     lang = request.cookies.get("language", "en")
     
     # VPS-style user isolation: check container ownership for limited users
@@ -2116,7 +2116,7 @@ async def create_lxc_container_smart(
         # Update IPAM allocation with VMID and server info
         if ipam_allocation_id:
             try:
-                from ..models import IPAMAllocation
+                from ...models import IPAMAllocation
                 allocation = db.query(IPAMAllocation).filter(IPAMAllocation.id == ipam_allocation_id).first()
                 if allocation:
                     allocation.resource_id = vmid

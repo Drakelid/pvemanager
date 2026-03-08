@@ -178,11 +178,11 @@ def create_app() -> FastAPI:
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://esm.sh; "
+            "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://fonts.googleapis.com; "
             "img-src 'self' data: blob:; "
-            "connect-src 'self' wss: ws:; "
-            "font-src 'self' data:; "
+            "connect-src 'self' wss: ws: https://esm.sh; "
+            "font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
             "frame-ancestors 'self';"
         )
         if not settings.DEBUG:

@@ -10,14 +10,14 @@ import asyncio
 import httpx
 import websockets
 
-from ..db import get_db
-from ..models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
-from ..schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
-from ..proxmox_client import ProxmoxClient, get_proxmox_resources
-from ..auth import get_current_user, PermissionChecker, require_permission, check_permission
-from ..logging_service import LoggingService
-from ..template_helpers import add_i18n_context
-from ..ipam_service import IPAMService
+from ...db import get_db
+from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
+from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
+from ...proxmox_client import ProxmoxClient, get_proxmox_resources
+from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
+from ...logging_service import LoggingService
+from ...template_helpers import add_i18n_context
+from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         get_next_vmid, archive_and_delete_snapshots,
                         save_vm_instance, get_vm_instance, soft_delete_vm_instance,
@@ -31,7 +31,7 @@ router = APIRouter()
 @router.get("/vms", response_class=HTMLResponse, include_in_schema=False)
 def vms_page(request: Request, db: Session = Depends(get_db)):
     """Страница управления Proxmox серверами, VM и LXC"""
-    from ..i18n import t
+    from ...i18n import t
     lang = request.cookies.get("language", "en")
     
     proxmox_servers = db.query(ProxmoxServer).all()
@@ -430,7 +430,7 @@ def update_proxmox_server(
     current_user: User = Depends(PermissionChecker("proxmox.servers.edit"))
 ):
     """Обновить Proxmox сервер"""
-    from ..proxmox_client import clear_server_cache
+    from ...proxmox_client import clear_server_cache
     
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
@@ -460,8 +460,8 @@ def delete_proxmox_server(
     current_user: User = Depends(PermissionChecker("proxmox.servers.delete"))
 ):
     """Удалить Proxmox сервер и связанные OS Templates"""
-    from ..proxmox_client import clear_server_cache
-    from ..models import OSTemplate, OSTemplateGroup, VMInstance
+    from ...proxmox_client import clear_server_cache
+    from ...models import OSTemplate, OSTemplateGroup, VMInstance
     
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
