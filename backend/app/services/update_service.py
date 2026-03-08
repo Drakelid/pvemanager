@@ -401,82 +401,120 @@ async def perform_update() -> Dict[str, Any]:
         "completed": False
     }
     
+    # Persistent log file (survives via volume mount ./logs:/app/logs)
+    UPDATE_LOG = "/app/logs/update.log"
+
+    def _detect_branch() -> str:
+        """Detect current git branch, falling back to 'main'"""
+        try:
+            r = subprocess.run(
+                ["git", "symbolic-ref", "--short", "HEAD"],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip()
+        except Exception:
+            pass
+        return "main"
+
     try:
-        # Stage 1: Git pull (10%)
+        # Stage 1: Git pull
         update_status["stage"] = "pulling"
         update_status["progress"] = 10
-        
-        # Пробуем pull с публичным доступом
+
+        git_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        branch = _detect_branch()
+
         pull_result = subprocess.run(
-            ["git", "pull", "origin", "main"],
+            ["git", "pull", "origin", branch],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
             timeout=120,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}  # Отключить запрос пароля
+            env=git_env,
         )
-        
+        logger.info(f"git pull stdout: {pull_result.stdout}")
+        logger.info(f"git pull stderr: {pull_result.stderr}")
+
         if pull_result.returncode != 0:
-            # Если не получилось через pull, пробуем через reset
-            # Fetch с установкой remote для публичного доступа
+            # Fallback: fetch + reset --hard
             fetch_result = subprocess.run(
-                ["git", "fetch", "origin", "main"],
+                ["git", "fetch", "origin", branch],
                 cwd=PROJECT_ROOT,
                 capture_output=True,
                 text=True,
                 timeout=120,
-                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+                env=git_env,
             )
-            
+
             if fetch_result.returncode != 0:
                 raise Exception(f"Git fetch failed: {fetch_result.stderr}")
-            
-            # Reset к удаленной версии
+
             reset_result = subprocess.run(
-                ["git", "reset", "--hard", "origin/main"],
+                ["git", "reset", "--hard", f"origin/{branch}"],
                 cwd=PROJECT_ROOT,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
-            
+
             if reset_result.returncode != 0:
                 raise Exception(f"Git reset failed: {reset_result.stderr}")
-        
-        # Stage 2: Docker build (50%)
+
+        # Stage 2: Docker rebuild
         update_status["stage"] = "building"
         update_status["progress"] = 30
-        
-        # Запускаем rebuild в фоне - это перезапустит сам контейнер
-        # Используем nohup чтобы процесс продолжился после рестарта
-        build_script = f"""
+
+        # Detect which compose command is available
+        compose_cmd = "docker compose"
+        try:
+            check = subprocess.run(
+                ["docker", "compose", "version"],
+                capture_output=True,
+                timeout=5,
+            )
+            if check.returncode != 0:
+                compose_cmd = "docker-compose"
+        except Exception:
+            compose_cmd = "docker-compose"
+
+        # Script runs after this process exits — writes logs to persistent volume
+        build_script = f"""#!/bin/sh
+set -e
 cd {PROJECT_ROOT}
-docker compose up -d --build app 2>&1 | tee /tmp/update.log
+echo "[update] Starting docker rebuild at $(date)" >> {UPDATE_LOG}
+{compose_cmd} up -d --build app >> {UPDATE_LOG} 2>&1
+echo "[update] Docker rebuild finished at $(date)" >> {UPDATE_LOG}
 """
-        
-        # Записываем скрипт обновления
+
         script_path = "/tmp/update_panel.sh"
         with open(script_path, "w") as f:
             f.write(build_script)
         os.chmod(script_path, 0o755)
-        
-        # Запускаем скрипт через nohup
+
+        with open(UPDATE_LOG, "a") as f:
+            f.write(f"[update] git pull done (branch={branch}), launching rebuild...\n")
+
+        # Launch detached so it survives container restart
         subprocess.Popen(
             ["nohup", "sh", script_path],
             cwd=PROJECT_ROOT,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True
+            start_new_session=True,
         )
-        
+
         update_status["stage"] = "restarting"
         update_status["progress"] = 80
-        
+
         return {
             "success": True,
-            "message": "Update started. The panel will restart shortly."
+            "message": "Update started. The panel will restart shortly.",
         }
-        
+
     except subprocess.TimeoutExpired:
         update_status["error"] = "Update timeout"
         update_status["is_updating"] = False

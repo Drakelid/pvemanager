@@ -40,6 +40,7 @@ RUN apk add --no-cache \
     curl \
     git \
     docker-cli \
+    docker-compose \
     libstdc++ \
     tzdata \
     && mkdir -p /root/.ssh /app/logs \
