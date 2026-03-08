@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.0.5
+> Complete guide for installation, configuration and usage of PVEmanager v1.1.0
 
 ---
 
@@ -1510,4 +1510,4 @@ A: Not yet, but planned for future versions.
 ---
 
 *Last updated: March 2026*
-*Version: 1.0.5*
+*Version: 1.1.0*
