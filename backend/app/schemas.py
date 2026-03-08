@@ -359,6 +359,7 @@ class IPAMNetworkBase(BaseModel):
     dns_secondary: Optional[str] = Field(None, description="Secondary DNS server")
     dns_domain: Optional[str] = Field(None, max_length=255, description="DNS domain")
     proxmox_server_id: Optional[int] = Field(None, description="Associated Proxmox server ID")
+    proxmox_node: Optional[str] = Field(None, max_length=100, description="Proxmox node name (e.g., pve1)")
     proxmox_bridge: Optional[str] = Field(None, max_length=20, description="Proxmox bridge (e.g., vmbr0)")
     is_active: bool = Field(default=True, description="Is network active")
 
@@ -400,6 +401,7 @@ class IPAMNetworkUpdate(BaseModel):
     dns_secondary: Optional[str] = None
     dns_domain: Optional[str] = Field(None, max_length=255)
     proxmox_server_id: Optional[int] = None
+    proxmox_node: Optional[str] = Field(None, max_length=100)
     proxmox_bridge: Optional[str] = Field(None, max_length=20)
     is_active: Optional[bool] = None
 

@@ -4,7 +4,9 @@ IP Address Management endpoints for networks, pools, and allocations.
 """
 
 import logging
+import ipaddress as ipaddress_module
 from typing import List, Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -12,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import IPAMNetwork, IPAMPool, IPAMAllocation, IPAMHistory, ProxmoxServer, User, VMInstance
+from ..proxmox_client import ProxmoxClient
 from ..schemas import (
     IPAMNetworkCreate, IPAMNetworkUpdate, IPAMNetworkResponse, IPAMNetworkStats,
     IPAMPoolCreate, IPAMPoolUpdate, IPAMPoolResponse,
@@ -814,97 +817,247 @@ async def cleanup_orphan_allocations(
     }
 
 
+def _build_proxmox_client(server: ProxmoxServer) -> ProxmoxClient:
+    """Build ProxmoxClient from ProxmoxServer model."""
+    host = server.ip_address or server.hostname
+    if server.port and server.port != 8006:
+        host = f"{host}:{server.port}"
+    if server.use_password and server.password:
+        return ProxmoxClient(host=host, user=server.api_user, password=server.password, verify_ssl=server.verify_ssl)
+    return ProxmoxClient(host=host, user=server.api_user, token_name=server.api_token_name, token_value=server.api_token_value, verify_ssl=server.verify_ssl)
+
+
+def _extract_primary_ipv4(interfaces: list, parsed_networks: list):
+    """Extract first IPv4 that belongs to any IPAM network from interface list."""
+    for iface in interfaces:
+        for ip_info in iface.get('ips', []):
+            if ip_info.get('type') != 'ipv4':
+                continue
+            addr = ip_info.get('address', '')
+            try:
+                ip_obj = ipaddress_module.ip_address(addr)
+            except ValueError:
+                continue
+            if ip_obj.is_loopback or ip_obj.is_link_local:
+                continue
+            for net, net_obj in parsed_networks:
+                if ip_obj in net_obj:
+                    return addr, net
+    return None, None
+
+
 @router.get("/api/unlinked")
 def get_unlinked_allocations(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
 ):
     """
-    Get IPAM allocations without proxmox_vmid that can be linked to existing VMs by name.
+    Return VM instances that have no IPAM allocation linked to them (by vmid+server_id).
     """
     unlinked = []
-    
-    # Allocations without proxmox_vmid
-    allocations = db.query(IPAMAllocation).filter(
-        IPAMAllocation.proxmox_vmid.is_(None),
-        IPAMAllocation.status.in_(['allocated', 'reserved'])
-    ).all()
-    
-    for alloc in allocations:
-        # Try to find matching VM by name
-        vm = db.query(VMInstance).filter(
-            VMInstance.name.ilike(alloc.resource_name),
-            VMInstance.deleted_at.is_(None)
-        ).first()
-        
+
+    # All live VMs
+    vms = db.query(VMInstance).filter(VMInstance.deleted_at.is_(None)).all()
+
+    # Pre-load all linked (proxmox_server_id, proxmox_vmid) pairs for fast lookup
+    linked_pairs = set(
+        (a.proxmox_server_id, a.proxmox_vmid)
+        for a in db.query(IPAMAllocation.proxmox_server_id, IPAMAllocation.proxmox_vmid).filter(
+            IPAMAllocation.proxmox_vmid.isnot(None)
+        ).all()
+    )
+
+    servers_map = {s.id: s for s in db.query(ProxmoxServer).all()}
+
+    for vm in vms:
+        if (vm.server_id, vm.vmid) in linked_pairs:
+            continue
+        server = servers_map.get(vm.server_id)
         unlinked.append({
-            'id': alloc.id,
-            'ip_address': alloc.ip_address,
-            'resource_name': alloc.resource_name,
-            'resource_type': alloc.resource_type,
-            'can_link': vm is not None,
-            'suggested_vmid': vm.vmid if vm else None,
-            'suggested_server_id': vm.server_id if vm else None,
-            'suggested_server_name': None  # Will be filled below
+            'id': None,
+            'ip_address': vm.ip_address or '?',
+            'resource_name': vm.name,
+            'resource_type': vm.vm_type,
+            'can_link': True,
+            'suggested_vmid': vm.vmid,
+            'suggested_server_id': vm.server_id,
+            'suggested_server_name': server.name if server else None
         })
-        
-        if vm:
-            server = db.query(ProxmoxServer).filter(ProxmoxServer.id == vm.server_id).first()
-            unlinked[-1]['suggested_server_name'] = server.name if server else None
-    
+
     return {
         'unlinked': unlinked,
         'count': len(unlinked),
-        'linkable_count': sum(1 for u in unlinked if u['can_link'])
+        'linkable_count': len(unlinked)
     }
+
+
+class LinkAllocationsRequest(BaseModel):
+    server_id: Optional[int] = None   # If set, only process this server's VMs
+    network_id: Optional[int] = None  # If set, only match against this IPAM network
 
 
 @router.post("/api/link-allocations")
 def link_allocations_to_vms(
+    body: LinkAllocationsRequest = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam.manage"))
 ):
     """
-    Link IPAM allocations to real VMs by matching resource_name.
+    Scan Proxmox servers, get VM IP addresses via QEMU guest agent / LXC config,
+    and create/update IPAM allocations for each VM whose IP belongs to a known IPAM network.
+
+    When body.server_id is given: only process that server.
+    When body.network_id is given: only match against that specific network.
+    In auto mode (no params): each VM is matched only against networks whose
+      proxmox_server_id equals the VM's server (or networks without a server binding).
     """
+    if body is None:
+        body = LinkAllocationsRequest()
+
     linked = []
     not_found = []
-    
-    # Get unlinked allocations
-    allocations = db.query(IPAMAllocation).filter(
-        IPAMAllocation.proxmox_vmid.is_(None),
-        IPAMAllocation.status.in_(['allocated', 'reserved'])
-    ).all()
-    
-    for alloc in allocations:
-        # Find VM by name (case-insensitive)
-        vm = db.query(VMInstance).filter(
-            VMInstance.name.ilike(alloc.resource_name),
-            VMInstance.deleted_at.is_(None)
-        ).first()
-        
-        if vm:
-            # Update allocation with VM info
-            alloc.proxmox_vmid = vm.vmid
-            alloc.proxmox_server_id = vm.server_id
-            alloc.resource_id = vm.vmid
-            
-            linked.append({
-                'ip_address': alloc.ip_address,
-                'resource_name': alloc.resource_name,
-                'vmid': vm.vmid,
-                'server_id': vm.server_id
-            })
-            logger.info(f"Linked IP {alloc.ip_address} to VM {vm.vmid} on server {vm.server_id}")
+
+    service = IPAMService(db)
+    synced_by = current_user.username if hasattr(current_user, 'username') else 'system'
+
+    # Parse all active IPAM networks once (or just the requested one)
+    net_query = db.query(IPAMNetwork).filter(IPAMNetwork.is_active == True)
+    if body.network_id:
+        net_query = net_query.filter(IPAMNetwork.id == body.network_id)
+    networks = net_query.all()
+
+    parsed_networks = []
+    for net in networks:
+        try:
+            parsed_networks.append((net, ipaddress_module.ip_network(net.network, strict=False)))
+        except ValueError:
+            pass
+
+    if not parsed_networks:
+        return {'linked': [], 'linked_count': 0, 'not_found': [], 'not_found_count': 0,
+                'message': 'No active IPAM networks configured'}
+
+    # Pre-build set of already-linked (server_id, vmid) pairs
+    linked_pairs = set(
+        (a.proxmox_server_id, a.proxmox_vmid)
+        for a in db.query(IPAMAllocation.proxmox_server_id, IPAMAllocation.proxmox_vmid).filter(
+            IPAMAllocation.proxmox_vmid.isnot(None)
+        ).all()
+    )
+
+    # All live VMs cached in DB (optionally filtered by server)
+    vm_query = db.query(VMInstance).filter(VMInstance.deleted_at.is_(None))
+    if body.server_id:
+        vm_query = vm_query.filter(VMInstance.server_id == body.server_id)
+    vms = vm_query.all()
+
+    # Group VMs by server_id for efficient client reuse
+    vms_by_server: dict = {}
+    for vm in vms:
+        vms_by_server.setdefault(vm.server_id, []).append(vm)
+
+    for server_id, server_vms in vms_by_server.items():
+        server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+        if not server:
+            continue
+
+        # Determine which networks apply for this server.
+        # If a specific network_id was requested, only use that (already filtered above).
+        # Otherwise restrict to networks that belong to this server OR are "global" (no server binding).
+        if body.network_id:
+            server_networks = parsed_networks  # already filtered to the one network
         else:
-            not_found.append({
-                'ip_address': alloc.ip_address,
-                'resource_name': alloc.resource_name
-            })
-    
+            server_networks = [
+                (n, p) for n, p in parsed_networks
+                if n.proxmox_server_id == server_id or n.proxmox_server_id is None
+            ]
+
+        if not server_networks:
+            logger.info(f"[IPAM link] Server {server.name} has no matching IPAM networks, skipping")
+            continue
+
+        try:
+            client = _build_proxmox_client(server)
+            if not client.is_connected():
+                logger.warning(f"[IPAM link] Server {server.name} not reachable, skipping")
+                for vm in server_vms:
+                    if (server_id, vm.vmid) not in linked_pairs:
+                        not_found.append({'ip_address': '-', 'resource_name': vm.name,
+                                          'reason': 'server_unreachable'})
+                continue
+        except Exception as e:
+            logger.error(f"[IPAM link] Cannot build client for server {server.name}: {e}")
+            continue
+
+        for vm in server_vms:
+            # Skip already linked
+            if (server_id, vm.vmid) in linked_pairs:
+                continue
+
+            # For this VM, further filter networks by proxmox_node if set
+            # (e.g. network tagged to pve1 should not match VMs on pve2)
+            vm_networks = [
+                (n, p) for n, p in server_networks
+                if not n.proxmox_node or n.proxmox_node == vm.node
+            ]
+            if not vm_networks:
+                not_found.append({'ip_address': '-', 'resource_name': vm.name,
+                                  'reason': 'no_network_for_node'})
+                continue
+
+            # Get interfaces from Proxmox
+            try:
+                if vm.vm_type == 'qemu':
+                    interfaces = client.get_vm_interfaces(vm.node, vm.vmid)
+                else:
+                    interfaces = client.get_container_interfaces(vm.node, vm.vmid)
+            except Exception as e:
+                logger.debug(f"[IPAM link] Cannot get interfaces for {vm.name}/{vm.vmid}: {e}")
+                interfaces = []
+
+            # Find first IPv4 in one of this VM's applicable IPAM networks
+            ip_found, matching_network = _extract_primary_ipv4(interfaces, vm_networks)
+
+            if not ip_found:
+                not_found.append({'ip_address': '-', 'resource_name': vm.name,
+                                  'reason': 'no_ip_in_ipam_network'})
+                continue
+
+            alloc, error = service.sync_from_proxmox_vm(
+                network_id=matching_network.id,
+                proxmox_server_id=server_id,
+                vmid=vm.vmid,
+                vm_name=vm.name,
+                vm_type=vm.vm_type,
+                ip_address=ip_found,
+                node=vm.node,
+                synced_by=synced_by
+            )
+
+            if alloc:
+                # Update the cached ip_address in vm_instances as well
+                vm.ip_address = ip_found
+                linked_pairs.add((server_id, vm.vmid))  # avoid double-linking
+                linked.append({
+                    'ip_address': ip_found,
+                    'resource_name': vm.name,
+                    'vmid': vm.vmid,
+                    'server_id': server_id
+                })
+                logger.info(f"[IPAM link] Linked {ip_found} -> VM {vm.vmid} ({vm.name}) on {server.name}")
+            else:
+                not_found.append({'ip_address': ip_found, 'resource_name': vm.name,
+                                  'reason': error or 'sync_error'})
+                logger.warning(f"[IPAM link] Failed {ip_found} for {vm.name}: {error}")
+
     if linked:
-        db.commit()
-    
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[IPAM link] Commit failed: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
     return {
         'linked': linked,
         'linked_count': len(linked),

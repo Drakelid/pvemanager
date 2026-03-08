@@ -1035,6 +1035,20 @@ def migrate_backup_jobs(conn):
     logger.info("✓ backup_jobs table created")
 
 
+# ==================== Migration 16: IPAM Network Node ====================
+
+def migrate_ipam_network_node(conn):
+    """Add proxmox_node column to ipam_networks table"""
+    if not table_exists(conn, 'ipam_networks'):
+        logger.info("Table ipam_networks does not exist, skipping")
+        return
+
+    if add_column_if_not_exists(conn, 'ipam_networks', 'proxmox_node', 'VARCHAR(100)'):
+        logger.info("✓ Added proxmox_node column to ipam_networks")
+    else:
+        logger.info("✓ ipam_networks.proxmox_node already exists")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1167,6 +1181,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Backup jobs migration: {e}")
+                conn.rollback()
+
+            # Migration 16: IPAM Network Node
+            try:
+                migrate_ipam_network_node(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"IPAM network node migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

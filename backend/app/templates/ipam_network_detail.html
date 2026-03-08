@@ -337,11 +337,11 @@ async function loadIPMap() {
 
 function getIPColor(status) {
     switch(status) {
-        case 'available': return 'rgba(34, 197, 94, 0.2)';
-        case 'allocated': return 'rgba(59, 130, 246, 0.3)';
-        case 'reserved': return 'rgba(245, 158, 11, 0.3)';
-        case 'gateway': return 'rgba(139, 92, 246, 0.3)';
-        case 'conflict': return 'rgba(239, 68, 68, 0.3)';
+        case 'available': return 'var(--success-light)';
+        case 'allocated': return 'var(--info-light)';
+        case 'reserved': return 'var(--warning-light)';
+        case 'gateway': return 'var(--purple-light)';
+        case 'conflict': return 'var(--danger-light)';
         default: return 'var(--bg-tertiary)';
     }
 }
@@ -392,7 +392,7 @@ async function loadAllocations() {
                                 <td style="padding: 0.5rem; color: var(--text-secondary);">${alloc.resource_type || '-'}</td>
                                 <td style="padding: 0.5rem; color: var(--text-secondary);">${alloc.hostname || '-'}</td>
                                 <td style="padding: 0.5rem;">
-                                    <span style="padding: 0.125rem 0.5rem; border-radius: 4px; font-size: 0.75rem; background: ${getStatusColor(alloc.status)}; color: #fff;">
+                                    <span style="padding: 0.125rem 0.5rem; border-radius: 4px; font-size: 0.75rem; background: ${getStatusColor(alloc.status)}; color: ${getStatusTextColor(alloc.status)}; font-weight: 600;">
                                         ${alloc.status}
                                     </span>
                                 </td>
@@ -412,10 +412,18 @@ async function loadAllocations() {
 
 function getStatusColor(status) {
     switch(status) {
-        case 'allocated': return 'rgba(59, 130, 246, 0.3)';
-        case 'reserved': return 'rgba(245, 158, 11, 0.3)';
-        case 'conflict': return 'rgba(239, 68, 68, 0.3)';
+        case 'allocated': return 'var(--info-light)';
+        case 'reserved': return 'var(--warning-light)';
+        case 'conflict': return 'var(--danger-light)';
         default: return 'var(--bg-tertiary)';
+    }
+}
+function getStatusTextColor(status) {
+    switch(status) {
+        case 'allocated': return 'var(--info)';
+        case 'reserved': return 'var(--warning)';
+        case 'conflict': return 'var(--danger)';
+        default: return 'var(--text-secondary)';
     }
 }
 
@@ -591,7 +599,7 @@ async function showIPDetail(ip) {
                             <div style="font-family: monospace; color: var(--text-primary);">${alloc.ip_address}</div>
                             
                             <div style="color: var(--text-muted);">${t('status')}:</div>
-                            <div><span style="padding: 0.125rem 0.5rem; border-radius: 4px; font-size: 0.875rem; background: ${getStatusColor(alloc.status)}; color: #fff;">${alloc.status}</span></div>
+                            <div><span style="padding: 0.125rem 0.5rem; border-radius: 4px; font-size: 0.875rem; background: ${getStatusColor(alloc.status)}; color: ${getStatusTextColor(alloc.status)}; font-weight: 600;">${alloc.status}</span></div>
                             
                             <div style="color: var(--text-muted);">${t('resource_type')}:</div>
                             <div style="color: var(--text-primary);">${alloc.resource_type || '-'}</div>

@@ -512,6 +512,7 @@ class IPAMNetwork(Base):
     
     # Привязка к Proxmox
     proxmox_server_id = Column(Integer, nullable=True, index=True)  # FK to ProxmoxServer
+    proxmox_node = Column(String(100), nullable=True)                # "pve1", "pve2" etc.
     proxmox_bridge = Column(String(20), nullable=True)  # "vmbr0"
     
     # Метаданные

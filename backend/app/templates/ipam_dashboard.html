@@ -121,10 +121,18 @@
                 
                 <div class="form-group">
                     <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">{{ t('proxmox_server') }}</label>
-                    <select id="networkServer" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                    <select id="networkServer" onchange="onNetworkServerChange()" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
                         <option value="">{{ t('all_servers') }} ({{ t('global_network') }})</option>
                     </select>
                     <small style="color: var(--text-muted);">{{ t('network_server_hint') }}</small>
+                </div>
+
+                <div class="form-group" id="networkNodeRow" style="display: none;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">{{ t('proxmox_node') }}</label>
+                    <select id="networkNode" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                        <option value="">{{ t('all_nodes') }}</option>
+                    </select>
+                    <small style="color: var(--text-muted);">{{ t('proxmox_node_hint') }}</small>
                 </div>
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
@@ -304,6 +312,37 @@ async function loadServersForIPAM() {
     }
 }
 
+async function onNetworkServerChange() {
+    const serverId = document.getElementById('networkServer').value;
+    const nodeRow = document.getElementById('networkNodeRow');
+    const nodeSelect = document.getElementById('networkNode');
+
+    if (!serverId) {
+        nodeRow.style.display = 'none';
+        nodeSelect.innerHTML = `<option value="">{{ t('all_nodes') }}</option>`;
+        return;
+    }
+
+    nodeRow.style.display = 'block';
+    nodeSelect.innerHTML = `<option value="">{{ t('loading_nodes') }}</option>`;
+
+    try {
+        const resp = await fetchWithAuth(`/proxmox/api/servers/${serverId}/cluster-info`);
+        const info = resp.ok ? await resp.json() : {};
+        const nodes = info.nodes || [];
+        nodeSelect.innerHTML = `<option value="">{{ t('all_nodes') }}</option>`;
+        nodes.forEach(n => {
+            nodeSelect.innerHTML += `<option value="${n}">${n}</option>`;
+        });
+        // If single-node server, pre-select it
+        if (nodes.length === 1) {
+            nodeSelect.value = nodes[0];
+        }
+    } catch(e) {
+        nodeSelect.innerHTML = `<option value="">{{ t('all_nodes') }}</option>`;
+    }
+}
+
 function showAddNetworkModal() {
     document.getElementById('addNetworkModal').style.display = 'flex';
     loadServersForIPAM();
@@ -312,12 +351,14 @@ function showAddNetworkModal() {
 function closeAddNetworkModal() {
     document.getElementById('addNetworkModal').style.display = 'none';
     document.getElementById('addNetworkForm').reset();
+    document.getElementById('networkNodeRow').style.display = 'none';
 }
 
 async function createNetwork(event) {
     event.preventDefault();
     
     const serverId = document.getElementById('networkServer').value;
+    const nodeVal = document.getElementById('networkNode').value;
     
     const data = {
         name: document.getElementById('networkName').value,
@@ -326,6 +367,7 @@ async function createNetwork(event) {
         vlan_id: document.getElementById('networkVLAN').value ? parseInt(document.getElementById('networkVLAN').value) : null,
         proxmox_bridge: document.getElementById('networkBridge').value || null,
         proxmox_server_id: serverId ? parseInt(serverId) : null,
+        proxmox_node: nodeVal || null,
         dns_primary: document.getElementById('networkDNS1').value || null,
         dns_secondary: document.getElementById('networkDNS2').value || null,
         dns_domain: document.getElementById('networkDomain').value || null,
@@ -502,23 +544,93 @@ async function cleanupOrphans() {
 }
 
 async function linkAllocations() {
-    const confirmed = await showDeleteConfirm(
-        '{{ t("link_to_vms") }}',
-        '{{ t("confirm_link_allocations") }}'
-    );
-    if (!confirmed) return;
-    
-    const btn = document.querySelector('#maintenanceModal .btn-primary');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> {{ t("linking") }}...';
-    
+    await showLinkModal();
+}
+
+// ---- Link Allocations Modal ----
+let _linkServers = [];
+
+async function showLinkModal() {
+    document.getElementById('linkAllocationsModal').style.display = 'flex';
+    const serverSel = document.getElementById('linkServerSelect');
+    const networkSel = document.getElementById('linkNetworkSelect');
+    serverSel.innerHTML = `<option value="">{{ t('loading_ellipsis') }}</option>`;
+    networkSel.innerHTML = `<option value="">{{ t('select_network_first_server') }}</option>`;
+    networkSel.disabled = true;
+    document.getElementById('submitLinkBtn').disabled = true;
+
     try {
-        const response = await fetchWithAuth('/ipam/api/link-allocations', { method: 'POST' });
+        const resp = await fetchWithAuth('/proxmox/api/servers');
+        _linkServers = resp.ok ? await resp.json() : [];
+    } catch(e) { _linkServers = []; }
+
+    serverSel.innerHTML = `<option value="">{{ t('select_server_for_link') }}</option>`;
+    _linkServers.forEach(s => {
+        serverSel.innerHTML += `<option value="${s.id}">${s.name} (${s.ip_address})</option>`;
+    });
+}
+
+function closeLinkModal() {
+    document.getElementById('linkAllocationsModal').style.display = 'none';
+}
+
+async function onLinkServerChange() {
+    const serverId = document.getElementById('linkServerSelect').value;
+    const networkSel = document.getElementById('linkNetworkSelect');
+    const submitBtn = document.getElementById('submitLinkBtn');
+
+    networkSel.disabled = true;
+    submitBtn.disabled = true;
+
+    if (!serverId) {
+        networkSel.innerHTML = `<option value="">{{ t('select_network_first_server') }}</option>`;
+        return;
+    }
+
+    networkSel.innerHTML = `<option value="">{{ t('loading_ellipsis') }}</option>`;
+    try {
+        const resp = await fetchWithAuth(`/ipam/api/networks?proxmox_server_id=${serverId}`);
+        const data = resp.ok ? await resp.json() : [];
+        if (!data.length) {
+            networkSel.innerHTML = `<option value="">{{ t('no_networks_for_server') }}</option>`;
+            return;
+        }
+        networkSel.innerHTML = `<option value="">{{ t('select_network') }}</option>`;
+        data.forEach(n => {
+            networkSel.innerHTML += `<option value="${n.id}">${n.name} (${n.network})</option>`;
+        });
+        networkSel.disabled = false;
+    } catch(e) {
+        networkSel.innerHTML = `<option value="">{{ t('error') }}</option>`;
+    }
+}
+
+function onLinkNetworkChange() {
+    const networkSel = document.getElementById('linkNetworkSelect');
+    document.getElementById('submitLinkBtn').disabled = !networkSel.value;
+}
+
+async function submitLinkAllocations() {
+    const serverId = document.getElementById('linkServerSelect').value;
+    const networkId = document.getElementById('linkNetworkSelect').value;
+    if (!serverId || !networkId) return;
+
+    const submitBtn = document.getElementById('submitLinkBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> {{ t("linking") }}...';
+
+    try {
+        const response = await fetchWithAuth('/ipam/api/link-allocations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ server_id: parseInt(serverId), network_id: parseInt(networkId) })
+        });
         if (response.ok) {
             const data = await response.json();
+            closeLinkModal();
             showToast('success', '{{ t("success") }}', `{{ t("linked") }}: ${data.linked_count}, {{ t("not_found") }}: ${data.not_found_count}`);
             loadMaintenanceData();
-            loadData(); // Refresh main data
+            loadData();
         } else {
             const error = await response.json();
             showToast('error', '{{ t("error") }}', error.detail || '{{ t("linking_failed") }}');
@@ -527,8 +639,8 @@ async function linkAllocations() {
         console.error('Error linking allocations:', e);
         showToast('error', '{{ t("error") }}', '{{ t("linking_failed") }}');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-link"></i> {{ t("link_to_vms") }}';
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-link"></i> {{ t("link_to_vms") }}';
     }
 }
 
@@ -537,6 +649,37 @@ window.addEventListener('DOMContentLoaded', () => {
     setTimeout(loadData, 100);
 });
 </script>
+
+<!-- Link Allocations Modal -->
+<div id="linkAllocationsModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 3000; align-items: center; justify-content: center; padding: 1rem;">
+    <div class="card" style="max-width: 480px; width: 95%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="margin: 0;"><i class="fa-solid fa-link"></i> {{ t('link_allocations_title') }}</h3>
+            <button onclick="closeLinkModal()" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer;">&times;</button>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.25rem;">{{ t('link_scope_hint') }}</p>
+        <div style="display: grid; gap: 1rem; margin-bottom: 1.5rem;">
+            <div>
+                <label style="display: block; margin-bottom: 0.4rem; font-size: 0.85rem; color: var(--text-secondary);">{{ t('proxmox_server') }} *</label>
+                <select id="linkServerSelect" onchange="onLinkServerChange()" style="width: 100%; padding: 0.65rem 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                    <option value="">{{ t('select_server_for_link') }}</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 0.4rem; font-size: 0.85rem; color: var(--text-secondary);">{{ t('network') }} *</label>
+                <select id="linkNetworkSelect" onchange="onLinkNetworkChange()" disabled style="width: 100%; padding: 0.65rem 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                    <option value="">{{ t('select_network_first_server') }}</option>
+                </select>
+            </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+            <button onclick="closeLinkModal()" class="btn btn-secondary">{{ t('cancel') }}</button>
+            <button onclick="submitLinkAllocations()" id="submitLinkBtn" disabled class="btn btn-primary">
+                <i class="fa-solid fa-link"></i> {{ t('link_to_vms') }}
+            </button>
+        </div>
+    </div>
+</div>
 
 <!-- Maintenance Modal -->
 <div id="maintenanceModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 2000; align-items: center; justify-content: center; padding: 1rem;">

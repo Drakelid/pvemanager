@@ -67,13 +67,13 @@
                     </td>
                     <td style="text-align: right;">
                         <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
-                            <button onclick="testConnection({{ server.id }})" class="btn btn-sm" style="background: var(--success); color: white;" title="{{ t('test') }}">
+                            <button onclick="testConnection({{ server.id }})" class="btn btn-sm" style="background: var(--success); color: var(--text-on-success);" title="{{ t('test') }}">
                                 <i class="fa-solid fa-plug"></i> {{ t('test') }}
                             </button>
-                            <button onclick="window.location.href='/proxmox/server/{{ server.id }}'" class="btn btn-sm" style="background: var(--info); color: white;" title="{{ t('details') }}">
+                            <button onclick="window.location.href='/proxmox/server/{{ server.id }}'" class="btn btn-sm" style="background: var(--info); color: var(--text-on-info);" title="{{ t('details') }}">
                                 <i class="fa-solid fa-chart-simple"></i> {{ t('details') }}
                             </button>
-                            <button onclick="editServer({{ server.id }})" class="btn btn-sm" style="background: var(--warning); color: white;" title="{{ t('edit') }}" data-permission="proxmox.servers.edit">
+                            <button onclick="editServer({{ server.id }}, '{{ server.name }}')" class="btn btn-sm" style="background: var(--warning); color: var(--text-on-warning);" title="{{ t('edit') }}" data-permission="proxmox.servers.edit">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
                             <button onclick="deleteServer({{ server.id }}, '{{ server.name }}')" class="btn btn-sm btn-delete" title="{{ t('delete') }}" data-permission="proxmox.servers.delete">
@@ -160,17 +160,17 @@
 }
 
 .status-badge.status-online {
-    background: rgba(34, 197, 94, 0.15);
+    background: var(--success-light);
     color: var(--success);
 }
 
 .status-badge.status-offline {
-    background: rgba(239, 68, 68, 0.15);
+    background: var(--danger-light);
     color: var(--danger);
 }
 
 .status-badge.status-loading {
-    background: rgba(156, 163, 175, 0.15);
+    background: var(--bg-surface-hover);
     color: var(--text-muted);
 }
 </style>

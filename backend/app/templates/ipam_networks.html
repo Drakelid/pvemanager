@@ -63,10 +63,21 @@
                         <input type="text" id="networkBridge" placeholder="vmbr0" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
                     </div>
                 </div>
-                
+
                 <div class="form-group">
-                    <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">{{ t('description') }}</label>
-                    <textarea id="networkDescription" rows="2" placeholder="{{ t('description_placeholder') }}" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); resize: vertical;"></textarea>
+                    <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">{{ t('proxmox_server') }}</label>
+                    <select id="networkServer" onchange="onNetworkServerChange()" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                        <option value="">{{ t('all_servers') }} ({{ t('global_network') }})</option>
+                    </select>
+                    <small style="color: var(--text-muted);">{{ t('network_server_hint') }}</small>
+                </div>
+
+                <div class="form-group" id="networkNodeRow" style="display: none;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">{{ t('proxmox_node') }}</label>
+                    <select id="networkNode" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                        <option value="">{{ t('all_nodes') }}</option>
+                    </select>
+                    <small style="color: var(--text-muted);">{{ t('proxmox_node_hint') }}</small>
                 </div>
             </div>
             
@@ -158,11 +169,52 @@ function getUtilizationColor(percent) {
 
 function showAddNetworkModal() {
     document.getElementById('addNetworkModal').style.display = 'flex';
+    loadServersForIPAM();
 }
 
 function closeAddNetworkModal() {
     document.getElementById('addNetworkModal').style.display = 'none';
     document.getElementById('addNetworkForm').reset();
+    document.getElementById('networkNodeRow').style.display = 'none';
+}
+
+let ipamServers = [];
+
+async function loadServersForIPAM() {
+    try {
+        const response = await fetchWithAuth('/proxmox/api/servers');
+        if (response.ok) {
+            ipamServers = await response.json();
+            const select = document.getElementById('networkServer');
+            select.innerHTML = `<option value="">{{ t('all_servers') }} ({{ t('global_network') }})</option>`;
+            ipamServers.forEach(s => {
+                select.innerHTML += `<option value="${s.id}">${s.name} (${s.ip_address})</option>`;
+            });
+        }
+    } catch(e) { console.error('Error loading servers:', e); }
+}
+
+async function onNetworkServerChange() {
+    const serverId = document.getElementById('networkServer').value;
+    const nodeRow = document.getElementById('networkNodeRow');
+    const nodeSelect = document.getElementById('networkNode');
+    if (!serverId) {
+        nodeRow.style.display = 'none';
+        nodeSelect.innerHTML = `<option value="">{{ t('all_nodes') }}</option>`;
+        return;
+    }
+    nodeRow.style.display = 'block';
+    nodeSelect.innerHTML = `<option value="">{{ t('loading_nodes') }}</option>`;
+    try {
+        const resp = await fetchWithAuth(`/proxmox/api/servers/${serverId}/cluster-info`);
+        const info = resp.ok ? await resp.json() : {};
+        const nodes = info.nodes || [];
+        nodeSelect.innerHTML = `<option value="">{{ t('all_nodes') }}</option>`;
+        nodes.forEach(n => { nodeSelect.innerHTML += `<option value="${n}">${n}</option>`; });
+        if (nodes.length === 1) nodeSelect.value = nodes[0];
+    } catch(e) {
+        nodeSelect.innerHTML = `<option value="">{{ t('all_nodes') }}</option>`;
+    }
 }
 
 async function createNetwork(event) {
@@ -174,6 +226,8 @@ async function createNetwork(event) {
         gateway: document.getElementById('networkGateway').value || null,
         vlan_id: document.getElementById('networkVLAN').value ? parseInt(document.getElementById('networkVLAN').value) : null,
         proxmox_bridge: document.getElementById('networkBridge').value || null,
+        proxmox_server_id: document.getElementById('networkServer').value ? parseInt(document.getElementById('networkServer').value) : null,
+        proxmox_node: document.getElementById('networkNode').value || null,
         description: document.getElementById('networkDescription').value || null
     };
     

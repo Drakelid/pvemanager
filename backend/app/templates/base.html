@@ -1083,16 +1083,16 @@ body.update-in-progress .layout {
         const toast = document.createElement('div');
         toast.style.cssText = `
             position: fixed; top: 20px; right: 20px; min-width: 300px; max-width: 400px;
-            padding: 16px 20px; background: rgba(30, 30, 40, 0.95); border: 1px solid rgba(255,255,255,0.1);
+            padding: 16px 20px; background: var(--bg-surface); border: 1px solid var(--border-default);
             border-left: 4px solid ${borderColor}; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
             z-index: 99999; animation: toastSlide 0.3s ease-out;
         `;
         toast.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-weight: 600; color: #fff;">${title}</span>
-                <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: #888; cursor: pointer; font-size: 18px;">&times;</button>
+                <span style="font-weight: 600; color: var(--text-primary);">${title}</span>
+                <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px;">&times;</button>
             </div>
-            <div style="color: #aaa; font-size: 14px;">${msg || ''}</div>
+            <div style="color: var(--text-secondary); font-size: 14px;">${msg || ''}</div>
         `;
         document.body.appendChild(toast);
         

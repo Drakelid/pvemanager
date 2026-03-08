@@ -1710,6 +1710,26 @@ class I18nService:
             "ru": "Proxmox Bridge",
             "en": "Proxmox Bridge"
         },
+        "proxmox_node": {
+            "ru": "Нода Proxmox",
+            "en": "Proxmox Node"
+        },
+        "proxmox_node_hint": {
+            "ru": "Нода внутри кластера, к которой привязана сеть. Привязка будет учтена при поиске IP.",
+            "en": "Cluster node the network is associated with. Used for IP matching."
+        },
+        "all_nodes": {
+            "ru": "— Все ноды —",
+            "en": "— All nodes —"
+        },
+        "select_node": {
+            "ru": "— Выберите ноду —",
+            "en": "— Select node —"
+        },
+        "loading_nodes": {
+            "ru": "Загрузка нод...",
+            "en": "Loading nodes..."
+        },
         "proxmox_server": {
             "ru": "Proxmox сервер",
             "en": "Proxmox Server"
@@ -3605,6 +3625,26 @@ class I18nService:
         "confirm_link_allocations": {
             "ru": "Привязать все несвязанные адреса к соответствующим VM по имени?",
             "en": "Link all unlinked allocations to matching VMs by name?"
+        },
+        "link_allocations_title": {
+            "ru": "Привязать IP к VM",
+            "en": "Link IPs to VMs"
+        },
+        "link_scope_hint": {
+            "ru": "Выберите сервер (ноду) и подсеть. Будут привязаны только ВМ выбранного сервера к выбранной подсети.",
+            "en": "Select a server (node) and subnet. Only VMs from the selected server will be linked to the selected subnet."
+        },
+        "select_server_for_link": {
+            "ru": "— Выберите сервер —",
+            "en": "— Select server —"
+        },
+        "select_network_first_server": {
+            "ru": "— Сначала выберите сервер —",
+            "en": "— Select server first —"
+        },
+        "no_networks_for_server": {
+            "ru": "Нет сетей для этого сервера",
+            "en": "No networks for this server"
         },
         "cleaning": {
             "ru": "Очистка",

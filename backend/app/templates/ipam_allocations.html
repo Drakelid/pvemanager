@@ -239,8 +239,8 @@ function renderAllocations(allocations) {
                         </td>
                         <td style="padding: 0.75rem;">
                             ${a.status === 'reserved' ? 
-                                `<span class="badge badge-info" style="color: #fff;"><i class="fa-solid fa-lock"></i> ${t('reserved')}</span>` : 
-                                `<span class="badge badge-success" style="color: #fff;">✓ ${t('allocated')}</span>`}
+                                `<span class="badge badge-info"><i class="fa-solid fa-lock"></i> ${t('reserved')}</span>` : 
+                                `<span class="badge badge-success">✓ ${t('allocated')}</span>`}
                         </td>
                         <td style="padding: 0.75rem; color: var(--text-muted); font-size: 0.875rem;">${a.created_at ? new Date(a.created_at).toLocaleDateString('ru-RU') : '-'}</td>
                         <td style="padding: 0.75rem; text-align: right;">

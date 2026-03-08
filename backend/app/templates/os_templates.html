@@ -150,7 +150,7 @@
         
         <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
             <button type="button" onclick="closeModal('autoImportModal')" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary);">{{ t('cancel') }}</button>
-            <button type="button" onclick="previewAutoImport()" id="previewImportBtn" class="btn" style="background: var(--info); color: white;"><i class="fa-solid fa-eye"></i> {{ t('preview') }}</button>
+            <button type="button" onclick="previewAutoImport()" id="previewImportBtn" class="btn" style="background: var(--info); color: var(--text-on-info);"><i class="fa-solid fa-eye"></i> {{ t('preview') }}</button>
             <button type="button" onclick="executeAutoImport()" id="executeImportBtn" class="btn btn-primary" style="display: none;"><i class="fa-solid fa-rocket"></i> {{ t('import') }}</button>
         </div>
     </div>
@@ -702,7 +702,7 @@ function renderTemplates(templates) {
                     <span style="color: var(--text-muted); margin-left: 0.5rem;">→</span>
                     <span style="color: var(--info); font-weight: 500; margin-left: 0.5rem;"><i class="fa-solid fa-cube"></i> ${group.node}</span>
                 </div>
-                <span class="badge" style="background: var(--primary); color: white; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem;">
+                <span class="badge" style="background: var(--primary); color: var(--text-on-primary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem;">
                     ${group.templates.length} ${i18n.templates_count}
                 </span>
             </div>
@@ -942,7 +942,7 @@ async function executeAutoImport() {
             html += `<div style="margin-bottom: 0.5rem;">
                 <span style="font-weight: bold;">${getGroupIcon(groupName)} ${groupName}:</span>`;
             templates.forEach(tpl => {
-                html += ` <span style="background: var(--success); color: white; padding: 0.125rem 0.5rem; border-radius: 1rem; font-size: 0.75rem; margin-left: 0.25rem;">${tpl.name} (#${tpl.sort_order})</span>`;
+                html += ` <span style="background: var(--success); color: var(--text-on-success); padding: 0.125rem 0.5rem; border-radius: 1rem; font-size: 0.75rem; margin-left: 0.25rem;">${tpl.name} (#${tpl.sort_order})</span>`;
             });
             html += '</div>';
         }
