@@ -131,8 +131,8 @@ def configure_git_for_public_access():
         return False
 
 
-CORRECT_REPO_URL = "https://github.com/markmorado/pvemanager"
-_LEGACY_URLS = {"https://git.tzim.uz/dilshod/pve_manager"}
+CORRECT_REPO_URL = "https://git.tzim.uz/markmorado/pvemanager"
+_LEGACY_URLS = {"https://git.tzim.uz/dilshod/pve_manager", "https://github.com/markmorado/pvemanager"}
 
 
 def get_repository_url_from_settings():
@@ -168,7 +168,7 @@ def parse_repo_url(url: str) -> tuple:
                 return owner_repo[0], owner_repo[1], "github"
     
     # GitLab or other Git hosting (Gitea, etc.)
-    # https://git.tzim.uz/dilshod/pve_manager
+    # https://git.tzim.uz/markmorado/pvemanager
     parts = url.split("://")
     if len(parts) == 2:
         path_parts = parts[1].split("/")

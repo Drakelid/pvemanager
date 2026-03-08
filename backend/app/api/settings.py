@@ -706,7 +706,7 @@ async def get_repository_url(
     setting = db.query(PanelSettings).filter(PanelSettings.key == "git_repository_url").first()
     if setting:
         return {"repository_url": setting.value}
-    return {"repository_url": "https://github.com/markmorado/pvemanager"}
+    return {"repository_url": "https://git.tzim.uz/markmorado/pvemanager"}
 
 
 @router.put("/api/updates/repository")

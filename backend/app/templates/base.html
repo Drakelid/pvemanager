@@ -616,7 +616,7 @@ body.update-in-progress .layout {
             <h2>{{ page_title or title or t('nav_dashboard') }}</h2>
             <div class="header-actions">
                 <!-- GitHub Stars Button -->
-                <a href="https://github.com/markmorado/pvemanager" target="_blank" rel="noopener noreferrer" class="github-btn" title="Star us on GitHub">
+                <a href="https://git.tzim.uz/markmorado/pvemanager" target="_blank" rel="noopener noreferrer" class="github-btn" title="Star us on Gitea">
                     <i class="fa-brands fa-github"></i>
                     <span class="github-text">pvemanager</span>
                     <svg class="github-star-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -869,9 +869,9 @@ body.update-in-progress .layout {
     // Load GitHub stars count
     async function loadGitHubStars() {
         try {
-            const response = await fetch('https://api.github.com/repos/markmorado/pvemanager', {
+            const response = await fetch('https://git.tzim.uz/api/v1/repos/markmorado/pvemanager', {
                 headers: {
-                    'Accept': 'application/vnd.github.v3+json'
+                    'Accept': 'application/json'
                 }
             });
             
@@ -880,7 +880,7 @@ body.update-in-progress .layout {
                 const starsElement = document.getElementById('githubStars');
                 if (starsElement) {
                     // Format number with K for thousands
-                    const stars = data.stargazers_count;
+                    const stars = data.stars_count;
                     const formatted = stars >= 1000 
                         ? (stars / 1000).toFixed(1) + 'K' 
                         : stars.toString();

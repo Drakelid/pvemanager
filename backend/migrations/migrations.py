@@ -922,7 +922,7 @@ def migrate_git_repository_setting(conn):
         INSERT INTO panel_settings (key, value, description, created_at, updated_at)
         VALUES (
             'git_repository_url',
-            'https://git.tzim.uz/dilshod/pve_manager',
+            'https://git.tzim.uz/markmorado/pvemanager',
             'Git repository URL for panel updates',
             NOW(),
             NOW()

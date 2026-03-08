@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.0.3
 
 ---
 
@@ -15,17 +15,18 @@
 7. [OS Templates](#-os-templates)
 8. [Proxmox Clusters](#-proxmox-clusters)
 9. [Snapshots](#-snapshots)
-10. [IPAM](#-ipam)
-11. [Remote Command Execution](#-remote-command-execution)
-12. [Monitoring](#-monitoring)
-13. [Security (RBAC v2)](#-security)
-14. [Localization](#-localization)
-15. [Settings](#-settings)
-16. [API Reference](#-api-reference)
-17. [Deployment Guide](#-deployment-guide)
-18. [Private Repo Updates](#-private-repo-updates)
-19. [Troubleshooting](#-troubleshooting)
-20. [FAQ](#-faq)
+10. [Backups](#-backups)
+11. [IPAM](#-ipam)
+12. [Remote Command Execution](#-remote-command-execution)
+13. [Monitoring](#-monitoring)
+14. [Security (RBAC v2)](#-security)
+15. [Localization](#-localization)
+16. [Settings](#-settings)
+17. [API Reference](#-api-reference)
+18. [Deployment Guide](#-deployment-guide)
+19. [Private Repo Updates](#-private-repo-updates)
+20. [Troubleshooting](#-troubleshooting)
+21. [FAQ](#-faq)
 
 ---
 
@@ -99,11 +100,36 @@ docker compose up -d
 # Database
 POSTGRES_PASSWORD=your_secure_password
 
-# Secret key (generate unique!)
-SECRET_KEY=your-very-long-secret-key-change-me
-
 # Timezone
 TZ=Your/Timezone
+
+# Disable update checks (for private repos without token)
+DISABLE_UPDATE_CHECK=false
+
+# GitHub token for private repository access (optional)
+GITHUB_TOKEN=
+```
+
+#### Backend (`backend/.env`)
+
+```bash
+# Secret key (generate unique! minimum 32 characters)
+SECRET_KEY=your-very-long-secret-key-change-me
+
+# Default admin password — MUST be changed before first deployment!
+ADMIN_PASSWORD=admin123
+
+# Fernet encryption key for sensitive DB fields (Proxmox/cloud-init passwords).
+# Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# WARNING: Keep this key safe — losing it means losing access to encrypted passwords.
+# If not set, passwords are stored as plaintext (insecure).
+FERNET_KEY=
+
+# JWT token lifetime (minutes). Default: 480 (8 hours)
+ACCESS_TOKEN_EXPIRE_MINUTES=480
+
+# CORS origins (comma-separated). Use actual domain(s) in production.
+CORS_ORIGINS=*
 ```
 
 #### Email and Telegram Notifications
@@ -201,12 +227,34 @@ This section summarizes key API endpoints. All require JWT authentication.
 - `GET /settings/api/notifications` — get notification settings
 - `PUT /settings/api/notifications` — update notification settings
 
-### Logs
+### Backups & Storages
 
-- `GET /logs/api/logs` — get audit logs
-- `GET /logs/api/stats` — get log statistics
+- `GET /api/backups/storages/{server_id}` — list storages
+- `POST /api/backups/storages/{server_id}` — add storage
+- `PUT /api/backups/storages/{server_id}/{storage_id}` — update storage
+- `DELETE /api/backups/storages/{server_id}/{storage_id}` — delete storage
+- `GET /api/backups/list/{server_id}?node=&storage=` — list backup files
+- `DELETE /api/backups/{server_id}/backup` — delete backup file
+- `POST /api/backups/create` — create VM/LXC backup (vzdump)
+- `POST /api/backups/restore` — restore VM/LXC from backup
+- `GET /api/backups/task/{server_id}/{node}/{upid}` — get task status/log
+- `GET /api/backups/jobs` — list scheduled backup jobs
+- `POST /api/backups/jobs` — create scheduled backup job
+- `PUT /api/backups/jobs/{id}` — update scheduled backup job
+- `DELETE /api/backups/jobs/{id}` — delete scheduled backup job
 
-## 🎯 Main Features
+### High Availability (HA)
+
+- `GET /api/{server_id}/ha/status` — get HA status for all VMs
+- `GET /api/{server_id}/ha/{vm_type}/{vmid}` — get HA status for a VM
+- `POST /api/{server_id}/ha/{vm_type}/{vmid}/add` — add VM to HA
+- `DELETE /api/{server_id}/ha/{vm_type}/{vmid}/remove` — remove VM from HA
+
+### Misc
+
+- `POST /api/sync-vms` — force immediate VM sync from all Proxmox servers
+
+
 
 ### Dashboard
 
@@ -248,6 +296,22 @@ This section summarizes key API endpoints. All require JWT authentication.
 - Create, delete, rollback VM/LXC snapshots
 - Snapshot operation queue system
 - Snapshot archival on VM deletion
+
+### Backups
+
+- Manual backup creation (vzdump) for VMs and containers
+- Backup listing and deletion by storage/node
+- Restore VM/LXC from backup with optional new VMID
+- **Scheduled backup jobs** with cron expressions
+- Backup retention policies (keep_last, keep_daily, keep_weekly, keep_monthly)
+- Storage pool management (add, edit, delete)
+- Task progress tracking via UPID
+
+### High Availability (HA)
+
+- View HA status for all VMs on a server
+- Add/remove VMs from Proxmox HA groups
+- Per-VM HA status and group information
 
 ### IPAM (IP Address Management)
 
@@ -395,6 +459,17 @@ CPU: 1-32 cores
 RAM: 512MB - 128GB
 Disk: Increase size (decrease not possible)
 ```
+
+### High Availability (HA)
+
+Requires a Proxmox cluster with HA manager configured.
+
+1. Open VM or container details
+2. Go to **HA** tab
+3. Click **Add to HA** and choose HA group (optional)
+4. To remove — click **Remove from HA**
+
+> Panel operations currently reflect HA status but do not replace Proxmox HA manager configuration.
 
 ---
 
@@ -559,6 +634,116 @@ pvecm add 10.10.10.11  # IP of pve1
 ### Cross-Node Template Deployment
 
 See [OS Templates - Cross-Node Template Deployment](#cross-node-template-deployment-clusters)
+
+---
+
+## 💾 Backups
+
+### Overview
+
+PVEmanager provides a full backup management interface powered by Proxmox `vzdump`. You can create, browse, restore and delete backups, as well as configure automated scheduled jobs.
+
+### Storage Management
+
+Before creating backups, make sure the target storage is configured in Proxmox.
+
+| Action | Description |
+|--------|-------------|
+| List storages | View all storages on a server |
+| Add storage | Add a new storage pool (directory, NFS, CIFS, etc.) |
+| Edit storage | Modify storage configuration |
+| Delete storage | Remove storage from Proxmox |
+
+### Creating a Backup
+
+1. Navigate to **Backups** page
+2. Select **Server** and **Node**
+3. Choose **Storage** where the backup will be saved
+4. Select **VM/Container** (by VMID)
+5. Configure options:
+   - **Mode**: `snapshot` (default), `suspend`, or `stop`
+   - **Compress**: `zstd` (default), `lzo`, `gzip`, `none`
+6. Click **Create Backup**
+7. A UPID is returned — use it to track task progress
+
+### Backup Modes
+
+| Mode | Description | Downtime |
+|------|-------------|----------|
+| `snapshot` | Live snapshot (requires QEMU agent or LVM) | None |
+| `suspend` | Suspend VM during backup | Brief |
+| `stop` | Stop VM, backup, start again | Full stop |
+
+### Listing & Deleting Backups
+
+- Browse existing backups by server, node and storage
+- Filter by VMID
+- Delete individual backup files
+
+### Restore
+
+1. Select a backup file from the list
+2. Click **Restore**
+3. Specify:
+   - **Target storage** for restoration
+   - **New VMID** (optional, keep original or assign new)
+   - **Start after restore** (optional)
+4. Restoration runs as a Proxmox task (UPID returned for tracking)
+
+> ⚠️ Restoring to an existing VMID will overwrite it!
+
+### Scheduled Backup Jobs
+
+Automate recurring backups using cron-style scheduling.
+
+#### Creating a Backup Job
+
+```
+Server: select Proxmox server
+Node: target node
+VMIDs: comma-separated list (e.g., 100,101,102)
+Storage: backup destination
+Mode: snapshot / suspend / stop
+Compress: zstd / lzo / gzip / none
+Cron: standard 5-field cron expression
+Enabled: on/off toggle
+```
+
+#### Cron Expression Examples
+
+| Expression | Meaning |
+|------------|---------|
+| `0 2 * * *` | Every day at 02:00 |
+| `0 3 * * 0` | Every Sunday at 03:00 |
+| `0 1 * * 1-5` | Weekdays at 01:00 |
+| `30 4 1 * *` | First day of each month at 04:30 |
+
+#### Retention Policies
+
+Configure how many backups to keep automatically:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `keep_last` | Keep N most recent backups | 3 |
+| `keep_daily` | Keep one per day for N days | 7 |
+| `keep_weekly` | Keep one per week for N weeks | 4 |
+| `keep_monthly` | Keep one per month for N months | 6 |
+
+#### Managing Jobs
+
+- **List jobs** — All backup jobs (admins see all; users see own)
+- **Enable/disable** — Toggle job without deleting it
+- **Edit** — Change schedule, retention, storage
+- **Delete** — Remove job and its APScheduler entry
+
+### Task Tracking
+
+Every backup operation (create / restore / delete) returns a Proxmox UPID. Use it to poll task status and logs:
+
+```bash
+# Get task status
+GET /api/backups/task/{server_id}/{node}/{upid}
+```
 
 ---
 
@@ -968,6 +1153,7 @@ Access via **Settings → Security**:
 - Full name
 - Email (for notifications)
 - Password change
+- **SSH Public Key** — stored in user profile and automatically injected into VM/LXC during cloud-init deployment
 
 ### Panel Settings
 
@@ -982,7 +1168,7 @@ Access via **Settings → Security**:
 The panel supports automatic updates from a Git repository. You can choose which repository to use:
 
 **Available Options:**
-1. **git.tzim.uz/dilshod/pve_manager** (Default) — Primary repository
+1. **git.tzim.uz/markmorado/pvemanager** (Default) — Primary repository
 2. **github.com/markmorado/pvemanager** — Mirror repository
 3. **Custom Repository** — Your own fork or mirror
 
@@ -1069,6 +1255,17 @@ curl -H "Authorization: Bearer eyJ..." \
 | PUT | `/settings/api/panel` | Update panel settings |
 | GET | `/logs/api/logs` | Get audit logs |
 | GET | `/logs/api/stats` | Get log statistics |
+| GET | `/api/backups/storages/{server_id}` | List Proxmox storages |
+| POST | `/api/backups/create` | Create VM/LXC backup |
+| POST | `/api/backups/restore` | Restore VM/LXC from backup |
+| GET | `/api/backups/list/{server_id}` | List backup files |
+| DELETE | `/api/backups/{server_id}/backup` | Delete backup file |
+| GET | `/api/backups/jobs` | List scheduled backup jobs |
+| POST | `/api/backups/jobs` | Create scheduled backup job |
+| GET | `/api/{server_id}/ha/status` | HA status for all VMs |
+| POST | `/api/{server_id}/ha/{vm_type}/{vmid}/add` | Add VM to HA group |
+| DELETE | `/api/{server_id}/ha/{vm_type}/{vmid}/remove` | Remove VM from HA |
+| POST | `/api/sync-vms` | Force VM sync from Proxmox |
 
 ### Swagger Documentation
 
@@ -1306,5 +1503,5 @@ A: Not yet, but planned for future versions.
 
 ---
 
-*Last updated: December 2025*
-*Version: 1.0*
+*Last updated: March 2026*
+*Version: 1.0.3*

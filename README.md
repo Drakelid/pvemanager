@@ -52,7 +52,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 
 ```bash
 # 1. Clone
-git clone https://github.com/markmorado/pvemanager.git
+git clone https://git.tzim.uz/markmorado/pvemanager.git
 cd pvemanager
 
 # 2. Configure
@@ -152,6 +152,6 @@ Configured via the web interface — **Settings → Notifications**:
 
 Made with ❤️ for Proxmox users
 
-[Issues](https://github.com/markmorado/pvemanager/issues) · [Changelog](CHANGELOG.md) · [Wiki](WIKI.md)
+[Issues](https://git.tzim.uz/markmorado/pvemanager/issues) · [Changelog](CHANGELOG.md) · [Wiki](WIKI.md)
 
 </div>
