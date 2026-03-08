@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.0.3
+> Complete guide for installation, configuration and usage of PVEmanager v1.0.5
 
 ---
 
@@ -316,6 +316,9 @@ This section summarizes key API endpoints. All require JWT authentication.
 ### IPAM (IP Address Management)
 
 - Network and subnet management
+- **Server and node binding** — networks are linked to a specific Proxmox server and node to prevent cross-server IP assignment
+- **Manual server + network selection** modal when linking IP to a VM/LXC
+- Dynamic server and node selectors in network creation forms
 - Automatic IP allocation
 - IP reservation and release
 - Allocation history
@@ -759,6 +762,8 @@ CIDR: 192.168.1.0/24
 VLAN: 100
 Gateway: 192.168.1.1
 DNS: 8.8.8.8, 8.8.4.4
+Proxmox Server: select server
+Proxmox Node: select node (prevents cross-server IP assignment)
 ```
 
 ### IP Pools
@@ -1123,6 +1128,7 @@ Access via **Settings → Security**:
 
 - 🇷🇺 Russian
 - 🇺🇸 English (default)
+- 🇺🇿 Uzbek (partial)
 
 ### Switching Language
 
@@ -1504,4 +1510,4 @@ A: Not yet, but planned for future versions.
 ---
 
 *Last updated: March 2026*
-*Version: 1.0.3*
+*Version: 1.0.5*
