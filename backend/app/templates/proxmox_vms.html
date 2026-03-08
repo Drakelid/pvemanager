@@ -2,31 +2,35 @@
 {% set page_title = t('nav_proxmox') %}
 {% block content %}
 
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h3><i class="fa-solid fa-computer"></i> {{ t('proxmox_servers') }}</h3>
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <div data-permission="proxmox.cluster.manage" style="position: relative;">
-                <button onclick="toggleClusterDropdown(event)" id="clusterMenuBtn" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary);">
-                    <i class="fa-solid fa-network-wired"></i> Кластер <i class="fa-solid fa-caret-down" style="font-size: 0.75rem; margin-left: 2px;"></i>
+<div class="page-header-block">
+    <div class="page-header-left">
+        <nav class="breadcrumb-nav">{{ t('dashboard') }} / {{ t('nav_proxmox') }}</nav>
+        <h1 class="page-header-title"><i class="fa-solid fa-computer"></i> {{ t('proxmox_servers') }}</h1>
+    </div>
+    <div class="page-header-right">
+        <div data-permission="proxmox.cluster.manage" style="position: relative;">
+            <button onclick="toggleClusterDropdown(event)" id="clusterMenuBtn" class="btn btn-secondary">
+                <i class="fa-solid fa-network-wired"></i> {{ t('cluster') if t('cluster') else 'Кластер' }} <i class="fa-solid fa-caret-down" style="font-size: 0.75rem; margin-left: 2px;"></i>
+            </button>
+            <div id="clusterDropdown" class="cluster-dropdown" style="display: none;">
+                <button onclick="showCreateClusterModal(); closeClusterDropdown();" class="cluster-dropdown-item">
+                    <i class="fa-solid fa-circle-plus" style="color: var(--success);"></i> Создать кластер
                 </button>
-                <div id="clusterDropdown" class="cluster-dropdown" style="display: none;">
-                    <button onclick="showCreateClusterModal(); closeClusterDropdown();" class="cluster-dropdown-item">
-                        <i class="fa-solid fa-circle-plus" style="color: var(--success);"></i> Создать кластер
-                    </button>
-                    <button onclick="showJoinClusterModal(); closeClusterDropdown();" class="cluster-dropdown-item">
-                        <i class="fa-solid fa-link" style="color: var(--info);"></i> Присоединить к кластеру
-                    </button>
-                    <button onclick="showEjectNodeModal(); closeClusterDropdown();" class="cluster-dropdown-item">
-                        <i class="fa-solid fa-right-from-bracket" style="color: var(--danger);"></i> Исключить ноду
-                    </button>
-                </div>
-            </div>
-            <div data-permission="proxmox.servers.add">
-                <button onclick="showAddServerModal()" class="btn btn-primary"><i class="fa-solid fa-plus"></i> {{ t('add_server') }}</button>
+                <button onclick="showJoinClusterModal(); closeClusterDropdown();" class="cluster-dropdown-item">
+                    <i class="fa-solid fa-link" style="color: var(--info);"></i> Присоединить к кластеру
+                </button>
+                <button onclick="showEjectNodeModal(); closeClusterDropdown();" class="cluster-dropdown-item">
+                    <i class="fa-solid fa-right-from-bracket" style="color: var(--danger);"></i> Исключить ноду
+                </button>
             </div>
         </div>
+        <div data-permission="proxmox.servers.add">
+            <button onclick="showAddServerModal()" class="btn btn-primary"><i class="fa-solid fa-plus"></i> {{ t('add_server') }}</button>
+        </div>
     </div>
+</div>
+
+<div class="card">
     
     {% if proxmox_servers %}
     <div class="table-container">

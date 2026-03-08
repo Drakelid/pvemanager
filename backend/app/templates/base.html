@@ -544,6 +544,14 @@ body.update-in-progress .layout {
             <span style="font-size: 2rem;"><i class="fa-solid fa-cloud"></i></span>
             {% endif %}
         </div>
+        <!-- Cluster Selector -->
+        <div class="sidebar-cluster-section" id="sidebarClusterSection">
+            <div class="sidebar-cluster-label">Cluster</div>
+            <button class="cluster-selector-btn" id="sidebarClusterBtn" title="Active cluster">
+                <span class="cluster-name-text" id="sidebarClusterName">—</span>
+                <i class="fa-solid fa-chevron-down" style="font-size:0.65rem; opacity:0.6;"></i>
+            </button>
+        </div>
         <nav>
             <ul class="sidebar-nav">
                 <li><a href="/" class="{{ 'active' if request.path == '/' or request.path == '/dashboard' else '' }}" title="{{ t('nav_dashboard') }}">
@@ -618,8 +626,15 @@ body.update-in-progress .layout {
                     <line x1="3" y1="18" x2="21" y2="18"></line>
                 </svg>
             </button>
-            <h2>{{ page_title or title or t('nav_dashboard') }}</h2>
+            <div class="header-title-block">
+                <h2>{{ page_title or title or t('nav_dashboard') }}</h2>
+                {% block page_subtitle %}<div class="page-subtitle" id="pageGlobalSubtitle"></div>{% endblock %}
+            </div>
             <div class="header-actions">
+                {% block header_status %}{% endblock %}
+                <!-- Version Badge -->
+                <span class="version-badge" title="PVEmanager version">v{{ version }}</span>
+                
                 <!-- GitHub Stars Button -->
                 <a href="https://git.tzim.uz/markmorado/pvemanager" target="_blank" rel="noopener noreferrer" class="github-btn" title="Star us on Gitea">
                     <i class="fa-brands fa-github"></i>
@@ -931,7 +946,31 @@ body.update-in-progress .layout {
             }
         }
     }
-    
+
+    // Load cluster info for sidebar cluster selector
+    async function loadSidebarCluster() {
+        try {
+            const response = await fetchWithAuth('/proxmox/api/servers', { hideOnForbidden: true });
+            if (!response || !response.ok) return;
+            const servers = await response.json();
+            const nameEl = document.getElementById('sidebarClusterName');
+            if (!nameEl) return;
+            if (!servers || servers.length === 0) {
+                nameEl.textContent = 'No cluster';
+                return;
+            }
+            // Find a named cluster
+            const named = servers.find(s => s.cluster_name && s.cluster_name.trim() !== '');
+            if (named) {
+                nameEl.textContent = named.cluster_name;
+            } else {
+                nameEl.textContent = servers[0].name || 'Standalone';
+            }
+        } catch (e) {
+            // silently ignore
+        }
+    }
+
     // Load unread notification count
     async function loadNotificationCount() {
         try {
@@ -1355,6 +1394,9 @@ body.update-in-progress .layout {
 
             // Init task drawer WS
             initTaskDrawerWS();
+
+            // Load cluster info for sidebar
+            loadSidebarCluster();
         }
         
         // Add click handlers for sidebar menu items to update page title

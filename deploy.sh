@@ -865,6 +865,40 @@ EOF
     fi
 }
 
+# Install pve CLI tool to /usr/local/bin/pve
+install_pve_cli() {
+    local project_dir
+    project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local pve_source="$project_dir/pve"
+    local install_path="/usr/local/bin/pve"
+
+    if [ ! -f "$pve_source" ]; then
+        print_error "CLI скрипт не найден: $pve_source"
+        print_info "Убедитесь, что файл 'pve' находится в той же директории, что и deploy.sh"
+        return 1
+    fi
+
+    if [ "$(id -u)" -ne 0 ]; then
+        print_error "Установка требует root-прав."
+        print_info "Выполните: sudo bash deploy.sh --install-cli"
+        return 1
+    fi
+
+    print_info "Установка pve CLI..."
+    print_info "  Источник  : $pve_source"
+    print_info "  Установка : $install_path"
+
+    # Подставить реальный путь к директории панели
+    sed "s|PVE_DIR=\"/opt/pvemanager\"|PVE_DIR=\"$project_dir\"|g" \
+        "$pve_source" > "$install_path"
+    chmod +x "$install_path"
+
+    print_success "pve CLI установлен в $install_path"
+    print_info "Теперь вы можете использовать команду 'pve' из любого места."
+    echo ""
+    "$install_path" help
+}
+
 show_help() {
     echo ""
     echo "Usage: $0 [OPTIONS]"
@@ -884,12 +918,14 @@ show_help() {
     echo "  $0 --restart                Restart all services"
     echo "  $0 --logs                   Show live logs"
     echo "  $0 --watchdog               Install/reinstall the host-side update watchdog (systemd)"
+    echo "  sudo $0 --install-cli       Install 'pve' CLI tool to /usr/local/bin/pve"
     echo ""
     echo "Examples:"
     echo "  $0 --standalone"
     echo "  $0 --nginx example.com"
     echo "  $0 --nginx example.com admin@example.com"
     echo "  sudo $0 --watchdog"
+    echo "  sudo $0 --install-cli"
 }
 
 # Parse command line arguments
@@ -929,6 +965,10 @@ if [ $# -gt 0 ]; then
             ;;
         --watchdog)
             install_update_watchdog
+            exit 0
+            ;;
+        --install-cli)
+            install_pve_cli
             exit 0
             ;;
         *)

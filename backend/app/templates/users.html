@@ -3,13 +3,12 @@
 {% block title %}{{ t('users_management') }}{% endblock %}
 
 {% block content %}
-<!-- Page Header -->
-<div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-    <div>
-        <h1 style="font-size: 1.75rem; font-weight: 600; margin: 0; color: var(--text-primary);"><i class="fa-solid fa-users"></i> {{ t('users_management') }}</h1>
-        <p style="color: var(--text-secondary); margin-top: 0.25rem;">{{ t('dashboard') }} / {{ t('settings') }} / {{ t('users') }}</p>
+<div class="page-header-block">
+    <div class="page-header-left">
+        <nav class="breadcrumb-nav">{{ t('dashboard') }} / {{ t('settings') }} / {{ t('users') }}</nav>
+        <h1 class="page-header-title"><i class="fa-solid fa-users"></i> {{ t('users_management') }}</h1>
     </div>
-    <div data-permission="users.create">
+    <div class="page-header-right" data-permission="users.create">
         <button class="btn btn-success" onclick="showAddUserModal()">
             <i class="fa-solid fa-plus"></i> {{ t('add_user') }}
         </button>

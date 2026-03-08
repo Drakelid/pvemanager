@@ -1,0 +1,330 @@
+#!/bin/bash
+# PVEmanager CLI — управление панелью
+# Установка: sudo bash /opt/pvemanager/deploy.sh --install-cli
+
+# ── Директория панели (задаётся при установке через --install-cli) ────────────
+PVE_DIR="/opt/pvemanager"
+
+# Авто-определение при запуске прямо из исходников (без установки)
+if [ ! -f "$PVE_DIR/compose.yml" ]; then
+    _SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+    if [ -f "$_SCRIPT_DIR/compose.yml" ]; then
+        PVE_DIR="$_SCRIPT_DIR"
+    fi
+fi
+
+BACKUP_DIR="/var/backups/pvemanager"
+BACKUP_KEEP=10
+
+# ── Цвета ─────────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+info()  { echo -e "${BLUE}[INFO]${NC}  $*"; }
+ok()    { echo -e "${GREEN}[ OK ]${NC}  $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+err()   { echo -e "${RED}[ERR ]${NC}  $*" >&2; }
+die()   { err "$*"; exit 1; }
+step()  { echo -e "\n${BOLD}▶  $*${NC}"; }
+
+# ── Compose runner ────────────────────────────────────────────────────────────
+# Глобальный массив compose-аргументов: заполняется _resolve_compose()
+declare -a _CF_ARGS
+
+# Авто-определение режима: prod (nginx) vs standalone
+# Логика: если контейнер serverpanel-nginx существует — prod-режим
+_resolve_compose() {
+    _CF_ARGS=("-f" "compose.yml")
+    if [ -f "$PVE_DIR/compose.prod.yml" ] && \
+       docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "serverpanel-nginx"; then
+        _CF_ARGS=("-f" "compose.yml" "-f" "compose.prod.yml")
+    fi
+}
+
+# Запустить docker compose из PVE_DIR с авто-определёнными файлами
+pve_dc() {
+    _resolve_compose
+    pushd "$PVE_DIR" > /dev/null
+    docker compose "${_CF_ARGS[@]}" "$@"
+    local rc=$?
+    popd > /dev/null
+    return $rc
+}
+
+# ── Предусловия ───────────────────────────────────────────────────────────────
+check_docker() {
+    docker info &>/dev/null || \
+        die "Docker недоступен. Запустите с sudo или добавьте пользователя в группу docker."
+}
+
+check_pve_dir() {
+    [ -d "$PVE_DIR" ] || die "Директория панели не найдена: $PVE_DIR"
+    [ -f "$PVE_DIR/compose.yml" ] || die "compose.yml не найден в $PVE_DIR"
+}
+
+# ── pve start ─────────────────────────────────────────────────────────────────
+cmd_start() {
+    check_docker; check_pve_dir
+    step "Запуск панели"
+    if pve_dc up -d; then
+        ok "Панель запущена"
+        echo ""
+        pve_dc ps
+    else
+        die "Не удалось запустить панель"
+    fi
+}
+
+# ── pve stop ──────────────────────────────────────────────────────────────────
+cmd_stop() {
+    check_docker; check_pve_dir
+    step "Остановка панели"
+    pve_dc down
+    ok "Панель остановлена"
+}
+
+# ── pve restart (полная пересборка) ───────────────────────────────────────────
+cmd_restart() {
+    check_docker; check_pve_dir
+    step "Остановка контейнеров"
+    pve_dc down
+
+    step "Пересборка образа app (без кеша)"
+    pve_dc build --no-cache app
+
+    step "Запуск контейнеров"
+    if pve_dc up -d; then
+        ok "Панель перезапущена"
+        echo ""
+        pve_dc ps
+    else
+        die "Не удалось запустить панель после пересборки"
+    fi
+}
+
+# ── pve update ────────────────────────────────────────────────────────────────
+cmd_update() {
+    check_docker; check_pve_dir
+    [ -d "$PVE_DIR/.git" ] || die "Не является git-репозиторием: $PVE_DIR"
+
+    step "Получение обновлений из репозитория"
+    local branch
+    branch=$(git -C "$PVE_DIR" branch --show-current 2>/dev/null || echo "main")
+    info "Ветка: $branch"
+
+    if ! git -C "$PVE_DIR" pull origin "$branch"; then
+        die "Не удалось выполнить git pull"
+    fi
+    ok "Исходный код обновлён"
+
+    step "Пересборка и перезапуск"
+    cmd_restart
+}
+
+# ── pve backup ────────────────────────────────────────────────────────────────
+cmd_backup() {
+    check_docker; check_pve_dir
+
+    local ts
+    ts=$(date +"%Y-%m-%d_%H-%M-%S")
+    local tmp_dir
+    tmp_dir=$(mktemp -d "/tmp/pve-backup-XXXXXX")
+    trap 'rm -rf "$tmp_dir"' EXIT
+
+    local archive_name="backup_${ts}.tar.gz"
+    local archive_path="$BACKUP_DIR/$archive_name"
+
+    step "Создание резервной копии"
+    info "Архив: $archive_path"
+    mkdir -p "$BACKUP_DIR"
+
+    # 1. Дамп базы данных
+    info "Дамп базы данных (pg_dump)..."
+    local pg_pass
+    pg_pass=$(grep -E '^POSTGRES_PASSWORD=' "$PVE_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"')
+    local dump_ok=false
+
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "serverpanel-db"; then
+        if docker exec -i \
+               -e PGPASSWORD="$pg_pass" \
+               serverpanel-db \
+               pg_dump -U serverpanel -d serverpanel \
+               > "$tmp_dir/db_dump.sql" 2>/dev/null; then
+            dump_ok=true
+            ok "Дамп БД: $(du -sh "$tmp_dir/db_dump.sql" | cut -f1)"
+        fi
+    fi
+
+    if [ "$dump_ok" = false ]; then
+        warn "pg_dump не удался (БД не запущена?). Сохраняю пустой файл."
+        echo "-- db dump skipped: container was not running at $(date)" > "$tmp_dir/db_dump.sql"
+    fi
+
+    # 2. Конфигурационные файлы
+    info "Сохранение конфигурационных файлов..."
+    [ -f "$PVE_DIR/.env" ]             && cp "$PVE_DIR/.env"             "$tmp_dir/root.env"
+    [ -f "$PVE_DIR/backend/.env" ]     && cp "$PVE_DIR/backend/.env"     "$tmp_dir/backend.env"
+    [ -f "$PVE_DIR/compose.yml" ]      && cp "$PVE_DIR/compose.yml"      "$tmp_dir/compose.yml"
+    [ -f "$PVE_DIR/compose.prod.yml" ] && cp "$PVE_DIR/compose.prod.yml" "$tmp_dir/compose.prod.yml"
+    [ -f "$PVE_DIR/VERSION" ]          && cp "$PVE_DIR/VERSION"          "$tmp_dir/VERSION"
+    [ -d "$PVE_DIR/nginx/conf.d" ]     && cp -r "$PVE_DIR/nginx/conf.d"  "$tmp_dir/nginx_conf.d"
+
+    # 3. Мета-файл
+    cat > "$tmp_dir/backup.info" << EOF
+PVEmanager Backup
+=================
+Date    : $(date)
+Version : $(cat "$PVE_DIR/VERSION" 2>/dev/null || echo "unknown")
+Host    : $(hostname)
+Commit  : $(git -C "$PVE_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+Branch  : $(git -C "$PVE_DIR" branch --show-current 2>/dev/null || echo "unknown")
+DB dump : $([ "$dump_ok" = true ] && echo "OK" || echo "SKIPPED")
+EOF
+
+    # 4. Упаковка
+    info "Упаковка..."
+    tar -czf "$archive_path" -C "$tmp_dir" . 2>/dev/null
+    trap - EXIT
+    rm -rf "$tmp_dir"
+
+    ok "Резервная копия создана: $archive_path ($(du -sh "$archive_path" | cut -f1))"
+
+    # 5. Ротация — оставить только BACKUP_KEEP последних архивов
+    local count
+    count=$(find "$BACKUP_DIR" -maxdepth 1 -name "backup_*.tar.gz" | wc -l)
+    if [ "$count" -gt "$BACKUP_KEEP" ]; then
+        local delete_count=$(( count - BACKUP_KEEP ))
+        info "Ротация: удаление $delete_count старых архивов (хранится $BACKUP_KEEP)..."
+        find "$BACKUP_DIR" -maxdepth 1 -name "backup_*.tar.gz" -printf '%T+ %p\n' \
+            | sort | head -n "$delete_count" | awk '{print $2}' | xargs rm -f
+        ok "Ротация выполнена"
+    fi
+
+    echo ""
+    info "Архивы в $BACKUP_DIR:"
+    find "$BACKUP_DIR" -maxdepth 1 -name "backup_*.tar.gz" -printf '%T+ %p\n' \
+        | sort -r | awk '{size=0; cmd="du -sh "$2; cmd | getline line; close(cmd); split(line,a,"\t"); printf "  %s  %s\n", a[1], $2}' \
+        | head -20
+}
+
+# ── pve status ────────────────────────────────────────────────────────────────
+cmd_status() {
+    check_docker; check_pve_dir
+    echo ""
+    pve_dc ps
+    echo ""
+    local version
+    version=$(cat "$PVE_DIR/VERSION" 2>/dev/null || echo "unknown")
+    local git_info
+    git_info=$(git -C "$PVE_DIR" log --oneline -1 2>/dev/null || echo "")
+    info "Версия: $version${git_info:+  |  $git_info}"
+}
+
+# ── pve logs ──────────────────────────────────────────────────────────────────
+cmd_logs() {
+    check_docker; check_pve_dir
+    local follow=false
+    local service=""
+    local tail=100
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -f|--follow) follow=true ;;
+            --tail=*) tail="${1#*=}" ;;
+            -*) warn "Неизвестный флаг: $1" ;;
+            *) service="$1" ;;
+        esac
+        shift
+    done
+
+    local -a args=("logs" "--tail=$tail")
+    [ "$follow" = true ] && args+=("-f")
+    [ -n "$service" ] && args+=("$service")
+
+    pve_dc "${args[@]}"
+}
+
+# ── pve shell ─────────────────────────────────────────────────────────────────
+cmd_shell() {
+    check_docker; check_pve_dir
+    local service="${1:-app}"
+    info "Вход в контейнер '$service'..."
+    pve_dc exec "$service" bash 2>/dev/null || pve_dc exec "$service" sh
+}
+
+# ── pve version ───────────────────────────────────────────────────────────────
+cmd_version() {
+    local version
+    version=$(cat "$PVE_DIR/VERSION" 2>/dev/null || echo "unknown")
+    local git_commit
+    git_commit=$(git -C "$PVE_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
+    local git_branch
+    git_branch=$(git -C "$PVE_DIR" branch --show-current 2>/dev/null || echo "")
+
+    echo -e "${BOLD}PVEmanager${NC} v${version}"
+    [ -n "$git_commit" ] && echo -e "  Commit : ${git_commit}${git_branch:+ ($git_branch)}"
+    echo -e "  Dir    : ${PVE_DIR}"
+}
+
+# ── pve help ──────────────────────────────────────────────────────────────────
+cmd_help() {
+    local version
+    version=$(cat "$PVE_DIR/VERSION" 2>/dev/null || echo "?")
+    echo ""
+    echo -e "  ${BOLD}PVEmanager CLI${NC} v${version} — управление панелью"
+    echo ""
+    echo -e "  ${CYAN}Использование:${NC}  pve <команда> [аргументы]"
+    echo ""
+    echo -e "  ${BOLD}Управление контейнерами${NC}"
+    echo "    start              Запустить панель (docker compose up -d)"
+    echo "    stop               Остановить панель (docker compose down)"
+    echo "    restart            Остановить → пересобрать app → запустить"
+    echo "    update             git pull + restart (полная пересборка)"
+    echo ""
+    echo -e "  ${BOLD}Обслуживание${NC}"
+    echo "    backup             Создать резервную копию в $BACKUP_DIR"
+    echo "    status             Статус контейнеров + версия"
+    echo "    logs [-f] [svc]    Логи (опции: -f следить, имя сервиса)"
+    echo "    shell [svc]        Войти в контейнер (по умолчанию: app)"
+    echo ""
+    echo -e "  ${BOLD}Информация${NC}"
+    echo "    version            Версия панели и git-коммит"
+    echo "    help               Показать эту справку"
+    echo ""
+    echo -e "  ${CYAN}Директория панели :${NC} $PVE_DIR"
+    echo -e "  ${CYAN}Директория бэкапов:${NC} $BACKUP_DIR (хранится $BACKUP_KEEP архивов)"
+    echo ""
+    echo -e "  ${BOLD}Примеры${NC}"
+    echo "    pve start"
+    echo "    pve logs -f app"
+    echo "    pve shell db"
+    echo "    pve backup"
+    echo ""
+}
+
+# ── Точка входа ───────────────────────────────────────────────────────────────
+CMD="${1:-help}"
+shift 2>/dev/null || true
+
+case "$CMD" in
+    start)          cmd_start ;;
+    stop)           cmd_stop ;;
+    restart)        cmd_restart ;;
+    update)         cmd_update ;;
+    backup)         cmd_backup ;;
+    status)         cmd_status ;;
+    logs)           cmd_logs "$@" ;;
+    shell)          cmd_shell "$@" ;;
+    version)        cmd_version ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        err "Неизвестная команда: $CMD"
+        cmd_help
+        exit 1
+        ;;
+esac

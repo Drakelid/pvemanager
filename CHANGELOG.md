@@ -4,6 +4,39 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.1.2] - 2026-03-08
+
+### 🎨 Dashboard Redesign
+
+- New 5-column stat grid: **Nodes, VMs, Containers, Clusters, Alerts**
+- Real-time VM/CT count loaded via API on page open
+- Resource cards row with mini sparkline charts: **CPU, RAM, Storage**
+- Status chip in header: `All systems operational` / warnings / critical
+- Header datetime display (live clock)
+- Cluster count computed from DB (named clusters + standalone nodes)
+- Alerts count sourced from `AuditLog` — errors + criticals in last 24 h
+- Recent audit events (last 5) now passed to dashboard context
+
+### 🖥️ Sidebar & Layout (`base.html`)
+
+- **Cluster Selector** widget in sidebar — shows active cluster/standalone name
+- **Version badge** in header (`v{{ version }}`)
+- `page_subtitle` and `header_status` Jinja2 blocks for per-page overrides
+- `loadSidebarCluster()` JS helper — fetches known servers, picks named cluster
+
+### 🛠️ `pve` CLI Tool
+
+- New `pve` shell script at project root — management shortcuts (logs, restart, update, exec, etc.)
+- `deploy.sh --install-cli` — installs `pve` to `/usr/local/bin/pve`, patches `PVE_DIR` to project path
+- Help visible after installation: `pve help`
+
+### 🎨 Theme CSS
+
+- New CSS classes for redesigned dashboard: `.stats-grid-5`, `.stat-card-v2`, `.resource-cards-row`, `.resource-card`, `.version-badge`, `.status-chip`, `.header-datetime`, `.sidebar-cluster-section`
+- Minor CSS fixes across login, logs, tasks, os_templates, users, proxmox_vms, virtual_machines, ipam_dashboard
+
+---
+
 ## [v1.1.1] - 2026-03-08
 
 ### 🔧 Fix: Update System — Host-side Rebuild

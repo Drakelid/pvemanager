@@ -49,4 +49,7 @@ def add_i18n_context(request: Request, context: dict) -> dict:
     context['panel_name'] = settings.PANEL_NAME
     context['custom_logo_exists'] = custom_logo_exists()
     
+    # Add version
+    context['version'] = settings.VERSION
+    
     return context

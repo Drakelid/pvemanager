@@ -1,281 +1,530 @@
 {% extends "base.html" %}
 {% set page_title = t('nav_dashboard') %}
+
+{% block page_subtitle %}
+<div class="page-subtitle" id="dashSubtitle">
+    {%- if stats.online_servers > 0 -%}
+        {{ stats.online_servers }} {{ t('online') | lower }}
+    {%- else -%}
+        {{ t('proxmox_servers') }}: {{ stats.total_servers }}
+    {%- endif %}
+</div>
+{% endblock %}
+
+{% block header_status %}
+<div class="status-chip {% if stats.total_alerts == 0 %}status-ok{% elif stats.critical_alerts > 0 %}status-error{% else %}status-warning{% endif %}" id="dashStatusChip">
+    <span class="status-chip-dot"></span>
+    <span id="dashStatusText">
+        {%- if stats.total_alerts == 0 -%}
+            All systems operational
+        {%- elif stats.critical_alerts > 0 -%}
+            {{ stats.critical_alerts }} critical alert{{ 's' if stats.critical_alerts != 1 else '' }}
+        {%- else -%}
+            {{ stats.total_alerts }} warning{{ 's' if stats.total_alerts != 1 else '' }}
+        {%- endif -%}
+    </span>
+</div>
+<div class="header-datetime" id="dashDatetime"></div>
+{% endblock %}
+
 {% block content %}
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-label">{{ t('proxmox_servers') }}</div>
-        <div class="stat-value">{{ stats.total_servers }}</div>
+<!-- ======== 5 STAT CARDS ======== -->
+<div class="stats-grid-5">
+    <div class="stat-card-v2">
+        <div class="stat-card-lbl">Nodes</div>
+        <div class="stat-card-val">{{ stats.total_servers }}</div>
+        <div class="stat-card-sub" id="statNodesSub">
+            {%- if stats.online_servers == stats.total_servers and stats.total_servers > 0 -%}
+                All online
+            {%- elif stats.online_servers > 0 -%}
+                {{ stats.online_servers }} online
+            {%- else -%}
+                —
+            {%- endif -%}
+        </div>
     </div>
-    <div class="stat-card">
-        <div class="stat-label">{{ t('online') }}</div>
-        <div class="stat-value text-success">{{ stats.online_servers }}</div>
+    <div class="stat-card-v2">
+        <div class="stat-card-lbl">VMs</div>
+        <div class="stat-card-val" id="statVmCount">—</div>
+        <div class="stat-card-sub" id="statVmSub">loading…</div>
     </div>
-    <div class="stat-card">
-        <div class="stat-label">{{ t('offline') }}</div>
-        <div class="stat-value text-danger">{{ stats.offline_servers }}</div>
+    <div class="stat-card-v2">
+        <div class="stat-card-lbl">Containers</div>
+        <div class="stat-card-val" id="statCtCount">—</div>
+        <div class="stat-card-sub" id="statCtSub">loading…</div>
+    </div>
+    <div class="stat-card-v2">
+        <div class="stat-card-lbl">Clusters</div>
+        <div class="stat-card-val">{{ stats.total_clusters }}</div>
+        <div class="stat-card-sub" id="statClusterSub">
+            {%- if stats.total_alerts == 0 -%}All healthy{%- else -%}—{%- endif -%}
+        </div>
+    </div>
+    <div class="stat-card-v2 {% if stats.critical_alerts > 0 %}card-alerts{% endif %}">
+        <div class="stat-card-lbl">Alerts</div>
+        <div class="stat-card-val">{{ stats.total_alerts }}</div>
+        <div class="stat-card-sub">
+            {%- if stats.critical_alerts > 0 -%}
+                <span style="color: var(--danger);">{{ stats.critical_alerts }} critical</span>
+            {%- elif stats.total_alerts > 0 -%}
+                last 24h
+            {%- else -%}
+                No alerts
+            {%- endif -%}
+        </div>
     </div>
 </div>
 
-<!-- Графики Proxmox нод -->
-<div class="card" id="proxmox-charts-section" style="display: none;">
-    <h3><i class="fa-solid fa-chart-line"></i> {{ t('proxmox_nodes_load') }}</h3>
-    <div class="dashboard-charts-grid" id="nodes-charts-grid"></div>
+<!-- ======== RESOURCE CARDS (CPU / RAM / STORAGE) ======== -->
+<div class="resource-cards-row" id="resourceCardsRow">
+    <div class="resource-card">
+        <div class="resource-card-header">
+            <span class="resource-card-title">CPU Usage</span>
+            <span class="resource-pct-badge" id="cpuPct">—</span>
+        </div>
+        <div class="resource-mini-chart">
+            <canvas id="cpuMiniChart"></canvas>
+        </div>
+        <div class="resource-progress-bar">
+            <div class="resource-progress-fill cpu-fill" id="cpuBar" style="width: 0%"></div>
+        </div>
+    </div>
+    <div class="resource-card">
+        <div class="resource-card-header">
+            <span class="resource-card-title">RAM Usage</span>
+            <span class="resource-pct-badge" id="ramPct">—</span>
+        </div>
+        <div class="resource-mini-chart">
+            <canvas id="ramMiniChart"></canvas>
+        </div>
+        <div class="resource-progress-bar">
+            <div class="resource-progress-fill ram-fill" id="ramBar" style="width: 0%"></div>
+        </div>
+    </div>
+    <div class="resource-card">
+        <div class="resource-card-header">
+            <span class="resource-card-title">Storage</span>
+            <span class="resource-pct-badge" id="diskPct">—</span>
+        </div>
+        <div class="resource-mini-chart">
+            <canvas id="diskMiniChart"></canvas>
+        </div>
+        <div class="resource-progress-bar">
+            <div class="resource-progress-fill disk-fill" id="diskBar" style="width: 0%"></div>
+        </div>
+    </div>
 </div>
 
-<style>
-    .dashboard-charts-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-        gap: 1rem;
-        margin-top: 1rem;
-    }
-    
-    @media (max-width: 768px) {
-        .dashboard-charts-grid {
-            grid-template-columns: 1fr;
-        }
-        
-        .stats-grid {
-            grid-template-columns: 1fr !important;
-        }
-        
-        .stat-card {
-            padding: 1rem;
-        }
-        
-        .stat-value {
-            font-size: 1.75rem;
-        }
-    }
-    
-    @media (max-width: 480px) {
-        .dashboard-charts-grid .card h4 {
-            font-size: 0.9rem;
-        }
-    }
-</style>
+<!-- ======== VM TABLE + NODES PANEL ======== -->
+<div class="dash-main-grid">
+    <!-- VM Table -->
+    <div class="dash-section">
+        <div class="dash-section-header">
+            <span class="dash-section-title">Virtual Machines</span>
+            <div style="display:flex; gap:0.75rem; align-items:center;">
+                <span class="dash-section-meta" id="vmTableMeta">—</span>
+                <a href="/virtual-machines" class="dash-section-link">View all →</a>
+            </div>
+        </div>
+        <div style="overflow-x: auto;">
+            <table class="vm-table-compact">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Node</th>
+                        <th>CPU</th>
+                        <th>RAM</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="vmTableBody">
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem 1.25rem;">
+                        <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:.5rem;"></i> Loading…
+                    </td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Nodes Panel -->
+    <div class="dash-section">
+        <div class="dash-section-header">
+            <span class="dash-section-title">Nodes</span>
+            <span class="dash-section-meta" id="nodesOnlineMeta">—</span>
+        </div>
+        <div class="nodes-panel" id="nodesPanel">
+            <div style="text-align:center; color:var(--text-muted); padding:2rem 1.25rem;">
+                <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:.5rem;"></i> Loading…
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ======== RECENT AUDIT EVENTS ======== -->
+<div class="dash-section" style="margin-bottom: var(--spacing-lg);">
+    <div class="dash-section-header">
+        <span class="dash-section-title">Recent Audit Events</span>
+        <a href="/logs" class="dash-section-link">View all →</a>
+    </div>
+    <div class="audit-events-list" id="auditEventsList">
+        {% if recent_audit %}
+            {% for entry in recent_audit %}
+            <div class="audit-row">
+                <span class="audit-time">
+                    {{ entry.created_at.strftime('%H:%M:%S') if entry.created_at else '—' }}
+                </span>
+                <span class="audit-user">{{ entry.username or '—' }}</span>
+                <span>
+                    <span class="audit-action-tag {{ entry.level | lower if entry.level else 'default' }}">
+                        {{ entry.action or '—' }}
+                    </span>
+                </span>
+                <span class="audit-resource">{{ entry.resource_name or '—' }}</span>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div style="text-align:center; color:var(--text-muted); padding:1.5rem 1.25rem; font-size:0.875rem;">
+                No audit events found
+            </div>
+        {% endif %}
+    </div>
+</div>
 
 <script>
-// Загрузка статистики и графиков Proxmox нод
-async function loadProxmoxNodesStats() {
-    try {
-        const response = await fetchWithAuth('/proxmox/api/servers');
-        if (!response) return;
-        
-        const servers = await response.json();
-        const onlineServers = servers.filter(s => s.is_online);
-        
-        if (onlineServers.length === 0) return;
-        
-        const chartsSection = document.getElementById('proxmox-charts-section');
-        const chartsGrid = document.getElementById('nodes-charts-grid');
-        
-        chartsGrid.innerHTML = '';
-        
-        // Собрать все данные сначала, потом отрисовать
-        const chartsToRender = [];
-        // Дедупликация по ключу "cluster_id::node".
-        // Члены одного кластера возвращают одинаковый cluster_id (имя кластера),
-        // поэтому общие ноды показываются один раз.
-        // Независимые серверы с одинаковым именем ноды получают разные cluster_id
-        // ("standalone-{server_id}"), поэтому отображаются отдельно.
-        const seenNodes = new Set();
-        
-        // Загрузить данные для каждого сервера
-        for (const server of onlineServers) {
-            try {
-                // Получить список нод
-                const nodesResponse = await fetchWithAuth(`/proxmox/api/${server.id}/nodes`);
-                if (!nodesResponse || !nodesResponse.ok) {
-                    console.warn(`Failed to load nodes for ${server.name}`);
-                    continue;
-                }
-                
-                const nodesData = await nodesResponse.json();
-                const nodes = nodesData.nodes || [];
-                const clusterId = nodesData.cluster_id || `standalone-${server.id}`;
+// ======== Dashboard JS ========
 
-                if (nodes.length === 0) {
-                    console.warn(`No nodes found for ${server.name}`);
-                    continue;
-                }
-
-                // Обработать ВСЕ ноды этого сервера
-                for (const nodeInfo of nodes) {
-                    const node = nodeInfo.node;
-
-                    // Дедупликация по кластеру: члены одного кластера имеют
-                    // одинаковый clusterId и одинаковые имена нод → пропускаем дубли.
-                    // Независимые серверы с одинаковым именем ноды имеют разные
-                    // clusterId → отображаются отдельно.
-                    const dedupeKey = `${clusterId}::${node}`;
-                    if (seenNodes.has(dedupeKey)) {
-                        continue;
-                    }
-                    seenNodes.add(dedupeKey);
-                    
-                    // Получить данные для графиков
-                    const rrdResponse = await fetchWithAuth(`/proxmox/api/${server.id}/node/rrddata?node=${node}&timeframe=hour`);
-                    if (!rrdResponse || !rrdResponse.ok) {
-                        console.warn(`Failed to load RRD data for ${server.name}/${node}, skipping chart`);
-                        continue;
-                    }
-                    
-                    const rrdData = await rrdResponse.json();
-                    const data = rrdData.data || [];
-                    
-                    if (data.length === 0) {
-                        console.warn(`No RRD data for ${server.name}/${node}`);
-                        continue;
-                    }
-                    
-                    // Сохранить данные для отрисовки
-                    chartsToRender.push({
-                        canvasId: `chart-${server.id}-${node}`,
-                        serverName: server.name,
-                        nodeName: node,
-                        data: data
-                    });
-                }
-                
-            } catch (error) {
-                console.error(`Error loading stats for server ${server.id}:`, error);
-            }
-        }
-        
-        // Теперь создать все canvas элементы
-        if (chartsToRender.length > 0) {
-            let html = '';
-            for (const chart of chartsToRender) {
-                // Извлекаем базовое имя сервера (убираем " - nodeX" если есть)
-                let baseServerName = chart.serverName.trim();
-                // Если имя сервера заканчивается на " - <nodeName>", убираем это
-                const nodePattern = new RegExp(`\\s*-\\s*(pve\\d+|node\\d+|${chart.nodeName})$`, 'i');
-                baseServerName = baseServerName.replace(nodePattern, '').trim();
-                
-                // Формируем отображаемое имя
-                // Если базовое имя пустое или равно имени ноды — просто показываем имя ноды
-                let displayName;
-                if (!baseServerName || baseServerName.toLowerCase() === chart.nodeName.toLowerCase()) {
-                    displayName = chart.nodeName;
-                } else {
-                    displayName = `${baseServerName} - ${chart.nodeName}`;
-                }
-                html += `
-                    <div class="card">
-                        <h4 style="margin: 0 0 1rem 0;">${displayName}</h4>
-                        <canvas id="${chart.canvasId}" style="max-height: 250px;"></canvas>
-                    </div>
-                `;
-            }
-            chartsGrid.innerHTML = html;
-            chartsSection.style.display = 'block';
-            
-            // Отрисовать все графики после того как DOM обновился
-            requestAnimationFrame(() => {
-                for (const chart of chartsToRender) {
-                    drawNodeChart(chart.canvasId, chart.data);
-                }
-            });
-        }
-        
-    } catch (error) {
-        console.error('Error loading Proxmox stats:', error);
+// Live clock
+(function startClock() {
+    const el = document.getElementById('dashDatetime');
+    if (!el) return;
+    function tick() {
+        const now = new Date();
+        el.textContent = now.toLocaleDateString(
+            '{{ "ru-RU" if lang == "ru" else "en-US" }}',
+            { month: 'short', day: 'numeric' }
+        ) + ', ' + now.toLocaleTimeString(
+            '{{ "ru-RU" if lang == "ru" else "en-US" }}',
+            { hour: '2-digit', minute: '2-digit' }
+        );
     }
+    tick();
+    setInterval(tick, 30000);
+})();
+
+// Colour the % badge based on value
+function setPctBadgeColor(el, pct) {
+    el.classList.remove('pct-ok', 'pct-warn', 'pct-high');
+    if (pct < 60) el.classList.add('pct-ok');
+    else if (pct < 85) el.classList.add('pct-warn');
+    else el.classList.add('pct-high');
 }
 
-// Отрисовка графика ноды
-function drawNodeChart(canvasId, data) {
-    if (typeof Chart === 'undefined') {
-        console.error('Chart.js not loaded');
-        return;
-    }
-    
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) {
-        console.error('Canvas not found:', canvasId);
-        return;
-    }
-    
-    const locale = "{{ 'ru-RU' if lang == 'ru' else 'en-US' }}";
-    const formatTime = (timestamp) => {
-        const date = new Date(timestamp * 1000);
-        return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-    };
-    
-    new Chart(ctx, {
+// Draw a mini line chart on a canvas
+function drawMiniLineChart(canvasId, dataPoints, color, bgColor) {
+    if (typeof Chart === 'undefined') return;
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    // destroy existing
+    if (canvas._chartInstance) { canvas._chartInstance.destroy(); }
+    const ctx = canvas.getContext('2d');
+    canvas._chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: data.map(d => formatTime(d.time)),
-            datasets: [
-                {
-                    label: '{{ t('cpu') }} %',
-                    data: data.map(d => ((d.cpu || 0) * 100).toFixed(2)),
-                    borderColor: '#60a5fa',
-                    backgroundColor: 'rgba(96,165,250,0.1)',
-                    borderWidth: 2,
-                    tension: 0.4,
-                    fill: true,
-                    pointRadius: 0,
-                    yAxisID: 'y'
-                },
-                {
-                    label: '{{ t('memory') }} {{ t('gb') }}',
-                    data: data.map(d => ((d.memused || 0) / (1024*1024*1024)).toFixed(2)),
-                    borderColor: '#f59e0b',
-                    backgroundColor: 'rgba(245,158,11,0.1)',
-                    borderWidth: 2,
-                    tension: 0.4,
-                    fill: true,
-                    pointRadius: 0,
-                    yAxisID: 'y1'
-                }
-            ]
+            labels: dataPoints.map((_, i) => i),
+            datasets: [{
+                data: dataPoints,
+                borderColor: color,
+                backgroundColor: bgColor,
+                borderWidth: 2,
+                tension: 0.4,
+                fill: true,
+                pointRadius: 0,
+            }]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top',
-                    labels: { color: '#9ca3af', usePointStyle: true, padding: 10 }
-                },
-                tooltip: { enabled: true, mode: 'index', intersect: false }
-            },
+            maintainAspectRatio: false,
+            animation: { duration: 600 },
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
             scales: {
-                x: {
-                    type: 'category',
-                    grid: { color: 'rgba(255,255,255,0.1)' },
-                    ticks: { color: '#9ca3af', maxTicksLimit: 10 }
-                },
-                y: {
-                    type: 'linear',
-                    display: true,
-                    position: 'left',
-                    beginAtZero: true,
-                    grid: { color: 'rgba(255,255,255,0.1)' },
-                    ticks: { color: '#9ca3af' },
-                    title: { display: true, text: '{{ t('cpu') }} %', color: '#60a5fa' }
-                },
-                y1: {
-                    type: 'linear',
-                    display: true,
-                    position: 'right',
-                    beginAtZero: true,
-                    grid: { drawOnChartArea: false },
-                    ticks: { color: '#9ca3af' },
-                    title: { display: true, text: '{{ t('memory') }} {{ t('gb') }}', color: '#f59e0b' }
-                }
+                x: { display: false },
+                y: { display: false, beginAtZero: true, max: 100 }
             }
         }
     });
 }
 
-// Инициализация при полной загрузке DOM
+// Draw a mini bar chart (for storage)
+function drawMiniBarChart(canvasId, dataPoints, color) {
+    if (typeof Chart === 'undefined') return;
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    if (canvas._chartInstance) { canvas._chartInstance.destroy(); }
+    const ctx = canvas.getContext('2d');
+    canvas._chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: dataPoints.map((_, i) => i),
+            datasets: [{
+                data: dataPoints,
+                backgroundColor: color,
+                borderRadius: 3,
+                borderSkipped: false,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 600 },
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: {
+                x: { display: false },
+                y: { display: false, beginAtZero: true, max: 100 }
+            }
+        }
+    });
+}
+
+// Load all resources to populate VMs stat card and VM table
+async function loadVMStats() {
+    try {
+        const res = await fetchWithAuth('/proxmox/api/resources/all', { hideOnForbidden: true });
+        if (!res || !res.ok || res.forbidden) return;
+        const data = await res.json();
+
+        let totalVms = 0, runningVms = 0, totalCt = 0, runningCt = 0;
+        const allVms = [];
+
+        for (const server of (data.servers || [])) {
+            const vms = server.vms || [];
+            const cts = server.containers || [];
+            totalVms += vms.length;
+            runningVms += vms.filter(v => v.status === 'running').length;
+            totalCt += cts.length;
+            runningCt += cts.filter(c => c.status === 'running').length;
+
+            for (const vm of vms) {
+                allVms.push({ ...vm, serverName: server.name });
+            }
+        }
+
+        // Update stat cards
+        const vmCount = document.getElementById('statVmCount');
+        const vmSub = document.getElementById('statVmSub');
+        const ctCount = document.getElementById('statCtCount');
+        const ctSub = document.getElementById('statCtSub');
+        if (vmCount) vmCount.textContent = totalVms;
+        if (vmSub) vmSub.textContent = runningVms + ' running';
+        if (ctCount) ctCount.textContent = totalCt;
+        if (ctSub) ctSub.textContent = runningCt + ' running';
+
+        // Update VM table (show max 8 — sorted: running first)
+        const tbody = document.getElementById('vmTableBody');
+        const meta = document.getElementById('vmTableMeta');
+        if (meta) meta.textContent = totalVms + ' total';
+        if (tbody) {
+            allVms.sort((a, b) => {
+                const rank = s => s === 'running' ? 0 : s === 'paused' ? 1 : 2;
+                return rank(a.status) - rank(b.status);
+            });
+            const shown = allVms.slice(0, 8);
+            if (shown.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem 1.25rem;">No VMs found</td></tr>';
+            } else {
+                tbody.innerHTML = shown.map(vm => {
+                    const cpuPct = vm.cpu != null ? (vm.cpu * 100).toFixed(0) + '%' : '—';
+                    const ramGb = vm.mem != null ? (vm.mem / (1024**3)).toFixed(1) + 'G' : '—';
+                    const status = (vm.status || 'unknown').toLowerCase();
+                    const statusCls = status === 'running' ? 'running' : status === 'paused' ? 'warning' : 'stopped';
+                    const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+                    return `<tr>
+                        <td><span class="vm-name-cell">${escapeHtml(vm.name || 'vm-' + vm.vmid)}</span></td>
+                        <td><span class="vm-node-cell">${escapeHtml(vm.node || '—')}</span></td>
+                        <td><span class="vm-metric-cell">${cpuPct}</span></td>
+                        <td><span class="vm-metric-cell">${ramGb}</span></td>
+                        <td><span class="vm-status-badge ${statusCls}"><span class="status-dot-sm"></span>${statusLabel}</span></td>
+                    </tr>`;
+                }).join('');
+            }
+        }
+    } catch (e) {
+        console.error('VM stats error:', e);
+    }
+}
+
+// Load node data and resource charts + nodes panel
+async function loadNodeStats() {
+    try {
+        const serversRes = await fetchWithAuth('/proxmox/api/servers', { hideOnForbidden: true });
+        if (!serversRes || !serversRes.ok || serversRes.forbidden) return;
+        const servers = await serversRes.json();
+        const onlineServers = servers.filter(s => s.is_online);
+        if (onlineServers.length === 0) return;
+
+        const seenNodes = new Set();
+        const allNodeData = [];
+        const cpuHistory = [], ramHistory = [], diskHistory = [];
+
+        for (const server of onlineServers) {
+            try {
+                const nodesRes = await fetchWithAuth(`/proxmox/api/${server.id}/nodes`, { hideOnForbidden: true });
+                if (!nodesRes || !nodesRes.ok) continue;
+                const nodesData = await nodesRes.json();
+                const nodes = nodesData.nodes || [];
+                const clusterId = nodesData.cluster_id || `standalone-${server.id}`;
+
+                for (const nodeInfo of nodes) {
+                    const nodeName = nodeInfo.node;
+                    const key = `${clusterId}::${nodeName}`;
+                    if (seenNodes.has(key)) continue;
+                    seenNodes.add(key);
+
+                    // Get node status (cpu, mem)
+                    try {
+                        const statusRes = await fetchWithAuth(
+                            `/proxmox/api/${server.id}/node/status?node=${nodeName}`,
+                            { hideOnForbidden: true }
+                        );
+                        if (statusRes && statusRes.ok) {
+                            const st = await statusRes.json();
+                            const cpuPct = Math.round((st.cpu || 0) * 100);
+                            const ramPct = st.memory && st.memory.total > 0
+                                ? Math.round((st.memory.used / st.memory.total) * 100)
+                                : 0;
+                            allNodeData.push({ name: nodeName, cpuPct, ramPct, vmCount: nodeInfo.maxvms || 0 });
+                        }
+                    } catch (e) {
+                        allNodeData.push({ name: nodeName, cpuPct: 0, ramPct: 0, vmCount: 0 });
+                    }
+
+                    // Load RRD for charts (only first node for aggregate chart)
+                    if (cpuHistory.length === 0) {
+                        try {
+                            const rrdRes = await fetchWithAuth(
+                                `/proxmox/api/${server.id}/node/rrddata?node=${nodeName}&timeframe=hour`,
+                                { hideOnForbidden: true }
+                            );
+                            if (rrdRes && rrdRes.ok) {
+                                const rrd = await rrdRes.json();
+                                const data = rrd.data || [];
+                                for (const pt of data) {
+                                    cpuHistory.push(((pt.cpu || 0) * 100));
+                                    const rPct = pt.memtotal > 0
+                                        ? ((pt.memused || 0) / pt.memtotal * 100)
+                                        : (pt.mem || 0) * 100;
+                                    ramHistory.push(rPct);
+                                    const dPct = pt.roottotal > 0
+                                        ? ((pt.rootused || 0) / pt.roottotal * 100)
+                                        : 0;
+                                    diskHistory.push(dPct);
+                                }
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+            } catch (e) {
+                console.error('Node load error:', e);
+            }
+        }
+
+        // === Render resource cards ===
+        if (allNodeData.length > 0) {
+            // Aggregate avg
+            const avgCpu = Math.round(allNodeData.reduce((s, n) => s + n.cpuPct, 0) / allNodeData.length);
+            const avgRam = Math.round(allNodeData.reduce((s, n) => s + n.ramPct, 0) / allNodeData.length);
+
+            const cpuPctEl = document.getElementById('cpuPct');
+            const ramPctEl = document.getElementById('ramPct');
+            const cpuBarEl = document.getElementById('cpuBar');
+            const ramBarEl = document.getElementById('ramBar');
+
+            if (cpuPctEl) { cpuPctEl.textContent = avgCpu + '%'; setPctBadgeColor(cpuPctEl, avgCpu); }
+            if (ramPctEl) { ramPctEl.textContent = avgRam + '%'; setPctBadgeColor(ramPctEl, avgRam); }
+            if (cpuBarEl) cpuBarEl.style.width = avgCpu + '%';
+            if (ramBarEl) ramBarEl.style.width = avgRam + '%';
+        }
+
+        // Draw mini charts
+        if (cpuHistory.length > 0) {
+            const cpuSlice = cpuHistory.slice(-24);
+            const ramSlice = ramHistory.slice(-24);
+            const diskSlice = diskHistory.slice(-24);
+
+            const lastDisk = diskSlice.length > 0 ? diskSlice[diskSlice.length - 1] : 0;
+            const pctDisk = Math.round(lastDisk);
+            const diskPctEl = document.getElementById('diskPct');
+            const diskBarEl = document.getElementById('diskBar');
+            if (diskPctEl) { diskPctEl.textContent = pctDisk + '%'; setPctBadgeColor(diskPctEl, pctDisk); }
+            if (diskBarEl) diskBarEl.style.width = pctDisk + '%';
+
+            requestAnimationFrame(() => {
+                drawMiniLineChart('cpuMiniChart', cpuSlice, '#3b82f6', 'rgba(59,130,246,0.15)');
+                drawMiniLineChart('ramMiniChart', ramSlice, '#8b5cf6', 'rgba(139,92,246,0.15)');
+                // disk as bar chart
+                if (diskSlice.some(v => v > 0)) {
+                    drawMiniBarChart('diskMiniChart', diskSlice, 'rgba(16,185,129,0.7)');
+                } else {
+                    // fallback: simple bar from pct
+                    const fakeData = Array(24).fill(0).map((_, i) => (i / 23) * pctDisk * 0.9 + pctDisk * 0.1);
+                    drawMiniBarChart('diskMiniChart', fakeData, 'rgba(16,185,129,0.7)');
+                }
+            });
+        }
+
+        // === Render Nodes panel ===
+        const panel = document.getElementById('nodesPanel');
+        const onlineMeta = document.getElementById('nodesOnlineMeta');
+        if (onlineMeta) onlineMeta.textContent = allNodeData.length + '/' + allNodeData.length + ' online';
+
+        if (panel) {
+            if (allNodeData.length === 0) {
+                panel.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem 1.25rem;font-size:.875rem;">No nodes available</div>';
+            } else {
+                panel.innerHTML = allNodeData.map(node => `
+                    <div class="node-item">
+                        <div class="node-item-header">
+                            <div class="node-item-name">
+                                <span class="node-dot-online"></span>
+                                ${escapeHtml(node.name)}
+                            </div>
+                            <span class="node-vm-count">${node.vmCount > 0 ? node.vmCount + ' VMs' : ''}</span>
+                        </div>
+                        <div class="node-bar-row">
+                            <span class="node-bar-lbl">CPU</span>
+                            <div class="node-bar-wrap">
+                                <div class="node-bar-fill cpu" style="width:${node.cpuPct}%"></div>
+                            </div>
+                            <span class="node-bar-pct">${node.cpuPct}%</span>
+                        </div>
+                        <div class="node-bar-row">
+                            <span class="node-bar-lbl">RAM</span>
+                            <div class="node-bar-wrap">
+                                <div class="node-bar-fill ram" style="width:${node.ramPct}%"></div>
+                            </div>
+                            <span class="node-bar-pct">${node.ramPct}%</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+    } catch (e) {
+        console.error('Node stats error:', e);
+    }
+}
+
+// HTML escape helper
+function escapeHtml(str) {
+    if (!str) return '';
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+// Init
 document.addEventListener('DOMContentLoaded', function() {
-    // Загрузить графики нод
-    loadProxmoxNodesStats();
+    loadVMStats();
+    loadNodeStats();
 });
 </script>
 {% endblock %}

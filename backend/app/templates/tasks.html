@@ -1,27 +1,19 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="page-header" style="margin-bottom: 1.5rem;">
-    <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
-        <div>
-            <h1 style="font-size:1.5rem; font-weight:700; margin:0; color:var(--text-primary);">
-                <i class="fa-solid fa-list-check" style="color:#667eea; margin-right:.5rem;"></i>
-                Менеджер задач
-            </h1>
-            <p style="margin:.25rem 0 0; color:var(--text-muted); font-size:.87rem;">
-                Все активные и завершённые задачи в реальном времени
-            </p>
+<div class="page-header-block">
+    <div class="page-header-left">
+        <h1 class="page-header-title"><i class="fa-solid fa-list-check"></i> Менеджер задач</h1>
+        <p class="page-header-sub">Все активные и завершённые задачи в реальном времени</p>
+    </div>
+    <div class="page-header-right">
+        <div id="wsStatus" style="display:flex; align-items:center; gap:.4rem; font-size:.78rem; color:var(--text-muted);">
+            <span class="task-dot" id="wsDot" style="background:#6b7280;"></span>
+            <span id="wsStatusText">Подключение...</span>
         </div>
-        <div style="margin-left:auto; display:flex; gap:.75rem; align-items:center;">
-            <div id="wsStatus" style="display:flex; align-items:center; gap:.4rem; font-size:.78rem; color:var(--text-muted);">
-                <span class="task-dot" id="wsDot" style="background:#6b7280;"></span>
-                <span id="wsStatusText">Подключение...</span>
-            </div>
-            <button class="btn btn-sm" style="background:var(--bg-surface); border:1px solid var(--border-default); color:var(--text-secondary); border-radius:8px; padding:.35rem .85rem;" 
-                    onclick="TaskManager.refresh()" title="Обновить">
-                <i class="fa-solid fa-rotate-right"></i>
-            </button>
-        </div>
+        <button class="btn btn-secondary" onclick="TaskManager.refresh()" title="{{ t('refresh') }}">
+            <i class="fa-solid fa-rotate-right"></i>
+        </button>
     </div>
 </div>
 

@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.1.1
+> Complete guide for installation, configuration and usage of PVEmanager v1.1.2
 
 ---
 
@@ -22,11 +22,12 @@
 14. [Security (RBAC v2)](#-security)
 15. [Localization](#-localization)
 16. [Settings](#-settings)
-17. [API Reference](#-api-reference)
-18. [Deployment Guide](#-deployment-guide)
-19. [Private Repo Updates](#-private-repo-updates)
-20. [Troubleshooting](#-troubleshooting)
-21. [FAQ](#-faq)
+17. [pve CLI Tool](#-pve-cli-tool)
+18. [API Reference](#-api-reference)
+19. [Deployment Guide](#-deployment-guide)
+20. [Private Repo Updates](#-private-repo-updates)
+21. [Troubleshooting](#-troubleshooting)
+22. [FAQ](#-faq)
 
 ---
 
@@ -258,10 +259,15 @@ This section summarizes key API endpoints. All require JWT authentication.
 
 ### Dashboard
 
-- Overall server statistics
-- VM/LXC container count
-- Resource usage graphs
-- Quick access to recent events
+- **5 stat cards** — Nodes, VMs, Containers, Clusters, Alerts (real-time)
+- **Resource cards** — CPU, RAM, Storage with mini sparkline charts
+- **Status chip** in header — `All systems operational` / warnings / critical alerts
+- **Live clock** in header
+- Cluster count computed automatically from database
+- Alerts count from AuditLog (errors + criticals in last 24 h)
+- Recent audit events (last 5) on the dashboard
+- **Cluster Selector** in sidebar — shows active cluster or standalone name
+- **Version badge** in header
 
 ### Proxmox Servers
 
@@ -1241,7 +1247,42 @@ tail -f logs/update_host.log
 
 ---
 
-## 🔌 API Reference
+## �️ pve CLI Tool
+
+Starting from v1.1.2, PVEmanager ships with a `pve` shell script — a handy CLI shortcut for common management tasks.
+
+### Installation
+
+```bash
+# Requires root (copies script to /usr/local/bin/pve and patches project path)
+sudo ./deploy.sh --install-cli
+```
+
+After installation the `pve` command is available system-wide.
+
+### Usage
+
+```bash
+pve help           # Show all available commands
+pve logs           # Tail live app logs
+pve restart        # Restart all containers
+pve update         # Trigger panel update (via watchdog)
+pve exec <cmd>     # Execute command inside app container
+pve status         # Show docker compose status
+```
+
+### How It Works
+
+- `deploy.sh --install-cli` reads the `pve` file from the project root
+- Replaces the placeholder `PVE_DIR` with the actual project path
+- Writes the result to `/usr/local/bin/pve` and makes it executable
+- Re-run `sudo ./deploy.sh --install-cli` after moving the project directory
+
+> **Note:** The `pve` binary reflects the project directory at install time. If you relocate the project, reinstall the CLI.
+
+---
+
+## �🔌 API Reference
 
 ### Authentication
 
@@ -1549,4 +1590,4 @@ A: Not yet, but planned for future versions.
 ---
 
 *Last updated: March 2026*
-*Version: 1.1.1*
+*Version: 1.1.2*

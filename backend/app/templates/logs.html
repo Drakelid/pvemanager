@@ -386,14 +386,13 @@
     }
 </style>
 
-<div class="logs-header">
-    <div>
-        <h3 style="margin: 0; color: var(--text-primary);">{{ t('event_log') }}</h3>
-        <p style="margin: 0.25rem 0 0; color: var(--text-muted); font-size: 0.875rem;">
-            {{ t('view_and_filter_system_logs') }}
-        </p>
+<div class="page-header-block">
+    <div class="page-header-left">
+        <nav class="breadcrumb-nav">{{ t('dashboard') }} / {{ t('nav_logs') }}</nav>
+        <h1 class="page-header-title"><i class="fa-solid fa-clipboard-list"></i> {{ t('event_log') }}</h1>
+        <p class="page-header-sub">{{ t('view_and_filter_system_logs') }}</p>
     </div>
-    <div style="display: flex; gap: 0.5rem;">
+    <div class="page-header-right">
         <button class="btn btn-secondary" onclick="refreshLogs()"><i class="fa-solid fa-rotate"></i> {{ t('refresh') }}</button>
         <button class="btn btn-secondary" onclick="exportLogs()"><i class="fa-solid fa-calendar"></i> {{ t('export') }}</button>
     </div>

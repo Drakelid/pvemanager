@@ -14,19 +14,17 @@
 }
 </style>
 
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h3><i class="fa-solid fa-desktop"></i> {{ t('os_templates') }}</h3>
-        <div style="display: flex; gap: 0.5rem;" data-permission="templates.manage">
-            <button onclick="showAutoImportModal()" class="btn" style="background: var(--success); color: var(--text-on-success);"><i class="fa-solid fa-rotate"></i> {{ t('auto_import') }}</button>
-            <button onclick="showAddGroupModal()" class="btn" style="background: var(--primary); color: var(--text-on-primary);"><i class="fa-solid fa-folder"></i> {{ t('new_group') }}</button>
-            <button onclick="showAddTemplateModal()" class="btn btn-primary"><i class="fa-solid fa-plus"></i> {{ t('add_template') }}</button>
-        </div>
+<div class="page-header-block">
+    <div class="page-header-left">
+        <nav class="breadcrumb-nav">{{ t('dashboard') }} / {{ t('os_templates_management') }}</nav>
+        <h1 class="page-header-title"><i class="fa-solid fa-desktop"></i> {{ t('os_templates') }}</h1>
+        <p class="page-header-sub">{{ t('manage_os_templates_description') }}</p>
     </div>
-    
-    <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
-        {{ t('manage_os_templates_description') }}
-    </p>
+    <div class="page-header-right" data-permission="templates.manage">
+        <button onclick="showAutoImportModal()" class="btn btn-secondary"><i class="fa-solid fa-rotate"></i> {{ t('auto_import') }}</button>
+        <button onclick="showAddGroupModal()" class="btn btn-secondary"><i class="fa-solid fa-folder"></i> {{ t('new_group') }}</button>
+        <button onclick="showAddTemplateModal()" class="btn btn-primary"><i class="fa-solid fa-plus"></i> {{ t('add_template') }}</button>
+    </div>
 </div>
 
 <!-- Группы шаблонов -->
