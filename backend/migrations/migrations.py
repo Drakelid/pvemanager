@@ -64,6 +64,11 @@ DEFAULT_ROLES = [
             "roles.view": True,
             "roles.manage": True,
             "notifications.manage": True,
+            "backup:view": True,
+            "backup:create": True,
+            "backup:restore": True,
+            "backup:delete": True,
+            "backup:manage": True,
         }
     },
     {
@@ -103,6 +108,11 @@ DEFAULT_ROLES = [
             "roles.view": False,
             "roles.manage": False,
             "notifications.manage": True,
+            "backup:view": True,
+            "backup:create": True,
+            "backup:restore": True,
+            "backup:delete": False,
+            "backup:manage": False,
         }
     },
     {
@@ -984,6 +994,47 @@ def migrate_encrypt_passwords(conn):
         logger.info(f"Migration 14: Encrypted {count} VM cloud-init password(s)")
 
 
+def migrate_backup_jobs(conn):
+    """Migration 15: Create backup_jobs table for scheduled backups"""
+    logger.info("Migration 15: Creating backup_jobs table...")
+
+    if table_exists(conn, 'backup_jobs'):
+        logger.info("Table backup_jobs already exists, skipping")
+        return
+
+    conn.execute(text("""
+        CREATE TABLE backup_jobs (
+            id SERIAL PRIMARY KEY,
+            server_id INTEGER NOT NULL REFERENCES proxmox_servers(id) ON DELETE CASCADE,
+            node VARCHAR(100) NOT NULL,
+            vmids JSONB NOT NULL DEFAULT '[]',
+            storage VARCHAR(100) NOT NULL,
+            mode VARCHAR(20) NOT NULL DEFAULT 'snapshot',
+            compress VARCHAR(20) NOT NULL DEFAULT 'zstd',
+            notes VARCHAR(500),
+            keep_last INTEGER NOT NULL DEFAULT 3,
+            keep_daily INTEGER NOT NULL DEFAULT 7,
+            keep_weekly INTEGER NOT NULL DEFAULT 4,
+            keep_monthly INTEGER NOT NULL DEFAULT 6,
+            cron_expression VARCHAR(100) NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+            last_run_at TIMESTAMP WITH TIME ZONE,
+            last_status VARCHAR(20),
+            last_error TEXT,
+            last_upid VARCHAR(200)
+        )
+    """))
+
+    conn.execute(text("CREATE INDEX idx_backup_jobs_server ON backup_jobs(server_id)"))
+    conn.execute(text("CREATE INDEX idx_backup_jobs_enabled ON backup_jobs(enabled)"))
+    conn.execute(text("CREATE INDEX idx_backup_jobs_owner ON backup_jobs(owner_id)"))
+
+    logger.info("✓ backup_jobs table created")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1108,6 +1159,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Password encryption migration: {e}")
+                conn.rollback()
+
+            # Migration 15: Backup Jobs
+            try:
+                migrate_backup_jobs(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Backup jobs migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

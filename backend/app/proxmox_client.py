@@ -2895,6 +2895,181 @@ class ProxmoxClient:
             logger.error(f"Error getting snapshot {snapname} config: {e}")
             return None
 
+    # ==================== Storage Methods ====================
+
+    def get_storages(self) -> List[Dict]:
+        """Get all storages configured on this Proxmox cluster"""
+        if not self.proxmox:
+            return []
+        try:
+            storages = self.proxmox.storage.get()
+            return storages
+        except Exception as e:
+            logger.error(f"Error getting storages from {self.host}: {e}")
+            return []
+
+    def get_node_storages(self, node: str, content: str = None) -> List[Dict]:
+        """Get storages available on a specific node, optionally filtered by content type"""
+        if not self.proxmox:
+            return []
+        try:
+            params = {}
+            if content:
+                params['content'] = content
+            storages = self.proxmox.nodes(node).storage.get(**params)
+            return storages
+        except Exception as e:
+            logger.error(f"Error getting storages for node {node}: {e}")
+            return []
+
+    def create_storage(self, storage_id: str, storage_type: str, **kwargs) -> Dict:
+        """Create a new storage configuration"""
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+        try:
+            self.proxmox.storage.post(storage=storage_id, type=storage_type, **kwargs)
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Error creating storage {storage_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def update_storage(self, storage_id: str, **kwargs) -> Dict:
+        """Update storage configuration"""
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+        try:
+            self.proxmox.storage(storage_id).put(**kwargs)
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Error updating storage {storage_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def delete_storage(self, storage_id: str) -> Dict:
+        """Delete storage configuration"""
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+        try:
+            self.proxmox.storage(storage_id).delete()
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Error deleting storage {storage_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    # ==================== Backup Methods ====================
+
+    def list_backups(self, node: str, storage: str, vmid: int = None) -> List[Dict]:
+        """List backup files in a storage on a node"""
+        if not self.proxmox:
+            return []
+        try:
+            params = {"content": "backup"}
+            if vmid:
+                params["vmid"] = vmid
+            items = self.proxmox.nodes(node).storage(storage).content.get(**params)
+            return items
+        except Exception as e:
+            logger.error(f"Error listing backups on {node}/{storage}: {e}")
+            return []
+
+    def create_backup(self, node: str, vmid: int, storage: str,
+                      mode: str = "snapshot", compress: str = "zstd",
+                      remove: int = 1, notes: str = None) -> Dict:
+        """
+        Trigger vzdump backup for a VM/container.
+        Returns {"success": True, "upid": "..."} or {"success": False, "error": "..."}
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+        try:
+            params = {
+                "vmid": vmid,
+                "storage": storage,
+                "mode": mode,
+                "compress": compress,
+                "remove": remove,
+            }
+            if notes:
+                params["notes"] = notes
+            upid = self.proxmox.nodes(node).vzdump.post(**params)
+            return {"success": True, "upid": upid}
+        except Exception as e:
+            logger.error(f"Error creating backup for VM {vmid} on {node}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def get_task_status(self, node: str, upid: str) -> Dict:
+        """Get status of a Proxmox task by UPID"""
+        if not self.proxmox:
+            return {}
+        try:
+            status = self.proxmox.nodes(node).tasks(upid).status.get()
+            return status
+        except Exception as e:
+            logger.error(f"Error getting task status {upid}: {e}")
+            return {}
+
+    def get_task_log(self, node: str, upid: str, start: int = 0, limit: int = 500) -> List[Dict]:
+        """Get task log lines"""
+        if not self.proxmox:
+            return []
+        try:
+            log = self.proxmox.nodes(node).tasks(upid).log.get(start=start, limit=limit)
+            return log
+        except Exception as e:
+            logger.error(f"Error getting task log {upid}: {e}")
+            return []
+
+    def restore_vm(self, node: str, vmid: int, archive: str, storage: str,
+                   new_vmid: int = None, start: bool = False, unique: bool = True) -> Dict:
+        """
+        Restore a QEMU VM from backup.
+        archive: volume id like 'local:backup/vzdump-qemu-100-...'
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+        try:
+            params = {
+                "vmid": new_vmid if new_vmid else vmid,
+                "archive": archive,
+                "storage": storage,
+                "start": 1 if start else 0,
+                "unique": 1 if unique else 0,
+            }
+            upid = self.proxmox.nodes(node).qemu.post(**{"restore": 1, **params})
+            return {"success": True, "upid": upid}
+        except Exception as e:
+            logger.error(f"Error restoring VM {vmid} on {node}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def restore_lxc(self, node: str, vmid: int, archive: str, storage: str,
+                    new_vmid: int = None, start: bool = False) -> Dict:
+        """Restore an LXC container from backup"""
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+        try:
+            params = {
+                "vmid": new_vmid if new_vmid else vmid,
+                "ostemplate": archive,
+                "storage": storage,
+                "restore": 1,
+                "start": 1 if start else 0,
+            }
+            upid = self.proxmox.nodes(node).lxc.post(**params)
+            return {"success": True, "upid": upid}
+        except Exception as e:
+            logger.error(f"Error restoring LXC {vmid} on {node}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def delete_backup(self, node: str, storage: str, volid: str) -> Dict:
+        """Delete a specific backup file by its volume ID"""
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+        try:
+            self.proxmox.nodes(node).storage(storage).content(volid).delete()
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Error deleting backup {volid}: {e}")
+            return {"success": False, "error": str(e)}
+
 
 def get_proxmox_resources(host: str, user: str = "root@pam", 
                          password: str = None, token_name: str = None, 

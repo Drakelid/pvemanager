@@ -845,4 +845,77 @@ class VMSnapshotArchive(Base):
         return f"<VMSnapshotArchive(id={self.id}, vmid={self.vmid}, snapname='{self.snapname}')>"
 
 
+# ==================== Backup Models ====================
 
+class BackupJob(Base):
+    """Scheduled backup job"""
+    __tablename__ = "backup_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    server_id = Column(Integer, ForeignKey("proxmox_servers.id", ondelete="CASCADE"), nullable=False)
+    node = Column(String(100), nullable=False)
+    vmids = Column(JSON, nullable=False, default=[])  # list[int] or ["all"]
+    storage = Column(String(100), nullable=False)
+
+    # Backup settings
+    mode = Column(String(20), default="snapshot", nullable=False)    # snapshot|suspend|stop
+    compress = Column(String(20), default="zstd", nullable=False)    # 0|lzo|gzip|zstd
+    notes = Column(String(500), nullable=True)
+
+    # Pruning
+    keep_last = Column(Integer, default=3, nullable=False)
+    keep_daily = Column(Integer, default=7, nullable=False)
+    keep_weekly = Column(Integer, default=4, nullable=False)
+    keep_monthly = Column(Integer, default=6, nullable=False)
+
+    # Schedule
+    cron_expression = Column(String(100), nullable=False)  # "0 2 * * *"
+    enabled = Column(Boolean, default=True, nullable=False)
+
+    # Ownership
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Tracking
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    last_status = Column(String(20), nullable=True)   # success|failed|running
+    last_error = Column(Text, nullable=True)
+    last_upid = Column(String(200), nullable=True)    # Last Proxmox UPID
+
+    server = relationship("ProxmoxServer", backref="backup_jobs")
+    owner = relationship("User", foreign_keys=[owner_id])
+
+    __table_args__ = (
+        Index('idx_backup_jobs_server', 'server_id'),
+        Index('idx_backup_jobs_enabled', 'enabled'),
+        Index('idx_backup_jobs_owner', 'owner_id'),
+    )
+
+    def __repr__(self):
+        return f"<BackupJob(id={self.id}, server_id={self.server_id}, cron='{self.cron_expression}')>"
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'server_id': self.server_id,
+            'node': self.node,
+            'vmids': self.vmids,
+            'storage': self.storage,
+            'mode': self.mode,
+            'compress': self.compress,
+            'notes': self.notes,
+            'keep_last': self.keep_last,
+            'keep_daily': self.keep_daily,
+            'keep_weekly': self.keep_weekly,
+            'keep_monthly': self.keep_monthly,
+            'cron_expression': self.cron_expression,
+            'enabled': self.enabled,
+            'owner_id': self.owner_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_run_at': self.last_run_at.isoformat() if self.last_run_at else None,
+            'last_status': self.last_status,
+            'last_error': self.last_error,
+            'last_upid': self.last_upid,
+        }

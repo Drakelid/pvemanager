@@ -43,6 +43,14 @@ class I18nService:
             "ru": "Удалить",
             "en": "Delete"
         },
+        "saved": {
+            "ru": "Сохранено",
+            "en": "Saved"
+        },
+        "none": {
+            "ru": "Нет",
+            "en": "None"
+        },
         "total": {
             "ru": "Всего",
             "en": "Total"
@@ -452,9 +460,241 @@ class I18nService:
             "ru": "IPAM",
             "en": "IPAM"
         },
+        "nav_backups": {
+            "ru": "Резервные копии",
+            "en": "Backups"
+        },
         "nav_docker": {
             "ru": "Docker",
             "en": "Docker"
+        },
+        "backup_tab_backups": {
+            "ru": "Резервные копии",
+            "en": "Backups"
+        },
+        "backup_tab_storages": {
+            "ru": "Хранилища",
+            "en": "Storages"
+        },
+        "backup_tab_schedule": {
+            "ru": "Расписание",
+            "en": "Schedule"
+        },
+        "backup_list_title": {
+            "ru": "Список резервных копий",
+            "en": "Backup List"
+        },
+        "backup_storages_title": {
+            "ru": "Хранилища Proxmox",
+            "en": "Proxmox Storages"
+        },
+        "backup_jobs_title": {
+            "ru": "Задания резервного копирования",
+            "en": "Backup Jobs"
+        },
+        "backup_create": {
+            "ru": "Создать бэкап",
+            "en": "Create Backup"
+        },
+        "backup_create_title": {
+            "ru": "Создать резервную копию",
+            "en": "Create Backup"
+        },
+        "backup_restore_title": {
+            "ru": "Восстановить из резервной копии",
+            "en": "Restore from Backup"
+        },
+        "backup_restore_btn": {
+            "ru": "Восстановить",
+            "en": "Restore"
+        },
+        "backup_restore_started": {
+            "ru": "Восстановление запущено",
+            "en": "Restore started"
+        },
+        "backup_restore_storage": {
+            "ru": "Хранилище для дисков",
+            "en": "Target storage for disks"
+        },
+        "backup_restore_new_vmid": {
+            "ru": "Новый VMID",
+            "en": "New VMID"
+        },
+        "backup_restore_vmid_hint": {
+            "ru": "Оставьте пустым для использования оригинального",
+            "en": "Leave empty to use original VMID"
+        },
+        "backup_restore_start": {
+            "ru": "Запустить после восстановления",
+            "en": "Start after restore"
+        },
+        "backup_restore_unique": {
+            "ru": "Сгенерировать уникальный MAC",
+            "en": "Generate unique MAC"
+        },
+        "backup_add_storage": {
+            "ru": "Добавить хранилище",
+            "en": "Add Storage"
+        },
+        "backup_add_job": {
+            "ru": "Добавить задание",
+            "en": "Add Job"
+        },
+        "backup_edit_job": {
+            "ru": "Редактировать задание",
+            "en": "Edit Job"
+        },
+        "backup_storage_id": {
+            "ru": "Хранилище",
+            "en": "Storage"
+        },
+        "backup_storage_type": {
+            "ru": "Тип хранилища",
+            "en": "Storage Type"
+        },
+        "backup_storage_content": {
+            "ru": "Типы контента",
+            "en": "Content Types"
+        },
+        "backup_storage_shared": {
+            "ru": "Общее",
+            "en": "Shared"
+        },
+        "backup_storage_usage": {
+            "ru": "Использование",
+            "en": "Usage"
+        },
+        "backup_storage_path": {
+            "ru": "Путь",
+            "en": "Path"
+        },
+        "backup_storage_delete_confirm": {
+            "ru": "Удалить хранилище из конфигурации Proxmox?",
+            "en": "Remove this storage from Proxmox configuration?"
+        },
+        "backup_storage_deleted": {
+            "ru": "Хранилище удалено",
+            "en": "Storage deleted"
+        },
+        "backup_storage_added": {
+            "ru": "Хранилище добавлено",
+            "en": "Storage added"
+        },
+        "backup_col_type": {
+            "ru": "Тип ВМ",
+            "en": "VM Type"
+        },
+        "backup_col_filename": {
+            "ru": "Файл",
+            "en": "File"
+        },
+        "backup_col_size": {
+            "ru": "Размер",
+            "en": "Size"
+        },
+        "backup_col_date": {
+            "ru": "Дата",
+            "en": "Date"
+        },
+        "backup_col_format": {
+            "ru": "Формат",
+            "en": "Format"
+        },
+        "backup_mode": {
+            "ru": "Режим",
+            "en": "Mode"
+        },
+        "backup_compress": {
+            "ru": "Сжатие",
+            "en": "Compression"
+        },
+        "backup_keep": {
+            "ru": "Хранить N последних",
+            "en": "Keep last N backups"
+        },
+        "backup_keep_hint": {
+            "ru": "0 — не удалять старые резервные копии",
+            "en": "0 — do not auto-remove old backups"
+        },
+        "backup_notes": {
+            "ru": "Заметка",
+            "en": "Notes"
+        },
+        "backup_notes_placeholder": {
+            "ru": "Описание резервной копии",
+            "en": "Backup description"
+        },
+        "backup_started": {
+            "ru": "Резервное копирование запущено",
+            "en": "Backup started"
+        },
+        "backup_deleted": {
+            "ru": "Резервная копия удалена",
+            "en": "Backup deleted"
+        },
+        "backup_delete_confirm": {
+            "ru": "Удалить резервную копию? Это действие необратимо.",
+            "en": "Delete this backup? This action cannot be undone."
+        },
+        "backup_empty": {
+            "ru": "Резервных копий нет",
+            "en": "No backups found"
+        },
+        "backup_no_storages": {
+            "ru": "Нет доступных хранилищ",
+            "en": "No storages available"
+        },
+        "backup_no_jobs": {
+            "ru": "Нет заданий резервного копирования",
+            "en": "No backup jobs configured"
+        },
+        "backup_task_log": {
+            "ru": "Лог задания",
+            "en": "Task Log"
+        },
+        "backup_job_last_run": {
+            "ru": "Последний запуск",
+            "en": "Last Run"
+        },
+        "backup_job_enabled": {
+            "ru": "Задание активно",
+            "en": "Job enabled"
+        },
+        "backup_job_enable": {
+            "ru": "Включить задание",
+            "en": "Enable job"
+        },
+        "backup_job_disable": {
+            "ru": "Отключить задание",
+            "en": "Disable job"
+        },
+        "backup_job_triggered": {
+            "ru": "Задание запущено",
+            "en": "Job triggered"
+        },
+        "backup_job_delete_confirm": {
+            "ru": "Удалить задание расписания?",
+            "en": "Delete this backup job?"
+        },
+        "backup_run_now": {
+            "ru": "Запустить сейчас",
+            "en": "Run now"
+        },
+        "backup_vmids_hint": {
+            "ru": "Список через запятую или 'all' для всех ВМ",
+            "en": "Comma-separated list or 'all' for all VMs"
+        },
+        "backup_cron_hint": {
+            "ru": "Пример: '0 2 * * *' — каждую ночь в 02:00 UTC",
+            "en": "Example: '0 2 * * *' — every night at 02:00 UTC"
+        },
+        "select_storage": {
+            "ru": "Выберите хранилище",
+            "en": "Select storage"
+        },
+        "select_server_and_storage": {
+            "ru": "Выберите сервер и хранилище",
+            "en": "Select a server and storage"
         },
         "nav_logs": {
             "ru": "Логи",
@@ -2007,9 +2247,241 @@ class I18nService:
             "ru": "IPAM",
             "en": "IPAM"
         },
+        "nav_backups": {
+            "ru": "Резервные копии",
+            "en": "Backups"
+        },
         "nav_docker": {
             "ru": "Docker",
             "en": "Docker"
+        },
+        "backup_tab_backups": {
+            "ru": "Резервные копии",
+            "en": "Backups"
+        },
+        "backup_tab_storages": {
+            "ru": "Хранилища",
+            "en": "Storages"
+        },
+        "backup_tab_schedule": {
+            "ru": "Расписание",
+            "en": "Schedule"
+        },
+        "backup_list_title": {
+            "ru": "Список резервных копий",
+            "en": "Backup List"
+        },
+        "backup_storages_title": {
+            "ru": "Хранилища Proxmox",
+            "en": "Proxmox Storages"
+        },
+        "backup_jobs_title": {
+            "ru": "Задания резервного копирования",
+            "en": "Backup Jobs"
+        },
+        "backup_create": {
+            "ru": "Создать бэкап",
+            "en": "Create Backup"
+        },
+        "backup_create_title": {
+            "ru": "Создать резервную копию",
+            "en": "Create Backup"
+        },
+        "backup_restore_title": {
+            "ru": "Восстановить из резервной копии",
+            "en": "Restore from Backup"
+        },
+        "backup_restore_btn": {
+            "ru": "Восстановить",
+            "en": "Restore"
+        },
+        "backup_restore_started": {
+            "ru": "Восстановление запущено",
+            "en": "Restore started"
+        },
+        "backup_restore_storage": {
+            "ru": "Хранилище для дисков",
+            "en": "Target storage for disks"
+        },
+        "backup_restore_new_vmid": {
+            "ru": "Новый VMID",
+            "en": "New VMID"
+        },
+        "backup_restore_vmid_hint": {
+            "ru": "Оставьте пустым для использования оригинального",
+            "en": "Leave empty to use original VMID"
+        },
+        "backup_restore_start": {
+            "ru": "Запустить после восстановления",
+            "en": "Start after restore"
+        },
+        "backup_restore_unique": {
+            "ru": "Сгенерировать уникальный MAC",
+            "en": "Generate unique MAC"
+        },
+        "backup_add_storage": {
+            "ru": "Добавить хранилище",
+            "en": "Add Storage"
+        },
+        "backup_add_job": {
+            "ru": "Добавить задание",
+            "en": "Add Job"
+        },
+        "backup_edit_job": {
+            "ru": "Редактировать задание",
+            "en": "Edit Job"
+        },
+        "backup_storage_id": {
+            "ru": "Хранилище",
+            "en": "Storage"
+        },
+        "backup_storage_type": {
+            "ru": "Тип хранилища",
+            "en": "Storage Type"
+        },
+        "backup_storage_content": {
+            "ru": "Типы контента",
+            "en": "Content Types"
+        },
+        "backup_storage_shared": {
+            "ru": "Общее",
+            "en": "Shared"
+        },
+        "backup_storage_usage": {
+            "ru": "Использование",
+            "en": "Usage"
+        },
+        "backup_storage_path": {
+            "ru": "Путь",
+            "en": "Path"
+        },
+        "backup_storage_delete_confirm": {
+            "ru": "Удалить хранилище из конфигурации Proxmox?",
+            "en": "Remove this storage from Proxmox configuration?"
+        },
+        "backup_storage_deleted": {
+            "ru": "Хранилище удалено",
+            "en": "Storage deleted"
+        },
+        "backup_storage_added": {
+            "ru": "Хранилище добавлено",
+            "en": "Storage added"
+        },
+        "backup_col_type": {
+            "ru": "Тип ВМ",
+            "en": "VM Type"
+        },
+        "backup_col_filename": {
+            "ru": "Файл",
+            "en": "File"
+        },
+        "backup_col_size": {
+            "ru": "Размер",
+            "en": "Size"
+        },
+        "backup_col_date": {
+            "ru": "Дата",
+            "en": "Date"
+        },
+        "backup_col_format": {
+            "ru": "Формат",
+            "en": "Format"
+        },
+        "backup_mode": {
+            "ru": "Режим",
+            "en": "Mode"
+        },
+        "backup_compress": {
+            "ru": "Сжатие",
+            "en": "Compression"
+        },
+        "backup_keep": {
+            "ru": "Хранить N последних",
+            "en": "Keep last N backups"
+        },
+        "backup_keep_hint": {
+            "ru": "0 — не удалять старые резервные копии",
+            "en": "0 — do not auto-remove old backups"
+        },
+        "backup_notes": {
+            "ru": "Заметка",
+            "en": "Notes"
+        },
+        "backup_notes_placeholder": {
+            "ru": "Описание резервной копии",
+            "en": "Backup description"
+        },
+        "backup_started": {
+            "ru": "Резервное копирование запущено",
+            "en": "Backup started"
+        },
+        "backup_deleted": {
+            "ru": "Резервная копия удалена",
+            "en": "Backup deleted"
+        },
+        "backup_delete_confirm": {
+            "ru": "Удалить резервную копию? Это действие необратимо.",
+            "en": "Delete this backup? This action cannot be undone."
+        },
+        "backup_empty": {
+            "ru": "Резервных копий нет",
+            "en": "No backups found"
+        },
+        "backup_no_storages": {
+            "ru": "Нет доступных хранилищ",
+            "en": "No storages available"
+        },
+        "backup_no_jobs": {
+            "ru": "Нет заданий резервного копирования",
+            "en": "No backup jobs configured"
+        },
+        "backup_task_log": {
+            "ru": "Лог задания",
+            "en": "Task Log"
+        },
+        "backup_job_last_run": {
+            "ru": "Последний запуск",
+            "en": "Last Run"
+        },
+        "backup_job_enabled": {
+            "ru": "Задание активно",
+            "en": "Job enabled"
+        },
+        "backup_job_enable": {
+            "ru": "Включить задание",
+            "en": "Enable job"
+        },
+        "backup_job_disable": {
+            "ru": "Отключить задание",
+            "en": "Disable job"
+        },
+        "backup_job_triggered": {
+            "ru": "Задание запущено",
+            "en": "Job triggered"
+        },
+        "backup_job_delete_confirm": {
+            "ru": "Удалить задание расписания?",
+            "en": "Delete this backup job?"
+        },
+        "backup_run_now": {
+            "ru": "Запустить сейчас",
+            "en": "Run now"
+        },
+        "backup_vmids_hint": {
+            "ru": "Список через запятую или 'all' для всех ВМ",
+            "en": "Comma-separated list or 'all' for all VMs"
+        },
+        "backup_cron_hint": {
+            "ru": "Пример: '0 2 * * *' — каждую ночь в 02:00 UTC",
+            "en": "Example: '0 2 * * *' — every night at 02:00 UTC"
+        },
+        "select_storage": {
+            "ru": "Выберите хранилище",
+            "en": "Select storage"
+        },
+        "select_server_and_storage": {
+            "ru": "Выберите сервер и хранилище",
+            "en": "Select a server and storage"
         },
         "nav_logs": {
             "ru": "Логи",

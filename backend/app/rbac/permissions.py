@@ -442,6 +442,13 @@ def _create_permissions() -> PermissionRegistry:
         requires=["backup:view"]
     ))
     registry.register(Permission(
+        resource="backup", action="restore",
+        display_name="Restore Backups",
+        description="Restore VM/LXC from backups",
+        category="Backups",
+        requires=["backup:view"]
+    ))
+    registry.register(Permission(
         resource="backup", action="delete",
         display_name="Delete Backups",
         description="Delete backups",
@@ -450,10 +457,10 @@ def _create_permissions() -> PermissionRegistry:
     ))
     registry.register(Permission(
         resource="backup", action="manage",
-        display_name="Restore Backups",
-        description="Restore from backups",
+        display_name="Manage Backups",
+        description="Manage storages and scheduled backup jobs",
         category="Backups",
-        requires=["backup:view", "vm:create"]
+        requires=["backup:view"]
     ))
     
     # IPAM permissions

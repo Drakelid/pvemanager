@@ -122,10 +122,19 @@ async def lifespan(app: FastAPI):
         logger.info("Background monitoring worker started")
     except Exception as e:
         logger.warning(f"Background worker startup failed: {e}")
-    
+
+    # Start backup scheduler
+    backup_scheduler = None
+    try:
+        from .services.backup_scheduler import start_backup_scheduler
+        backup_scheduler = start_backup_scheduler()
+        logger.info("Backup scheduler started")
+    except Exception as e:
+        logger.warning(f"Backup scheduler startup failed: {e}")
+
     logger.info("Application startup complete")
     yield
-    
+
     # Cleanup
     try:
         if 'scheduler' in locals():
@@ -133,6 +142,13 @@ async def lifespan(app: FastAPI):
             logger.info("Background worker stopped")
     except Exception as e:
         logger.warning(f"Background worker shutdown failed: {e}")
+
+    try:
+        if backup_scheduler:
+            backup_scheduler.shutdown()
+            logger.info("Backup scheduler stopped")
+    except Exception as e:
+        logger.warning(f"Backup scheduler shutdown failed: {e}")
     
     logger.info("Application shutdown")
 
@@ -218,6 +234,12 @@ def create_app() -> FastAPI:
     @app.get("/", include_in_schema=False)
     async def root():
         return RedirectResponse(url="/dashboard", status_code=302)
+
+    # Backup Storage page
+    @app.get("/backups", include_in_schema=False)
+    async def backups_page(request: Request):
+        """Backup storage management page"""
+        return RedirectResponse(url="/proxmox/api/backups/page", status_code=302)
 
     # Legacy redirect for old /servers URL
     @app.get("/servers", include_in_schema=False)
