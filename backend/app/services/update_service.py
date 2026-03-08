@@ -148,7 +148,7 @@ def get_repository_url_from_settings():
         logger.warning(f"Could not get repository URL from settings: {e}")
     
     # Default fallback
-    return "https://git.tzim.uz/dilshod/pve_manager"
+    return "https://github.com/markmorado/pvemanager"
 
 
 def parse_repo_url(url: str) -> tuple:
