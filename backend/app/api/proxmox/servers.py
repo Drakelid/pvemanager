@@ -403,14 +403,19 @@ def get_server_cluster_info(
             })
         
         is_cluster = client.is_cluster()
-        nodes = client.get_nodes() if is_cluster else []
-        
+        nodes = client.get_nodes()
+        node_names = [n.get('node') for n in nodes if n.get('node')]
+        # Fallback: если get_nodes() вернул пустой список (например, нет прав),
+        # используем hostname сервера как имя ноды
+        if not node_names:
+            node_names = [server.hostname]
+
         return JSONResponse(content={
             "server_id": server_id,
             "server_name": server.name,
             "is_cluster": is_cluster,
-            "node_count": len(nodes),
-            "nodes": [n.get('node') for n in nodes] if nodes else []
+            "node_count": len(node_names),
+            "nodes": node_names
         })
     except Exception as e:
         logger.error(f"Error checking cluster info for server {server_id}: {e}")

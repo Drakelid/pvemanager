@@ -5,8 +5,26 @@
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h3><i class="fa-solid fa-computer"></i> {{ t('proxmox_servers') }}</h3>
-        <div style="display: flex; gap: 0.5rem;" data-permission="proxmox.servers.add">
-            <button onclick="showAddServerModal()" class="btn btn-primary"><i class="fa-solid fa-plus"></i> {{ t('add_server') }}</button>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <div data-permission="proxmox.cluster.manage" style="position: relative;">
+                <button onclick="toggleClusterDropdown(event)" id="clusterMenuBtn" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary);">
+                    <i class="fa-solid fa-network-wired"></i> Кластер <i class="fa-solid fa-caret-down" style="font-size: 0.75rem; margin-left: 2px;"></i>
+                </button>
+                <div id="clusterDropdown" class="cluster-dropdown" style="display: none;">
+                    <button onclick="showCreateClusterModal(); closeClusterDropdown();" class="cluster-dropdown-item">
+                        <i class="fa-solid fa-circle-plus" style="color: var(--success);"></i> Создать кластер
+                    </button>
+                    <button onclick="showJoinClusterModal(); closeClusterDropdown();" class="cluster-dropdown-item">
+                        <i class="fa-solid fa-link" style="color: var(--info);"></i> Присоединить к кластеру
+                    </button>
+                    <button onclick="showEjectNodeModal(); closeClusterDropdown();" class="cluster-dropdown-item">
+                        <i class="fa-solid fa-right-from-bracket" style="color: var(--danger);"></i> Исключить ноду
+                    </button>
+                </div>
+            </div>
+            <div data-permission="proxmox.servers.add">
+                <button onclick="showAddServerModal()" class="btn btn-primary"><i class="fa-solid fa-plus"></i> {{ t('add_server') }}</button>
+            </div>
         </div>
     </div>
     
@@ -41,6 +59,9 @@
                 <tr id="server-row-{{ server.id }}" data-server-id="{{ server.id }}" data-name="{{ server.name|lower }}" data-ip="{{ server.ip_address }}" data-node="{{ server.hostname or '' }}" data-vms="0" data-lxc="0" data-status="loading">
                     <td>
                         <div style="font-weight: 600; color: var(--text-primary);">{{ server.name }}</div>
+                        {% if server.cluster_name %}
+                        <span class="cluster-badge"><i class="fa-solid fa-network-wired"></i> {{ server.cluster_name }}</span>
+                        {% endif %}
                         {% if server.description %}
                         <div style="font-size: 0.75rem; color: var(--text-muted);">{{ server.description }}</div>
                         {% endif %}
@@ -172,6 +193,52 @@
 .status-badge.status-loading {
     background: var(--bg-surface-hover);
     color: var(--text-muted);
+}
+
+.cluster-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--info);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 0.375rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.125rem 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.cluster-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    min-width: 215px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    z-index: 200;
+    overflow: hidden;
+}
+
+.cluster-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    padding: 0.7rem 1rem;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+    font-size: 0.875rem;
+    transition: background 0.15s;
+}
+
+.cluster-dropdown-item:hover {
+    background: var(--bg-hover);
 }
 </style>
 
@@ -338,6 +405,245 @@
             <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
                 <button type="button" onclick="closeEditServerModal()" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary);">{{ t('cancel') }}</button>
                 <button type="submit" class="btn btn-primary">{{ t('save') }}</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== Cluster: Create Cluster Modal ==================== -->
+<div id="createClusterModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
+    <div class="card" style="max-width: 520px; width: 90%; max-height: 90vh; overflow-y: auto; margin: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3><i class="fa-solid fa-network-wired" style="color: var(--success);"></i> Создать кластер Proxmox</h3>
+            <button onclick="closeCreateClusterModal()" style="background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">&times;</button>
+        </div>
+
+        <form id="createClusterForm" onsubmit="submitCreateCluster(event)">
+            <div style="margin-bottom: 1rem;">
+                <label>Сервер (нода для создания кластера) *</label>
+                <select id="createClusterServerId" name="server_id" required style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem;">
+                    <option value="">-- Выберите сервер --</option>
+                    {% for s in proxmox_servers %}{% if not s.cluster_name %}
+                    <option value="{{ s.id }}">{{ s.name }} ({{ s.ip_address }})</option>
+                    {% endif %}{% endfor %}
+                </select>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <label>Имя кластера *</label>
+                <input type="text" id="createClusterName" name="cluster_name" required
+                       placeholder="mycluster" pattern="[a-zA-Z][a-zA-Z0-9\-]{0,14}"
+                       title="Начинается с буквы, буквы/цифры/дефис, макс 15 символов"
+                       style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem; box-sizing: border-box;">
+                <small style="color: var(--text-muted);">Начинается с буквы, только буквы/цифры/дефис, макс. 15 символов</small>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <label>Corosync link0 IP <span style="color: var(--text-muted);">(опционально)</span></label>
+                <input type="text" id="createClusterLink0" name="link0_ip"
+                       placeholder="192.168.1.101 (по умолчанию — IP сервера)"
+                       style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem; box-sizing: border-box;">
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <label>Пароль root@pam <span style="color: var(--text-muted);">(если не сохранён в панели)</span></label>
+                <input type="password" id="createClusterRootpw" name="rootpw"
+                       placeholder="Пароль для кластерных операций"
+                       style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem; box-sizing: border-box;">
+            </div>
+
+            {% if proxmox_servers | length <= 2 %}
+            <div style="background: rgba(234, 179, 8, 0.1); border: 1px solid var(--warning); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; align-items: start; gap: 0.75rem;">
+                    <i class="fa-solid fa-triangle-exclamation" style="color: var(--warning); margin-top: 2px;"></i>
+                    <div style="font-size: 0.875rem; color: var(--text-primary);">
+                        <strong>Кластер из 2 нод</strong><br>
+                        В 2-нодовых кластерах нет чёткого кворума — при отказе одной ноды оставшаяся не сможет запускать VM.
+                        Рекомендуется добавить 3-ю ноду или настроить <strong>QDevice</strong> (<code>pvecm qdevice setup</code>).
+                        Временное восстановление: <code>pvecm expected 1</code>.
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div id="createClusterStatus" style="display: none; margin-bottom: 1rem; padding: 1rem; border-radius: 0.5rem;"></div>
+
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button type="button" onclick="closeCreateClusterModal()" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary);">Отмена</button>
+                <button type="submit" id="createClusterBtn" class="btn" style="background: var(--success); color: var(--text-on-success);">
+                    <i class="fa-solid fa-circle-plus"></i> Создать кластер
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== Cluster: Join Cluster Modal (4-step) ==================== -->
+<div id="joinClusterModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
+    <div class="card" style="max-width: 580px; width: 90%; max-height: 90vh; overflow-y: auto; margin: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <div>
+                <h3 style="margin: 0;"><i class="fa-solid fa-link" style="color: var(--info);"></i> Присоединить к кластеру</h3>
+                <small id="joinStepTitle" style="color: var(--text-muted);">Шаг 1 из 4: Выбор нод</small>
+            </div>
+            <button onclick="closeJoinClusterModal()" style="background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">&times;</button>
+        </div>
+
+        <!-- Warning: no cluster servers -->
+        <div id="joinNoClusterWarning" style="display: none; background: rgba(234, 179, 8, 0.1); border: 1px solid var(--warning); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.875rem;">
+            <i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i>
+            Нет серверов с активным кластером. Сначала <strong>создайте кластер</strong> на одном из серверов.
+        </div>
+
+        <!-- Step 1: Select nodes -->
+        <div id="joinStep1">
+            <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid var(--info); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1.2rem; font-size: 0.875rem;">
+                <i class="fa-solid fa-circle-info" style="color: var(--info);"></i>
+                Выберите ноду для добавления в кластер и любую существующую ноду кластера.
+            </div>
+            <form id="joinStep1Form" onsubmit="submitJoinStep1(event)">
+                <div style="margin-bottom: 1rem;">
+                    <label>Добавляемая нода (standalone) *</label>
+                    <select id="joinNodeServerId" required style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem;">
+                        <option value="">-- Выберите ноду для добавления --</option>
+                        {% for s in proxmox_servers %}{% if not s.cluster_name %}
+                        <option value="{{ s.id }}">{{ s.name }} ({{ s.ip_address }})</option>
+                        {% endif %}{% endfor %}
+                    </select>
+                </div>
+                <div style="margin-bottom: 1.5rem;">
+                    <label>Кластерная нода (источник join-информации) *</label>
+                    <select id="joinClusterServerId" required style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem;">
+                        <option value="">-- Выберите ноду кластера --</option>
+                        {% for s in proxmox_servers %}{% if s.cluster_name %}
+                        <option value="{{ s.id }}" data-cluster="{{ s.cluster_name }}">{{ s.name }} (кластер: {{ s.cluster_name }})</option>
+                        {% endif %}{% endfor %}
+                    </select>
+                </div>
+                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button type="button" onclick="closeJoinClusterModal()" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary);">Отмена</button>
+                    <button type="submit" id="joinStep1Btn" class="btn btn-primary">Далее <i class="fa-solid fa-arrow-right"></i></button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Step 2: Pre-check results -->
+        <div id="joinStep2" style="display: none;">
+            <div id="joinPreCheckResult"></div>
+            <div id="joinPrepareSection" style="display: none; margin-top: 0.5rem;">
+                <div style="margin-bottom: 1rem;">
+                    <label>Хранилище для резервных копий *</label>
+                    <select id="joinBackupStorage" style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem;">
+                        <option value="">-- Загрузка хранилищ... --</option>
+                    </select>
+                    <small style="color: var(--text-muted);">Рекомендуется общее хранилище (NFS, Ceph) — доступное в будущем из кластера.</small>
+                </div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
+                <button onclick="showJoinStep(1)" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary);">
+                    <i class="fa-solid fa-arrow-left"></i> Назад
+                </button>
+                <button id="joinSkipToStep4Btn" onclick="joinSkipToFinalStep()" class="btn btn-primary" style="display: none;">
+                    Продолжить <i class="fa-solid fa-arrow-right"></i>
+                </button>
+                <button id="joinStep2PrepBtn" onclick="submitJoinPrepare()" class="btn" style="display: none; background: var(--warning); color: var(--bg-primary);">
+                    <i class="fa-solid fa-hard-drive"></i> Бэкап и очистка ноды
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 3: Backup progress -->
+        <div id="joinStep3" style="display: none;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">
+                <i class="fa-solid fa-hard-drive"></i>
+                Резервное копирование и очистка гестов перед присоединением к кластеру
+            </div>
+            <div id="joinPrepResult"></div>
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
+                <button id="joinPrepContinueBtn" onclick="showJoinStep(4)" class="btn btn-primary" style="display: none;">
+                    Продолжить <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 4: Final join -->
+        <div id="joinStep4" style="display: none;">
+            <div style="background: rgba(234, 179, 8, 0.1); border: 1px solid var(--warning); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1.2rem; font-size: 0.875rem;">
+                <i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i>
+                После присоединения нода синхронизирует конфигурацию с кластером. Операция необратима.
+            </div>
+            <form onsubmit="submitJoinFinal(event)">
+                <div style="margin-bottom: 1rem;">
+                    <label>Пароль root@pam присоединяемой ноды *</label>
+                    <input type="password" id="joinRootpw" required placeholder="root-пароль"
+                           style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem; box-sizing: border-box;">
+                </div>
+                <div style="margin-bottom: 1.5rem;">
+                    <label>Corosync link0 IP <span style="color: var(--text-muted);">(опционально)</span></label>
+                    <input type="text" id="joinLink0" placeholder="IP присоединяемой ноды для corosync"
+                           style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem; box-sizing: border-box;">
+                </div>
+                <div id="joinFinalStatus" style="display: none; margin-bottom: 1rem; padding: 1rem; border-radius: 0.5rem;"></div>
+                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button type="button"
+                            onclick="showJoinStep(joinState.preCheck && joinState.preCheck.guests_count > 0 ? 3 : 2)"
+                            class="btn" style="background: var(--bg-tertiary); color: var(--text-primary);">
+                        <i class="fa-solid fa-arrow-left"></i> Назад
+                    </button>
+                    <button type="submit" id="joinFinalBtn" class="btn" style="background: var(--success); color: var(--text-on-success);">
+                        <i class="fa-solid fa-link"></i> Присоединить к кластеру
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== Cluster: Eject Node Modal ==================== -->
+<div id="ejectNodeModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
+    <div class="card" style="max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; margin: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3><i class="fa-solid fa-right-from-bracket" style="color: var(--danger);"></i> Исключить ноду из кластера</h3>
+            <button onclick="closeEjectNodeModal()" style="background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">&times;</button>
+        </div>
+
+        <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.875rem;">
+            <i class="fa-solid fa-triangle-exclamation" style="color: var(--danger);"></i>
+            <strong> Внимание!</strong> Исключаемая нода должна быть <strong>полностью выключена</strong> до запуска операции.
+            После исключения на ней необходимо вручную сбросить конфигурацию кластера.
+        </div>
+
+        <form id="ejectNodeForm" onsubmit="submitEjectNode(event)">
+            <div style="margin-bottom: 1rem;">
+                <label>Управляющий сервер (остаётся в кластере) *</label>
+                <select id="ejectFromServerId" required style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem;">
+                    <option value="">-- Выберите кластерный сервер --</option>
+                    {% for s in proxmox_servers %}{% if s.cluster_name %}
+                    <option value="{{ s.id }}" data-cluster="{{ s.cluster_name }}">{{ s.name }} (кластер: {{ s.cluster_name }})</option>
+                    {% endif %}{% endfor %}
+                </select>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <label>Hostname ноды для исключения *</label>
+                <input type="text" id="ejectNodeName" required placeholder="pve2 (hostname как в pvecm status)"
+                       style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem; box-sizing: border-box;">
+                <small style="color: var(--text-muted);">Hostname как в <code>pvecm status</code>, не IP-адрес</small>
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <label>Пароль root@pam <span style="color: var(--text-muted);">(для SSH fallback)</span></label>
+                <input type="password" id="ejectRootpw" placeholder="Используется при ошибке REST API"
+                       style="width: 100%; padding: 0.6rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.5rem; box-sizing: border-box;">
+            </div>
+
+            <div id="ejectNodeStatus" style="display: none; margin-bottom: 1rem; padding: 1rem; border-radius: 0.5rem;"></div>
+
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button type="button" onclick="closeEjectNodeModal()" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary);">Отмена</button>
+                <button type="submit" id="ejectNodeBtn" class="btn" style="background: var(--danger); color: white;">
+                    <i class="fa-solid fa-right-from-bracket"></i> Исключить ноду
+                </button>
             </div>
         </form>
     </div>
@@ -2135,6 +2441,464 @@ function closeCreateVMModal() {
     document.getElementById('createVMModal').style.display = 'none';
     const status = document.getElementById('createVMStatus');
     if (status) status.style.display = 'none';
+}
+
+// ==================== Cluster Dropdown ====================
+
+function toggleClusterDropdown(event) {
+    event.stopPropagation();
+    const dropdown = document.getElementById('clusterDropdown');
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+}
+
+function closeClusterDropdown() {
+    const dropdown = document.getElementById('clusterDropdown');
+    if (dropdown) dropdown.style.display = 'none';
+}
+
+document.addEventListener('click', function(e) {
+    const btn = document.getElementById('clusterMenuBtn');
+    const dropdown = document.getElementById('clusterDropdown');
+    if (dropdown && btn && !btn.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = 'none';
+    }
+});
+
+// ==================== Create Cluster ====================
+
+function showCreateClusterModal() {
+    document.getElementById('createClusterModal').style.display = 'flex';
+    document.getElementById('createClusterStatus').style.display = 'none';
+}
+
+function closeCreateClusterModal() {
+    document.getElementById('createClusterModal').style.display = 'none';
+    document.getElementById('createClusterForm').reset();
+    document.getElementById('createClusterStatus').style.display = 'none';
+}
+
+async function submitCreateCluster(event) {
+    event.preventDefault();
+
+    const btn = document.getElementById('createClusterBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Создание...';
+    btn.disabled = true;
+
+    const data = {
+        server_id: parseInt(document.getElementById('createClusterServerId').value),
+        cluster_name: document.getElementById('createClusterName').value.trim(),
+        link0_ip: document.getElementById('createClusterLink0').value.trim() || null,
+        rootpw: document.getElementById('createClusterRootpw').value || null,
+    };
+
+    const statusEl = document.getElementById('createClusterStatus');
+    statusEl.style.display = 'block';
+    statusEl.style.background = 'var(--bg-tertiary)';
+    statusEl.style.border = '1px solid var(--border-color)';
+    statusEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Создание кластера...';
+
+    try {
+        const response = await fetchWithAuth('/proxmox/api/cluster/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            statusEl.style.background = 'var(--success-dark)';
+            statusEl.style.border = '1px solid var(--success)';
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color: var(--success);"></i>
+                <strong>Кластер "${result.cluster_name}" создаётся!</strong><br>
+                <span style="font-size: 0.875rem; color: var(--text-secondary);">Сервер: ${result.server_name}</span>
+                ${result.upid ? `<br><small style="color: var(--text-muted);">UPID: <code>${result.upid}</code></small>` : ''}`;
+            setTimeout(() => { closeCreateClusterModal(); window.location.reload(); }, 2500);
+        } else {
+            statusEl.style.background = 'var(--danger-dark)';
+            statusEl.style.border = '1px solid var(--danger)';
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i>
+                ${typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)}`;
+        }
+    } catch (error) {
+        statusEl.style.background = 'var(--danger-dark)';
+        statusEl.style.border = '1px solid var(--danger)';
+        statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i> Ошибка: ${error.message}`;
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+// ==================== Join Cluster (4-step wizard) ====================
+
+let joinState = {};
+
+function showJoinClusterModal() {
+    joinState = {};
+    document.getElementById('joinClusterModal').style.display = 'flex';
+    document.getElementById('joinPreCheckResult').innerHTML = '';
+    document.getElementById('joinPrepResult').innerHTML = '';
+    document.getElementById('joinFinalStatus').style.display = 'none';
+    document.getElementById('joinStep1Form').reset();
+    showJoinStep(1);
+
+    // Warn if no cluster servers available
+    const clusterSelect = document.getElementById('joinClusterServerId');
+    const hasCluster = clusterSelect.querySelectorAll('option[value]:not([value=""])').length > 0;
+    document.getElementById('joinNoClusterWarning').style.display = hasCluster ? 'none' : 'block';
+}
+
+function closeJoinClusterModal() {
+    document.getElementById('joinClusterModal').style.display = 'none';
+    joinState = {};
+}
+
+function showJoinStep(step) {
+    [1, 2, 3, 4].forEach(s => {
+        const el = document.getElementById(`joinStep${s}`);
+        if (el) el.style.display = s === step ? 'block' : 'none';
+    });
+    const titles = ['', 'Шаг 1 из 4: Выбор нод', 'Шаг 2 из 4: Проверка ноды', 'Шаг 3 из 4: Подготовка', 'Шаг 4 из 4: Присоединение'];
+    document.getElementById('joinStepTitle').textContent = titles[step] || `Шаг ${step} из 4`;
+}
+
+async function submitJoinStep1(event) {
+    event.preventDefault();
+
+    const nodeServerId = parseInt(document.getElementById('joinNodeServerId').value);
+    const clusterServerId = parseInt(document.getElementById('joinClusterServerId').value);
+
+    if (!nodeServerId || !clusterServerId) {
+        showToast('error', 'Ошибка', 'Выберите оба сервера'); return;
+    }
+    if (nodeServerId === clusterServerId) {
+        showToast('error', 'Ошибка', 'Нда для добавления и кластерная нода должны быть разными'); return;
+    }
+
+    joinState.nodeServerId = nodeServerId;
+    joinState.clusterServerId = clusterServerId;
+
+    const btn = document.getElementById('joinStep1Btn');
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Проверка...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetchWithAuth(`/proxmox/api/cluster/${nodeServerId}/pre-join-check`);
+        const data = await response.json();
+
+        if (!response.ok) {
+            showToast('error', 'Ошибка', typeof data.detail === 'string' ? data.detail : 'Ошибка проверки ноды');
+            return;
+        }
+
+        joinState.preCheck = data;
+        renderPreCheckResult(data);
+        showJoinStep(2);
+    } catch (error) {
+        showToast('error', 'Ошибка', error.message);
+    } finally {
+        btn.innerHTML = 'Далее <i class="fa-solid fa-arrow-right"></i>';
+        btn.disabled = false;
+    }
+}
+
+function renderPreCheckResult(data) {
+    const container = document.getElementById('joinPreCheckResult');
+
+    const storageOptions = (data.backup_storages || []).map(s =>
+        `<option value="${s.storage}">${s.storage} (${s.type}${s.avail ? ', свободно: ' + formatBytes(s.avail) : ''})</option>`
+    ).join('');
+
+    if (data.guests_count === 0) {
+        container.innerHTML = `
+            <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid var(--success); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem;">
+                <i class="fa-solid fa-circle-check" style="color: var(--success);"></i>
+                <strong> Нода чистая!</strong> VM и LXC не обнаружены. Можно сразу присоединяться к кластеру.
+            </div>
+        `;
+        document.getElementById('joinPrepareSection').style.display = 'none';
+        document.getElementById('joinSkipToStep4Btn').style.display = 'inline-flex';
+        document.getElementById('joinStep2PrepBtn').style.display = 'none';
+    } else {
+        const guestRows = data.guests.map(g => `
+            <tr>
+                <td style="padding: 0.4rem 0.75rem;">${g.vmid}</td>
+                <td style="padding: 0.4rem 0.75rem;">${g.name}</td>
+                <td style="padding: 0.4rem 0.75rem;">
+                    <span style="background: ${g.type === 'qemu' ? 'var(--purple)' : 'var(--info)'}; color: white;
+                          padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.7rem;">
+                        ${g.type === 'qemu' ? 'VM' : 'LXC'}
+                    </span>
+                </td>
+                <td style="padding: 0.4rem 0.75rem;">
+                    <span class="status-badge ${g.status === 'running' ? 'status-online' : 'status-offline'}"
+                          style="font-size: 0.7rem; padding: 0.1rem 0.5rem;">${g.status}</span>
+                </td>
+            </tr>
+        `).join('');
+
+        container.innerHTML = `
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem;">
+                <i class="fa-solid fa-triangle-exclamation" style="color: var(--danger);"></i>
+                <strong> Обнаружено гестов: ${data.guests_count}</strong><br>
+                <span style="font-size: 0.875rem; color: var(--text-secondary);">
+                    При присоединении к кластеру /etc/pve перезапишется и конфиги гестов потеряются.
+                    Необходимо создать бэкапы и удалить всех гестов перед join.
+                </span>
+            </div>
+            <div style="overflow-x: auto; margin-bottom: 1rem;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+                    <thead>
+                        <tr style="background: var(--bg-secondary);">
+                            <th style="padding: 0.4rem 0.75rem; text-align: left;">VMID</th>
+                            <th style="padding: 0.4rem 0.75rem; text-align: left;">Имя</th>
+                            <th style="padding: 0.4rem 0.75rem; text-align: left;">Тип</th>
+                            <th style="padding: 0.4rem 0.75rem; text-align: left;">Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>${guestRows}</tbody>
+                </table>
+            </div>
+        `;
+
+        document.getElementById('joinPrepareSection').style.display = 'block';
+        if (storageOptions) {
+            document.getElementById('joinBackupStorage').innerHTML = storageOptions;
+        } else {
+            document.getElementById('joinBackupStorage').innerHTML = '<option value="">Нет доступных хранилищ backup</option>';
+            container.innerHTML += `
+                <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.875rem;">
+                    <i class="fa-solid fa-exclamation-circle" style="color: var(--danger);"></i>
+                    <strong> Нет хранилищ для бэкапов.</strong> Добавьте NFS/CIFS/Ceph хранилище с типом backup.
+                </div>
+            `;
+        }
+
+        document.getElementById('joinSkipToStep4Btn').style.display = 'none';
+        document.getElementById('joinStep2PrepBtn').style.display = 'inline-flex';
+    }
+}
+
+function joinSkipToFinalStep() {
+    showJoinStep(4);
+}
+
+async function submitJoinPrepare() {
+    const storage = document.getElementById('joinBackupStorage').value;
+    if (!storage) {
+        showToast('error', 'Ошибка', 'Выберите хранилище для бэкапов');
+        return;
+    }
+
+    joinState.backupStorage = storage;
+
+    const btn = document.getElementById('joinStep2PrepBtn');
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Создание бэкапов...';
+    btn.disabled = true;
+
+    showJoinStep(3);
+    document.getElementById('joinPrepResult').innerHTML = `
+        <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
+            <i class="fa-solid fa-spinner fa-spin" style="font-size: 2rem; margin-bottom: 1rem; display: block;"></i>
+            <div>Создание резервных копий и очистка ноды...</div>
+            <div style="font-size: 0.875rem; margin-top: 0.5rem;">Процесс может занять несколько минут</div>
+        </div>
+    `;
+    document.getElementById('joinPrepContinueBtn').style.display = 'none';
+
+    try {
+        const response = await fetchWithAuth('/proxmox/api/cluster/prepare-join', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                node_server_id: joinState.nodeServerId,
+                backup_storage: storage,
+                compress: 'zstd',
+            }),
+        });
+
+        const result = await response.json();
+        const container = document.getElementById('joinPrepResult');
+
+        if (!response.ok) {
+            container.innerHTML = `
+                <div style="background: var(--danger-dark); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 1rem;">
+                    <i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i>
+                    <strong> Ошибка:</strong> ${typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)}
+                </div>
+            `;
+            return;
+        }
+
+        const statusColor = result.ready_for_join ? 'var(--success)' : 'var(--warning)';
+        let errorsHtml = '';
+        if (result.errors && result.errors.length > 0) {
+            const errList = result.errors.map(e => `<li>VMID ${e.vmid} (${e.phase}): ${e.error}</li>`).join('');
+            errorsHtml = `<ul style="margin-top: 0.5rem; color: var(--danger); font-size: 0.875rem;">${errList}</ul>`;
+        }
+
+        container.innerHTML = `
+            <div style="background: ${result.ready_for_join ? 'rgba(34, 197, 94, 0.1)' : 'rgba(234, 179, 8, 0.1)'};
+                        border: 1px solid ${statusColor}; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem;">
+                <i class="fa-solid fa-${result.ready_for_join ? 'circle-check' : 'triangle-exclamation'}" style="color: ${statusColor};"></i>
+                <strong> ${result.message}</strong><br>
+                <span style="font-size: 0.875rem; color: var(--text-secondary);">
+                    Забэкаплено: ${result.backed_up.length} | Удалено: ${result.deleted.length} | Ошибки: ${result.errors.length}
+                </span>
+                ${errorsHtml}
+            </div>
+        `;
+
+        joinState.prepareResult = result;
+        if (result.ready_for_join) {
+            document.getElementById('joinPrepContinueBtn').style.display = 'inline-flex';
+        }
+    } catch (error) {
+        document.getElementById('joinPrepResult').innerHTML = `
+            <div style="background: var(--danger-dark); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 1rem;">
+                <i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i> Ошибка: ${error.message}
+            </div>
+        `;
+    } finally {
+        btn.innerHTML = '<i class="fa-solid fa-hard-drive"></i> Бэкап и очистка';
+        btn.disabled = false;
+    }
+}
+
+async function submitJoinFinal(event) {
+    event.preventDefault();
+
+    const rootpw = document.getElementById('joinRootpw').value.trim();
+    if (!rootpw) {
+        showToast('error', 'Ошибка', 'Введите пароль root@pam для присоединяемой ноды');
+        return;
+    }
+
+    const link0 = document.getElementById('joinLink0').value.trim() || null;
+    const btn = document.getElementById('joinFinalBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Присоединение...';
+    btn.disabled = true;
+
+    const statusEl = document.getElementById('joinFinalStatus');
+    statusEl.style.display = 'block';
+    statusEl.style.background = 'var(--bg-tertiary)';
+    statusEl.style.border = '1px solid var(--border-color)';
+    statusEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Выполняется join...';
+
+    try {
+        const response = await fetchWithAuth('/proxmox/api/cluster/join', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                node_server_id: joinState.nodeServerId,
+                cluster_server_id: joinState.clusterServerId,
+                rootpw: rootpw,
+                link0: link0,
+            }),
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            statusEl.style.background = 'var(--success-dark)';
+            statusEl.style.border = '1px solid var(--success)';
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color: var(--success);"></i>
+                <strong> ${result.message}</strong>${result.upid ? `<br><small style="color: var(--text-muted);">UPID: <code>${result.upid}</code></small>` : ''}`;
+            setTimeout(() => { closeJoinClusterModal(); window.location.reload(); }, 3000);
+        } else if (response.status === 409 && result.detail && result.detail.code === 'GUESTS_FOUND') {
+            statusEl.style.background = 'var(--danger-dark)';
+            statusEl.style.border = '1px solid var(--danger)';
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i> ${result.detail.message}`;
+        } else {
+            statusEl.style.background = 'var(--danger-dark)';
+            statusEl.style.border = '1px solid var(--danger)';
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i>
+                ${typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)}`;
+        }
+    } catch (error) {
+        statusEl.style.background = 'var(--danger-dark)';
+        statusEl.style.border = '1px solid var(--danger)';
+        statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i> Ошибка: ${error.message}`;
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+// ==================== Eject Node ====================
+
+function showEjectNodeModal() {
+    document.getElementById('ejectNodeModal').style.display = 'flex';
+    document.getElementById('ejectNodeStatus').style.display = 'none';
+    document.getElementById('ejectNodeForm').reset();
+}
+
+function closeEjectNodeModal() {
+    document.getElementById('ejectNodeModal').style.display = 'none';
+}
+
+async function submitEjectNode(event) {
+    event.preventDefault();
+
+    const serverId = document.getElementById('ejectFromServerId').value;
+    const nodeName = document.getElementById('ejectNodeName').value.trim();
+    const rootpw = document.getElementById('ejectRootpw').value.trim() || null;
+
+    if (!serverId || !nodeName) {
+        showToast('error', 'Ошибка', 'Выберите сервер и введите имя ноды');
+        return;
+    }
+
+    const confirmed = await showDeleteConfirm(
+        `Вы уверены, что хотите исключить ноду "${nodeName}" из кластера?\n\nНода должна быть ВЫКЛЮЧЕНА перед выполнением этой операции.`,
+        'Исключить ноду'
+    );
+    if (!confirmed) return;
+
+    const btn = document.getElementById('ejectNodeBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Исключение...';
+    btn.disabled = true;
+
+    const statusEl = document.getElementById('ejectNodeStatus');
+    statusEl.style.display = 'block';
+    statusEl.style.background = 'var(--bg-tertiary)';
+    statusEl.style.border = '1px solid var(--border-color)';
+    statusEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Удаление ноды из кластера...';
+
+    try {
+        const response = await fetchWithAuth(`/proxmox/api/cluster/${serverId}/eject-node`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ node_name: nodeName, rootpw: rootpw, clear_panel_entry: true }),
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            statusEl.style.background = 'var(--success-dark)';
+            statusEl.style.border = '1px solid var(--success)';
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color: var(--success);"></i>
+                <strong> ${result.message}</strong>
+                <br><span style="font-size: 0.875rem; color: var(--text-muted);">Метод: ${result.method}</span>`;
+            setTimeout(() => { closeEjectNodeModal(); window.location.reload(); }, 2500);
+        } else {
+            statusEl.style.background = 'var(--danger-dark)';
+            statusEl.style.border = '1px solid var(--danger)';
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i>
+                ${typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)}`;
+        }
+    } catch (error) {
+        statusEl.style.background = 'var(--danger-dark)';
+        statusEl.style.border = '1px solid var(--danger)';
+        statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i> Ошибка: ${error.message}`;
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
 }
 </script>
 

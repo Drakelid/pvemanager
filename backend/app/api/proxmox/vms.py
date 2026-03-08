@@ -27,6 +27,7 @@ router = APIRouter()
 
 from ...models import TaskQueue
 from ...services.task_queue_service import TaskQueueService, process_task_queue
+from ...api.proxmox.tasks import ProxmoxTaskService
 from pydantic import BaseModel
 from typing import List as TypingList, Optional
 
@@ -1869,6 +1870,20 @@ async def download_lxc_template(
         if not upid:
             raise HTTPException(status_code=500, detail="Failed to start template download")
         
+        # Register UPID task for real-time tracking
+        try:
+            ProxmoxTaskService.register(
+                db=db,
+                upid=upid,
+                server_id=server_id,
+                user_id=current_user.id,
+                action="download_template",
+                node=node,
+                description=f"Download template: {template}",
+            )
+        except Exception as _e:
+            logger.warning(f"Failed to register UPID task for template download: {_e}")
+
         LoggingService.log_proxmox_action(
             db=db,
             action="download_template",
@@ -1974,6 +1989,22 @@ async def create_lxc_container(
         if not upid:
             raise HTTPException(status_code=500, detail="Failed to create LXC container")
         
+        # Register UPID task for real-time tracking
+        try:
+            ProxmoxTaskService.register(
+                db=db,
+                upid=upid,
+                server_id=server_id,
+                user_id=current_user.id,
+                action="create_lxc",
+                node=node,
+                vmid=vmid,
+                vm_type="lxc",
+                description=f"Create LXC container: {hostname} (ID: {vmid})",
+            )
+        except Exception as _e:
+            logger.warning(f"Failed to register UPID task for LXC creation: {_e}")
+
         LoggingService.log_proxmox_action(
             db=db,
             action="create",

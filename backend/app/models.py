@@ -385,6 +385,9 @@ class ProxmoxServer(Base):
     # SSL/TLS verification
     verify_ssl = Column(Boolean, nullable=False, default=True)
 
+    # Cluster membership
+    cluster_name = Column(String(100), nullable=True, index=True)
+
     # Metadata
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -787,11 +790,15 @@ class TaskQueue(Base):
     def to_dict(self) -> dict:
         return {
             'id': self.id,
+            'kind': 'bulk',
+            'user_id': self.user_id,
             'task_type': self.task_type,
+            'description': self.task_type,
             'status': self.status,
             'total_items': self.total_items,
             'completed_items': self.completed_items,
             'failed_items': self.failed_items,
+            'processed_items': self.completed_items + self.failed_items,
             'progress_percent': self.progress_percent,
             'results': self.results,
             'error_message': self.error_message,
@@ -799,6 +806,53 @@ class TaskQueue(Base):
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
         }
+
+
+# ==================== Proxmox UPID Task ====================
+
+class ProxmoxTask(Base):
+    """
+    Tracks long-running Proxmox tasks identified by UPID.
+    Created when operations like create VM/container or download template are started.
+    """
+    __tablename__ = "proxmox_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    upid = Column(String(200), nullable=False, index=True)
+    server_id = Column(Integer, ForeignKey("proxmox_servers.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    node = Column(String(100), nullable=True)
+    vmid = Column(Integer, nullable=True)
+    vm_type = Column(String(10), nullable=True)  # qemu / lxc / storage
+    action = Column(String(100), nullable=False)  # create, clone, download_template, etc.
+    description = Column(String(500), nullable=True)
+    status = Column(String(20), nullable=False, default="running", index=True)  # running/completed/failed
+    exit_status = Column(String(100), nullable=True)  # "OK" or error text from Proxmox
+    log_text = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'kind': 'proxmox',
+            'upid': self.upid,
+            'server_id': self.server_id,
+            'user_id': self.user_id,
+            'node': self.node,
+            'vmid': self.vmid,
+            'vm_type': self.vm_type,
+            'action': self.action,
+            'description': self.description,
+            'status': self.status,
+            'exit_status': self.exit_status,
+            'log_text': self.log_text,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+    def __repr__(self):
+        return f"<ProxmoxTask(id={self.id}, upid='{self.upid[:30]}...', status='{self.status}')>"
 
 
 # ==================== Snapshot Archive ====================

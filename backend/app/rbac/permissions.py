@@ -240,6 +240,13 @@ def _create_permissions() -> PermissionRegistry:
         category="Proxmox Servers",
         requires=["server:view"]
     ))
+    registry.register(Permission(
+        resource="cluster", action="manage",
+        display_name="Manage Cluster Topology",
+        description="Create clusters, join nodes, eject nodes from cluster",
+        category="Proxmox Servers",
+        requires=["server:view"]
+    ))
     
     # VM permissions
     registry.register(Permission(
@@ -619,6 +626,7 @@ LEGACY_PERMISSION_MAP = {
     "proxmox.servers.add": "server:create",
     "proxmox.servers.edit": "server:update",
     "proxmox.servers.delete": "server:delete",
+    "proxmox.cluster.manage": "cluster:manage",
     "proxmox.vm.manage": "vm:manage",
     "vms.view": "vm:view",
     "vms.create": "vm:create",

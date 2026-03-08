@@ -2303,3 +2303,398 @@ body {
     /* Rocky Linux использует тот же зелёный цвет */
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Cpath fill='%2310B981' fill-rule='evenodd' clip-rule='evenodd' d='M186.7 127.7C190.1 117.7 192 107.1 192 96c0-53-43-96-96-96S0 43 0 96c0 26.2 10.5 50 27.6 67.3l97.4-97.4L149 90l37.7 37.7zM169.1 158.2l-44.2-44.2-69.1 69.2C67.9 188.8 81.6 192 96 192c29.3 0 55.5-13.1 73.1-33.8z'/%3E%3C/svg%3E");
 }
+
+
+/* ================================================================
+   TASK MANAGER — Animations & Component Styles
+   ================================================================ */
+
+/* ── Keyframes ────────────────────────────────────────────────── */
+@keyframes task-shimmer {
+    0%   { background-position: -200% center; }
+    100% { background-position:  200% center; }
+}
+
+@keyframes task-pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: .5; transform: scale(1.35); }
+}
+
+@keyframes task-shake {
+    0%, 100% { transform: translateX(0); }
+    20%       { transform: translateX(-5px); }
+    40%       { transform: translateX(5px); }
+    60%       { transform: translateX(-4px); }
+    80%       { transform: translateX(4px); }
+}
+
+@keyframes task-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+@keyframes task-drawer-in {
+    from { transform: translateX(100%); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes task-badge-pop {
+    0%   { transform: scale(0); }
+    70%  { transform: scale(1.3); }
+    100% { transform: scale(1); }
+}
+
+/* ── Status colours ───────────────────────────────────────────── */
+.task-status-running   { color: #667eea; }
+.task-status-pending   { color: #f97316; }
+.task-status-completed { color: #10b981; }
+.task-status-failed    { color: #ef4444; }
+.task-status-cancelled { color: #6b7280; }
+
+/* ── Status badges ────────────────────────────────────────────── */
+.task-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: 3px 10px;
+    border-radius: var(--radius-full, 9999px);
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .03em;
+    white-space: nowrap;
+}
+.task-badge-running {
+    background: rgba(102,126,234,.15);
+    color: #667eea;
+    border: 1px solid rgba(102,126,234,.3);
+}
+.task-badge-pending {
+    background: rgba(249,115,22,.13);
+    color: #f97316;
+    border: 1px solid rgba(249,115,22,.3);
+}
+.task-badge-completed {
+    background: rgba(16,185,129,.13);
+    color: #10b981;
+    border: 1px solid rgba(16,185,129,.3);
+}
+.task-badge-failed {
+    background: rgba(239,68,68,.13);
+    color: #ef4444;
+    border: 1px solid rgba(239,68,68,.3);
+}
+.task-badge-cancelled {
+    background: rgba(107,114,128,.1);
+    color: #9ca3af;
+    border: 1px solid rgba(107,114,128,.25);
+}
+
+/* ── Progress bar ─────────────────────────────────────────────── */
+.task-progress-track {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-surface-hover, rgba(255,255,255,.08));
+    border-radius: 9999px;
+    overflow: hidden;
+}
+.task-progress-fill {
+    height: 100%;
+    border-radius: 9999px;
+    transition: width .5s ease;
+    background: var(--gradient-primary, linear-gradient(90deg, #667eea, #764ba2));
+}
+.task-progress-fill.running {
+    background: linear-gradient(90deg, #667eea 0%, #a78bfa 50%, #667eea 100%);
+    background-size: 200% 100%;
+    animation: task-shimmer 2s linear infinite;
+}
+.task-progress-fill.pending {
+    background: linear-gradient(90deg, #f97316, #fb923c);
+    animation: task-shimmer 2.5s linear infinite;
+    background-size: 200% 100%;
+}
+.task-progress-fill.completed { background: linear-gradient(90deg, #10b981, #34d399); }
+.task-progress-fill.failed    { background: linear-gradient(90deg, #ef4444, #f87171); }
+.task-progress-fill.cancelled { background: #6b7280; }
+
+/* ── Spinning icon for running tasks ──────────────────────────── */
+.task-icon-spin {
+    display: inline-block;
+    animation: task-spin 1.2s linear infinite;
+}
+
+/* ── Error shake ──────────────────────────────────────────────── */
+.task-shake {
+    animation: task-shake .5s ease;
+}
+
+/* ── Navbar tasks button & badge ──────────────────────────────── */
+.tasks-btn {
+    position: relative;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--transition-fast), background var(--transition-fast);
+}
+.tasks-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+.tasks-count-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    background: #ef4444;
+    color: #fff;
+    font-size: .62rem;
+    font-weight: 700;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: task-badge-pop .25s ease;
+    line-height: 1;
+}
+.tasks-count-badge.has-active {
+    background: #667eea;
+    animation: task-badge-pop .25s ease, task-pulse-dot 2s ease-in-out infinite;
+}
+
+/* ── Status pulsing dot ───────────────────────────────────────── */
+.task-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.task-dot.running   { background: #667eea; animation: task-pulse-dot 1.2s ease-in-out infinite; }
+.task-dot.pending   { background: #f97316; animation: task-pulse-dot 1.6s ease-in-out infinite; }
+.task-dot.completed { background: #10b981; }
+.task-dot.failed    { background: #ef4444; }
+.task-dot.cancelled { background: #6b7280; }
+
+/* ── Task Drawer (slide-in from right) ────────────────────────── */
+.task-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 380px;
+    max-width: 96vw;
+    height: 100vh;
+    background: var(--glass-bg, rgba(20,20,35,.95));
+    backdrop-filter: blur(20px);
+    border-left: 1px solid var(--glass-border, rgba(255,255,255,.08));
+    z-index: 1200;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -8px 0 40px rgba(0,0,0,.45);
+    animation: task-drawer-in .25s ease;
+}
+.task-drawer-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border-default);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+.task-drawer-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.task-drawer-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-size: 1.25rem;
+    line-height: 1;
+    transition: color .15s, background .15s;
+}
+.task-drawer-close:hover { color: var(--text-primary); background: var(--bg-hover); }
+.task-drawer-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: .75rem 1rem;
+}
+.task-drawer-empty {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    color: var(--text-muted);
+    font-size: .9rem;
+}
+.task-drawer-footer {
+    padding: .75rem 1rem;
+    border-top: 1px solid var(--border-default);
+    flex-shrink: 0;
+}
+.task-drawer-footer a {
+    display: block;
+    text-align: center;
+    font-size: .85rem;
+    color: #667eea;
+    text-decoration: none;
+    padding: .5rem;
+    border-radius: 8px;
+    transition: background .15s;
+}
+.task-drawer-footer a:hover { background: rgba(102,126,234,.1); }
+
+/* ── Mini task card (drawer) ──────────────────────────────────── */
+.task-mini-card {
+    background: var(--bg-surface, rgba(255,255,255,.04));
+    border: 1px solid var(--border-muted, rgba(255,255,255,.06));
+    border-radius: 10px;
+    padding: .75rem 1rem;
+    margin-bottom: .5rem;
+    transition: border-color .15s;
+}
+.task-mini-card:hover { border-color: var(--border-default); }
+.task-mini-card.running  { border-left: 3px solid #667eea; }
+.task-mini-card.pending  { border-left: 3px solid #f97316; }
+.task-mini-card.completed { border-left: 3px solid #10b981; }
+.task-mini-card.failed   { border-left: 3px solid #ef4444; }
+.task-mini-card.cancelled { border-left: 3px solid #6b7280; }
+.task-mini-top {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: .45rem;
+}
+.task-mini-name {
+    font-size: .85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.task-mini-time {
+    font-size: .72rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.task-mini-progress { margin-top: .3rem; }
+
+/* ── Full task card (page) ────────────────────────────────────── */
+.task-card {
+    background: var(--glass-bg, rgba(255,255,255,.04));
+    border: 1px solid var(--glass-border, rgba(255,255,255,.08));
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: .75rem;
+    transition: border-color .2s, box-shadow .2s;
+    cursor: pointer;
+}
+.task-card:hover {
+    border-color: rgba(102,126,234,.4);
+    box-shadow: 0 4px 20px rgba(0,0,0,.2);
+}
+.task-card.running   { border-left: 4px solid #667eea; }
+.task-card.pending   { border-left: 4px solid #f97316; }
+.task-card.completed { border-left: 4px solid #10b981; }
+.task-card.failed    { border-left: 4px solid #ef4444; }
+.task-card.cancelled { border-left: 4px solid #6b7280; }
+.task-card-header {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-bottom: .75rem;
+}
+.task-card-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: .95rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.task-card-meta {
+    display: flex;
+    gap: 1.5rem;
+    font-size: .8rem;
+    color: var(--text-muted);
+    margin-top: .6rem;
+    flex-wrap: wrap;
+}
+.task-card-meta span { display: flex; align-items: center; gap: .3rem; }
+
+/* ── Trace modal ──────────────────────────────────────────────── */
+.task-trace-log {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .78rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    background: var(--bg-input, rgba(0,0,0,.25));
+    border: 1px solid var(--border-muted);
+    border-radius: 8px;
+    padding: 1rem;
+    max-height: 320px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.task-results-table th { font-weight: 600; font-size: .8rem; color: var(--text-muted); }
+.task-results-table td { font-size: .82rem; padding: .5rem .75rem; vertical-align: middle; }
+.task-result-ok   { color: #10b981; }
+.task-result-fail { color: #ef4444; }
+
+/* ── Tab bar ──────────────────────────────────────────────────── */
+.tasks-tab-bar {
+    display: flex;
+    gap: .25rem;
+    border-bottom: 2px solid var(--border-muted);
+    margin-bottom: 1.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.tasks-tab-bar::-webkit-scrollbar { display: none; }
+.tasks-tab {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: .6rem 1.1rem;
+    font-size: .85rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color .15s, border-color .15s;
+    white-space: nowrap;
+}
+.tasks-tab:hover   { color: var(--text-primary); }
+.tasks-tab.active  { color: #667eea; border-bottom-color: #667eea; }
+.tasks-tab .tasks-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: var(--bg-surface-hover, rgba(255,255,255,.08));
+    border-radius: 9999px;
+    font-size: .7rem;
+    font-weight: 700;
+    margin-left: .35rem;
+    color: var(--text-secondary);
+}
+.tasks-tab.active .tasks-tab-count {
+    background: rgba(102,126,234,.2);
+    color: #667eea;
+}

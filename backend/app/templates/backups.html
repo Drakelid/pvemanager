@@ -113,13 +113,45 @@
 
   <!-- =================== TAB: SCHEDULE =================== -->
   <div id="pane-jobs" class="d-none">
+    <!-- Нативные расписания Proxmox -->
+    <div class="card mb-3" id="proxmoxJobsCard" style="display:none!important">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 text-muted"><i class="fa-solid fa-server me-1"></i>Расписания из Proxmox <span class="badge bg-secondary ms-1">нативные</span></h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadProxmoxNativeJobs()">
+          <i class="fa-solid fa-rotate me-1"></i>Обновить
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-secondary"><tr>
+              <th>ID</th>
+              <th>VMIDs</th>
+              <th>{{ t('backup_storage_id') }}</th>
+              <th>Cron</th>
+              <th>{{ t('backup_mode') }}</th>
+              <th>{{ t('status') }}</th>
+            </tr></thead>
+            <tbody id="proxmoxJobsTbody">
+              <tr><td colspan="6" class="text-center py-3 text-muted">{{ t('select_server') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">{{ t('backup_jobs_title') }}</h5>
-        <button class="btn btn-primary btn-sm" onclick="openAddJobModal()">
-          <i class="fa-solid fa-plus me-1"></i>
-          {{ t('backup_add_job') }}
-        </button>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadProxmoxNativeJobs()" id="btnLoadProxmoxJobs" title="Показать расписания, созданные напрямую в Proxmox">
+            <i class="fa-solid fa-server me-1"></i>Расписания Proxmox
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="openAddJobModal()">
+            <i class="fa-solid fa-plus me-1"></i>
+            {{ t('backup_add_job') }}
+          </button>
+        </div>
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
@@ -370,31 +402,120 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="row">
-          <div class="col-6 mb-3">
-            <label class="form-label">{{ t('server') }}</label>
+
+        <!-- Сервер и нода -->
+        <div class="row mb-3">
+          <div class="col-6">
+            <label class="form-label fw-semibold">{{ t('server') }}</label>
             <select id="ajServer" class="form-select" onchange="onJobServerChange(this.value)">
               {% for s in servers %}
               <option value="{{ s.id }}">{{ s.name }}</option>
               {% endfor %}
             </select>
           </div>
-          <div class="col-6 mb-3">
-            <label class="form-label">{{ t('node') }}</label>
+          <div class="col-6">
+            <label class="form-label fw-semibold">{{ t('node') }}</label>
             <select id="ajNode" class="form-select"></select>
           </div>
         </div>
+
+        <hr class="my-3">
+
+        <!-- Построитель расписания -->
         <div class="mb-3">
-          <label class="form-label">VMIDs</label>
-          <input type="text" id="ajVmids" class="form-control" placeholder='100,101,102 или "all"'>
-          <div class="form-text">{{ t('backup_vmids_hint') }}</div>
+          <label class="form-label fw-semibold"><i class="fa-solid fa-clock me-1"></i>Расписание</label>
+
+          <div class="btn-group w-100 mb-3" role="group">
+            <input type="radio" class="btn-check" name="ajSchedType" id="ajSchedHourly" value="hourly" onchange="onSchedTypeChange('hourly')">
+            <label class="btn btn-outline-secondary" for="ajSchedHourly"><i class="fa-solid fa-stopwatch me-1"></i>Ежечасно</label>
+            <input type="radio" class="btn-check" name="ajSchedType" id="ajSchedDaily" value="daily" onchange="onSchedTypeChange('daily')" checked>
+            <label class="btn btn-outline-secondary" for="ajSchedDaily"><i class="fa-solid fa-sun me-1"></i>Ежедневно</label>
+            <input type="radio" class="btn-check" name="ajSchedType" id="ajSchedWeekly" value="weekly" onchange="onSchedTypeChange('weekly')">
+            <label class="btn btn-outline-secondary" for="ajSchedWeekly"><i class="fa-solid fa-calendar-week me-1"></i>Еженедельно</label>
+            <input type="radio" class="btn-check" name="ajSchedType" id="ajSchedMonthly" value="monthly" onchange="onSchedTypeChange('monthly')">
+            <label class="btn btn-outline-secondary" for="ajSchedMonthly"><i class="fa-solid fa-calendar-days me-1"></i>Ежемесячно</label>
+            <input type="radio" class="btn-check" name="ajSchedType" id="ajSchedCustom" value="custom" onchange="onSchedTypeChange('custom')">
+            <label class="btn btn-outline-secondary" for="ajSchedCustom"><i class="fa-solid fa-code me-1"></i>Cron</label>
+          </div>
+
+          <!-- Интервал (ежечасно) -->
+          <div id="schedHourlyOpts" class="d-none mb-3">
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-muted">Каждые</span>
+              <select id="ajHourlyInterval" class="form-select" style="width:180px" onchange="buildCron()">
+                <option value="15">15 минут</option>
+                <option value="30">30 минут</option>
+                <option value="60">1 час</option>
+                <option value="120">2 часа</option>
+                <option value="360">6 часов</option>
+                <option value="720">12 часов</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Время (ежедневно / еженедельно / ежемесячно) -->
+          <div id="schedTimeRow" class="d-flex align-items-center gap-2 mb-3">
+            <span class="text-muted">в</span>
+            <input type="time" id="ajSchedTime" class="form-control" style="width:140px" value="02:00" oninput="buildCron()">
+            <span class="text-muted">по UTC</span>
+          </div>
+
+          <!-- Дни недели (еженедельно) -->
+          <div id="schedWeeklyOpts" class="d-none mb-3">
+            <label class="form-label small text-muted">Дни недели:</label>
+            <div class="d-flex gap-2 flex-wrap">
+              <div class="border rounded px-2 py-1"><input class="form-check-input" type="checkbox" id="wd1" value="1" onchange="buildCron()" checked><label class="form-check-label small fw-semibold ms-1" for="wd1">Пн</label></div>
+              <div class="border rounded px-2 py-1"><input class="form-check-input" type="checkbox" id="wd2" value="2" onchange="buildCron()"><label class="form-check-label small fw-semibold ms-1" for="wd2">Вт</label></div>
+              <div class="border rounded px-2 py-1"><input class="form-check-input" type="checkbox" id="wd3" value="3" onchange="buildCron()"><label class="form-check-label small fw-semibold ms-1" for="wd3">Ср</label></div>
+              <div class="border rounded px-2 py-1"><input class="form-check-input" type="checkbox" id="wd4" value="4" onchange="buildCron()"><label class="form-check-label small fw-semibold ms-1" for="wd4">Чт</label></div>
+              <div class="border rounded px-2 py-1"><input class="form-check-input" type="checkbox" id="wd5" value="5" onchange="buildCron()"><label class="form-check-label small fw-semibold ms-1" for="wd5">Пт</label></div>
+              <div class="border rounded px-2 py-1"><input class="form-check-input" type="checkbox" id="wd6" value="6" onchange="buildCron()"><label class="form-check-label small fw-semibold ms-1" for="wd6">Сб</label></div>
+              <div class="border rounded px-2 py-1"><input class="form-check-input" type="checkbox" id="wd0" value="0" onchange="buildCron()"><label class="form-check-label small fw-semibold ms-1" for="wd0">Вс</label></div>
+            </div>
+          </div>
+
+          <!-- Число месяца (ежемесячно) -->
+          <div id="schedMonthlyOpts" class="d-none mb-3">
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-muted">Число:</span>
+              <input type="number" id="ajMonthDay" class="form-control" style="width:90px" value="1" min="1" max="28" oninput="buildCron()">
+              <span class="text-muted">каждого месяца</span>
+            </div>
+          </div>
+
+          <!-- Произвольный cron -->
+          <div id="schedCustomOpts" class="d-none mb-3">
+            <input type="text" id="ajCronCustom" class="form-control font-monospace" placeholder="0 2 * * *" oninput="buildCron()">
+            <div class="form-text">{{ t('backup_cron_hint') }}</div>
+          </div>
+
+          <!-- Превью cron -->
+          <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:var(--bg-surface,rgba(0,0,0,.05))">
+            <i class="fa-regular fa-calendar-check text-primary"></i>
+            <span id="ajCronPreview" class="small">Ежедневно в 02:00</span>
+            <code id="ajCronDisplay" class="ms-auto small text-muted font-monospace">0 2 * * *</code>
+          </div>
+          <input type="hidden" id="ajCron" value="0 2 * * *">
         </div>
-        <div class="mb-3">
-          <label class="form-label">{{ t('backup_storage_id') }}</label>
-          <select id="ajStorage" class="form-select"></select>
+
+        <hr class="my-3">
+
+        <!-- Хранилище и VMIDs -->
+        <div class="row mb-3">
+          <div class="col-6">
+            <label class="form-label fw-semibold"><i class="fa-solid fa-database me-1"></i>{{ t('backup_storage_id') }}</label>
+            <select id="ajStorage" class="form-select"></select>
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold">VMIDs</label>
+            <input type="text" id="ajVmids" class="form-control" placeholder='100,101 или "all"'>
+            <div class="form-text">{{ t('backup_vmids_hint') }}</div>
+          </div>
         </div>
-        <div class="row">
-          <div class="col-6 mb-3">
+
+        <!-- Режим и сжатие -->
+        <div class="row mb-3">
+          <div class="col-6">
             <label class="form-label">{{ t('backup_mode') }}</label>
             <select id="ajMode" class="form-select">
               <option value="snapshot">snapshot</option>
@@ -402,47 +523,57 @@
               <option value="stop">stop</option>
             </select>
           </div>
-          <div class="col-6 mb-3">
+          <div class="col-6">
             <label class="form-label">{{ t('backup_compress') }}</label>
             <select id="ajCompress" class="form-select">
-              <option value="zstd">zstd</option>
+              <option value="zstd">zstd (быстро + хорошо)</option>
               <option value="gzip">gzip</option>
               <option value="lzo">lzo</option>
               <option value="0">{{ t('none') }}</option>
             </select>
           </div>
         </div>
+
+        <hr class="my-3">
+
+        <!-- Хранение копий -->
         <div class="mb-3">
-          <label class="form-label">Cron</label>
-          <input type="text" id="ajCron" class="form-control font-monospace" placeholder="0 2 * * *">
-          <div class="form-text">{{ t('backup_cron_hint') }}</div>
+          <label class="form-label fw-semibold"><i class="fa-solid fa-rotate me-1"></i>Хранение копий</label>
+          <div class="row g-2">
+            <div class="col-6 col-md-3">
+              <label class="form-label small text-muted mb-1">keep-last</label>
+              <input type="number" id="ajKeepLast" class="form-control" value="3" min="0">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small text-muted mb-1">keep-daily</label>
+              <input type="number" id="ajKeepDaily" class="form-control" value="7" min="0">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small text-muted mb-1">keep-weekly</label>
+              <input type="number" id="ajKeepWeekly" class="form-control" value="4" min="0">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small text-muted mb-1">keep-monthly</label>
+              <input type="number" id="ajKeepMonthly" class="form-control" value="6" min="0">
+            </div>
+          </div>
+          <div class="form-text mt-1">{{ t('backup_keep_hint') }}</div>
         </div>
+
+        <!-- Заметки + Включено -->
         <div class="row">
-          <div class="col-3 mb-2">
-            <label class="form-label small">keep-last</label>
-            <input type="number" id="ajKeepLast" class="form-control form-control-sm" value="3" min="0">
+          <div class="col-9">
+            <label class="form-label">{{ t('backup_notes') }}</label>
+            <input type="text" id="ajNotes" class="form-control" placeholder="{{ t('backup_notes_placeholder') }}">
           </div>
-          <div class="col-3 mb-2">
-            <label class="form-label small">keep-daily</label>
-            <input type="number" id="ajKeepDaily" class="form-control form-control-sm" value="7" min="0">
-          </div>
-          <div class="col-3 mb-2">
-            <label class="form-label small">keep-weekly</label>
-            <input type="number" id="ajKeepWeekly" class="form-control form-control-sm" value="4" min="0">
-          </div>
-          <div class="col-3 mb-2">
-            <label class="form-label small">keep-monthly</label>
-            <input type="number" id="ajKeepMonthly" class="form-control form-control-sm" value="6" min="0">
+          <div class="col-3 d-flex align-items-end pb-1">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="ajEnabled" checked>
+              <label class="form-check-label">{{ t('backup_job_enabled') }}</label>
+            </div>
           </div>
         </div>
-        <div class="mb-3">
-          <label class="form-label">{{ t('backup_notes') }}</label>
-          <input type="text" id="ajNotes" class="form-control" placeholder="{{ t('backup_notes_placeholder') }}">
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="ajEnabled" checked>
-          <label class="form-check-label">{{ t('backup_job_enabled') }}</label>
-        </div>
+
         <input type="hidden" id="ajJobId">
       </div>
       <div class="modal-footer">
@@ -777,6 +908,45 @@ async function loadJobs() {
     } catch(e) { console.error(e); }
 }
 
+async function loadProxmoxNativeJobs() {
+    const card = document.getElementById('proxmoxJobsCard');
+    card.style.removeProperty('display');
+    const tbody = document.getElementById('proxmoxJobsTbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-2"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка...</td></tr>';
+    const servers = serversData || [];
+    if (!servers.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3 text-muted">Нет подключённых серверов</td></tr>';
+        return;
+    }
+    const allRows = [];
+    await Promise.all(servers.map(async srv => {
+        try {
+            const r = await (await fetchWithAuth(`/proxmox/api/backups/proxmox-jobs/${srv.id}`)).json();
+            (r.jobs || []).forEach(j => allRows.push({ srv, job: j }));
+        } catch (e) { console.warn(`Failed to load Proxmox jobs for server ${srv.name}:`, e); }
+    }));
+    if (!allRows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3 text-muted">Нативных расписаний Proxmox не найдено</td></tr>';
+        return;
+    }
+    tbody.innerHTML = allRows.map(({ srv, job }) => {
+        const vmids = job.vmid ? String(job.vmid).replace(/,/g, ', ') : '<em class="text-muted">all</em>';
+        const enabled = job.enabled !== 0 && job.enabled !== '0' && job.enabled !== false;
+        const statusBadge = enabled
+            ? '<span class="badge bg-success">активно</span>'
+            : '<span class="badge bg-secondary">отключено</span>';
+        const mode = job.mode || '-';
+        return `<tr class="table-light">
+            <td><span class="badge bg-dark me-1">${srv.name}</span>${job.id || ''}</td>
+            <td class="font-monospace small">${vmids}</td>
+            <td>${job.storage || '-'}</td>
+            <td class="font-monospace small">${job.schedule || '-'}</td>
+            <td>${mode}</td>
+            <td>${statusBadge}</td>
+        </tr>`;
+    }).join('');
+}
+
 async function onJobServerChange(serverId) {
     const nodes = await fetchNodes(serverId);
     fillNodeSelect('ajNode', nodes);
@@ -793,13 +963,112 @@ async function populateJobStorages(serverId) {
     } catch(e) {}
 }
 
+// ===== Schedule Builder =====
+function onSchedTypeChange(type) {
+    document.getElementById('schedHourlyOpts').classList.add('d-none');
+    document.getElementById('schedTimeRow').classList.add('d-none');
+    document.getElementById('schedWeeklyOpts').classList.add('d-none');
+    document.getElementById('schedMonthlyOpts').classList.add('d-none');
+    document.getElementById('schedCustomOpts').classList.add('d-none');
+    if (type === 'hourly') document.getElementById('schedHourlyOpts').classList.remove('d-none');
+    else if (type === 'daily') document.getElementById('schedTimeRow').classList.remove('d-none');
+    else if (type === 'weekly') {
+        document.getElementById('schedTimeRow').classList.remove('d-none');
+        document.getElementById('schedWeeklyOpts').classList.remove('d-none');
+    } else if (type === 'monthly') {
+        document.getElementById('schedTimeRow').classList.remove('d-none');
+        document.getElementById('schedMonthlyOpts').classList.remove('d-none');
+    } else if (type === 'custom') document.getElementById('schedCustomOpts').classList.remove('d-none');
+    buildCron();
+}
+
+function buildCron() {
+    const type = document.querySelector('input[name="ajSchedType"]:checked')?.value || 'daily';
+    let cron = '0 2 * * *', preview = '';
+    if (type === 'hourly') {
+        const mins = parseInt(document.getElementById('ajHourlyInterval').value);
+        if (mins < 60) { cron = `*/${mins} * * * *`; preview = `Каждые ${mins} минут`; }
+        else { const hrs = mins / 60; cron = `0 */${hrs} * * *`; preview = `Каждые ${hrs} ${hrs === 1 ? 'час' : hrs < 5 ? 'часа' : 'часов'}`; }
+    } else if (type === 'daily') {
+        const time = document.getElementById('ajSchedTime').value || '02:00';
+        const [h, m] = time.split(':');
+        cron = `${parseInt(m)} ${parseInt(h)} * * *`;
+        preview = `Ежедневно в ${time}`;
+    } else if (type === 'weekly') {
+        const time = document.getElementById('ajSchedTime').value || '02:00';
+        const [h, m] = time.split(':');
+        const dayNames = { '0': 'Вс', '1': 'Пн', '2': 'Вт', '3': 'Ср', '4': 'Чт', '5': 'Пт', '6': 'Сб' };
+        const days = ['1','2','3','4','5','6','0'].filter(d => document.getElementById('wd' + d)?.checked);
+        if (!days.length) { document.getElementById('wd1').checked = true; days.push('1'); }
+        cron = `${parseInt(m)} ${parseInt(h)} * * ${days.join(',')}`;
+        preview = `Еженедельно (${days.map(d => dayNames[d]).join(', ')}) в ${time}`;
+    } else if (type === 'monthly') {
+        const time = document.getElementById('ajSchedTime').value || '02:00';
+        const [h, m] = time.split(':');
+        const day = document.getElementById('ajMonthDay').value || '1';
+        cron = `${parseInt(m)} ${parseInt(h)} ${day} * *`;
+        preview = `Ежемесячно ${day}-го в ${time}`;
+    } else if (type === 'custom') {
+        cron = (document.getElementById('ajCronCustom').value || '').trim() || '0 2 * * *';
+        preview = cron;
+    }
+    document.getElementById('ajCron').value = cron;
+    document.getElementById('ajCronDisplay').textContent = cron;
+    document.getElementById('ajCronPreview').textContent = preview;
+}
+
+function parseCronToUI(cron) {
+    const p = (cron || '').trim().split(/\s+/);
+    if (p.length !== 5) return { type: 'custom' };
+    const [min, hour, dom, month, dow] = p;
+    if (month === '*' && dom === '*' && min.startsWith('*/') && hour === '*' && dow === '*')
+        return { type: 'hourly', interval: parseInt(min.slice(2)) };
+    if (month === '*' && dom === '*' && min === '0' && hour.startsWith('*/') && dow === '*')
+        return { type: 'hourly', interval: parseInt(hour.slice(2)) * 60 };
+    if (month === '*' && dow === '*' && !/[*\/,]/.test(dom) && !/[*\/]/.test(hour) && !/[*\/]/.test(min))
+        return { type: 'monthly', time: `${hour.padStart(2,'0')}:${min.padStart(2,'0')}`, day: dom };
+    if (dom === '*' && month === '*' && dow !== '*' && !/[*\/]/.test(hour) && !/[*\/]/.test(min))
+        return { type: 'weekly', time: `${hour.padStart(2,'0')}:${min.padStart(2,'0')}`, days: dow.split(',') };
+    if (dom === '*' && month === '*' && dow === '*' && !/[*\/]/.test(hour) && !/[*\/]/.test(min))
+        return { type: 'daily', time: `${hour.padStart(2,'0')}:${min.padStart(2,'0')}` };
+    return { type: 'custom' };
+}
+
+function applySchedToUI(info) {
+    const map = { hourly: 'ajSchedHourly', daily: 'ajSchedDaily', weekly: 'ajSchedWeekly', monthly: 'ajSchedMonthly', custom: 'ajSchedCustom' };
+    const r = document.getElementById(map[info.type] || 'ajSchedDaily');
+    if (r) r.checked = true;
+    if (info.time) document.getElementById('ajSchedTime').value = info.time;
+    if (info.type === 'hourly' && info.interval) {
+        const opts = [15, 30, 60, 120, 360, 720];
+        document.getElementById('ajHourlyInterval').value = opts.reduce((a, b) => Math.abs(b - info.interval) < Math.abs(a - info.interval) ? b : a);
+    }
+    if (info.type === 'weekly') {
+        ['0','1','2','3','4','5','6'].forEach(d => {
+            const cb = document.getElementById('wd' + d);
+            if (cb) cb.checked = (info.days || []).includes(d);
+        });
+    }
+    if (info.type === 'monthly' && info.day) document.getElementById('ajMonthDay').value = info.day;
+    if (info.type === 'custom') document.getElementById('ajCronCustom').value = document.getElementById('ajCron').value;
+    onSchedTypeChange(info.type);
+}
+
 async function openAddJobModal() {
     document.getElementById('addJobModalTitle').textContent = '{{ t("backup_add_job") }}';
     document.getElementById('ajJobId').value = '';
-    document.getElementById('ajCron').value = '0 2 * * *';
     document.getElementById('ajVmids').value = '';
     document.getElementById('ajNotes').value = '';
     document.getElementById('ajEnabled').checked = true;
+    document.getElementById('ajKeepLast').value = 3;
+    document.getElementById('ajKeepDaily').value = 7;
+    document.getElementById('ajKeepWeekly').value = 4;
+    document.getElementById('ajKeepMonthly').value = 6;
+    document.getElementById('ajMode').value = 'snapshot';
+    document.getElementById('ajCompress').value = 'zstd';
+    document.getElementById('ajSchedTime').value = '02:00';
+    document.getElementById('ajSchedDaily').checked = true;
+    onSchedTypeChange('daily');
     const firstServer = serversData[0];
     if (firstServer) {
         document.getElementById('ajServer').value = firstServer.id;
@@ -825,6 +1094,7 @@ async function openEditJobModal(job) {
     document.getElementById('ajKeepMonthly').value = job.keep_monthly;
     document.getElementById('ajNotes').value = job.notes || '';
     document.getElementById('ajEnabled').checked = job.enabled;
+    applySchedToUI(parseCronToUI(job.cron_expression));
     new bootstrap.Modal(document.getElementById('addJobModal')).show();
 }
 

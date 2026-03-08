@@ -349,6 +349,25 @@ async def restore_backup(
 
 # ==================== Scheduled Backup Jobs ====================
 
+@router.get("/api/backups/proxmox-jobs/{server_id}")
+def list_proxmox_native_jobs(
+    server_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("backup:view")),
+):
+    """Fetch native vzdump backup schedules configured directly in Proxmox"""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    try:
+        client = _get_proxmox_client(server)
+        jobs = client.get_cluster_backup_jobs()
+        return JSONResponse(content={"jobs": jobs, "server_name": server.name})
+    except Exception as e:
+        logger.error(f"Error fetching proxmox native jobs for server {server_id}: {e}")
+        return JSONResponse(content={"jobs": [], "error": str(e)})
+
+
 @router.get("/api/backups/jobs")
 def list_backup_jobs(
     db: Session = Depends(get_db),
@@ -408,9 +427,10 @@ async def create_backup_job(
     except Exception as e:
         logger.warning(f"Could not register job {job.id} with scheduler: {e}")
 
-    LoggingService.log_action(
-        db=db, action="backup_job_create", resource_type="backup_job",
+    LoggingService.log_proxmox_action(
+        db=db, action="create", resource_type="backup_job",
         resource_id=str(job.id), username=current_user.username, success=True,
+        server_id=job.server_id, node_name=job.node,
     )
     return JSONResponse(content={"success": True, "job": job.to_dict()})
 

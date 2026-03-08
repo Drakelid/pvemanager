@@ -966,6 +966,7 @@ function restoreFiltersFromUrl() {
 
 // Bulk selection state
 let selectedVMs = new Set();  // Set of "server_id-vmid" keys
+let currentPageVMsCache = [];  // sorted page items cache used by getCurrentPageVMs
 let currentTaskId = null;
 let taskPollInterval = null;
 
@@ -1002,7 +1003,7 @@ function toggleSelectAll(event) {
     // checked уже изменён браузером к моменту вызова onclick
     const isChecked = checkbox.checked;
     
-    console.log('toggleSelectAll:', { isChecked, selectedVMsSize: selectedVMs.size });
+    debugLog('toggleSelectAll:', { isChecked, selectedVMsSize: selectedVMs.size });
     
     const checkboxes = document.querySelectorAll('.vm-row-checkbox');
     
@@ -1025,7 +1026,7 @@ function toggleSelectAll(event) {
         });
     }
     
-    console.log('After toggleSelectAll:', { selectedVMsSize: selectedVMs.size, isChecked });
+    debugLog('After toggleSelectAll:', { selectedVMsSize: selectedVMs.size, isChecked });
     
     updateBulkActionsBar();
 }
@@ -1091,9 +1092,7 @@ function updateSelectAllCheckbox() {
 }
 
 function getCurrentPageVMs() {
-    const start = (currentPageNum - 1) * pageSizeNum;
-    const end = start + pageSizeNum;
-    return filteredVMs.slice(start, end);
+    return currentPageVMsCache;
 }
 
 function getSelectedVMsData() {
@@ -1162,9 +1161,9 @@ async function bulkAction(action) {
         bulkOperationAction = action;
         
         // Show pending status with spinner for all selected items
-        console.log('[bulkAction] Setting pending status for items:', items);
+        debugLog('[bulkAction] Setting pending status for items:', items);
         items.forEach(item => {
-            console.log(`[bulkAction] Calling updateVMStatusUI for server_id=${item.server_id}, vmid=${item.vmid}, action=${action}`);
+            debugLog(`[bulkAction] Calling updateVMStatusUI for server_id=${item.server_id}, vmid=${item.vmid}, action=${action}`);
             updateVMStatusUI(item.server_id, item.vmid, 'pending', action);
         });
         
@@ -1439,6 +1438,7 @@ function renderTable() {
     const start = (currentPageNum - 1) * pageSizeNum;
     const end = start + pageSizeNum;
     const pageItems = sorted.slice(start, end);
+    currentPageVMsCache = pageItems;
     
     if (pageItems.length === 0) {
         tbody.innerHTML = `
@@ -1816,7 +1816,7 @@ async function vmAction(action, serverId, vmid, type, node, vmName) {
 function updateVMStatusUI(serverId, vmid, status, action = null) {
     const elementId = `vm-status-${serverId}-${vmid}`;
     const statusEl = document.getElementById(elementId);
-    console.log(`[updateVMStatusUI] Looking for element: ${elementId}, found: ${!!statusEl}, status: ${status}, action: ${action}`);
+    debugLog(`[updateVMStatusUI] Looking for element: ${elementId}, found: ${!!statusEl}, status: ${status}, action: ${action}`);
     if (!statusEl) {
         console.warn(`[updateVMStatusUI] Element not found: ${elementId}`);
         return;
@@ -1837,8 +1837,7 @@ function updateVMStatusUI(serverId, vmid, status, action = null) {
                            action === 'restart' ? '{{ t("restarting") }}' :
                            action === 'shutdown' ? '{{ t("shutting_down") }}' : '...';
         statusEl.innerHTML = `<span class="status-spinner"></span> ${actionLabel}`;
-        console.log(`[updateVMStatusUI] Set pending with spinner: ${statusEl.innerHTML}`);
-    } else if (status === 'running') {
+        debugLog(`[updateVMStatusUI] Set pending with spinner: ${statusEl.innerHTML}`);    } else if (status === 'running') {
         statusEl.textContent = t('active');
     } else {
         statusEl.textContent = t('inactive');

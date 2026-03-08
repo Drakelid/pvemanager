@@ -1,0 +1,648 @@
+"""
+Cluster Topology Management API
+=================================
+Endpoints for creating Proxmox clusters, joining nodes, ejecting nodes,
+and preparing nodes for join (backup + cleanup).
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+from loguru import logger
+import asyncio
+from typing import Optional
+
+from ...db import get_db
+from ...models import ProxmoxServer, User
+from ...auth import PermissionChecker
+from ...proxmox_client import ProxmoxClient
+from ._helpers import _get_proxmox_client
+
+router = APIRouter()
+
+
+# ==================== Helpers ====================
+
+def _get_server_or_404(db: Session, server_id: int) -> ProxmoxServer:
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
+    return server
+
+
+def _get_password_client(server: ProxmoxServer, override_password: str = None) -> ProxmoxClient:
+    """
+    Build a ProxmoxClient that uses password auth (required for cluster ops).
+    Falls back to stored password, or raises 400 if none available.
+    """
+    pw = override_password or server.password
+    if not pw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Для операций с кластером требуется пароль root@pam. "
+                "Убедитесь, что сервер добавлен через Auto-Setup с паролем, "
+                "или передайте пароль явно в параметре rootpw."
+            )
+        )
+    return ProxmoxClient(
+        host=server.ip_address,
+        user=server.api_user,
+        password=pw,
+        verify_ssl=server.verify_ssl,
+    )
+
+
+# ==================== GET /api/cluster/topology ====================
+
+@router.get("/api/cluster/topology")
+def get_cluster_topology(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.view")),
+):
+    """
+    Получить все серверы, сгруппированные по кластеру.
+    Standalone-серверы (cluster_name=NULL) — в отдельном списке.
+    """
+    servers = db.query(ProxmoxServer).all()
+
+    clusters: dict = {}
+    standalone = []
+
+    for s in servers:
+        entry = {
+            "id": s.id,
+            "name": s.name,
+            "hostname": s.hostname,
+            "ip_address": s.ip_address,
+            "port": s.port,
+            "is_online": s.is_online,
+            "cluster_name": s.cluster_name,
+        }
+        if s.cluster_name:
+            clusters.setdefault(s.cluster_name, []).append(entry)
+        else:
+            standalone.append(entry)
+
+    return {"clusters": clusters, "standalone": standalone}
+
+
+# ==================== POST /api/cluster/create ====================
+
+@router.post("/api/cluster/create", status_code=status.HTTP_201_CREATED)
+async def create_cluster(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+):
+    """
+    Создать новый Proxmox corosync кластер на указанной ноде.
+
+    Body:
+        server_id (int): ID ноды в панели
+        cluster_name (str): Уникальное имя кластера
+        link0_ip (str, optional): IP для corosync link0
+        rootpw (str, optional): root-пароль (если не сохранён)
+    """
+    server_id = body.get("server_id")
+    cluster_name = body.get("cluster_name", "").strip()
+    link0_ip = body.get("link0_ip")
+    rootpw = body.get("rootpw")
+
+    if not server_id or not cluster_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать server_id и cluster_name"
+        )
+
+    # Validate cluster_name matches Proxmox node name rules:
+    # lowercase, alphanumeric + hyphens, starts with letter, max 15 chars
+    import re
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9\-]{0,14}$', cluster_name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="cluster_name должен начинаться с буквы, содержать только буквы/цифры/дефис, макс 15 символов"
+        )
+
+    server = _get_server_or_404(db, server_id)
+
+    # Check if server is already part of a cluster
+    if server.cluster_name:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Сервер '{server.name}' уже состоит в кластере '{server.cluster_name}'"
+        )
+
+    client = _get_password_client(server, rootpw)
+
+    # Verify server is not already in a cluster on Proxmox side
+    if client.is_cluster():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Нода уже является частью кластера Proxmox. Используйте join для добавления в существующий кластер."
+        )
+
+    result = client.create_cluster(cluster_name=cluster_name, link0=link0_ip)
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ошибка создания кластера: {result.get('error')}"
+        )
+
+    # Update panel DB
+    server.cluster_name = cluster_name
+    db.commit()
+
+    logger.info(
+        f"User {current_user.username} created cluster '{cluster_name}' on server '{server.name}'"
+    )
+
+    return {
+        "success": True,
+        "cluster_name": cluster_name,
+        "server_id": server_id,
+        "server_name": server.name,
+        "upid": result.get("upid"),
+        "message": f"Кластер '{cluster_name}' создаётся. Отслеживайте задачу через upid.",
+    }
+
+
+# ==================== GET /api/cluster/{server_id}/join-info ====================
+
+@router.get("/api/cluster/{server_id}/join-info")
+def get_cluster_join_info(
+    server_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+):
+    """
+    Получить fingerprint и join-данные с кластерной ноды.
+    Используется для последующего вызова /api/cluster/join.
+    """
+    server = _get_server_or_404(db, server_id)
+    client = _get_proxmox_client(server)
+
+    result = client.get_cluster_join_info()
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось получить join-информацию: {result.get('error')}"
+        )
+
+    data = result.get("data", {})
+
+    # Extract the most useful fields for the frontend
+    totem = data.get("totem", {})
+    return {
+        "server_id": server_id,
+        "server_name": server.name,
+        "cluster_name": totem.get("cluster_name") or server.cluster_name,
+        "fingerprint": data.get("fingerprint"),
+        "nodelist": data.get("nodelist", []),
+        "config_digest": data.get("config_digest"),
+        "preferred_node_ip": server.ip_address,
+    }
+
+
+# ==================== GET /api/cluster/{server_id}/pre-join-check ====================
+
+@router.get("/api/cluster/{server_id}/pre-join-check")
+def pre_join_check(
+    server_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+):
+    """
+    Проверить ноду перед присоединением к кластеру:
+    - Список существующих VM и LXC (их нужно бэкапировать и удалить)
+    - Список хранилищ, поддерживающих content=backup
+    """
+    server = _get_server_or_404(db, server_id)
+    client = _get_proxmox_client(server)
+
+    nodes = client.get_nodes()
+    node_name = nodes[0].get("node") if nodes else server.hostname
+
+    vms = client.get_vms(node=node_name)
+    containers = client.get_containers(node=node_name)
+    backup_storages = client.get_backup_storages(node=node_name)
+
+    vm_list = [
+        {
+            "vmid": v.get("vmid"),
+            "name": v.get("name", f"vm-{v.get('vmid')}"),
+            "status": v.get("status"),
+            "type": "qemu",
+            "maxdisk": v.get("maxdisk", 0),
+            "mem": v.get("maxmem", 0),
+        }
+        for v in vms
+    ]
+    ct_list = [
+        {
+            "vmid": c.get("vmid"),
+            "name": c.get("name", f"ct-{c.get('vmid')}"),
+            "status": c.get("status"),
+            "type": "lxc",
+            "maxdisk": c.get("maxdisk", 0),
+            "mem": c.get("maxmem", 0),
+        }
+        for c in containers
+    ]
+
+    guests = vm_list + ct_list
+    storages = [
+        {
+            "storage": s.get("storage"),
+            "type": s.get("type"),
+            "avail": s.get("avail"),
+            "total": s.get("total"),
+        }
+        for s in backup_storages
+    ]
+
+    return {
+        "server_id": server_id,
+        "server_name": server.name,
+        "node_name": node_name,
+        "guests_count": len(guests),
+        "guests": guests,
+        "backup_storages": storages,
+        "ready_for_join": len(guests) == 0,
+        "warning": (
+            "После присоединения к кластеру /etc/pve будет перезаписан. "
+            "Рекомендуется использовать shared storage (NFS, Ceph) — "
+            "локальные хранилища ноды могут стать недоступными через кластерный интерфейс."
+            if guests else None
+        ),
+    }
+
+
+# ==================== POST /api/cluster/prepare-join ====================
+
+@router.post("/api/cluster/prepare-join")
+async def prepare_join(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+):
+    """
+    Создать резервные копии всех VM/LXC на ноде через vzdump и удалить их,
+    чтобы нода стала готова для присоединения к кластеру.
+
+    Body:
+        node_server_id (int): ID ноды в панели
+        backup_storage (str): Хранилище для бэкапов (content=backup)
+        compress (str, optional): zstd | lzo | gzip | 0 (default: zstd)
+
+    Returns:
+        backed_up: список успешно забэкапированных vmid
+        deleted: список удалённых vmid
+        errors: список ошибок (vmid + сообщение)
+        ready_for_join: True если все VM удалены
+    """
+    node_server_id = body.get("node_server_id")
+    backup_storage = body.get("backup_storage", "").strip()
+    compress = body.get("compress", "zstd")
+
+    if not node_server_id or not backup_storage:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать node_server_id и backup_storage"
+        )
+
+    server = _get_server_or_404(db, node_server_id)
+    client = _get_proxmox_client(server)
+
+    nodes = client.get_nodes()
+    node_name = nodes[0].get("node") if nodes else server.hostname
+
+    # Collect all guests
+    vms = client.get_vms(node=node_name)
+    containers = client.get_containers(node=node_name)
+    all_guests = [
+        {"vmid": v.get("vmid"), "type": "qemu"} for v in vms
+    ] + [
+        {"vmid": c.get("vmid"), "type": "lxc"} for c in containers
+    ]
+
+    if not all_guests:
+        return {
+            "backed_up": [],
+            "deleted": [],
+            "errors": [],
+            "ready_for_join": True,
+            "message": "Нода не содержит VM/LXC — готова к join",
+        }
+
+    backed_up = []
+    errors = []
+
+    # Step 1: Create backups for all guests
+    upid_map: dict = {}  # vmid -> upid
+    for guest in all_guests:
+        vmid = guest["vmid"]
+        result = client.vzdump_guest(
+            node=node_name,
+            vmid=vmid,
+            storage=backup_storage,
+            compress=compress,
+        )
+        if result.get("success"):
+            upid_map[vmid] = result["upid"]
+        else:
+            errors.append({"vmid": vmid, "phase": "backup", "error": result.get("error")})
+
+    # Step 2: Poll backup tasks until done (max 30 min, check every 5 sec)
+    MAX_WAIT = 1800  # seconds
+    POLL_INTERVAL = 5
+    elapsed = 0
+
+    while upid_map and elapsed < MAX_WAIT:
+        await asyncio.sleep(POLL_INTERVAL)
+        elapsed += POLL_INTERVAL
+
+        finished_vmids = []
+        for vmid, upid in list(upid_map.items()):
+            try:
+                task_status = client.proxmox.nodes(node_name).tasks(upid).status.get()
+                if task_status.get("status") == "stopped":
+                    finished_vmids.append(vmid)
+                    if task_status.get("exitstatus") == "OK":
+                        backed_up.append(vmid)
+                    else:
+                        errors.append({
+                            "vmid": vmid,
+                            "phase": "backup",
+                            "error": f"vzdump завершился с ошибкой: {task_status.get('exitstatus')}",
+                        })
+            except Exception as e:
+                logger.warning(f"Could not check task status for vmid {vmid}: {e}")
+
+        for vmid in finished_vmids:
+            del upid_map[vmid]
+
+    # Timeout: treat remaining as errors
+    for vmid in upid_map:
+        errors.append({"vmid": vmid, "phase": "backup", "error": "Таймаут ожидания бэкапа (30 мин)"})
+
+    # Step 3: Delete guests that were successfully backed up
+    deleted = []
+    vmids_to_delete = set(backed_up)
+
+    for guest in all_guests:
+        vmid = guest["vmid"]
+        if vmid not in vmids_to_delete:
+            continue
+
+        try:
+            if guest["type"] == "qemu":
+                # Stop first if running
+                qemu_info = client.proxmox.nodes(node_name).qemu(vmid).status.current.get()
+                if qemu_info.get("status") == "running":
+                    client.proxmox.nodes(node_name).qemu(vmid).status.stop.post()
+                    await asyncio.sleep(3)
+                client.proxmox.nodes(node_name).qemu(vmid).delete()
+            else:
+                ct_info = client.proxmox.nodes(node_name).lxc(vmid).status.current.get()
+                if ct_info.get("status") == "running":
+                    client.proxmox.nodes(node_name).lxc(vmid).status.stop.post()
+                    await asyncio.sleep(3)
+                client.proxmox.nodes(node_name).lxc(vmid).delete()
+
+            deleted.append(vmid)
+            logger.info(f"Deleted guest vmid {vmid} on {server.name} during prepare-join")
+
+        except Exception as e:
+            errors.append({"vmid": vmid, "phase": "delete", "error": str(e)})
+
+    ready_for_join = len(errors) == 0 and len(deleted) == len(all_guests)
+
+    logger.info(
+        f"User {current_user.username} prepare-join on '{server.name}': "
+        f"backed_up={backed_up}, deleted={deleted}, errors={[e['vmid'] for e in errors]}"
+    )
+
+    return {
+        "backed_up": backed_up,
+        "deleted": deleted,
+        "errors": errors,
+        "ready_for_join": ready_for_join,
+        "message": (
+            "Нода очищена и готова к присоединению к кластеру"
+            if ready_for_join
+            else f"Завершено с {len(errors)} ошибками. Исправьте их вручную перед join."
+        ),
+    }
+
+
+# ==================== POST /api/cluster/join ====================
+
+@router.post("/api/cluster/join")
+async def join_cluster(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+):
+    """
+    Присоединить standalone-ноду к существующему кластеру.
+
+    Body:
+        node_server_id (int): ID присоединяемой ноды в панели
+        cluster_server_id (int): ID любой ноды существующего кластера
+        rootpw (str): root-пароль присоединяемой ноды
+        link0 (str, optional): Локальный IP присоединяемой ноды для corosync
+
+    Returns 409 если нода содержит VM/LXC (сначала вызовите prepare-join).
+    """
+    node_server_id = body.get("node_server_id")
+    cluster_server_id = body.get("cluster_server_id")
+    rootpw = body.get("rootpw", "").strip()
+    link0 = body.get("link0")
+
+    if not node_server_id or not cluster_server_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать node_server_id и cluster_server_id"
+        )
+    if not rootpw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать rootpw (root-пароль присоединяемой ноды)"
+        )
+    if node_server_id == cluster_server_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="node_server_id и cluster_server_id не могут совпадать"
+        )
+
+    node_server = _get_server_or_404(db, node_server_id)
+    cluster_server = _get_server_or_404(db, cluster_server_id)
+
+    if not cluster_server.cluster_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Сервер '{cluster_server.name}' не является кластерной нодой в панели. "
+                   "Сначала создайте кластер или выберите ноду с cluster_name."
+        )
+
+    # --- Pre-check: ноды не должно содержать гестов ---
+    node_client = _get_proxmox_client(node_server)
+    nodes = node_client.get_nodes()
+    node_name = nodes[0].get("node") if nodes else node_server.hostname
+
+    vms = node_client.get_vms(node=node_name)
+    containers = node_client.get_containers(node=node_name)
+
+    if vms or containers:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "GUESTS_FOUND",
+                "message": (
+                    f"Нода '{node_server.name}' содержит {len(vms)} VM и {len(containers)} LXC. "
+                    "При присоединении к кластеру /etc/pve будет перезаписан и все конфиги потеряются. "
+                    "Используйте 'prepare-join' для создания бэкапов и очистки ноды."
+                ),
+                "vms": [{"vmid": v.get("vmid"), "name": v.get("name")} for v in vms],
+                "lxc": [{"vmid": c.get("vmid"), "name": c.get("name")} for c in containers],
+            }
+        )
+
+    # --- Получить join-info с кластерной ноды ---
+    cluster_client = _get_proxmox_client(cluster_server)
+    join_info_result = cluster_client.get_cluster_join_info()
+
+    if not join_info_result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось получить join-информацию с '{cluster_server.name}': "
+                   f"{join_info_result.get('error')}"
+        )
+
+    join_data = join_info_result.get("data", {})
+    fingerprint = join_data.get("fingerprint")
+    cluster_name = join_data.get("totem", {}).get("cluster_name") or cluster_server.cluster_name
+
+    if not fingerprint:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось получить fingerprint кластера"
+        )
+
+    # --- Выполнить join на присоединяемой ноде (используем пароль из запроса) ---
+    joining_client = _get_password_client(node_server, rootpw)
+    result = joining_client.join_cluster(
+        cluster_host=cluster_server.ip_address,
+        rootpw=rootpw,
+        fingerprint=fingerprint,
+        link0=link0,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ошибка присоединения к кластеру: {result.get('error')}"
+        )
+
+    # --- Обновить панель: выставить cluster_name ---
+    node_server.cluster_name = cluster_name
+    db.commit()
+
+    logger.info(
+        f"User {current_user.username} joined '{node_server.name}' "
+        f"to cluster '{cluster_name}' (via '{cluster_server.name}')"
+    )
+
+    return {
+        "success": True,
+        "node_server_id": node_server_id,
+        "node_name": node_server.name,
+        "cluster_name": cluster_name,
+        "upid": result.get("upid"),
+        "message": (
+            f"Нода '{node_server.name}' присоединяется к кластеру '{cluster_name}'. "
+            "После завершения задачи интерфейс ноды перезапустится. "
+            "Отслеживайте прогресс через upid."
+        ),
+    }
+
+
+# ==================== POST /api/cluster/{server_id}/eject-node ====================
+
+@router.post("/api/cluster/{server_id}/eject-node")
+def eject_cluster_node(
+    server_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+):
+    """
+    Удалить ноду из кластера Proxmox.
+    Вызывается на ЛЮБОЙ другой кластерной ноде (не на удаляемой).
+    Удаляемая нода должна быть ВЫКЛЮЧЕНА.
+
+    body:
+        node_name (str): hostname ноды для удаления
+        rootpw (str, optional): root-пароль для SSH fallback
+        clear_panel_entry (bool, optional): Очистить cluster_name у панельной записи ноды (default: true)
+    """
+    node_name = body.get("node_name", "").strip()
+    rootpw = body.get("rootpw")
+    clear_panel_entry = body.get("clear_panel_entry", True)
+
+    if not node_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать node_name"
+        )
+
+    # server_id — это нода, с которой выполняем команду (остающаяся в кластере)
+    server = _get_server_or_404(db, server_id)
+
+    # Build client — prefer password for SSH fallback availability
+    if rootpw or server.password:
+        client = _get_password_client(server, rootpw)
+        client._password = rootpw or server.password  # expose for SSH fallback
+    else:
+        client = _get_proxmox_client(server)
+
+    result = client.delete_cluster_node(node_name)
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось удалить ноду '{node_name}': {result.get('error')}"
+        )
+
+    # Clear cluster_name on matching panel entry
+    if clear_panel_entry:
+        ejected_server = db.query(ProxmoxServer).filter(
+            ProxmoxServer.hostname == node_name,
+            ProxmoxServer.cluster_name == server.cluster_name,
+        ).first()
+        if ejected_server:
+            ejected_server.cluster_name = None
+            db.commit()
+            logger.info(
+                f"Cleared cluster_name for panel server '{ejected_server.name}' (ejected node)"
+            )
+
+    logger.info(
+        f"User {current_user.username} ejected node '{node_name}' "
+        f"from cluster '{server.cluster_name}' via server '{server.name}' "
+        f"(method: {result.get('method', 'rest')})"
+    )
+
+    return {
+        "success": True,
+        "ejected_node": node_name,
+        "cluster_name": server.cluster_name,
+        "method": result.get("method", "rest"),
+        "message": (
+            f"Нода '{node_name}' удалена из кластера. "
+            "Убедитесь, что нода выключена и не подключена к той же кластерной сети."
+        ),
+    }

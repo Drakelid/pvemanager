@@ -578,6 +578,11 @@ body.update-in-progress .layout {
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
                     <span>{{ t('nav_logs') }}</span>
                 </a></li>
+                <li><a href="/tasks" class="{{ 'active' if request.path.startswith('/tasks') else '' }}" title="Менеджер задач">
+                    <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+                    <span>Задачи</span>
+                    <span id="sidebarTasksBadge" style="display:none; background:#667eea; color:#fff; font-size:.62rem; font-weight:700; border-radius:9999px; padding:1px 6px; margin-left:auto; line-height:1.5;"></span>
+                </a></li>
                 <li><a href="/settings" class="{{ 'active' if request.path.startswith('/settings') else '' }}" title="{{ t('nav_settings') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                     <span>{{ t('nav_settings') }}</span>
@@ -643,6 +648,14 @@ body.update-in-progress .layout {
                     </svg>
                 </button>
                 
+                <!-- Task Manager Button -->
+                <button id="tasksBtn" class="tasks-btn" onclick="toggleTaskDrawer()" title="Менеджер задач">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    <span id="tasksCountBadge" class="tasks-count-badge" style="display:none;">0</span>
+                </button>
+
                 <!-- Notification Bell -->
                 <button id="notificationBell" class="notification-bell" onclick="toggleNotificationCenter()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -674,6 +687,29 @@ body.update-in-progress .layout {
         <div class="notification-center-footer">
             <button onclick="markAllAsRead()" class="notification-action-btn">{{ t('mark_all_read') }}</button>
             <button onclick="clearAllRead()" class="notification-action-btn">{{ t('clear_all') }}</button>
+        </div>
+    </div>
+
+    <!-- Task Drawer -->
+    <div id="taskDrawer" class="task-drawer" style="display:none;">
+        <div class="task-drawer-header">
+            <h3><i class="fa-solid fa-list-check" style="color:#667eea; margin-right:.5rem;"></i> Задачи</h3>
+            <button class="task-drawer-close" onclick="toggleTaskDrawer()">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="task-drawer-body" id="taskDrawerBody">
+            <div class="task-drawer-empty" id="taskDrawerEmpty">
+                <i class="fa-solid fa-inbox" style="font-size:1.8rem; display:block; margin-bottom:.5rem; opacity:.4;"></i>
+                Нет активных задач
+            </div>
+            <div id="taskDrawerCards"></div>
+        </div>
+        <div class="task-drawer-footer">
+            <a href="/tasks">
+                <i class="fa-solid fa-arrow-right" style="margin-right:.4rem;"></i>
+                Открыть менеджер задач
+            </a>
         </div>
     </div>
     
@@ -1316,6 +1352,9 @@ body.update-in-progress .layout {
             
             // Load GitHub stars count
             loadGitHubStars();
+
+            // Init task drawer WS
+            initTaskDrawerWS();
         }
         
         // Add click handlers for sidebar menu items to update page title
@@ -1335,6 +1374,128 @@ body.update-in-progress .layout {
             });
         });
     });
+
+    // ================================================================
+    // Task Drawer — global WebSocket-based live task indicator
+    // ================================================================
+    let taskDrawerOpen = false;
+    let taskDrawerWS = null;
+    let taskDrawerTasks = {};
+    let taskDrawerReconnectTimer = null;
+    let taskDrawerReconnectDelay = 2000;
+
+    function toggleTaskDrawer() {
+        const drawer = document.getElementById('taskDrawer');
+        taskDrawerOpen = !taskDrawerOpen;
+        drawer.style.display = taskDrawerOpen ? 'flex' : 'none';
+        if (taskDrawerOpen) renderTaskDrawer();
+    }
+
+    // Close drawer when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!taskDrawerOpen) return;
+        const drawer = document.getElementById('taskDrawer');
+        const btn = document.getElementById('tasksBtn');
+        if (drawer && btn && !drawer.contains(e.target) && !btn.contains(e.target)) {
+            taskDrawerOpen = false;
+            drawer.style.display = 'none';
+        }
+    });
+
+    function normalizeTaskStatus(s) {
+        const m = { queued:'pending', error:'failed', canceled:'cancelled' };
+        return m[s] || s || 'pending';
+    }
+
+    function renderTaskDrawer() {
+        const cards = document.getElementById('taskDrawerCards');
+        const empty = document.getElementById('taskDrawerEmpty');
+        const list = Object.values(taskDrawerTasks)
+            .sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
+            .slice(0, 10);
+        if (list.length === 0) {
+            cards.innerHTML = '';
+            empty.style.display = 'block';
+            return;
+        }
+        empty.style.display = 'none';
+        const icons = { running:'<i class="fa-solid fa-circle-notch" style="animation:task-spin 1.2s linear infinite;"></i>', pending:'<i class="fa-solid fa-clock"></i>', completed:'<i class="fa-solid fa-circle-check"></i>', failed:'<i class="fa-solid fa-circle-xmark"></i>', cancelled:'<i class="fa-solid fa-ban"></i>' };
+        const labels = { running:'Выполняется', pending:'В очереди', completed:'Завершено', failed:'Ошибка', cancelled:'Отменено' };
+        cards.innerHTML = list.map(t => {
+            const st = normalizeTaskStatus(t.status);
+            const pct = st === 'completed' ? 100 : st === 'failed' || st === 'cancelled' ? 100 :
+                (t.kind === 'bulk' && t.total_items > 0 ? Math.round(t.processed_items/t.total_items*100) : (st==='running'?60:0));
+            const desc = t.description || t.action || t.task_type || 'Задача';
+            const ts = t.created_at ? new Date(t.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}) : '';
+            return `<div class="task-mini-card ${st}">
+                <div class="task-mini-top">
+                    <span class="task-dot ${st}"></span>
+                    <span class="task-mini-name" title="${desc}">${desc.length>35?desc.slice(0,33)+'…':desc}</span>
+                    <span class="task-mini-time">${ts}</span>
+                </div>
+                <div class="task-mini-progress">
+                    <div class="task-progress-track" style="height:4px;">
+                        <div class="task-progress-fill ${st}" style="width:${pct}%;"></div>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:.35rem;">
+                    <span class="task-badge task-badge-${st}" style="font-size:.65rem; padding:2px 7px;">${icons[st]||''} ${labels[st]||st}</span>
+                    ${t.kind==='bulk'&&t.total_items>0?`<span style="font-size:.7rem;color:var(--text-muted);">${t.processed_items||0}/${t.total_items}</span>`:''}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function updateTaskBadge() {
+        const active = Object.values(taskDrawerTasks).filter(t => {
+            const st = normalizeTaskStatus(t.status);
+            return st === 'running' || st === 'pending';
+        }).length;
+        const badge = document.getElementById('tasksCountBadge');
+        const sidebar = document.getElementById('sidebarTasksBadge');
+        if (!badge) return;
+        if (active > 0) {
+            badge.textContent = active;
+            badge.style.display = 'flex';
+            badge.className = 'tasks-count-badge has-active';
+            if (sidebar) { sidebar.textContent = active; sidebar.style.display = 'inline-block'; }
+        } else {
+            badge.style.display = 'none';
+            if (sidebar) sidebar.style.display = 'none';
+        }
+    }
+
+    function initTaskDrawerWS() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        taskDrawerWS = new WebSocket(`${proto}://${location.host}/ws/tasks?token=${encodeURIComponent(token)}`);
+        taskDrawerWS.onmessage = ({data}) => {
+            try {
+                const msg = JSON.parse(data);
+                if (msg.type === 'task_list') {
+                    taskDrawerTasks = {};
+                    (msg.tasks||[]).forEach(t => { taskDrawerTasks[`${t.kind}_${t.id}`] = t; });
+                } else if (msg.type === 'task_update' || msg.type === 'task_created') {
+                    if (msg.task) taskDrawerTasks[`${msg.task.kind}_${msg.task.id}`] = msg.task;
+                } else if (msg.type === 'task_removed') {
+                    if (msg.task) delete taskDrawerTasks[`${msg.task.kind}_${msg.task.id}`];
+                }
+                updateTaskBadge();
+                if (taskDrawerOpen) renderTaskDrawer();
+            } catch {}
+        };
+        taskDrawerWS.onclose = () => {
+            taskDrawerReconnectTimer = setTimeout(initTaskDrawerWS, taskDrawerReconnectDelay);
+            taskDrawerReconnectDelay = Math.min(taskDrawerReconnectDelay * 2, 30000);
+        };
+        taskDrawerWS.onopen = () => {
+            taskDrawerReconnectDelay = 2000;
+            setInterval(() => {
+                if (taskDrawerWS && taskDrawerWS.readyState === WebSocket.OPEN) taskDrawerWS.send(JSON.stringify({type:'ping'}));
+            }, 20000);
+        };
+    }
 </script>
 <!-- Bootstrap 5 JS Bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>

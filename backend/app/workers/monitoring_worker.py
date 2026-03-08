@@ -16,20 +16,22 @@ def utcnow() -> datetime:
 
 try:
     from backend.app.db import SessionLocal
-    from backend.app.models import User, ProxmoxServer, PanelSettings, VMInstance, IPAMAllocation, Notification
+    from backend.app.models import User, ProxmoxServer, PanelSettings, VMInstance, IPAMAllocation, Notification, ProxmoxTask
     from backend.app.services.notification_service import NotificationService
     from backend.app.logging_service import LoggingService
     from backend.app.proxmox_client import ProxmoxClient
     from backend.app.schemas import NotificationCreate
     from backend.app.i18n import t
+    from backend.app.websocket_manager import broadcast_task_update
 except ImportError:
     from app.db import SessionLocal
-    from app.models import User, ProxmoxServer, PanelSettings, VMInstance, IPAMAllocation, Notification
+    from app.models import User, ProxmoxServer, PanelSettings, VMInstance, IPAMAllocation, Notification, ProxmoxTask
     from app.services.notification_service import NotificationService
     from app.logging_service import LoggingService
     from app.proxmox_client import ProxmoxClient
     from app.schemas import NotificationCreate
     from app.i18n import t
+    from app.websocket_manager import broadcast_task_update
 
 
 def get_panel_language(db) -> str:
@@ -570,7 +572,7 @@ class MonitoringWorker:
                 logger.debug("[VM SYNC] No online servers, skipping sync")
                 return
             
-            logger.info(f"[VM SYNC] Starting VM cache sync for {len(servers)} servers")
+            logger.debug(f"[VM SYNC] Starting VM cache sync for {len(servers)} servers")
             
             # Load IPAM allocations for IP lookup
             ipam_allocations = db.query(IPAMAllocation).filter(
@@ -618,7 +620,7 @@ class MonitoringWorker:
                 cluster_id = min(server_ids)  # Use smallest server_id as cluster identifier
                 for sid in server_ids:
                     cluster_map[sid] = cluster_id
-                logger.info(f"[VM SYNC] Cluster detected: servers {server_ids} share nodes {list(nodes)})")
+                logger.debug(f"[VM SYNC] Cluster detected: servers {server_ids} share nodes {list(nodes)})")
             
             # Track seen VMs per cluster/server for dedup
             seen_in_cluster = {}  # cluster_id -> set of vmid
@@ -677,12 +679,12 @@ class MonitoringWorker:
                         all_vms_data.append((use_server_id, ct, 'lxc'))
                         server_ct_count += 1
                     
-                    logger.info(f"[VM SYNC] Server {server.name}: collected {server_vm_count} VMs, {server_ct_count} containers")
+                    logger.debug(f"[VM SYNC] Server {server.name}: collected {server_vm_count} VMs, {server_ct_count} containers")
                         
                 except Exception as e:
                     logger.error(f"[VM SYNC] Error fetching from server {server.name}: {e}")
             
-            logger.info(f"[VM SYNC] Collected {len(all_vms_data)} unique VMs/containers")
+            logger.debug(f"[VM SYNC] Collected {len(all_vms_data)} unique VMs/containers")
             
             # Track all seen (server_id, vmid) pairs for cleanup
             all_seen = set()
@@ -780,7 +782,7 @@ class MonitoringWorker:
                 if (vm.server_id, vm.vmid) not in all_seen:
                     vm.deleted_at = sync_time
                     deleted_count += 1
-                    logger.info(f"[VM SYNC] Marked VM {vm.name} (server={vm.server_id}, vmid={vm.vmid}) as deleted")
+                    logger.debug(f"[VM SYNC] Marked VM {vm.name} (server={vm.server_id}, vmid={vm.vmid}) as deleted")
                     
                     # Release IPAM allocation for deleted VM
                     try:
@@ -794,19 +796,88 @@ class MonitoringWorker:
                         )
                         if released:
                             released_ips += 1
-                            logger.info(f"[VM SYNC] Released IPAM IP {released_ip} for deleted VM {vm.name}")
+                            logger.debug(f"[VM SYNC] Released IPAM IP {released_ip} for deleted VM {vm.name}")
                     except Exception as e:
                         logger.warning(f"[VM SYNC] Failed to release IPAM for VM {vm.vmid}: {e}")
             
             db.commit()
-            logger.info(f"[VM SYNC] Cache sync completed. Processed {len(all_vms_data)} VMs/containers, marked {deleted_count} as deleted, released {released_ips} IPs")
+            logger.debug(f"[VM SYNC] Cache sync completed. Processed {len(all_vms_data)} VMs/containers, marked {deleted_count} as deleted, released {released_ips} IPs")
             
         except Exception as e:
             logger.error(f"[VM SYNC] Critical error: {e}", exc_info=True)
             db.rollback()
         finally:
             db.close()
-    
+
+    def run_upid_task_sync(self) -> None:
+        """
+        Poll Proxmox API for status of all 'running' ProxmoxTask records.
+        Updates DB status + log, then broadcasts WS update.
+        Runs every 5 seconds via APScheduler.
+        """
+        db = SessionLocal()
+        try:
+            running_tasks = (
+                db.query(ProxmoxTask)
+                .filter(ProxmoxTask.status == "running")
+                .all()
+            )
+            if not running_tasks:
+                return
+
+            logger.debug(f"[UPID SYNC] Checking {len(running_tasks)} running UPID task(s)")
+
+            for task in running_tasks:
+                if not task.server_id or not task.node:
+                    continue
+                try:
+                    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == task.server_id).first()
+                    if not server or not server.is_online:
+                        continue
+
+                    client = self._create_proxmox_client(server)
+                    if not client.is_connected():
+                        continue
+
+                    # --- status -----------------------------------------------
+                    proxmox_status = client.get_task_status(task.node, task.upid)
+                    pve_status = proxmox_status.get("status", "running") if proxmox_status else "running"
+
+                    # --- log --------------------------------------------------
+                    try:
+                        log_entries = client.get_task_log(task.node, task.upid, 0, 500) or []
+                        if isinstance(log_entries, list):
+                            task.log_text = "\n".join(
+                                entry.get("t", "") if isinstance(entry, dict) else str(entry)
+                                for entry in log_entries
+                            )
+                    except Exception:
+                        pass
+
+                    # --- finalise if stopped ----------------------------------
+                    if pve_status == "stopped":
+                        exit_status = proxmox_status.get("exitstatus", "") if proxmox_status else ""
+                        task.exit_status = exit_status
+                        task.status = "completed" if exit_status == "OK" else "failed"
+                        task.completed_at = utcnow()
+                        logger.info(f"[UPID SYNC] Task #{task.id} finished: {task.status} ({exit_status})")
+
+                    db.commit()
+
+                    # --- WS broadcast -----------------------------------------
+                    try:
+                        broadcast_task_update(task.user_id, "task_update", task.to_dict())
+                    except Exception as _wb:
+                        logger.debug(f"[UPID SYNC] WS broadcast skipped: {_wb}")
+
+                except Exception as e:
+                    logger.error(f"[UPID SYNC] Error syncing task #{task.id} ({task.upid[:30]}): {e}")
+
+        except Exception as e:
+            logger.error(f"[UPID SYNC] Critical error: {e}", exc_info=True)
+        finally:
+            db.close()
+
     def _should_send_alert(self, alert_key: str, cooldown_minutes: int = 30) -> bool:
         """
         Check if alert should be sent (rate limiting)
@@ -837,7 +908,7 @@ class MonitoringWorker:
         
         db = SessionLocal()
         try:
-            logger.info("[UPDATE CHECK] Checking for panel updates...")
+            logger.debug("[UPDATE CHECK] Checking for panel updates...")
             
             # Run async check_for_updates
             result = run_async(check_for_updates())
@@ -888,12 +959,12 @@ class MonitoringWorker:
                         new_version=new_version,
                         changelog=changelog
                     )
-                    logger.info(f"[UPDATE CHECK] Notified user {user.username} about update to {new_version}")
+                    logger.debug(f"[UPDATE CHECK] Notified user {user.username} about update to {new_version}")
                 except Exception as e:
                     logger.error(f"[UPDATE CHECK] Failed to notify user {user.id}: {e}")
             
             db.commit()
-            logger.info(f"[UPDATE CHECK] Completed. Notified {len(users)} admin users about version {new_version}")
+            logger.debug(f"[UPDATE CHECK] Completed. Notified {len(users)} admin users about version {new_version}")
             
         except Exception as e:
             logger.error(f"[UPDATE CHECK] Error checking for updates: {e}", exc_info=True)
@@ -972,6 +1043,15 @@ def start_monitoring_worker():
         logger.info("Task queue processor registered")
     except ImportError as e:
         logger.warning(f"Task queue service not available: {e}")
+
+    # Proxmox UPID task sync - every 5 seconds
+    scheduler.add_job(
+        monitoring_worker.run_upid_task_sync,
+        trigger=IntervalTrigger(seconds=5),
+        id='upid_task_sync',
+        name='Sync Proxmox UPID task statuses',
+        replace_existing=True
+    )
     
     # Cleanup expired notifications - every 6 hours
     scheduler.add_job(

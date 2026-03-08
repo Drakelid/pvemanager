@@ -577,6 +577,187 @@ class ProxmoxClient:
             logger.error(f"Ошибка получения HA статуса {vmid}: {e}")
             return None
 
+    # ==================== Cluster Topology Management ====================
+
+    def create_cluster(self, cluster_name: str, link0: str = None) -> Dict:
+        """
+        Создать новый Proxmox кластер на этой ноде.
+        Требует аутентификации через пароль (root@pam).
+
+        Args:
+            cluster_name: Уникальное имя кластера (не изменяемо после создания)
+            link0: IP-адрес для corosync link0 (по умолчанию — IP ноды)
+
+        Returns:
+            Dict с UPID задачи или ошибкой
+        """
+        if not self.proxmox:
+            return {'success': False, 'error': 'Not connected'}
+
+        try:
+            params = {'clustername': cluster_name}
+            if link0:
+                params['link0'] = link0
+
+            result = self.proxmox.cluster.config.post(**params)
+            logger.info(f"Cluster '{cluster_name}' creation started on {self.host}, UPID: {result}")
+            return {'success': True, 'upid': result, 'cluster_name': cluster_name}
+        except Exception as e:
+            logger.error(f"Ошибка создания кластера '{cluster_name}' на {self.host}: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def get_cluster_join_info(self) -> Dict:
+        """
+        Получить информацию для присоединения к кластеру (fingerprint, join token).
+        Вызывается на существующей кластерной ноде.
+
+        Returns:
+            Dict с полями: totem, nodelist, fingerprint, config_digest
+        """
+        if not self.proxmox:
+            return {'success': False, 'error': 'Not connected'}
+
+        try:
+            info = self.proxmox.cluster.config.join.get()
+            logger.info(f"Got cluster join info from {self.host}")
+            return {'success': True, 'data': info}
+        except Exception as e:
+            logger.error(f"Ошибка получения join info с {self.host}: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def join_cluster(self, cluster_host: str, rootpw: str, fingerprint: str,
+                     link0: str = None) -> Dict:
+        """
+        Присоединить эту ноду к существующему кластеру.
+        ВАЖНО: Нода должна быть пустой — /etc/pve будет перезаписан.
+
+        Args:
+            cluster_host: IP/hostname существующей кластерной ноды
+            rootpw: root-пароль кластерной ноды (нужен для join)
+            fingerprint: SHA-256 fingerprint кластерного сертификата
+            link0: Локальный IP для corosync link0 (по умолчанию — IP ноды)
+
+        Returns:
+            Dict с UPID задачи или ошибкой
+        """
+        if not self.proxmox:
+            return {'success': False, 'error': 'Not connected'}
+
+        try:
+            params = {
+                'hostname': cluster_host,
+                'password': rootpw,
+                'fingerprint': fingerprint,
+            }
+            if link0:
+                params['link0'] = link0
+
+            result = self.proxmox.cluster.config.join.post(**params)
+            logger.info(f"Node {self.host} joining cluster at {cluster_host}, UPID: {result}")
+            return {'success': True, 'upid': result}
+        except Exception as e:
+            logger.error(f"Ошибка присоединения {self.host} к кластеру {cluster_host}: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def delete_cluster_node(self, node_name: str) -> Dict:
+        """
+        Удалить ноду из кластера (pvecm delnode).
+        Вызывается на ДРУГОЙ ноде кластера, не на удаляемой.
+        Удаляемая нода должна быть ВЫКЛЮЧЕНА.
+
+        Args:
+            node_name: Имя ноды для удаления (hostname)
+
+        Returns:
+            Dict с результатом
+        """
+        if not self.proxmox:
+            return {'success': False, 'error': 'Not connected'}
+
+        try:
+            # Proxmox PVE 8 API: DELETE /nodes/{node}
+            self.proxmox.nodes(node_name).delete()
+            logger.info(f"Node '{node_name}' deleted from cluster via {self.host}")
+            return {'success': True, 'node': node_name}
+        except Exception as e:
+            logger.warning(f"REST API delete node failed, trying SSH fallback: {e}")
+            # SSH fallback через pvecm delnode
+            return self._delete_cluster_node_via_ssh(node_name)
+
+    def _delete_cluster_node_via_ssh(self, node_name: str) -> Dict:
+        """SSH fallback для удаления ноды через pvecm delnode"""
+        from app.ssh_client import SSHClient
+        ssh = SSHClient(
+            hostname=self.host,
+            username='root',
+            password=getattr(self, '_password', None),
+        )
+        try:
+            if not ssh.connect():
+                return {'success': False, 'error': 'SSH connection failed'}
+
+            output, exit_code = ssh.execute(f"pvecm delnode {node_name}", return_exit_code=True)
+            ssh.close()
+
+            # "Could not kill node (error = CS_ERR_NOT_EXIST)" — ignorable per Proxmox docs
+            if exit_code == 0 or (output and 'CS_ERR_NOT_EXIST' in output):
+                logger.info(f"Node '{node_name}' removed via pvecm delnode (SSH)")
+                return {'success': True, 'node': node_name, 'method': 'ssh'}
+            else:
+                return {'success': False, 'error': output or 'pvecm delnode failed'}
+        except Exception as e:
+            logger.error(f"SSH pvecm delnode failed for {node_name}: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def vzdump_guest(self, node: str, vmid: int, storage: str,
+                     compress: str = 'zstd', mode: str = 'snapshot') -> Dict:
+        """
+        Создать резервную копию VM/LXC через vzdump.
+
+        Args:
+            node: Имя ноды
+            vmid: ID ВМ или контейнера
+            storage: Хранилище для бэкапа (должно поддерживать content=backup)
+            compress: Алгоритм сжатия (zstd, lzo, gzip, 0)
+            mode: Режим снятия бэкапа (snapshot, suspend, stop)
+
+        Returns:
+            Dict с UPID задачи
+        """
+        if not self.proxmox:
+            return {'success': False, 'error': 'Not connected'}
+
+        try:
+            upid = self.proxmox.nodes(node).vzdump.post(
+                vmid=vmid,
+                storage=storage,
+                compress=compress,
+                mode=mode,
+                remove=0,  # не удалять старые бэкапы автоматически
+            )
+            logger.info(f"vzdump started for vmid {vmid} on {node}, storage {storage}, UPID: {upid}")
+            return {'success': True, 'upid': upid, 'vmid': vmid}
+        except Exception as e:
+            logger.error(f"Ошибка vzdump vmid {vmid} на {node}: {e}")
+            return {'success': False, 'error': str(e), 'vmid': vmid}
+
+    def get_backup_storages(self, node: str) -> List[Dict]:
+        """
+        Получить список хранилищ, поддерживающих content=backup на ноде.
+
+        Returns:
+            Список Dict с полями: storage, type, content, avail, total
+        """
+        if not self.proxmox:
+            return []
+
+        try:
+            storages = self.proxmox.nodes(node).storage.get(content='backup', enabled=1)
+            return storages
+        except Exception as e:
+            logger.error(f"Ошибка получения backup-хранилищ для {node}: {e}")
+            return []
+
     def get_vm_rrddata(self, node: str, vmid: int, timeframe: str = "hour") -> Dict:
         """
         Получить исторические данные VM для графиков (CPU, Memory, Network, Disk IO)
@@ -2973,7 +3154,7 @@ class ProxmoxClient:
 
     def create_backup(self, node: str, vmid: int, storage: str,
                       mode: str = "snapshot", compress: str = "zstd",
-                      remove: int = 1, notes: str = None) -> Dict:
+                      remove: int = 1, keep_last: int = None, notes: str = None) -> Dict:
         """
         Trigger vzdump backup for a VM/container.
         Returns {"success": True, "upid": "..."} or {"success": False, "error": "..."}
@@ -2986,8 +3167,10 @@ class ProxmoxClient:
                 "storage": storage,
                 "mode": mode,
                 "compress": compress,
-                "remove": remove,
+                "remove": int(bool(remove)),
             }
+            if keep_last and int(keep_last) > 0:
+                params["prune-backups"] = f"keep-last={int(keep_last)}"
             if notes:
                 params["notes"] = notes
             upid = self.proxmox.nodes(node).vzdump.post(**params)
@@ -3069,6 +3252,17 @@ class ProxmoxClient:
         except Exception as e:
             logger.error(f"Error deleting backup {volid}: {e}")
             return {"success": False, "error": str(e)}
+
+    def get_cluster_backup_jobs(self) -> List[Dict]:
+        """Fetch native vzdump backup jobs configured in Proxmox (cluster/backup)"""
+        if not self.proxmox:
+            return []
+        try:
+            jobs = self.proxmox.cluster.backup.get()
+            return jobs if isinstance(jobs, list) else []
+        except Exception as e:
+            logger.error(f"Error fetching cluster backup jobs: {e}")
+            return []
 
 
 def get_proxmox_resources(host: str, user: str = "root@pam", 

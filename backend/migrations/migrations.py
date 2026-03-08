@@ -1049,6 +1049,74 @@ def migrate_ipam_network_node(conn):
         logger.info("✓ ipam_networks.proxmox_node already exists")
 
 
+def migrate_cluster_support(conn):
+    """Migration 17: Add cluster_name column to proxmox_servers table"""
+    logger.info("Migration 17: Adding cluster support to proxmox_servers...")
+
+    if add_column_if_not_exists(conn, 'proxmox_servers', 'cluster_name', 'VARCHAR(100)'):
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_proxmox_cluster_name
+            ON proxmox_servers(cluster_name)
+        """))
+        logger.info("✓ Added cluster_name column and index to proxmox_servers")
+    else:
+        logger.info("✓ proxmox_servers.cluster_name already exists")
+
+    # Add cluster:manage permission to admin role if not already present
+    try:
+        result = conn.execute(text("SELECT permissions FROM roles WHERE name = 'admin'")).fetchone()
+        if result:
+            import json as _json
+            perms = _json.loads(result.permissions) if isinstance(result.permissions, str) else result.permissions
+            if not perms.get('proxmox.cluster.manage'):
+                perms['proxmox.cluster.manage'] = True
+                conn.execute(
+                    text("UPDATE roles SET permissions = :p WHERE name = 'admin'"),
+                    {"p": _json.dumps(perms)}
+                )
+                logger.info("✓ Added proxmox.cluster.manage to admin role")
+    except Exception as e:
+        logger.warning(f"Could not update admin role permissions: {e}")
+
+
+# ==================== Migration 18: Proxmox Tasks (UPID) ====================
+
+def migrate_proxmox_tasks(conn):
+    """Create proxmox_tasks table for tracking long-running Proxmox UPID tasks."""
+    logger.info("Migration 18: Creating proxmox_tasks table...")
+
+    if table_exists(conn, 'proxmox_tasks'):
+        logger.info("Table proxmox_tasks already exists, skipping")
+        return
+
+    conn.execute(text("""
+        CREATE TABLE proxmox_tasks (
+            id SERIAL PRIMARY KEY,
+            upid VARCHAR(200) NOT NULL,
+            server_id INTEGER REFERENCES proxmox_servers(id) ON DELETE SET NULL,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            node VARCHAR(100),
+            vmid INTEGER,
+            vm_type VARCHAR(10),
+            action VARCHAR(100) NOT NULL,
+            description VARCHAR(500),
+            status VARCHAR(20) NOT NULL DEFAULT 'running',
+            exit_status VARCHAR(100),
+            log_text TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+            completed_at TIMESTAMP WITH TIME ZONE
+        )
+    """))
+
+    conn.execute(text("CREATE INDEX idx_proxmox_tasks_upid ON proxmox_tasks(upid)"))
+    conn.execute(text("CREATE INDEX idx_proxmox_tasks_user_id ON proxmox_tasks(user_id)"))
+    conn.execute(text("CREATE INDEX idx_proxmox_tasks_status ON proxmox_tasks(status)"))
+    conn.execute(text("CREATE INDEX idx_proxmox_tasks_user_status ON proxmox_tasks(user_id, status)"))
+    conn.execute(text("CREATE INDEX idx_proxmox_tasks_created ON proxmox_tasks(created_at DESC)"))
+
+    logger.info("✓ proxmox_tasks table created")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1189,6 +1257,22 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"IPAM network node migration: {e}")
+                conn.rollback()
+
+            # Migration 17: Cluster Support (cluster_name column)
+            try:
+                migrate_cluster_support(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Cluster support migration: {e}")
+                conn.rollback()
+
+            # Migration 18: Proxmox Tasks (UPID tracking)
+            try:
+                migrate_proxmox_tasks(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Proxmox tasks migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

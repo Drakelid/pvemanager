@@ -1,0 +1,522 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom: 1.5rem;">
+    <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+        <div>
+            <h1 style="font-size:1.5rem; font-weight:700; margin:0; color:var(--text-primary);">
+                <i class="fa-solid fa-list-check" style="color:#667eea; margin-right:.5rem;"></i>
+                Менеджер задач
+            </h1>
+            <p style="margin:.25rem 0 0; color:var(--text-muted); font-size:.87rem;">
+                Все активные и завершённые задачи в реальном времени
+            </p>
+        </div>
+        <div style="margin-left:auto; display:flex; gap:.75rem; align-items:center;">
+            <div id="wsStatus" style="display:flex; align-items:center; gap:.4rem; font-size:.78rem; color:var(--text-muted);">
+                <span class="task-dot" id="wsDot" style="background:#6b7280;"></span>
+                <span id="wsStatusText">Подключение...</span>
+            </div>
+            <button class="btn btn-sm" style="background:var(--bg-surface); border:1px solid var(--border-default); color:var(--text-secondary); border-radius:8px; padding:.35rem .85rem;" 
+                    onclick="TaskManager.refresh()" title="Обновить">
+                <i class="fa-solid fa-rotate-right"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Tab bar -->
+<div class="tasks-tab-bar">
+    <button class="tasks-tab active" data-filter="all" onclick="TaskManager.setFilter('all', this)">
+        Все <span class="tasks-tab-count" id="cnt-all">0</span>
+    </button>
+    <button class="tasks-tab" data-filter="running" onclick="TaskManager.setFilter('running', this)">
+        <span class="task-dot running" style="margin-right:.3rem;"></span>
+        Выполняется <span class="tasks-tab-count" id="cnt-running">0</span>
+    </button>
+    <button class="tasks-tab" data-filter="pending" onclick="TaskManager.setFilter('pending', this)">
+        <span class="task-dot pending" style="margin-right:.3rem;"></span>
+        В очереди <span class="tasks-tab-count" id="cnt-pending">0</span>
+    </button>
+    <button class="tasks-tab" data-filter="completed" onclick="TaskManager.setFilter('completed', this)">
+        <span class="task-dot completed" style="margin-right:.3rem;"></span>
+        Завершено <span class="tasks-tab-count" id="cnt-completed">0</span>
+    </button>
+    <button class="tasks-tab" data-filter="failed" onclick="TaskManager.setFilter('failed', this)">
+        <span class="task-dot failed" style="margin-right:.3rem;"></span>
+        Ошибка <span class="tasks-tab-count" id="cnt-failed">0</span>
+    </button>
+    <button class="tasks-tab" data-filter="cancelled" onclick="TaskManager.setFilter('cancelled', this)">
+        <span class="task-dot cancelled" style="margin-right:.3rem;"></span>
+        Отменено <span class="tasks-tab-count" id="cnt-cancelled">0</span>
+    </button>
+</div>
+
+<!-- Task list -->
+<div id="taskList">
+    <div class="task-empty-state" id="taskEmpty" style="text-align:center; padding:4rem 2rem; color:var(--text-muted); display:none;">
+        <i class="fa-solid fa-inbox" style="font-size:2.5rem; margin-bottom:1rem; display:block; opacity:.35;"></i>
+        <p style="font-size:.95rem;">Задачи не найдены</p>
+    </div>
+    <div id="taskCards"></div>
+</div>
+
+<!-- Trace Modal -->
+<div class="modal fade" id="traceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content" style="background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:16px;">
+            <div class="modal-header" style="border-bottom:1px solid var(--border-default); padding:1.25rem 1.5rem;">
+                <div>
+                    <h5 class="modal-title" id="traceModalTitle" style="font-weight:700; color:var(--text-primary); margin:0;"></h5>
+                    <div id="traceModalMeta" style="font-size:.78rem; color:var(--text-muted); margin-top:.25rem;"></div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body" style="padding:0;">
+                <!-- Status bar -->
+                <div id="traceStatusBar" style="padding:.75rem 1.5rem; border-bottom:1px solid var(--border-muted); display:flex; align-items:center; gap:.75rem;">
+                    <span id="traceStatusBadge"></span>
+                    <div class="task-progress-track" style="flex:1;">
+                        <div class="task-progress-fill" id="traceProgressFill" style="width:0%;"></div>
+                    </div>
+                    <span id="traceProgressPct" style="font-size:.78rem; color:var(--text-muted); min-width:35px; text-align:right;">0%</span>
+                </div>
+
+                <!-- Tabs -->
+                <ul class="nav nav-tabs" style="padding:0 1.5rem; border-bottom:1px solid var(--border-muted); margin:0;">
+                    <li class="nav-item">
+                        <button class="nav-link active" id="tabResultsBtn" onclick="TaskManager.switchTraceTab('results')" 
+                                style="color:var(--text-muted); background:none; border:none; border-bottom:2px solid transparent; padding:.75rem 1rem; font-size:.85rem;">
+                            <i class="fa-solid fa-table-list" style="margin-right:.4rem;"></i> Результаты
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="tabLogBtn" onclick="TaskManager.switchTraceTab('log')"
+                                style="color:var(--text-muted); background:none; border:none; border-bottom:2px solid transparent; padding:.75rem 1rem; font-size:.85rem;">
+                            <i class="fa-solid fa-terminal" style="margin-right:.4rem;"></i> Лог
+                        </button>
+                    </li>
+                </ul>
+
+                <!-- Results tab -->
+                <div id="tabResults" style="padding:1.25rem 1.5rem;">
+                    <div id="traceResultsContent">
+                        <div style="text-align:center; padding:2rem; color:var(--text-muted);">Нет данных</div>
+                    </div>
+                </div>
+
+                <!-- Log tab -->
+                <div id="tabLog" style="padding:1.25rem 1.5rem; display:none;">
+                    <div class="task-trace-log" id="traceLogContent">Загрузка...</div>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid var(--border-default); padding:1rem 1.5rem;">
+                <button id="traceCancelBtn" class="btn btn-sm btn-danger" onclick="TaskManager.cancelTask()" style="display:none;">
+                    <i class="fa-solid fa-ban"></i> Отменить задачу
+                </button>
+                <button type="button" class="btn btn-sm" data-bs-dismiss="modal"
+                        style="background:var(--bg-surface); border:1px solid var(--border-default); color:var(--text-secondary);">
+                    Закрыть
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const TaskManager = (() => {
+    let ws = null;
+    let tasks = {};       // id -> task object
+    let currentFilter = 'all';
+    let openTaskId = null;
+    let openTaskKind = null; // 'bulk' | 'proxmox'
+    let traceTab = 'results';
+    let reconnectTimer = null;
+    let heartbeatTimer = null;
+    let reconnectDelay = 2000;
+
+    // ── Status helpers ─────────────────────────────────────────────
+    const STATUS_LABEL = {
+        running: 'Выполняется', pending: 'В очереди', queued: 'В очереди',
+        completed: 'Завершено', failed: 'Ошибка', error: 'Ошибка',
+        cancelled: 'Отменено', canceled: 'Отменено'
+    };
+    const STATUS_ICON = {
+        running: '<i class="fa-solid fa-circle-notch task-icon-spin"></i>',
+        pending: '<i class="fa-solid fa-clock"></i>',
+        queued:  '<i class="fa-solid fa-clock"></i>',
+        completed: '<i class="fa-solid fa-circle-check"></i>',
+        failed: '<i class="fa-solid fa-circle-xmark"></i>',
+        error:  '<i class="fa-solid fa-circle-xmark"></i>',
+        cancelled: '<i class="fa-solid fa-ban"></i>',
+        canceled:  '<i class="fa-solid fa-ban"></i>',
+    };
+    function normalizeStatus(s) {
+        const map = { queued: 'pending', error: 'failed', canceled: 'cancelled' };
+        return map[s] || s || 'pending';
+    }
+    function progressPct(task) {
+        const s = normalizeStatus(task.status);
+        if (s === 'completed') return 100;
+        if (s === 'failed' || s === 'cancelled') return 100;
+        if (task.kind === 'bulk' && task.total_items > 0) {
+            return Math.round((task.processed_items / task.total_items) * 100);
+        }
+        if (s === 'running') return null; // indeterminate
+        return 0;
+    }
+    function escH(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function fmtTime(iso) {
+        if (!iso) return '—';
+        try { return new Date(iso).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }); }
+        catch { return iso; }
+    }
+    function elapsed(start, end) {
+        if (!start) return '';
+        const a = new Date(start), b = end ? new Date(end) : new Date();
+        const s = Math.floor((b - a) / 1000);
+        if (s < 60) return `${s}с`;
+        if (s < 3600) return `${Math.floor(s/60)}м ${s%60}с`;
+        return `${Math.floor(s/3600)}ч ${Math.floor((s%3600)/60)}м`;
+    }
+
+    // ── Build card HTML ────────────────────────────────────────────
+    function buildCard(task) {
+        const st = normalizeStatus(task.status);
+        const pct = progressPct(task);
+        const indeterminate = (pct === null);
+        const fillPct = indeterminate ? 60 : pct;
+        const desc = task.description || task.action || task.task_type || 'Задача';
+        const meta = [];
+        if (task.kind === 'bulk') {
+            if (task.total_items > 0) meta.push(`<span><i class="fa-solid fa-layer-group"></i> ${task.processed_items||0} / ${task.total_items} объектов</span>`);
+        } else {
+            if (task.vmid) meta.push(`<span><i class="fa-solid fa-server"></i> VM ${task.vmid}</span>`);
+            if (task.node) meta.push(`<span><i class="fa-solid fa-network-wired"></i> ${escH(task.node)}</span>`);
+        }
+        meta.push(`<span><i class="fa-regular fa-clock"></i> ${fmtTime(task.created_at)}</span>`);
+        if (task.completed_at || task.updated_at) meta.push(`<span><i class="fa-solid fa-hourglass-end"></i> ${elapsed(task.created_at, task.completed_at || task.updated_at)}</span>`);
+        const cancelBtn = (st === 'pending' && task.kind === 'bulk') ?
+            `<button class="btn btn-sm" onclick="event.stopPropagation(); TaskManager.cancelTaskById('${task.kind}','${task.id}')"
+                style="background:rgba(239,68,68,.12); color:#ef4444; border:1px solid rgba(239,68,68,.3); border-radius:8px; padding:3px 10px; font-size:.75rem;">
+                <i class="fa-solid fa-ban"></i> Отменить
+            </button>` : '';
+
+        return `<div class="task-card ${st}" data-id="${task.id}" data-kind="${task.kind}" onclick="TaskManager.openTrace('${task.kind}','${task.id}')">
+            <div class="task-card-header">
+                <span class="task-dot ${st}"></span>
+                <span class="task-card-title">${escH(desc)}</span>
+                <span class="task-badge task-badge-${st}">
+                    ${STATUS_ICON[st] || ''} ${STATUS_LABEL[st] || st}
+                </span>
+                ${cancelBtn}
+            </div>
+            <div class="task-progress-track">
+                <div class="task-progress-fill ${st}" style="width:${fillPct}%;"></div>
+            </div>
+            <div class="task-card-meta">
+                ${meta.join('')}
+            </div>
+        </div>`;
+    }
+
+    // ── Render all cards ───────────────────────────────────────────
+    function render() {
+        const counts = { all:0, running:0, pending:0, completed:0, failed:0, cancelled:0 };
+        const filtered = [];
+        for (const [, task] of Object.entries(tasks)) {
+            const st = normalizeStatus(task.status);
+            counts.all++;
+            counts[st] = (counts[st] || 0) + 1;
+            if (currentFilter === 'all' || st === currentFilter) filtered.push(task);
+        }
+        // Sort: running first, then pending, then by date desc
+        const order = ['running','pending','failed','cancelled','completed'];
+        filtered.sort((a,b) => {
+            const oa = order.indexOf(normalizeStatus(a.status));
+            const ob = order.indexOf(normalizeStatus(b.status));
+            if (oa !== ob) return oa - ob;
+            return new Date(b.created_at) - new Date(a.created_at);
+        });
+
+        document.getElementById('cnt-all').textContent = counts.all;
+        document.getElementById('cnt-running').textContent = counts.running || 0;
+        document.getElementById('cnt-pending').textContent = counts.pending || 0;
+        document.getElementById('cnt-completed').textContent = counts.completed || 0;
+        document.getElementById('cnt-failed').textContent = counts.failed || 0;
+        document.getElementById('cnt-cancelled').textContent = counts.cancelled || 0;
+
+        const cardsEl = document.getElementById('taskCards');
+        const emptyEl = document.getElementById('taskEmpty');
+        if (filtered.length === 0) {
+            cardsEl.innerHTML = '';
+            emptyEl.style.display = 'flex';
+            emptyEl.style.flexDirection = 'column';
+            emptyEl.style.alignItems = 'center';
+        } else {
+            emptyEl.style.display = 'none';
+            cardsEl.innerHTML = filtered.map(buildCard).join('');
+        }
+
+        // Update open trace if modal is visible
+        const modal = document.getElementById('traceModal');
+        if (modal.classList.contains('show') && openTaskId) {
+            const t = findTask(openTaskKind, openTaskId);
+            if (t) refreshTraceModal(t);
+        }
+    }
+
+    function findTask(kind, id) {
+        const key = `${kind}_${id}`;
+        return tasks[key] || null;
+    }
+
+    // ── WebSocket ──────────────────────────────────────────────────
+    function connect() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const url = `${proto}://${location.host}/ws/tasks?token=${encodeURIComponent(token)}`;
+        ws = new WebSocket(url);
+        setWsStatus('connecting');
+
+        ws.onopen = () => {
+            setWsStatus('connected');
+            reconnectDelay = 2000;
+            // heartbeat
+            heartbeatTimer = setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'ping'}));
+            }, 20000);
+        };
+
+        ws.onmessage = ({data}) => {
+            try {
+                const msg = JSON.parse(data);
+                handleMessage(msg);
+            } catch {}
+        };
+
+        ws.onerror = () => {};
+        ws.onclose = () => {
+            clearInterval(heartbeatTimer);
+            setWsStatus('disconnected');
+            reconnectTimer = setTimeout(connect, reconnectDelay);
+            reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+        };
+    }
+
+    function handleMessage(msg) {
+        if (msg.type === 'task_list') {
+            tasks = {};
+            (msg.tasks || []).forEach(t => { tasks[`${t.kind}_${t.id}`] = t; });
+            render();
+        } else if (msg.type === 'task_update' || msg.type === 'task_created') {
+            const t = msg.task;
+            if (t) { tasks[`${t.kind}_${t.id}`] = t; render(); }
+        } else if (msg.type === 'task_removed') {
+            const t = msg.task;
+            if (t) { delete tasks[`${t.kind}_${t.id}`]; render(); }
+        } else if (msg.type === 'pong') { /* ok */ }
+    }
+
+    function setWsStatus(status) {
+        const dot = document.getElementById('wsDot');
+        const txt = document.getElementById('wsStatusText');
+        const colors = { connected:'#10b981', connecting:'#f97316', disconnected:'#ef4444' };
+        const labels = { connected:'Подключено', connecting:'Подключение...', disconnected:'Отключено' };
+        if (dot) dot.style.background = colors[status];
+        if (txt) txt.textContent = labels[status];
+    }
+
+    // ── Trace Modal ────────────────────────────────────────────────
+    function openTrace(kind, id) {
+        openTaskId = id;
+        openTaskKind = kind;
+        const task = findTask(kind, id);
+        if (!task) return;
+        refreshTraceModal(task);
+        const modal = new bootstrap.Modal(document.getElementById('traceModal'));
+        modal.show();
+        // If proxmox task and running, fetch fresh log
+        if (kind === 'proxmox') loadProxmoxLog(id);
+    }
+
+    function refreshTraceModal(task) {
+        const st = normalizeStatus(task.status);
+        const desc = task.description || task.action || task.task_type || 'Задача';
+        document.getElementById('traceModalTitle').textContent = desc;
+        document.getElementById('traceModalMeta').innerHTML =
+            `Создана: ${fmtTime(task.created_at)}` +
+            (task.completed_at ? ` &nbsp;·&nbsp; Завершена: ${fmtTime(task.completed_at)}` : '') +
+            ` &nbsp;·&nbsp; Время: ${elapsed(task.created_at, task.completed_at)}`;
+
+        // Status badge
+        document.getElementById('traceStatusBadge').innerHTML =
+            `<span class="task-badge task-badge-${st}">${STATUS_ICON[st]||''} ${STATUS_LABEL[st]||st}</span>`;
+
+        // Progress
+        const pct = progressPct(task);
+        const fill = document.getElementById('traceProgressFill');
+        fill.className = `task-progress-fill ${st}`;
+        fill.style.width = `${pct === null ? 60 : pct}%`;
+        document.getElementById('traceProgressPct').textContent = pct === null ? '…' : `${pct}%`;
+
+        // Cancel button
+        const cancelBtn = document.getElementById('traceCancelBtn');
+        cancelBtn.style.display = (st === 'pending' && task.kind === 'bulk') ? 'inline-flex' : 'none';
+
+        // Results tab
+        renderTraceResults(task);
+
+        // Log tab
+        if (task.kind === 'proxmox') {
+            document.getElementById('traceLogContent').textContent = task.log_text || '(лог пуст)';
+        } else {
+            renderBulkLog(task);
+        }
+    }
+
+    function renderTraceResults(task) {
+        const el = document.getElementById('traceResultsContent');
+        const st = normalizeStatus(task.status);
+
+        if (task.kind === 'proxmox') {
+            el.innerHTML = `<table class="table task-results-table" style="margin:0;">
+                <thead><tr>
+                    <th>Параметр</th><th>Значение</th>
+                </tr></thead>
+                <tbody>
+                    <tr><td>UPID</td><td style="font-family:monospace; font-size:.78rem;">${escH(task.upid)}</td></tr>
+                    <tr><td>Узел</td><td>${escH(task.node)||'—'}</td></tr>
+                    <tr><td>VM ID</td><td>${task.vmid||'—'}</td></tr>
+                    <tr><td>Тип</td><td>${escH(task.vm_type)||'—'}</td></tr>
+                    <tr><td>Действие</td><td>${escH(task.action)}</td></tr>
+                    <tr><td>Статус выхода</td><td>${task.exit_status ? `<span class="${task.exit_status==='OK'?'task-result-ok':'task-result-fail'}">${escH(task.exit_status)}</span>` : '—'}</td></tr>
+                </tbody>
+            </table>`;
+        } else if (task.kind === 'bulk') {
+            const items = task.processed_items || 0;
+            const total = task.total_items || 0;
+            const results = task.results || [];
+            if (results.length === 0) {
+                el.innerHTML = `<div style="padding:1.5rem; text-align:center; color:var(--text-muted);">
+                    ${total > 0 ? `Обработано ${items} из ${total} объектов` : 'Нет результатов'}
+                </div>`;
+                return;
+            }
+            const rows = results.map(r => {
+                const ok = r.success || r.status === 'success' || r.status === 'completed';
+                const icon = ok ? '<i class="fa-solid fa-circle-check task-result-ok"></i>' : '<i class="fa-solid fa-circle-xmark task-result-fail"></i>';
+                return `<tr>
+                    <td>${icon}</td>
+                    <td>${escH(r.vm_name || r.name || r.id || '—')}</td>
+                    <td>${escH(r.message || r.error || (ok ? 'OK' : 'Ошибка'))}</td>
+                </tr>`;
+            }).join('');
+            el.innerHTML = `<table class="table task-results-table" style="margin:0;">
+                <thead><tr><th width="30"></th><th>Объект</th><th>Сообщение</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+        }
+    }
+
+    function renderBulkLog(task) {
+        const items = task.results || [];
+        const lines = items.map(r => {
+            const ok = r.success || r.status === 'success' || r.status === 'completed';
+            const ts = r.timestamp ? new Date(r.timestamp).toLocaleTimeString('ru-RU') : '';
+            return `${ts ? '['+ts+'] ' : ''}${ok?'✓':'✗'} ${r.vm_name||r.name||''}: ${r.message||r.error||''}`;
+        }).join('\n');
+        document.getElementById('traceLogContent').textContent = lines || '(пусто)';
+    }
+
+    function switchTraceTab(tab) {
+        traceTab = tab;
+        document.getElementById('tabResults').style.display = tab === 'results' ? '' : 'none';
+        document.getElementById('tabLog').style.display     = tab === 'log'     ? '' : 'none';
+        document.getElementById('tabResultsBtn').classList.toggle('active', tab === 'results');
+        document.getElementById('tabLogBtn').classList.toggle('active', tab === 'log');
+        // Style active tab
+        ['tabResultsBtn','tabLogBtn'].forEach(id => {
+            const btn = document.getElementById(id);
+            const isActive = btn.classList.contains('active');
+            btn.style.color = isActive ? '#667eea' : 'var(--text-muted)';
+            btn.style.borderBottom = isActive ? '2px solid #667eea' : '2px solid transparent';
+        });
+    }
+
+    async function loadProxmoxLog(id) {
+        try {
+            const resp = await fetchWithAuth(`/proxmox/api/proxmox-tasks/${id}/log`);
+            if (resp && resp.ok) {
+                const data = await resp.json();
+                document.getElementById('traceLogContent').textContent = data.log_text || '(лог пуст)';
+            }
+        } catch {}
+    }
+
+    async function cancelTaskById(kind, id) {
+        if (kind !== 'bulk') return;
+        const ok = await showConfirm('Отменить эту задачу?', 'Подтверждение');
+        if (!ok) return;
+        try {
+            const resp = await fetchWithAuth(`/proxmox/api/tasks/${id}/cancel`, { method:'POST' });
+            if (resp && resp.ok) showToast('success', 'Готово', 'Задача отменена');
+            else showToast('error', 'Ошибка', 'Не удалось отменить');
+        } catch { showToast('error', 'Ошибка', 'Ошибка сети'); }
+    }
+
+    async function cancelTask() {
+        if (openTaskKind && openTaskId) {
+            await cancelTaskById(openTaskKind, openTaskId);
+            bootstrap.Modal.getInstance(document.getElementById('traceModal'))?.hide();
+        }
+    }
+
+    async function refresh() {
+        try {
+            const resp = await fetchWithAuth('/proxmox/api/all-tasks');
+            if (resp && resp.ok) {
+                const data = await resp.json();
+                const list = Array.isArray(data) ? data : (data.tasks || []);
+                tasks = {};
+                list.forEach(t => { tasks[`${t.kind}_${t.id}`] = t; });
+                render();
+            }
+        } catch {}
+    }
+
+    function setFilter(f, btn) {
+        currentFilter = f;
+        document.querySelectorAll('.tasks-tab').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        render();
+    }
+
+    // ── Init ───────────────────────────────────────────────────────
+    function init() {
+        connect();
+        refresh();
+    }
+
+    return { init, refresh, setFilter, openTrace, switchTraceTab, cancelTask, cancelTaskById };
+})();
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Wait for token to be available
+    const check = () => {
+        if (localStorage.getItem('access_token')) TaskManager.init();
+        else setTimeout(check, 300);
+    };
+    check();
+});
+
+// Style active tab on load
+document.addEventListener('DOMContentLoaded', () => {
+    TaskManager.switchTraceTab('results');
+});
+</script>
+{% endblock %}

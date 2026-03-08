@@ -18,10 +18,22 @@ try:
     from backend.app.db import SessionLocal
     from backend.app.models import TaskQueue, ProxmoxServer, User
     from backend.app.proxmox_client import ProxmoxClient
+    from backend.app.websocket_manager import broadcast_task_update
 except ImportError:
     from app.db import SessionLocal
     from app.models import TaskQueue, ProxmoxServer, User
     from app.proxmox_client import ProxmoxClient
+    from app.websocket_manager import broadcast_task_update
+
+
+def _ws_broadcast(task: TaskQueue, event: str = "task_update") -> None:
+    """Fire-and-forget WS broadcast for a TaskQueue update."""
+    try:
+        data = task.to_dict()
+        data["kind"] = "bulk"
+        broadcast_task_update(task.user_id, event, data)
+    except Exception as e:
+        logger.debug(f"[TASK QUEUE] WS broadcast skipped: {e}")
 
 
 class TaskQueueService:
@@ -114,6 +126,7 @@ class TaskQueueService:
         task.completed_at = utcnow()
         db.commit()
         
+        _ws_broadcast(task, "task_update")
         logger.info(f"[TASK QUEUE] Task #{task_id} cancelled by user {user_id}")
         return True
 
@@ -220,6 +233,7 @@ class TaskQueueProcessor:
             task.started_at = utcnow()
             db.commit()
             
+            _ws_broadcast(task, "task_update")
             logger.info(f"[TASK QUEUE] Starting task #{task.id}: {task.task_type}")
             
             # Determine action from task type
@@ -276,12 +290,14 @@ class TaskQueueProcessor:
                 # Update progress
                 task.results = results
                 db.commit()
+                _ws_broadcast(task, "task_update")
             
             # Mark as completed
             task.status = 'completed'
             task.completed_at = utcnow()
             db.commit()
             
+            _ws_broadcast(task, "task_update")
             logger.info(f"[TASK QUEUE] Completed task #{task.id}: {task.completed_items} success, {task.failed_items} failed")
             
         except Exception as e:
@@ -291,6 +307,7 @@ class TaskQueueProcessor:
                 task.error_message = str(e)
                 task.completed_at = utcnow()
                 db.commit()
+                _ws_broadcast(task, "task_update")
             except Exception:
                 pass
         finally:

@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exception_handlers import http_exception_handler
@@ -70,6 +70,21 @@ def setup_logging():
             logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
     
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+
+    # Suppress noisy third-party loggers
+    for noisy_logger in (
+        "apscheduler",
+        "apscheduler.scheduler",
+        "apscheduler.executors.default",
+        "httpx",
+        "httpcore",
+        "httpcore.http11",
+        "httpcore.connection",
+        "urllib3",
+        "urllib3.connectionpool",
+        "multipart",
+    ):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -276,6 +291,87 @@ def create_app() -> FastAPI:
     async def api_virtual_machines(request: Request):
         """Proxy to proxmox virtual-machines API"""
         return RedirectResponse(url="/proxmox/api/virtual-machines", status_code=307)
+
+    # Task Manager page
+    @app.get("/tasks", include_in_schema=False)
+    async def tasks_page(request: Request):
+        """Task Manager page"""
+        from .i18n import t
+        lang = request.cookies.get("language", "ru")
+        context = {
+            "request": request,
+            "page_title": t("nav_tasks", lang) if callable(t) else "Менеджер задач",
+        }
+        context = add_i18n_context(request, context)
+        return templates.TemplateResponse("tasks.html", context)
+
+    # WebSocket endpoint for real-time task updates
+    @app.websocket("/ws/tasks")
+    async def websocket_tasks(websocket: WebSocket, token: str = Query(None)):
+        """
+        WebSocket endpoint for live task manager updates.
+        Auth via ?token=<jwt> query parameter (browsers cannot set WS headers).
+        """
+        from .auth import decode_access_token
+        from .db import SessionLocal
+        from .models import TaskQueue, ProxmoxTask, User
+        from .websocket_manager import ws_manager
+        import json
+
+        # --- Authenticate --------------------------------------------------
+        if not token:
+            await websocket.close(code=4001, reason="Missing token")
+            return
+        try:
+            payload = decode_access_token(token)
+            username = payload.get("sub")
+            if not username:
+                raise ValueError("No subject in token")
+        except Exception:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.username == username, User.is_active == True).first()
+            if not user:
+                await websocket.close(code=4001, reason="User not found")
+                return
+            user_id = user.id
+        finally:
+            db.close()
+
+        # --- Connect -------------------------------------------------------
+        await ws_manager.connect(websocket, user_id)
+
+        try:
+            # Send initial snapshot
+            db = SessionLocal()
+            try:
+                bulk = db.query(TaskQueue).filter(TaskQueue.user_id == user_id).order_by(TaskQueue.created_at.desc()).limit(30).all()
+                prox = db.query(ProxmoxTask).filter(ProxmoxTask.user_id == user_id).order_by(ProxmoxTask.created_at.desc()).limit(30).all()
+            finally:
+                db.close()
+
+            all_tasks = sorted(
+                [t.to_dict() for t in bulk] + [t.to_dict() for t in prox],
+                key=lambda x: x.get("created_at") or "",
+                reverse=True,
+            )[:30]
+            await websocket.send_text(json.dumps({"type": "task_list", "tasks": all_tasks}, default=str))
+
+            # Keep connection alive – wait for client messages / ping-pong
+            while True:
+                try:
+                    msg = await websocket.receive_text()
+                    if msg == "ping":
+                        await websocket.send_text(json.dumps({"type": "pong"}))
+                except WebSocketDisconnect:
+                    break
+                except Exception:
+                    break
+        finally:
+            ws_manager.disconnect(websocket, user_id)
 
     # Include routers
     app.include_router(auth_router.router, tags=["auth"])

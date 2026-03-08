@@ -156,7 +156,8 @@ async def run_backup_job(job_id: int) -> None:
                     storage=job.storage,
                     mode=job.mode,
                     compress=job.compress,
-                    remove=job.keep_last,
+                    remove=1 if job.keep_last else 0,
+                    keep_last=job.keep_last,
                     notes=job.notes,
                 )
                 if result.get("success"):
