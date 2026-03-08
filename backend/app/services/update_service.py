@@ -181,6 +181,19 @@ def parse_repo_url(url: str) -> tuple:
     return None, None, None
 
 
+def _parse_version(v: str) -> tuple:
+    """Parse version string into a tuple of ints for comparison, e.g. '1.0.3' -> (1, 0, 3)"""
+    try:
+        return tuple(int(x) for x in v.strip().split("."))
+    except Exception:
+        return (0,)
+
+
+def _is_newer(remote: str, local: str) -> bool:
+    """Return True only if remote version is strictly greater than local"""
+    return _parse_version(remote) > _parse_version(local)
+
+
 async def check_for_updates() -> Dict[str, Any]:
     """
     Проверить наличие обновлений через GitHub API
@@ -262,7 +275,7 @@ async def check_for_updates() -> Dict[str, Any]:
                 return result
             
             # Сравнить версии
-            if result["latest_version"] != current_version:
+            if _is_newer(result["latest_version"], current_version):
                 result["update_available"] = True
                 
                 # Получить CHANGELOG.md (используем ту же ветку, что и для VERSION)
