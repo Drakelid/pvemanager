@@ -131,24 +131,27 @@ def configure_git_for_public_access():
         return False
 
 
+CORRECT_REPO_URL = "https://github.com/markmorado/pvemanager"
+_LEGACY_URLS = {"https://git.tzim.uz/dilshod/pve_manager"}
+
+
 def get_repository_url_from_settings():
     """Get configured repository URL from database settings"""
     try:
         from ..db import SessionLocal
         from ..models import PanelSettings
-        
+
         db = SessionLocal()
         try:
             setting = db.query(PanelSettings).filter(PanelSettings.key == "git_repository_url").first()
-            if setting and setting.value:
+            if setting and setting.value and setting.value not in _LEGACY_URLS:
                 return setting.value
         finally:
             db.close()
     except Exception as e:
         logger.warning(f"Could not get repository URL from settings: {e}")
-    
-    # Default fallback
-    return "https://github.com/markmorado/pvemanager"
+
+    return CORRECT_REPO_URL
 
 
 def parse_repo_url(url: str) -> tuple:
@@ -225,7 +228,8 @@ async def check_for_updates() -> Dict[str, Any]:
             # Пробуем оба варианта: main и master
             version_url = None
             version_response = None
-            
+            last_response = None
+
             for branch in ["main", "master"]:
                 # Формируем URL в зависимости от хостинга
                 if host == "github":
@@ -233,22 +237,27 @@ async def check_for_updates() -> Dict[str, Any]:
                 else:
                     # Для Gitea, GitLab и других (формат: https://domain/owner/repo/raw/branch/file)
                     test_url = f"https://{host}/{owner}/{repo}/raw/branch/{branch}/VERSION"
-                
+
                 test_response = await client.get(test_url, headers=headers)
-                
+                last_response = test_response
+
                 if test_response.status_code == 200:
                     version_url = test_url
                     version_response = test_response
                     break
-            
-            if version_response and version_response.status_code == 200:
+
+            if version_response:
                 result["latest_version"] = version_response.text.strip()
-            elif version_response and version_response.status_code == 404:
-                result["error"] = "Repository is private or not accessible. Set DISABLE_UPDATE_CHECK=true to hide this error."
+            elif last_response and last_response.status_code in (401, 403, 404):
+                result["error"] = (
+                    f"Repository is private or not accessible (HTTP {last_response.status_code}). "
+                    "Set DISABLE_UPDATE_CHECK=true to hide this error."
+                )
                 result["latest_version"] = current_version
                 return result
             else:
-                result["error"] = f"Failed to fetch VERSION file: HTTP {version_response.status_code if version_response else 'unknown'}"
+                status_code = last_response.status_code if last_response else "unknown"
+                result["error"] = f"Failed to fetch VERSION file: HTTP {status_code}"
                 result["latest_version"] = current_version
                 return result
             
