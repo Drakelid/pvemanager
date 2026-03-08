@@ -1,129 +1,157 @@
-# 🖥️ PVEmanager
+<div align="center">
 
-Modern web panel for managing Proxmox servers, virtual machines and LXC containers.
+# PVEmanager
 
-[![Version](https://img.shields.io/badge/version-1.0-blue.svg)](CHANGELOG.md)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](compose.yml)
+**Modern web panel for managing Proxmox servers, virtual machines and LXC containers**
 
-## ✨ Key Features
+[![Version](https://img.shields.io/badge/version-1.0.1-blue?style=flat-square)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](compose.yml)
+[![Python](https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](backend/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi&logoColor=white)](backend/)
+[![Proxmox](https://img.shields.io/badge/Proxmox%20VE-7.x%20%7C%208.x%20%7C%209.x-E57000?style=flat-square)](https://www.proxmox.com/)
 
-- 🖥️ **Proxmox Integration** — Manage multiple servers and clusters
-- 🎛️ **VM/LXC Management** — Start, Stop, Restart, Delete, Resize
-- ⚡ **Bulk Operations** — Mass start/stop/restart/delete VMs and containers
-- 🖵 **VNC Console** — Built-in console via noVNC
-- ⌨️ **Remote Commands** — Bash via QEMU Guest Agent
-- 📸 **Snapshots** — Create, delete, rollback VM/LXC snapshots with queue system
-- 📋 **OS Templates** — Quick VM deployment from templates
-- 🔄 **Cross-Node Templates** — Deploy templates to any cluster node with auto-replication
-- 📦 **Smart LXC Creation** — Create containers from templates on any node with auto-migration
-- 🌐 **IPAM** — IP Address Management
-- 🔔 **Notifications** — Email, Telegram, In-App
-- 📊 **Monitoring** — CPU, RAM, Disk, Network in real-time
-- 🔒 **Security** — RBAC v2, IP blocking, session management, login protection
-- 🌍 **Multilingual** — Russian and English
-
-## 🚀 Quick Start
-
-```bash
-# Clone repository
-git clone https://github.com/your-repo/pvemanager.git
-cd pvemanager
-
-# Copy configuration
-cp .env.example .env
-cp backend/.env.example backend/.env
-
-# Start
-docker compose up -d
-
-# Open http://localhost:8000
-# Login: admin / Password: admin123
-```
-
-> ⚠️ Make sure to change password after first login!
-
-## 📖 Documentation
-
-| Document | Description |
-|----------|-------------|
-| [📖 WIKI.md](WIKI.md) | **Complete User & Admin Guide** |
-| [📝 CHANGELOG.md](CHANGELOG.md) | Change History |
-
-## 🔔 Notifications
-
-Notification system supports:
-
-- **In-App** — Bell icon with badge in UI
-- **Email** — SMTP (Yandex, Gmail, Mail.ru)
-- **Telegram** — Via Bot API
-
-Settings: **Settings** → **Notifications**
-
-## 🛠️ Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Backend | FastAPI + Python 3.12 |
-| Frontend | Jinja2 + Vanilla JS |
-| Database | PostgreSQL 16 |
-| Container | Docker + Alpine |
-| Proxmox API | proxmoxer |
-| VNC | noVNC |
-
-## 📋 Requirements
-
-- Docker & Docker Compose
-- 2GB RAM minimum
-- Proxmox VE 7.x / 8.x / 9.x
-
-## 🔧 Configuration
-
-### Main Variables (`.env`)
-
-```bash
-POSTGRES_PASSWORD=your_secure_password
-TZ=Your/Timezone
-```
-
-### Private Repository Configuration
-
-For private repositories, update checks need to be configured:
-
-```bash
-# Disable update checks completely
-DISABLE_UPDATE_CHECK=true
-
-# OR use GitHub token for access
-GITHUB_TOKEN=your_github_personal_access_token
-```
-
-To create GitHub token: https://github.com/settings/tokens (needs 'repo' scope)
-
-### Notifications (SMTP and Telegram)
-
-Email and Telegram notification settings are now managed via web interface:
-1. Open **Settings → Notifications**
-2. Fill in SMTP server details for email notifications
-3. Enter Telegram bot token for Telegram notifications
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch
-3. Commit changes
-4. Push and create Pull Request
-
-## 📜 License
-
-MIT License — see [LICENSE](LICENSE)
-
-## 📞 Support
-
-- 📖 [Documentation (WIKI.md)](WIKI.md)
-- 🐛 [Issues](https://github.com/your-repo/pvemanager/issues)
-- 📝 [Changelog](CHANGELOG.md)
+</div>
 
 ---
 
+## Overview
+
+PVEmanager is a self-hosted web panel that provides a unified interface for managing multiple Proxmox VE servers and clusters. It covers the full VM/LXC lifecycle — from provisioning to monitoring — with role-based access control, notifications, and IP address management.
+
+## Features
+
+### Infrastructure
+- **Multi-server management** — connect and manage multiple Proxmox servers and clusters from a single panel
+- **VM & LXC lifecycle** — create, start, stop, restart, resize, delete virtual machines and containers
+- **Bulk operations** — mass start / stop / restart / delete with queue and progress tracking
+- **Snapshot management** — create, rollback, delete snapshots with an async queue system
+- **OS templates** — deploy VMs from templates; cross-node replication handled automatically
+- **SDN support** — manage Software-Defined Networking zones, VNets, and subnets
+
+### Access & Console
+- **VNC console** — in-browser console via noVNC, no client software required
+- **Remote commands** — execute bash commands via QEMU Guest Agent
+- **RBAC v2** — granular role-based access control with per-resource permissions
+- **Session management** — active session list, remote session revocation, login protection
+
+### Monitoring & Alerts
+- **Real-time metrics** — CPU, RAM, Disk, Network charts per node and per VM
+- **Background sync** — automatic VM state synchronization from Proxmox API
+- **Notifications** — In-App (bell icon), Email (SMTP), Telegram (Bot API)
+- **Audit log** — full action log with user, timestamp, and details
+
+### Other
+- **IPAM** — IP Address Management with allocation history and orphan detection
+- **Multilingual** — Russian and English interface
+- **Encrypted credentials** — sensitive fields stored encrypted in the database
+
+---
+
+## Quick Start
+
+```bash
+# 1. Clone
+git clone https://github.com/markmorado/pvemanager.git
+cd pvemanager
+
+# 2. Configure
+cp .env.example .env
+cp backend/.env.example backend/.env
+# Edit .env — set POSTGRES_PASSWORD and TZ
+
+# 3. Start
+docker compose up -d
+
+# 4. Open
+# http://localhost:8000
+# Default login: admin / admin123
+```
+
+> **Important:** Change the default password immediately after first login.
+
+---
+
+## Requirements
+
+| Requirement | Minimum |
+|---|---|
+| Docker | 24.x+ |
+| Docker Compose | v2.x+ |
+| RAM | 512 MB (app) + 256 MB (DB) |
+| Proxmox VE | 7.x / 8.x / 9.x |
+
+---
+
+## Configuration
+
+### Environment variables (`.env`)
+
+```bash
+# Database
+POSTGRES_PASSWORD=your_secure_password
+
+# Timezone (IANA format)
+TZ=Europe/Moscow
+
+# Update checks (for private repos — disable or provide a token)
+DISABLE_UPDATE_CHECK=false
+GITHUB_TOKEN=                     # optional, for private repo update checks
+```
+
+### Notifications
+
+Configured via the web interface — **Settings → Notifications**:
+
+- **Email** — SMTP server, port, login, password (Yandex, Gmail, Mail.ru and others)
+- **Telegram** — Bot token and Chat ID via [@BotFather](https://t.me/BotFather)
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python 3.12, FastAPI, SQLAlchemy |
+| Frontend | Jinja2 templates, Vanilla JS, Bootstrap 5 |
+| Database | PostgreSQL 16 |
+| Containerization | Docker, Alpine Linux |
+| Proxmox API | proxmoxer |
+| VNC | noVNC |
+| Charts | Chart.js |
+| Terminal | xterm.js |
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [WIKI.md](WIKI.md) | Full user and administrator guide |
+| [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit your changes: `git commit -m 'feat: add my feature'`
+4. Push: `git push origin feature/my-feature`
+5. Open a Pull Request
+
+---
+
+## License
+
+[MIT](LICENSE) — free to use, modify, and distribute.
+
+---
+
+<div align="center">
+
 Made with ❤️ for Proxmox users
+
+[Issues](https://github.com/markmorado/pvemanager/issues) · [Changelog](CHANGELOG.md) · [Wiki](WIKI.md)
+
+</div>
