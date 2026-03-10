@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from ..db import get_db
 from ..models import ProxmoxServer, AuditLog, User
 from ..template_helpers import add_i18n_context
-from ..rbac.decorators import PermissionChecker
+from ..auth import get_current_user, PermissionChecker
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
