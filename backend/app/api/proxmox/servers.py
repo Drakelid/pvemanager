@@ -113,7 +113,7 @@ def create_proxmox_server(
     db.commit()
     db.refresh(server)
     
-    logger.info(f"User {current_user.username} added Proxmox server: {server.name} ({server.ip_address})")
+    logger.info(f"User {current_user.username} added Proxmox server: {server.name}")
     return server
 
 
@@ -187,7 +187,7 @@ async def auto_setup_proxmox_server(
                 detail="Не удалось получить auth ticket от Proxmox"
             )
         
-        logger.info(f"Successfully authenticated to Proxmox {ip_address}")
+        logger.info("Successfully authenticated to Proxmox")
         
     except http_requests.exceptions.RequestException as e:
         logger.error(f"Connection error to Proxmox: {e}")
@@ -227,7 +227,7 @@ async def auto_setup_proxmox_server(
         else:
             token_data = token_response.json().get("data", {})
             token_value = token_data.get("value")
-            logger.info(f"Created API token: {token_name}")
+            logger.info("Created API token successfully")
             
     except Exception as e:
         logger.warning(f"Error creating token: {e}, will use password auth")
@@ -346,7 +346,7 @@ async def auto_setup_proxmox_server(
         db.commit()
         db.refresh(server)
         
-        logger.info(f"User {current_user.username} auto-setup Proxmox server: {server.name} ({server.ip_address})")
+        logger.info(f"User {current_user.username} auto-setup Proxmox server: {server.name}")
         
         return {
             "cluster": False,
@@ -624,7 +624,7 @@ def get_all_resources(
     
     for server in proxmox_servers:
         try:
-            logger.info(f"Getting resources from server {server.name} ({server.ip_address}), use_password={server.use_password}")
+            logger.info(f"Getting resources from server {server.name}, use_password={server.use_password}")
             # Создаём клиента для каждого сервера независимо
             if server.use_password:
                 resources = get_proxmox_resources(
@@ -634,7 +634,7 @@ def get_all_resources(
                     verify_ssl=server.verify_ssl
                 )
             else:
-                logger.info(f"Using API token for {server.name}: user={server.api_user}, token_name={server.api_token_name}")
+                logger.info(f"Using API token for {server.name}: user={server.api_user}")
                 resources = get_proxmox_resources(
                     host=server.ip_address,
                     user=server.api_user,

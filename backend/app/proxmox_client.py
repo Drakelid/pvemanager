@@ -86,9 +86,9 @@ class ProxmoxClient:
                     verify_ssl=verify_ssl,
                     timeout=timeout
                 )
-                logger.info(f"Connected to Proxmox {host} using password")
+                logger.info("Connected to Proxmox using password")
             else:
-                logger.error(f"Необходимо указать либо password, либо token для {host}")
+                logger.error("Необходимо указать либо password, либо token")
                 return
             
             # Test connection

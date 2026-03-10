@@ -1206,7 +1206,7 @@ def get_server_nodes(
         except Exception:
             pass
 
-        logger.info(f"Nodes for server {server_id} ({server.name}), cluster_id={cluster_id}: {nodes}")
+        logger.info(f"Nodes for server {server_id} ({server.name}), cluster_id={cluster_id}: {len(nodes)} node(s)")
         return JSONResponse(content={"nodes": nodes, "cluster_id": cluster_id})
     except Exception as e:
         logger.error(f"Error getting nodes from {server.name}: {e}")
@@ -1611,7 +1611,7 @@ async def vnc_websocket_proxy(
     encoded_ticket = urllib.parse.quote(vncticket, safe='')
     proxmox_ws_url = f"wss://{server.ip_address}:8006/api2/json/nodes/{node}/{proxmox_vmtype}/{vmid}/vncwebsocket?port={port}&vncticket={encoded_ticket}"
     
-    logger.info(f"Connecting to Proxmox VNC: {server.ip_address}:8006 for {proxmox_vmtype}/{vmid}")
+    logger.info(f"Connecting to Proxmox VNC: {server.name} for {proxmox_vmtype}/{vmid}")
     
     # SSL контекст для самоподписанных сертификатов
     ssl_context = ssl.create_default_context()

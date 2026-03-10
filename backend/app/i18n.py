@@ -5149,6 +5149,72 @@ class I18nService:
             "ru": "Удалить все",
             "en": "Delete all"
         },
+
+        # ---- Dashboard labels ----
+        "nodes_label": {
+            "ru": "Ноды",
+            "en": "Nodes"
+        },
+        "clusters_label": {
+            "ru": "Кластеры",
+            "en": "Clusters"
+        },
+        "alerts_label": {
+            "ru": "Оповещения",
+            "en": "Alerts"
+        },
+        "all_online": {
+            "ru": "Все онлайн",
+            "en": "All online"
+        },
+        "all_healthy": {
+            "ru": "Все работают",
+            "en": "All healthy"
+        },
+        "no_alerts": {
+            "ru": "Нет оповещений",
+            "en": "No alerts"
+        },
+        "all_systems_operational": {
+            "ru": "Все системы работают",
+            "en": "All systems operational"
+        },
+        "view_all": {
+            "ru": "Смотреть все →",
+            "en": "View all →"
+        },
+        "recent_audit_events": {
+            "ru": "Недавние события аудита",
+            "en": "Recent Audit Events"
+        },
+        "no_audit_events": {
+            "ru": "Нет событий аудита",
+            "en": "No audit events found"
+        },
+        "last_24h": {
+            "ru": "последние 24ч",
+            "en": "last 24h"
+        },
+        "ram": {
+            "ru": "RAM",
+            "en": "RAM"
+        },
+        "ram_usage": {
+            "ru": "Использование RAM",
+            "en": "RAM Usage"
+        },
+        "storage": {
+            "ru": "Хранилище",
+            "en": "Storage"
+        },
+        "paused": {
+            "ru": "Пауза",
+            "en": "Paused"
+        },
+        "stopped": {
+            "ru": "Остановлен",
+            "en": "Stopped"
+        },
     }
     
     @classmethod

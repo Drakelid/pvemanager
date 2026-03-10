@@ -28,8 +28,20 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     
     # Paths that should only log errors (to reduce noise)
     QUIET_PATHS = [
-        "/api/logs",  # Don't log requests to view logs
+        "/api/logs",           # Don't log requests to view logs
         "/api/virtual-machines",  # High frequency polling
+    ]
+
+    # GET-only polling paths — only log on error/slow (dashboard real-time updates)
+    POLL_PATHS = [
+        "/proxmox/api/resources/all",
+        "/proxmox/api/servers",
+        "/settings/api/panel",
+        "/api/notifications/unread-count",
+    ]
+    # Path prefixes for node polling (dynamic IDs, e.g. /proxmox/api/4/nodes)
+    POLL_PREFIXES = [
+        "/proxmox/api/",  # all proxmox data reads
     ]
     
     # Paths to log request body (important operations)
@@ -106,7 +118,19 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         
         # Determine if we should log this request
         should_log = self.enable_api_logging
-        
+
+        # Suppress GET polling traffic — only log errors or very slow requests
+        if request.method == "GET":
+            for poll_path in self.POLL_PATHS:
+                if path == poll_path or path.startswith(poll_path):
+                    should_log = response.status_code >= 400 or duration_ms > 5000
+                    break
+            else:
+                for prefix in self.POLL_PREFIXES:
+                    if path.startswith(prefix):
+                        should_log = response.status_code >= 400 or duration_ms > 5000
+                        break
+
         # Check quiet paths - only log errors or slow requests
         for quiet_path in self.QUIET_PATHS:
             if path.startswith(quiet_path):

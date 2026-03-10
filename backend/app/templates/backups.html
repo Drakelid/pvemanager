@@ -10,12 +10,17 @@
         <h1 class="page-header-title"><i class="fa-solid fa-hard-drive"></i> {{ t('nav_backups') }}</h1>
     </div>
     <div class="page-header-right">
-      <select id="serverSelect" class="form-select form-select-sm" style="min-width:180px" onchange="onServerChange()">
-        <option value="">{{ t('select_server') }}</option>
-        {% for s in servers %}
-        <option value="{{ s.id }}" data-name="{{ s.name }}">{{ s.name }}</option>
-        {% endfor %}
-      </select>
+      <div class="d-flex align-items-center gap-2">
+        <label for="serverSelect" class="form-label mb-0 text-nowrap fw-semibold">
+          <i class="fa-solid fa-server me-1"></i>{{ t('server') }}:
+        </label>
+        <select id="serverSelect" class="form-select form-select-sm" style="min-width:260px" onchange="onServerChange()">
+          <option value="">{{ t('select_server') }}</option>
+          {% for s in servers %}
+          <option value="{{ s.id }}" data-name="{{ s.name }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
   </div>
 

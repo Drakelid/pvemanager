@@ -12,15 +12,15 @@
 {% endblock %}
 
 {% block header_status %}
-<div class="status-chip {% if stats.total_alerts == 0 %}status-ok{% elif stats.critical_alerts > 0 %}status-error{% else %}status-warning{% endif %}" id="dashStatusChip">
+<div class="status-chip {% if stats.total_alerts == 0 %}status-ok{% elif stats.critical_alerts > 0 %}status-error{% else %}status-warning{% endif %}" id="dashStatusChip"{% if stats.total_alerts > 0 %} onclick="openAlertsModal()" style="cursor:pointer;" title="{{ t('view_alerts') if t('view_alerts') else 'Посмотреть предупреждения' }}"{% endif %}>
     <span class="status-chip-dot"></span>
     <span id="dashStatusText">
         {%- if stats.total_alerts == 0 -%}
-            All systems operational
+            {{ t('all_systems_operational') }}
         {%- elif stats.critical_alerts > 0 -%}
-            {{ stats.critical_alerts }} critical alert{{ 's' if stats.critical_alerts != 1 else '' }}
+            {{ stats.critical_alerts }} {{ t('critical') | lower }} {{ t('alerts_label') | lower }}
         {%- else -%}
-            {{ stats.total_alerts }} warning{{ 's' if stats.total_alerts != 1 else '' }}
+            {{ stats.total_alerts }} {{ t('warning') | lower }}{{ 's' if stats.total_alerts != 1 else '' }}
         {%- endif -%}
     </span>
 </div>
@@ -31,55 +31,62 @@
 <!-- ======== 5 STAT CARDS ======== -->
 <div class="stats-grid-5">
     <div class="stat-card-v2">
-        <div class="stat-card-lbl">Nodes</div>
+        <div class="stat-card-lbl">{{ t('nodes_label') }}</div>
         <div class="stat-card-val">{{ stats.total_servers }}</div>
         <div class="stat-card-sub" id="statNodesSub">
             {%- if stats.online_servers == stats.total_servers and stats.total_servers > 0 -%}
-                All online
+                {{ t('all_online') }}
             {%- elif stats.online_servers > 0 -%}
-                {{ stats.online_servers }} online
+                {{ stats.online_servers }} {{ t('online') | lower }}
             {%- else -%}
                 —
             {%- endif -%}
         </div>
     </div>
     <div class="stat-card-v2">
-        <div class="stat-card-lbl">VMs</div>
+        <div class="stat-card-lbl">{{ t('vms') }}</div>
         <div class="stat-card-val" id="statVmCount">—</div>
-        <div class="stat-card-sub" id="statVmSub">loading…</div>
+        <div class="stat-card-sub" id="statVmSub">{{ t('loading') }}…</div>
     </div>
     <div class="stat-card-v2">
-        <div class="stat-card-lbl">Containers</div>
+        <div class="stat-card-lbl">{{ t('containers') }}</div>
         <div class="stat-card-val" id="statCtCount">—</div>
-        <div class="stat-card-sub" id="statCtSub">loading…</div>
+        <div class="stat-card-sub" id="statCtSub">{{ t('loading') }}…</div>
     </div>
     <div class="stat-card-v2">
-        <div class="stat-card-lbl">Clusters</div>
+        <div class="stat-card-lbl">{{ t('clusters_label') }}</div>
         <div class="stat-card-val">{{ stats.total_clusters }}</div>
         <div class="stat-card-sub" id="statClusterSub">
-            {%- if stats.total_alerts == 0 -%}All healthy{%- else -%}—{%- endif -%}
+            {%- if stats.total_alerts == 0 -%}{{ t('all_healthy') }}{%- else -%}—{%- endif -%}
         </div>
     </div>
     <div class="stat-card-v2 {% if stats.critical_alerts > 0 %}card-alerts{% endif %}">
-        <div class="stat-card-lbl">Alerts</div>
+        <div class="stat-card-lbl">{{ t('alerts_label') }}</div>
         <div class="stat-card-val">{{ stats.total_alerts }}</div>
         <div class="stat-card-sub">
             {%- if stats.critical_alerts > 0 -%}
-                <span style="color: var(--danger);">{{ stats.critical_alerts }} critical</span>
+                <span style="color: var(--danger);">{{ stats.critical_alerts }} {{ t('critical') | lower }}</span>
             {%- elif stats.total_alerts > 0 -%}
-                last 24h
+                {{ t('last_24h') }}
             {%- else -%}
-                No alerts
+                {{ t('no_alerts') }}
             {%- endif -%}
         </div>
     </div>
 </div>
 
 <!-- ======== RESOURCE CARDS (CPU / RAM / STORAGE) ======== -->
+<div style="position:relative;">
 <div class="resource-cards-row" id="resourceCardsRow">
+    <!-- refresh spinner (shown while fetching) -->
+    <span id="dashRefreshSpin" title="{{ t('loading') }}" style="
+        position:absolute; top:-1.6rem; right:0;
+        font-size:.75rem; color:var(--text-muted); opacity:0;
+        transition:opacity .2s; pointer-events:none;
+    "><i class="fa-solid fa-arrows-rotate fa-spin" style="margin-right:.3rem;"></i><span id="dashLastUpdated"></span></span>
     <div class="resource-card">
         <div class="resource-card-header">
-            <span class="resource-card-title">CPU Usage</span>
+            <span class="resource-card-title">{{ t('cpu_usage') }}</span>
             <span class="resource-pct-badge" id="cpuPct">—</span>
         </div>
         <div class="resource-mini-chart">
@@ -91,7 +98,7 @@
     </div>
     <div class="resource-card">
         <div class="resource-card-header">
-            <span class="resource-card-title">RAM Usage</span>
+            <span class="resource-card-title">{{ t('ram_usage') }}</span>
             <span class="resource-pct-badge" id="ramPct">—</span>
         </div>
         <div class="resource-mini-chart">
@@ -103,7 +110,7 @@
     </div>
     <div class="resource-card">
         <div class="resource-card-header">
-            <span class="resource-card-title">Storage</span>
+            <span class="resource-card-title">{{ t('storage') }}</span>
             <span class="resource-pct-badge" id="diskPct">—</span>
         </div>
         <div class="resource-mini-chart">
@@ -114,32 +121,33 @@
         </div>
     </div>
 </div>
+</div>
 
 <!-- ======== VM TABLE + NODES PANEL ======== -->
 <div class="dash-main-grid">
     <!-- VM Table -->
     <div class="dash-section">
         <div class="dash-section-header">
-            <span class="dash-section-title">Virtual Machines</span>
+            <span class="dash-section-title">{{ t('virtual_machines') }}</span>
             <div style="display:flex; gap:0.75rem; align-items:center;">
                 <span class="dash-section-meta" id="vmTableMeta">—</span>
-                <a href="/virtual-machines" class="dash-section-link">View all →</a>
+                <a href="/virtual-machines" class="dash-section-link">{{ t('view_all') }}</a>
             </div>
         </div>
         <div style="overflow-x: auto;">
             <table class="vm-table-compact">
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Node</th>
-                        <th>CPU</th>
-                        <th>RAM</th>
-                        <th>Status</th>
+                        <th>{{ t('name') }}</th>
+                        <th>{{ t('node') }}</th>
+                        <th>{{ t('cpu') }}</th>
+                        <th>{{ t('ram') }}</th>
+                        <th>{{ t('status') }}</th>
                     </tr>
                 </thead>
                 <tbody id="vmTableBody">
                     <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem 1.25rem;">
-                        <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:.5rem;"></i> Loading…
+                            <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:.5rem;"></i> {{ t('loading') }}…
                     </td></tr>
                 </tbody>
             </table>
@@ -149,12 +157,12 @@
     <!-- Nodes Panel -->
     <div class="dash-section">
         <div class="dash-section-header">
-            <span class="dash-section-title">Nodes</span>
+            <span class="dash-section-title">{{ t('nodes_label') }}</span>
             <span class="dash-section-meta" id="nodesOnlineMeta">—</span>
         </div>
         <div class="nodes-panel" id="nodesPanel">
             <div style="text-align:center; color:var(--text-muted); padding:2rem 1.25rem;">
-                <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:.5rem;"></i> Loading…
+                <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:.5rem;"></i> {{ t('loading') }}…
             </div>
         </div>
     </div>
@@ -163,8 +171,8 @@
 <!-- ======== RECENT AUDIT EVENTS ======== -->
 <div class="dash-section" style="margin-bottom: var(--spacing-lg);">
     <div class="dash-section-header">
-        <span class="dash-section-title">Recent Audit Events</span>
-        <a href="/logs" class="dash-section-link">View all →</a>
+        <span class="dash-section-title">{{ t('recent_audit_events') }}</span>
+        <a href="/logs" class="dash-section-link">{{ t('view_all') }}</a>
     </div>
     <div class="audit-events-list" id="auditEventsList">
         {% if recent_audit %}
@@ -184,7 +192,7 @@
             {% endfor %}
         {% else %}
             <div style="text-align:center; color:var(--text-muted); padding:1.5rem 1.25rem; font-size:0.875rem;">
-                No audit events found
+                {{ t('no_audit_events') }}
             </div>
         {% endif %}
     </div>
@@ -219,13 +227,18 @@ function setPctBadgeColor(el, pct) {
     else el.classList.add('pct-high');
 }
 
-// Draw a mini line chart on a canvas
+// Draw a mini line chart on a canvas — updates in-place on subsequent calls
 function drawMiniLineChart(canvasId, dataPoints, color, bgColor) {
     if (typeof Chart === 'undefined') return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    // destroy existing
-    if (canvas._chartInstance) { canvas._chartInstance.destroy(); }
+    if (canvas._chartInstance) {
+        // Update data in-place (no flicker, smooth transition)
+        canvas._chartInstance.data.labels = dataPoints.map((_, i) => i);
+        canvas._chartInstance.data.datasets[0].data = dataPoints;
+        canvas._chartInstance.update('active');
+        return;
+    }
     const ctx = canvas.getContext('2d');
     canvas._chartInstance = new Chart(ctx, {
         type: 'line',
@@ -244,7 +257,7 @@ function drawMiniLineChart(canvasId, dataPoints, color, bgColor) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { duration: 600 },
+            animation: { duration: 400 },
             plugins: { legend: { display: false }, tooltip: { enabled: false } },
             scales: {
                 x: { display: false },
@@ -254,12 +267,17 @@ function drawMiniLineChart(canvasId, dataPoints, color, bgColor) {
     });
 }
 
-// Draw a mini bar chart (for storage)
+// Draw a mini bar chart (for storage) — updates in-place on subsequent calls
 function drawMiniBarChart(canvasId, dataPoints, color) {
     if (typeof Chart === 'undefined') return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    if (canvas._chartInstance) { canvas._chartInstance.destroy(); }
+    if (canvas._chartInstance) {
+        canvas._chartInstance.data.labels = dataPoints.map((_, i) => i);
+        canvas._chartInstance.data.datasets[0].data = dataPoints;
+        canvas._chartInstance.update('active');
+        return;
+    }
     const ctx = canvas.getContext('2d');
     canvas._chartInstance = new Chart(ctx, {
         type: 'bar',
@@ -275,7 +293,7 @@ function drawMiniBarChart(canvasId, dataPoints, color) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { duration: 600 },
+            animation: { duration: 400 },
             plugins: { legend: { display: false }, tooltip: { enabled: false } },
             scales: {
                 x: { display: false },
@@ -285,11 +303,182 @@ function drawMiniBarChart(canvasId, dataPoints, color) {
     });
 }
 
-// Load all resources to populate VMs stat card and VM table
-async function loadVMStats() {
+// Refresh spinner helpers
+function showRefreshSpin(visible) {
+    const el = document.getElementById('dashRefreshSpin');
+    if (el) el.style.opacity = visible ? '1' : '0';
+}
+function markLastUpdated() {
+    const el = document.getElementById('dashLastUpdated');
+    if (!el) return;
+    const now = new Date();
+    el.textContent = now.toLocaleTimeString(
+        '{{ "ru-RU" if lang == "ru" else "en-US" }}',
+        { hour: '2-digit', minute: '2-digit', second: '2-digit' }
+    );
+}
+
+// Inner function: fetch node stats for already-known online servers
+async function _refreshNodeStats(onlineServers) {
+    try {
+
+        // ---------- Step 1: fetch node lists for all servers IN PARALLEL ----------
+        const nodeListResults = await Promise.all(
+            onlineServers.map(async server => {
+                // server here may be from /resources/all (has .id) or /servers (has .id + .is_online)
+                try {
+                    const r = await fetchWithAuth(`/proxmox/api/${server.id}/nodes`, { hideOnForbidden: true });
+                    if (!r || !r.ok) return null;
+                    const d = await r.json();
+                    return { server, nodes: d.nodes || [], clusterId: d.cluster_id || `standalone-${server.id}` };
+                } catch (e_) { return null; }
+            })
+        );
+
+        // de-duplicate across clusters
+        const seenNodes = new Set();
+        const uniqueNodes = [];
+        for (const result of nodeListResults) {
+            if (!result) continue;
+            for (const nodeInfo of result.nodes) {
+                const key = `${result.clusterId}::${nodeInfo.node}`;
+                if (seenNodes.has(key)) continue;
+                seenNodes.add(key);
+                uniqueNodes.push({ server: result.server, nodeName: nodeInfo.node, maxVms: nodeInfo.maxvms || 0 });
+            }
+        }
+        if (uniqueNodes.length === 0) return;
+
+        // ---------- Step 2: fetch status AND rrd for ALL nodes IN PARALLEL ----------
+        const [statusResults, rrdResults] = await Promise.all([
+            Promise.all(uniqueNodes.map(async ({ server, nodeName, maxVms }) => {
+                try {
+                    const r = await fetchWithAuth(`/proxmox/api/${server.id}/node/status?node=${nodeName}`, { hideOnForbidden: true });
+                    if (!r || !r.ok) return { nodeName, cpuPct: 0, ramPct: 0, diskPct: 0, vmCount: maxVms };
+                    const st = await r.json();
+                    return {
+                        nodeName, vmCount: maxVms,
+                        cpuPct:  Math.round((st.cpu || 0) * 100),
+                        ramPct:  st.memory && st.memory.total > 0 ? Math.round((st.memory.used / st.memory.total) * 100) : 0,
+                        diskPct: st.rootfs  && st.rootfs.total  > 0 ? Math.round((st.rootfs.used  / st.rootfs.total)  * 100) : 0,
+                    };
+                } catch (e_) { return { nodeName, cpuPct: 0, ramPct: 0, diskPct: 0, vmCount: maxVms }; }
+            })),
+            Promise.all(uniqueNodes.map(async ({ server, nodeName }) => {
+                try {
+                    const r = await fetchWithAuth(`/proxmox/api/${server.id}/node/rrddata?node=${nodeName}&timeframe=hour`, { hideOnForbidden: true });
+                    if (!r || !r.ok) return null;
+                    const d = await r.json();
+                    return d.data || [];
+                } catch (e_) { return null; }
+            }))
+        ]);
+
+        const allNodeData = statusResults.filter(Boolean);
+
+        // Aggregate RRD histories
+        const cpuHistoryAll = [], ramHistoryAll = [], diskHistoryAll = [];
+        for (const data of rrdResults) {
+            if (!data || data.length === 0) continue;
+            const nc = [], nr = [], nd = [];
+            for (const pt of data) {
+                nc.push((pt.cpu || 0) * 100);
+                nr.push(pt.memtotal > 0 ? ((pt.memused || 0) / pt.memtotal * 100) : (pt.mem || 0) * 100);
+                nd.push(pt.roottotal > 0 ? ((pt.rootused || 0) / pt.roottotal * 100) : 0);
+            }
+            if (nc.length > 0) { cpuHistoryAll.push(nc); ramHistoryAll.push(nr); diskHistoryAll.push(nd); }
+        }
+
+        // ---------- Render resource cards ----------
+        if (allNodeData.length > 0) {
+            const avgCpu  = Math.round(allNodeData.reduce((s, n) => s + n.cpuPct,  0) / allNodeData.length);
+            const avgRam  = Math.round(allNodeData.reduce((s, n) => s + n.ramPct,  0) / allNodeData.length);
+            const avgDisk = Math.round(allNodeData.reduce((s, n) => s + n.diskPct, 0) / allNodeData.length);
+            const cpuPctEl  = document.getElementById('cpuPct');
+            const ramPctEl  = document.getElementById('ramPct');
+            const diskPctEl = document.getElementById('diskPct');
+            if (cpuPctEl)  { cpuPctEl.textContent  = avgCpu  + '%'; setPctBadgeColor(cpuPctEl,  avgCpu);  document.getElementById('cpuBar').style.width  = avgCpu  + '%'; }
+            if (ramPctEl)  { ramPctEl.textContent   = avgRam  + '%'; setPctBadgeColor(ramPctEl,  avgRam);  document.getElementById('ramBar').style.width  = avgRam  + '%'; }
+            if (diskPctEl) { diskPctEl.textContent  = avgDisk + '%'; setPctBadgeColor(diskPctEl, avgDisk); document.getElementById('diskBar').style.width = avgDisk + '%'; }
+        }
+
+        // Mini charts
+        if (cpuHistoryAll.length > 0) {
+            const len = Math.max(...cpuHistoryAll.map(a => a.length));
+            const avgH = arrays => Array.from({ length: len }, (_, i) => {
+                const vals = arrays.map(a => i < a.length ? a[i] : (a[a.length - 1] || 0));
+                return vals.reduce((s, v) => s + v, 0) / vals.length;
+            });
+            const cpuSlice  = avgH(cpuHistoryAll).slice(-24);
+            const ramSlice  = avgH(ramHistoryAll).slice(-24);
+            const diskSlice = avgH(diskHistoryAll).slice(-24);
+            requestAnimationFrame(() => {
+                drawMiniLineChart('cpuMiniChart',  cpuSlice, '#3b82f6', 'rgba(59,130,246,0.15)');
+                drawMiniLineChart('ramMiniChart',  ramSlice, '#8b5cf6', 'rgba(139,92,246,0.15)');
+                if (diskSlice.some(v => v > 0)) {
+                    drawMiniBarChart('diskMiniChart', diskSlice, 'rgba(16,185,129,0.7)');
+                } else {
+                    const avgD = allNodeData.length > 0 ? Math.round(allNodeData.reduce((s, n) => s + n.diskPct, 0) / allNodeData.length) : 0;
+                    drawMiniBarChart('diskMiniChart', Array(24).fill(0).map((_, i) => (i / 23) * avgD * 0.9 + avgD * 0.1), 'rgba(16,185,129,0.7)');
+                }
+            });
+        }
+
+        // ---------- Render Nodes panel ----------
+        const panel      = document.getElementById('nodesPanel');
+        const onlineMeta = document.getElementById('nodesOnlineMeta');
+        if (onlineMeta) onlineMeta.textContent = allNodeData.length + '/' + allNodeData.length + ' ' + t('online').toLowerCase();
+        if (panel) {
+            if (allNodeData.length === 0) {
+                panel.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:2rem 1.25rem;font-size:.875rem;">${t('no_nodes')}</div>`;
+            } else {
+                panel.innerHTML = allNodeData.map(node => `
+                    <div class="node-item">
+                        <div class="node-item-header">
+                            <div class="node-item-name">
+                                <span class="node-dot-online"></span>
+                                ${escapeHtml(node.nodeName)}
+                            </div>
+                            <span class="node-vm-count">${node.vmCount > 0 ? node.vmCount + ' ' + t('vms') : ''}</span>
+                        </div>
+                        <div class="node-bar-row">
+                            <span class="node-bar-lbl">CPU</span>
+                            <div class="node-bar-wrap"><div class="node-bar-fill cpu" style="width:${node.cpuPct}%"></div></div>
+                            <span class="node-bar-pct">${node.cpuPct}%</span>
+                        </div>
+                        <div class="node-bar-row">
+                            <span class="node-bar-lbl">RAM</span>
+                            <div class="node-bar-wrap"><div class="node-bar-fill ram" style="width:${node.ramPct}%"></div></div>
+                            <span class="node-bar-pct">${node.ramPct}%</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (e) {
+        // silent
+    }
+}
+
+// HTML escape helper
+function escapeHtml(str) {
+    if (!str) return '';
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+// Two-speed refresh:
+//   • refreshVMs()       — every refresh_interval (fast, 1 request)
+//   • _refreshNodeStats  — max once per 60 s (slow, many requests)
+let _lastNodeRefresh = 0;
+const NODE_REFRESH_MIN_MS = 60000; // node charts refresh at most every 60 s
+
+async function refreshVMs() {
+    showRefreshSpin(true);
     try {
         const res = await fetchWithAuth('/proxmox/api/resources/all', { hideOnForbidden: true });
-        if (!res || !res.ok || res.forbidden) return;
+        if (!res || !res.ok || res.forbidden) { showRefreshSpin(false); return; }
         const data = await res.json();
 
         let totalVms = 0, runningVms = 0, totalCt = 0, runningCt = 0;
@@ -302,26 +491,21 @@ async function loadVMStats() {
             runningVms += vms.filter(v => v.status === 'running').length;
             totalCt += cts.length;
             runningCt += cts.filter(c => c.status === 'running').length;
-
-            for (const vm of vms) {
-                allVms.push({ ...vm, serverName: server.name });
-            }
+            for (const vm of vms) allVms.push({ ...vm, serverName: server.name });
         }
 
-        // Update stat cards
         const vmCount = document.getElementById('statVmCount');
-        const vmSub = document.getElementById('statVmSub');
+        const vmSub   = document.getElementById('statVmSub');
         const ctCount = document.getElementById('statCtCount');
-        const ctSub = document.getElementById('statCtSub');
+        const ctSub   = document.getElementById('statCtSub');
         if (vmCount) vmCount.textContent = totalVms;
-        if (vmSub) vmSub.textContent = runningVms + ' running';
+        if (vmSub)   vmSub.textContent   = runningVms + ' ' + t('running').toLowerCase();
         if (ctCount) ctCount.textContent = totalCt;
-        if (ctSub) ctSub.textContent = runningCt + ' running';
+        if (ctSub)   ctSub.textContent   = runningCt + ' ' + t('running').toLowerCase();
 
-        // Update VM table (show max 8 — sorted: running first)
         const tbody = document.getElementById('vmTableBody');
-        const meta = document.getElementById('vmTableMeta');
-        if (meta) meta.textContent = totalVms + ' total';
+        const meta  = document.getElementById('vmTableMeta');
+        if (meta) meta.textContent = totalVms + ' ' + t('total');
         if (tbody) {
             allVms.sort((a, b) => {
                 const rank = s => s === 'running' ? 0 : s === 'paused' ? 1 : 2;
@@ -329,14 +513,14 @@ async function loadVMStats() {
             });
             const shown = allVms.slice(0, 8);
             if (shown.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem 1.25rem;">No VMs found</td></tr>';
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem 1.25rem;">${t('no_vms_found')}</td></tr>`;
             } else {
                 tbody.innerHTML = shown.map(vm => {
                     const cpuPct = vm.cpu != null ? (vm.cpu * 100).toFixed(0) + '%' : '—';
-                    const ramGb = vm.mem != null ? (vm.mem / (1024**3)).toFixed(1) + 'G' : '—';
+                    const ramGb  = vm.mem != null ? (vm.mem / (1024**3)).toFixed(1) + 'G' : '—';
                     const status = (vm.status || 'unknown').toLowerCase();
-                    const statusCls = status === 'running' ? 'running' : status === 'paused' ? 'warning' : 'stopped';
-                    const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+                    const statusCls   = status === 'running' ? 'running' : status === 'paused' ? 'warning' : 'stopped';
+                    const statusLabel = status === 'running' ? t('running') : status === 'paused' ? t('paused') : t('stopped');
                     return `<tr>
                         <td><span class="vm-name-cell">${escapeHtml(vm.name || 'vm-' + vm.vmid)}</span></td>
                         <td><span class="vm-node-cell">${escapeHtml(vm.node || '—')}</span></td>
@@ -347,184 +531,116 @@ async function loadVMStats() {
                 }).join('');
             }
         }
+
+        // Trigger node chart refresh if enough time has passed
+        const now = Date.now();
+        if (now - _lastNodeRefresh >= NODE_REFRESH_MIN_MS) {
+            _lastNodeRefresh = now;
+            const onlineServers = (data.servers || []).filter(s => !s.error && s.id);
+            if (onlineServers.length > 0) {
+                _refreshNodeStats(onlineServers).then(() => {
+                    markLastUpdated();
+                });
+            }
+        }
+
+        markLastUpdated();
     } catch (e) {
-        console.error('VM stats error:', e);
+        // silent
+    } finally {
+        showRefreshSpin(false);
     }
 }
 
-// Load node data and resource charts + nodes panel
-async function loadNodeStats() {
+// Init — reads refresh_interval from panel settings, falls back to 10s
+document.addEventListener('DOMContentLoaded', async function() {
+    // Initial full load (VMs + nodes)
+    showRefreshSpin(true);
     try {
-        const serversRes = await fetchWithAuth('/proxmox/api/servers', { hideOnForbidden: true });
-        if (!serversRes || !serversRes.ok || serversRes.forbidden) return;
-        const servers = await serversRes.json();
-        const onlineServers = servers.filter(s => s.is_online);
-        if (onlineServers.length === 0) return;
-
-        const seenNodes = new Set();
-        const allNodeData = [];
-        const cpuHistory = [], ramHistory = [], diskHistory = [];
-
-        for (const server of onlineServers) {
-            try {
-                const nodesRes = await fetchWithAuth(`/proxmox/api/${server.id}/nodes`, { hideOnForbidden: true });
-                if (!nodesRes || !nodesRes.ok) continue;
-                const nodesData = await nodesRes.json();
-                const nodes = nodesData.nodes || [];
-                const clusterId = nodesData.cluster_id || `standalone-${server.id}`;
-
-                for (const nodeInfo of nodes) {
-                    const nodeName = nodeInfo.node;
-                    const key = `${clusterId}::${nodeName}`;
-                    if (seenNodes.has(key)) continue;
-                    seenNodes.add(key);
-
-                    // Get node status (cpu, mem)
-                    try {
-                        const statusRes = await fetchWithAuth(
-                            `/proxmox/api/${server.id}/node/status?node=${nodeName}`,
-                            { hideOnForbidden: true }
-                        );
-                        if (statusRes && statusRes.ok) {
-                            const st = await statusRes.json();
-                            const cpuPct = Math.round((st.cpu || 0) * 100);
-                            const ramPct = st.memory && st.memory.total > 0
-                                ? Math.round((st.memory.used / st.memory.total) * 100)
-                                : 0;
-                            allNodeData.push({ name: nodeName, cpuPct, ramPct, vmCount: nodeInfo.maxvms || 0 });
-                        }
-                    } catch (e) {
-                        allNodeData.push({ name: nodeName, cpuPct: 0, ramPct: 0, vmCount: 0 });
-                    }
-
-                    // Load RRD for charts (only first node for aggregate chart)
-                    if (cpuHistory.length === 0) {
-                        try {
-                            const rrdRes = await fetchWithAuth(
-                                `/proxmox/api/${server.id}/node/rrddata?node=${nodeName}&timeframe=hour`,
-                                { hideOnForbidden: true }
-                            );
-                            if (rrdRes && rrdRes.ok) {
-                                const rrd = await rrdRes.json();
-                                const data = rrd.data || [];
-                                for (const pt of data) {
-                                    cpuHistory.push(((pt.cpu || 0) * 100));
-                                    const rPct = pt.memtotal > 0
-                                        ? ((pt.memused || 0) / pt.memtotal * 100)
-                                        : (pt.mem || 0) * 100;
-                                    ramHistory.push(rPct);
-                                    const dPct = pt.roottotal > 0
-                                        ? ((pt.rootused || 0) / pt.roottotal * 100)
-                                        : 0;
-                                    diskHistory.push(dPct);
-                                }
-                            }
-                        } catch (e) { /* ignore */ }
-                    }
-                }
-            } catch (e) {
-                console.error('Node load error:', e);
+        const res = await fetchWithAuth('/proxmox/api/resources/all', { hideOnForbidden: true });
+        if (res && res.ok && !res.forbidden) {
+            const data = await res.json();
+            const onlineServers = (data.servers || []).filter(s => !s.error && s.id);
+            if (onlineServers.length > 0) {
+                _lastNodeRefresh = Date.now();
+                await _refreshNodeStats(onlineServers);
             }
         }
+    } catch (e) {/* ignore */}
+    await refreshVMs();
 
-        // === Render resource cards ===
-        if (allNodeData.length > 0) {
-            // Aggregate avg
-            const avgCpu = Math.round(allNodeData.reduce((s, n) => s + n.cpuPct, 0) / allNodeData.length);
-            const avgRam = Math.round(allNodeData.reduce((s, n) => s + n.ramPct, 0) / allNodeData.length);
-
-            const cpuPctEl = document.getElementById('cpuPct');
-            const ramPctEl = document.getElementById('ramPct');
-            const cpuBarEl = document.getElementById('cpuBar');
-            const ramBarEl = document.getElementById('ramBar');
-
-            if (cpuPctEl) { cpuPctEl.textContent = avgCpu + '%'; setPctBadgeColor(cpuPctEl, avgCpu); }
-            if (ramPctEl) { ramPctEl.textContent = avgRam + '%'; setPctBadgeColor(ramPctEl, avgRam); }
-            if (cpuBarEl) cpuBarEl.style.width = avgCpu + '%';
-            if (ramBarEl) ramBarEl.style.width = avgRam + '%';
-        }
-
-        // Draw mini charts
-        if (cpuHistory.length > 0) {
-            const cpuSlice = cpuHistory.slice(-24);
-            const ramSlice = ramHistory.slice(-24);
-            const diskSlice = diskHistory.slice(-24);
-
-            const lastDisk = diskSlice.length > 0 ? diskSlice[diskSlice.length - 1] : 0;
-            const pctDisk = Math.round(lastDisk);
-            const diskPctEl = document.getElementById('diskPct');
-            const diskBarEl = document.getElementById('diskBar');
-            if (diskPctEl) { diskPctEl.textContent = pctDisk + '%'; setPctBadgeColor(diskPctEl, pctDisk); }
-            if (diskBarEl) diskBarEl.style.width = pctDisk + '%';
-
-            requestAnimationFrame(() => {
-                drawMiniLineChart('cpuMiniChart', cpuSlice, '#3b82f6', 'rgba(59,130,246,0.15)');
-                drawMiniLineChart('ramMiniChart', ramSlice, '#8b5cf6', 'rgba(139,92,246,0.15)');
-                // disk as bar chart
-                if (diskSlice.some(v => v > 0)) {
-                    drawMiniBarChart('diskMiniChart', diskSlice, 'rgba(16,185,129,0.7)');
-                } else {
-                    // fallback: simple bar from pct
-                    const fakeData = Array(24).fill(0).map((_, i) => (i / 23) * pctDisk * 0.9 + pctDisk * 0.1);
-                    drawMiniBarChart('diskMiniChart', fakeData, 'rgba(16,185,129,0.7)');
-                }
-            });
-        }
-
-        // === Render Nodes panel ===
-        const panel = document.getElementById('nodesPanel');
-        const onlineMeta = document.getElementById('nodesOnlineMeta');
-        if (onlineMeta) onlineMeta.textContent = allNodeData.length + '/' + allNodeData.length + ' online';
-
-        if (panel) {
-            if (allNodeData.length === 0) {
-                panel.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem 1.25rem;font-size:.875rem;">No nodes available</div>';
-            } else {
-                panel.innerHTML = allNodeData.map(node => `
-                    <div class="node-item">
-                        <div class="node-item-header">
-                            <div class="node-item-name">
-                                <span class="node-dot-online"></span>
-                                ${escapeHtml(node.name)}
-                            </div>
-                            <span class="node-vm-count">${node.vmCount > 0 ? node.vmCount + ' VMs' : ''}</span>
-                        </div>
-                        <div class="node-bar-row">
-                            <span class="node-bar-lbl">CPU</span>
-                            <div class="node-bar-wrap">
-                                <div class="node-bar-fill cpu" style="width:${node.cpuPct}%"></div>
-                            </div>
-                            <span class="node-bar-pct">${node.cpuPct}%</span>
-                        </div>
-                        <div class="node-bar-row">
-                            <span class="node-bar-lbl">RAM</span>
-                            <div class="node-bar-wrap">
-                                <div class="node-bar-fill ram" style="width:${node.ramPct}%"></div>
-                            </div>
-                            <span class="node-bar-pct">${node.ramPct}%</span>
-                        </div>
-                    </div>
-                `).join('');
+    let intervalMs = 10000; // default 10s
+    try {
+        const r = await fetchWithAuth('/settings/api/panel');
+        if (r && r.ok) {
+            const cfg = await r.json();
+            if (cfg.refresh_interval && cfg.refresh_interval > 0) {
+                intervalMs = cfg.refresh_interval * 1000;
             }
         }
+    } catch (e) {/* use default */}
 
+    setInterval(refreshVMs, intervalMs);
+});
+
+// ======== Alerts Modal ========
+function closeAlertsModal() {
+    document.getElementById('alertsModal').style.display = 'none';
+}
+
+async function openAlertsModal() {
+    const modal = document.getElementById('alertsModal');
+    modal.style.display = 'flex';
+    const body = document.getElementById('alertsModalBody');
+    body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;"><i class="fa-solid fa-circle-notch fa-spin"></i></div>';
+    try {
+        const res = await fetchWithAuth('/api/dashboard/alerts');
+        if (!res || !res.ok) throw new Error('failed');
+        const data = await res.json();
+        if (!data.alerts || data.alerts.length === 0) {
+            body.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:2rem;">${t('no_alerts')}</div>`;
+            return;
+        }
+        const locale = '{{ "ru-RU" if lang == "ru" else "en-US" }}';
+        body.innerHTML = data.alerts.map(a => {
+            const time = a.created_at
+                ? new Date(a.created_at).toLocaleString(locale, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})
+                : '—';
+            const lvlCls = a.level === 'critical' ? 'critical' : 'error';
+            return `<div class="audit-row" style="align-items:flex-start;padding:.65rem 0;border-bottom:1px solid var(--border, rgba(255,255,255,.06));">
+                <span class="audit-time" style="flex-shrink:0;">${time}</span>
+                <span style="flex-shrink:0;"><span class="audit-action-tag ${lvlCls}">${escapeHtml(a.level)}</span></span>
+                <span style="flex:1;font-size:.875rem;color:var(--text-primary);word-break:break-word;">${escapeHtml(a.message)}</span>
+                ${a.username ? `<span class="audit-user" style="flex-shrink:0;">${escapeHtml(a.username)}</span>` : '<span></span>'}
+            </div>`;
+        }).join('');
     } catch (e) {
-        console.error('Node stats error:', e);
+        body.innerHTML = '<div style="text-align:center;color:var(--danger);padding:2rem;"><i class="fa-solid fa-circle-exclamation" style="margin-right:.5rem;"></i>Ошибка загрузки</div>';
     }
 }
+</script>
 
-// HTML escape helper
-function escapeHtml(str) {
-    if (!str) return '';
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-}
-
-// Init
-document.addEventListener('DOMContentLoaded', function() {
-    loadVMStats();
-    loadNodeStats();
+<!-- ======== Alerts Modal ======== -->
+<div id="alertsModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.82);z-index:2000;align-items:center;justify-content:center;">
+    <div class="card" style="max-width:680px;width:95%;max-height:82vh;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <h3 style="margin:0;color:var(--text-primary);">
+                <i class="fa-solid fa-triangle-exclamation" style="color:var(--warning,#f59e0b);margin-right:.5rem;"></i>
+                {{ t('alerts_label') }} — {{ t('last_24h') }}
+            </h3>
+            <button onclick="closeAlertsModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <div id="alertsModalBody" style="overflow-y:auto;flex:1;min-height:80px;"></div>
+        <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border, rgba(255,255,255,.06));text-align:right;">
+            <a href="/logs?level=error" class="btn btn-secondary" style="text-decoration:none;">
+                <i class="fa-solid fa-arrow-right" style="margin-right:.5rem;"></i>{{ t('view_all') }}
+            </a>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('alertsModal').addEventListener('click', function(e) {
+    if (e.target === this) closeAlertsModal();
 });
 </script>
 {% endblock %}

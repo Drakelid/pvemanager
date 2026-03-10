@@ -46,6 +46,21 @@ const translations = {
         ssh_key_saved: "SSH ключ успешно сохранён",
         error_saving_ssh_key: "Ошибка сохранения SSH ключа",
         invalid_ssh_key_format: "Неверный формат SSH ключа",
+
+        // Dashboard
+        nodes_label: "Ноды",
+        clusters_label: "Кластеры",
+        alerts_label: "Оповещения",
+        vms: "ВМ",
+        running: "Запущено",
+        online: "Онлайн",
+        paused: "Пауза",
+        stopped: "Остановлен",
+        loading_dots: "Загрузка…",
+        no_vms_found: "Нет виртуальных машин",
+        no_nodes: "Нет доступных нод",
+        all_healthy: "Все работают",
+        no_alerts: "Нет оповещений",
     },
     
     en: {
@@ -90,6 +105,21 @@ const translations = {
         ssh_key_saved: "SSH key saved successfully",
         error_saving_ssh_key: "Error saving SSH key",
         invalid_ssh_key_format: "Invalid SSH key format",
+
+        // Dashboard
+        nodes_label: "Nodes",
+        clusters_label: "Clusters",
+        alerts_label: "Alerts",
+        vms: "VMs",
+        running: "Running",
+        online: "Online",
+        paused: "Paused",
+        stopped: "Stopped",
+        loading_dots: "Loading…",
+        no_vms_found: "No VMs found",
+        no_nodes: "No nodes available",
+        all_healthy: "All healthy",
+        no_alerts: "No alerts",
     }
 };
 

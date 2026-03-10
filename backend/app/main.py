@@ -86,6 +86,24 @@ def setup_logging():
     ):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
+    # Filter uvicorn access log — suppress GET polling endpoints
+    import re as _re
+    _POLL_RE = _re.compile(
+        r'"GET /(proxmox/api/|settings/api/panel|api/notifications/unread-count|proxmox/api/servers)'
+    )
+
+    class _UvicornAccessFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            msg = record.getMessage()
+            # Allow all non-200 responses through
+            if '" 2' not in msg:
+                return True
+            return not bool(_POLL_RE.search(msg))
+
+    for uvicorn_logger_name in ("uvicorn.access", "uvicorn"):
+        uvicorn_logger = logging.getLogger(uvicorn_logger_name)
+        uvicorn_logger.addFilter(_UvicornAccessFilter())
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -212,7 +230,7 @@ def create_app() -> FastAPI:
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://esm.sh; "
             "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://fonts.googleapis.com; "
             "img-src 'self' data: blob:; "
-            "connect-src 'self' wss: ws: https://esm.sh; "
+            "connect-src 'self' wss: ws: https://esm.sh https://api.github.com; "
             "font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
             "frame-ancestors 'self';"
         )

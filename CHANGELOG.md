@@ -4,6 +4,36 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.1.3] - 2026-03-10
+
+### 🚨 Dashboard — Alerts Panel & Real-time Node Stats
+
+- New API endpoint `GET /api/dashboard/alerts` — returns error/critical `AuditLog` entries for the last 24 h (up to 50), protected by `logs.view` permission
+- Alerts modal (`openAlertsModal()`) on the dashboard status chip — click to view recent errors
+- Mini sparkline charts (Chart.js) for **CPU, RAM, Storage** per node — updates in-place without re-rendering
+- Node stats fetched in parallel via `Promise.all` for all online servers
+- Full i18n coverage for new dashboard elements: `nodes_label`, `clusters_label`, `alerts_label`, `all_online`, `all_healthy`, `no_alerts`, `all_systems_operational`, `view_all`, `recent_audit_events`, `no_audit_events`, `last_24h`, `ram`, `ram_usage`, `storage`, `paused`, and more
+
+### 🔒 Security — Log sanitisation
+
+- Removed IP addresses from structured log messages in `servers.py` to prevent credential leakage via logs
+- `logging_middleware.py` now suppresses noisy GET polling traffic — requests to `/proxmox/api/`, `/api/notifications/unread-count`, `/settings/api/panel` etc. are only logged on HTTP errors (≥ 400) or slow responses (> 5 s)
+
+### 🎨 UI — CSS variables & GitHub stars
+
+- `base.html`: GitHub stars counter switched from Gitea API to GitHub API (`api.github.com`, `stargazers_count`)
+- Hard-coded `rgba()` colours in `backups.html` and `proxmox_vms.html` replaced with CSS theme variables (`var(--info-light)`, `var(--warning-light)`)
+- Backups server selector redesigned — added icon and label for better clarity
+
+### 📖 WIKI — Fixes & new content
+
+- Fixed broken anchor links in Table of Contents (`#deployment-guide` → `#installation-and-deployment`)
+- Added **Snapshots** section with creation guide, management table, and full API reference
+- Added **Main Features / Dashboard** section
+- Fixed broken emoji characters in section headings (`🛠️ pve CLI Tool`, `🔌 API Reference`)
+
+---
+
 ## [v1.1.2] - 2026-03-08
 
 ### 🎨 Dashboard Redesign

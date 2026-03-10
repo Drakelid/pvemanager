@@ -203,9 +203,9 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    background: rgba(56, 189, 248, 0.1);
+    background: var(--info-light);
     color: var(--info);
-    border: 1px solid rgba(56, 189, 248, 0.4);
+    border: 1px solid var(--info);
     border-radius: 0.375rem;
     font-size: 0.7rem;
     font-weight: 600;
@@ -457,7 +457,7 @@
             </div>
 
             {% if proxmox_servers | length <= 2 %}
-            <div style="background: rgba(234, 179, 8, 0.1); border: 1px solid var(--warning); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem;">
+            <div style="background: var(--warning-light); border: 1px solid var(--warning); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem;">
                 <div style="display: flex; align-items: start; gap: 0.75rem;">
                     <i class="fa-solid fa-triangle-exclamation" style="color: var(--warning); margin-top: 2px;"></i>
                     <div style="font-size: 0.875rem; color: var(--text-primary);">
@@ -494,14 +494,14 @@
         </div>
 
         <!-- Warning: no cluster servers -->
-        <div id="joinNoClusterWarning" style="display: none; background: rgba(234, 179, 8, 0.1); border: 1px solid var(--warning); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.875rem;">
+        <div id="joinNoClusterWarning" style="display: none; background: var(--warning-light); border: 1px solid var(--warning); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.875rem;">
             <i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i>
             Нет серверов с активным кластером. Сначала <strong>создайте кластер</strong> на одном из серверов.
         </div>
 
         <!-- Step 1: Select nodes -->
         <div id="joinStep1">
-            <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid var(--info); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1.2rem; font-size: 0.875rem;">
+            <div style="background: var(--info-light); border: 1px solid var(--info); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1.2rem; font-size: 0.875rem;">
                 <i class="fa-solid fa-circle-info" style="color: var(--info);"></i>
                 Выберите ноду для добавления в кластер и любую существующую ноду кластера.
             </div>
@@ -572,7 +572,7 @@
 
         <!-- Step 4: Final join -->
         <div id="joinStep4" style="display: none;">
-            <div style="background: rgba(234, 179, 8, 0.1); border: 1px solid var(--warning); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1.2rem; font-size: 0.875rem;">
+            <div style="background: var(--warning-light); border: 1px solid var(--warning); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1.2rem; font-size: 0.875rem;">
                 <i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i>
                 После присоединения нода синхронизирует конфигурацию с кластером. Операция необратима.
             </div>
@@ -611,7 +611,7 @@
             <button onclick="closeEjectNodeModal()" style="background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">&times;</button>
         </div>
 
-        <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.875rem;">
+        <div style="background: var(--danger-light); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.875rem;">
             <i class="fa-solid fa-triangle-exclamation" style="color: var(--danger);"></i>
             <strong> Внимание!</strong> Исключаемая нода должна быть <strong>полностью выключена</strong> до запуска операции.
             После исключения на ней необходимо вручную сбросить конфигурацию кластера.
@@ -1876,7 +1876,7 @@ async function loadVNC(serverId, node, vmid, type) {
                         </ol>
                     </div>
                     
-                    <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(255,193,7,0.1); border: 1px solid rgba(255,193,7,0.3); border-radius: 6px;">
+                    <div style="margin-top: 1.5rem; padding: 1rem; background: var(--warning-light); border: 1px solid var(--warning); border-radius: 6px;">
                         <p style="color: var(--warning); font-size: 0.875rem; margin: 0;">
                             <strong><i class="fa-solid fa-triangle-exclamation"></i> Примечание:</strong> Встроенный VNC в iframe невозможен из-за политики безопасности браузера и Proxmox CORS.
                         </p>
@@ -2617,7 +2617,7 @@ function renderPreCheckResult(data) {
 
     if (data.guests_count === 0) {
         container.innerHTML = `
-            <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid var(--success); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem;">
+            <div style="background: var(--success-light); border: 1px solid var(--success); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem;">
                 <i class="fa-solid fa-circle-check" style="color: var(--success);"></i>
                 <strong> Нода чистая!</strong> VM и LXC не обнаружены. Можно сразу присоединяться к кластеру.
             </div>
@@ -2644,7 +2644,7 @@ function renderPreCheckResult(data) {
         `).join('');
 
         container.innerHTML = `
-            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem;">
+            <div style="background: var(--danger-light); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem;">
                 <i class="fa-solid fa-triangle-exclamation" style="color: var(--danger);"></i>
                 <strong> Обнаружено гестов: ${data.guests_count}</strong><br>
                 <span style="font-size: 0.875rem; color: var(--text-secondary);">
@@ -2673,7 +2673,7 @@ function renderPreCheckResult(data) {
         } else {
             document.getElementById('joinBackupStorage').innerHTML = '<option value="">Нет доступных хранилищ backup</option>';
             container.innerHTML += `
-                <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.875rem;">
+                <div style="background: var(--danger-light); border: 1px solid var(--danger); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.875rem;">
                     <i class="fa-solid fa-exclamation-circle" style="color: var(--danger);"></i>
                     <strong> Нет хранилищ для бэкапов.</strong> Добавьте NFS/CIFS/Ceph хранилище с типом backup.
                 </div>

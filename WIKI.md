@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.1.2
+> Complete guide for installation, configuration and usage of PVEmanager v1.1.3
 
 ---
 
@@ -24,8 +24,8 @@
 16. [Settings](#-settings)
 17. [pve CLI Tool](#-pve-cli-tool)
 18. [API Reference](#-api-reference)
-19. [Deployment Guide](#-deployment-guide)
-20. [Private Repo Updates](#-private-repo-updates)
+19. [Deployment Guide](#-installation-and-deployment)
+20. [Private Repo Updates](#-settings)
 21. [Troubleshooting](#-troubleshooting)
 22. [FAQ](#-faq)
 
@@ -255,7 +255,9 @@ This section summarizes key API endpoints. All require JWT authentication.
 
 - `POST /api/sync-vms` — force immediate VM sync from all Proxmox servers
 
+---
 
+## 🏠 Main Features
 
 ### Dashboard
 
@@ -643,6 +645,54 @@ pvecm add 10.10.10.11  # IP of pve1
 ### Cross-Node Template Deployment
 
 See [OS Templates - Cross-Node Template Deployment](#cross-node-template-deployment-clusters)
+
+---
+
+## 📸 Snapshots
+
+### Overview
+
+Snapshots allow you to save and restore the state of VMs and containers at any point in time.
+
+### Creating a Snapshot
+
+1. Open VM or container details
+2. Go to the **Snapshots** tab
+3. Click **Create Snapshot**
+4. Enter a name and description
+5. Optionally include RAM state (QEMU VMs only)
+
+### Managing Snapshots
+
+| Action | Description |
+|--------|-------------|
+| Create | Save current VM state |
+| Rollback | Restore to a previous snapshot state |
+| Delete | Remove an existing snapshot |
+
+> ⚠️ Rolling back will discard all changes made after the snapshot was created!
+
+### Snapshot Queue
+
+Snapshot operations are processed through the task queue system. Progress is tracked and results are saved for each item.
+
+### API Endpoints
+
+```bash
+# List snapshots
+GET /api/{server_id}/vm/{vmid}/snapshots?node={node}
+
+# Create snapshot
+POST /api/{server_id}/vm/{vmid}/snapshots?node={node}
+
+# Delete snapshot
+DELETE /api/{server_id}/vm/{vmid}/snapshots/{snapname}?node={node}
+
+# Rollback to snapshot
+POST /api/{server_id}/vm/{vmid}/snapshots/{snapname}/rollback?node={node}
+```
+
+> For LXC containers use `/container/` instead of `/vm/` in the endpoints above.
 
 ---
 
@@ -1247,7 +1297,7 @@ tail -f logs/update_host.log
 
 ---
 
-## �️ pve CLI Tool
+## 🛠️ pve CLI Tool
 
 Starting from v1.1.2, PVEmanager ships with a `pve` shell script — a handy CLI shortcut for common management tasks.
 
@@ -1282,7 +1332,7 @@ pve status         # Show docker compose status
 
 ---
 
-## �🔌 API Reference
+## 🔌 API Reference
 
 ### Authentication
 
@@ -1589,5 +1639,5 @@ A: Not yet, but planned for future versions.
 
 ---
 
-*Last updated: March 2026*
-*Version: 1.1.2*
+*Last updated: March 10, 2026*
+*Version: 1.1.3*
