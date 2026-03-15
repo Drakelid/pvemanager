@@ -75,13 +75,11 @@ class ChangePasswordRequest(BaseModel):
 
 class PanelSettingsResponse(BaseModel):
     panel_name: str
-    refresh_interval: int  # seconds
     log_retention_days: int
     language: str  # ru or en
 
 
 class UpdatePanelSettingsRequest(BaseModel):
-    refresh_interval: Optional[int] = Field(None, ge=1, le=60)
     log_retention_days: Optional[int] = Field(None, ge=1, le=365)
     language: Optional[str] = Field(None, pattern='^(ru|en)$')
 
@@ -269,13 +267,11 @@ async def get_panel_settings(
     from ..config import settings
     
     # Get settings from database or use defaults
-    refresh_interval = get_setting(db, "refresh_interval", "5")
     log_retention_days = get_setting(db, "log_retention_days", "30")
     language = get_setting(db, "language", "ru")
     
     return {
         "panel_name": settings.PANEL_NAME,
-        "refresh_interval": int(refresh_interval),
         "log_retention_days": int(log_retention_days),
         "language": language
     }
@@ -291,10 +287,6 @@ async def update_panel_settings(
     updated_fields = []
     
     # Save settings to database
-    if data.refresh_interval is not None:
-        set_setting(db, "refresh_interval", str(data.refresh_interval), "Интервал обновления данных (секунды)")
-        updated_fields.append(f"refresh_interval={data.refresh_interval}")
-    
     if data.log_retention_days is not None:
         set_setting(db, "log_retention_days", str(data.log_retention_days), "Срок хранения логов (дни)")
         updated_fields.append(f"log_retention_days={data.log_retention_days}")

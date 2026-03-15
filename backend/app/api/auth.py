@@ -216,6 +216,26 @@ def login(login_data: LoginRequest, request: Request, db: Session = Depends(get_
     }
 
 
+@router.post("/api/auth/refresh", response_model=Token)
+def refresh_token(
+    current_user: User = Depends(get_current_user),
+    session_token: str = Depends(get_current_session_token),
+    db: Session = Depends(get_db)
+):
+    """Refresh JWT access token without re-login (extends session)"""
+    session_timeout = SecurityService.get_setting_int(db, "session_timeout_minutes", 60)
+    access_token_expires = timedelta(minutes=session_timeout)
+    new_token = create_access_token(
+        data={"sub": current_user.username},
+        session_token=session_token,
+        expires_delta=access_token_expires
+    )
+    return {
+        "access_token": new_token,
+        "token_type": "bearer"
+    }
+
+
 @router.post("/api/auth/logout")
 def logout(
     request: Request, 

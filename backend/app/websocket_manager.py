@@ -1,21 +1,24 @@
 """
-WebSocket Connection Manager for real-time task updates.
-Maintains per-user WebSocket connections and broadcasts task events.
+WebSocket Connection Manager for real-time task updates and metrics push.
+Maintains per-user WebSocket connections, broadcasts task events,
+and supports channel-based subscriptions for metrics streaming.
 """
 import asyncio
 import json
-from typing import Dict, Set
+from typing import Dict, List, Set
 
 from fastapi import WebSocket
 from loguru import logger
 
 
 class ConnectionManager:
-    """Manages WebSocket connections grouped by user_id."""
+    """Manages WebSocket connections grouped by user_id and by channel."""
 
     def __init__(self):
         # user_id -> set of active WebSocket connections
         self._connections: Dict[int, Set[WebSocket]] = {}
+        # channel_name -> set of subscribed WebSocket connections
+        self._channel_subscribers: Dict[str, Set[WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, user_id: int) -> None:
         await websocket.accept()
@@ -29,7 +32,57 @@ class ConnectionManager:
             self._connections[user_id].discard(websocket)
             if not self._connections[user_id]:
                 del self._connections[user_id]
+        self.unsubscribe_all(websocket)
         logger.debug(f"[WS TASKS] User {user_id} disconnected")
+
+    # ── Channel subscription helpers ──────────────────────────────────
+
+    def subscribe(self, websocket: WebSocket, channel: str) -> None:
+        """Subscribe a WebSocket connection to a named channel."""
+        if channel not in self._channel_subscribers:
+            self._channel_subscribers[channel] = set()
+        self._channel_subscribers[channel].add(websocket)
+        logger.debug(f"[WS] Subscribed to channel '{channel}'")
+
+    def unsubscribe(self, websocket: WebSocket, channel: str) -> None:
+        """Unsubscribe a WebSocket connection from a named channel."""
+        if channel in self._channel_subscribers:
+            self._channel_subscribers[channel].discard(websocket)
+            if not self._channel_subscribers[channel]:
+                del self._channel_subscribers[channel]
+        logger.debug(f"[WS] Unsubscribed from channel '{channel}'")
+
+    def unsubscribe_all(self, websocket: WebSocket) -> None:
+        """Remove a WebSocket from every channel it is subscribed to."""
+        for channel in list(self._channel_subscribers):
+            self._channel_subscribers[channel].discard(websocket)
+            if not self._channel_subscribers[channel]:
+                del self._channel_subscribers[channel]
+
+    def has_channel_subscribers(self, channel: str) -> bool:
+        """Return True if at least one connection is subscribed to *channel*."""
+        return bool(self._channel_subscribers.get(channel))
+
+    def get_channels_matching(self, prefix: str) -> List[str]:
+        """Return all channel names that start with *prefix*."""
+        return [ch for ch in list(self._channel_subscribers) if ch.startswith(prefix)]
+
+    async def broadcast_to_channel(self, channel: str, data: dict) -> None:
+        """Send JSON data to all connections subscribed to *channel*."""
+        connections = self._channel_subscribers.get(channel)
+        if not connections:
+            return
+        message = json.dumps(data, default=str)
+        dead: Set[WebSocket] = set()
+        for ws in list(connections):
+            try:
+                await ws.send_text(message)
+            except Exception:
+                dead.add(ws)
+        for ws in dead:
+            self._channel_subscribers[channel].discard(ws)
+        if not self._channel_subscribers.get(channel):
+            self._channel_subscribers.pop(channel, None)
 
     @property
     def active_user_count(self) -> int:

@@ -31,8 +31,6 @@
 </div>
 
 <div class="card">
-    
-    {% if proxmox_servers %}
     <div class="table-container">
         <table class="data-table" id="serversTable">
             <thead>
@@ -59,63 +57,14 @@
                 </tr>
             </thead>
             <tbody id="serversTableBody">
-                {% for server in proxmox_servers|sort(attribute='name') %}
-                <tr id="server-row-{{ server.id }}" data-server-id="{{ server.id }}" data-name="{{ server.name|lower }}" data-ip="{{ server.ip_address }}" data-node="{{ server.hostname or '' }}" data-vms="0" data-lxc="0" data-status="loading">
-                    <td>
-                        <div style="font-weight: 600; color: var(--text-primary);">{{ server.name }}</div>
-                        {% if server.cluster_name %}
-                        <span class="cluster-badge"><i class="fa-solid fa-network-wired"></i> {{ server.cluster_name }}</span>
-                        {% endif %}
-                        {% if server.description %}
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">{{ server.description }}</div>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <div style="font-family: monospace; font-size: 0.875rem;">{{ server.ip_address }}:{{ server.port }}</div>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);"><i class="fa-solid fa-user"></i> {{ server.api_user }}</div>
-                    </td>
-                    <td>
-                        {% if server.hostname and server.hostname != server.ip_address %}
-                        <span style="font-size: 0.875rem; color: var(--info);">{{ server.hostname }}</span>
-                        {% else %}
-                        <span style="color: var(--text-muted);">—</span>
-                        {% endif %}
-                    </td>
-                    <td id="server-vms-{{ server.id }}" style="text-align: center;">
-                        <span style="color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i></span>
-                    </td>
-                    <td id="server-lxc-{{ server.id }}" style="text-align: center;">
-                        <span style="color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i></span>
-                    </td>
-                    <td id="server-status-{{ server.id }}" style="text-align: center;">
-                        <span class="status-badge status-loading"><i class="fa-solid fa-spinner fa-spin"></i> {{ t('loading') }}</span>
-                    </td>
-                    <td style="text-align: right;">
-                        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
-                            <button onclick="testConnection({{ server.id }})" class="btn btn-sm" style="background: var(--success); color: var(--text-on-success);" title="{{ t('test') }}">
-                                <i class="fa-solid fa-plug"></i> {{ t('test') }}
-                            </button>
-                            <button onclick="window.location.href='/proxmox/server/{{ server.id }}'" class="btn btn-sm" style="background: var(--info); color: var(--text-on-info);" title="{{ t('details') }}">
-                                <i class="fa-solid fa-chart-simple"></i> {{ t('details') }}
-                            </button>
-                            <button onclick="editServer({{ server.id }}, '{{ server.name }}')" class="btn btn-sm" style="background: var(--warning); color: var(--text-on-warning);" title="{{ t('edit') }}" data-permission="proxmox.servers.edit">
-                                <i class="fa-solid fa-pen"></i>
-                            </button>
-                            <button onclick="deleteServer({{ server.id }}, '{{ server.name }}')" class="btn btn-sm btn-delete" title="{{ t('delete') }}" data-permission="proxmox.servers.delete">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </div>
+                <tr id="servers-loading-row">
+                    <td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">
+                        <i class="fa-solid fa-spinner fa-spin"></i> {{ t('loading') }}
                     </td>
                 </tr>
-                {% endfor %}
             </tbody>
         </table>
     </div>
-    {% else %}
-    <p style="color: var(--text-secondary);">
-        {{ t('no_proxmox_servers') }} <a href="#" onclick="showAddServerModal(); return false;" style="color: var(--success);">{{ t('add_first_server') }}</a>.
-    </p>
-    {% endif %}
 </div>
 
 <style>
@@ -1966,13 +1915,96 @@ async function controlResource(serverId, node, vmid, action, type) {
     }
 }
 
+// -----------------------------------------------------------------------
+// Dynamic server table loader (workspace-aware)
+// -----------------------------------------------------------------------
+async function loadServersTable() {
+    const tbody = document.getElementById('serversTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;"><i class="fa-solid fa-spinner fa-spin"></i> ${t('loading') || 'Загрузка...'}</td></tr>`;
+
+    try {
+        const resp = await fetchWithAuth('/proxmox/api/servers');
+        if (!resp || !resp.ok) throw new Error('Failed to load servers');
+        const servers = await resp.json();
+
+        if (!servers || servers.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">
+                ${t('no_proxmox_servers') || 'Нет серверов.'} <a href="#" onclick="showAddServerModal();return false;" style="color:var(--success);">${t('add_first_server') || 'Добавить первый'}</a>
+            </td></tr>`;
+            return;
+        }
+
+        servers.sort((a, b) => a.name.localeCompare(b.name));
+
+        tbody.innerHTML = servers.map(server => `
+            <tr id="server-row-${server.id}" data-server-id="${server.id}" data-name="${(server.name || '').toLowerCase()}" data-ip="${server.ip_address || ''}" data-node="${server.hostname || ''}" data-vms="0" data-lxc="0" data-status="loading">
+                <td>
+                    <div style="font-weight:600;color:var(--text-primary);">${escapeHtml(server.name)}</div>
+                    ${server.cluster_name ? `<span class="cluster-badge"><i class="fa-solid fa-network-wired"></i> ${escapeHtml(server.cluster_name)}</span>` : ''}
+                    ${server.description ? `<div style="font-size:0.75rem;color:var(--text-muted);">${escapeHtml(server.description)}</div>` : ''}
+                </td>
+                <td>
+                    <div style="font-family:monospace;font-size:0.875rem;">${escapeHtml(server.ip_address)}:${server.port || 8006}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);"><i class="fa-solid fa-user"></i> ${escapeHtml(server.api_user || '')}</div>
+                </td>
+                <td>
+                    ${(server.hostname && server.hostname !== server.ip_address)
+                        ? `<span style="font-size:0.875rem;color:var(--info);">${escapeHtml(server.hostname)}</span>`
+                        : `<span style="color:var(--text-muted);">—</span>`}
+                </td>
+                <td id="server-vms-${server.id}" style="text-align:center;">
+                    <span style="color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                </td>
+                <td id="server-lxc-${server.id}" style="text-align:center;">
+                    <span style="color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                </td>
+                <td id="server-status-${server.id}" style="text-align:center;">
+                    <span class="status-badge status-loading"><i class="fa-solid fa-spinner fa-spin"></i> ${t('loading') || 'Загрузка'}</span>
+                </td>
+                <td style="text-align:right;">
+                    <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+                        <button onclick="testConnection(${server.id})" class="btn btn-sm" style="background:var(--success);color:var(--text-on-success);" title="${t('test') || 'Тест'}">
+                            <i class="fa-solid fa-plug"></i> ${t('test') || 'Тест'}
+                        </button>
+                        <button onclick="window.location.href='/proxmox/server/${server.id}'" class="btn btn-sm" style="background:var(--info);color:var(--text-on-info);" title="${t('details') || 'Детали'}">
+                            <i class="fa-solid fa-chart-simple"></i> ${t('details') || 'Детали'}
+                        </button>
+                        <button onclick="editServer(${server.id}, ${JSON.stringify(server.name)})" class="btn btn-sm" style="background:var(--warning);color:var(--text-on-warning);" title="${t('edit') || 'Изменить'}" data-permission="proxmox.servers.edit">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button onclick="deleteServer(${server.id}, ${JSON.stringify(server.name)})" class="btn btn-sm btn-delete" title="${t('delete') || 'Удалить'}" data-permission="proxmox.servers.delete">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+
+        // Apply permission visibility after re-render
+        if (typeof applyPermissions === 'function') applyPermissions();
+
+        // Load statuses for the new rows
+        loadAllStatuses();
+    } catch (e) {
+        console.error('loadServersTable error:', e);
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--danger);padding:2rem;">${t('error') || 'Ошибка'}: ${e.message}</td></tr>`;
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // Загрузить данные при открытии страницы
-{% if proxmox_servers %}
 // Wait for auth token to be validated
 setTimeout(() => {
-    loadAllStatuses();
+    loadServersTable();
+    // Hook for workspace switch
+    window.reloadPageData = loadServersTable;
 }, 500);
-{% endif %}
 </script>
 
 <!-- Модальное окно мониторинга -->

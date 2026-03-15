@@ -807,15 +807,19 @@ function displayCommandOutput(result, command = null) {
 
 async function loadRRDData(timeframe = 'hour') {
     try {
-        const response = await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}/rrddata?node=${instanceNode}&timeframe=${timeframe}`);
-        if (!response.ok) return;
-        
-        const rrdData = await response.json();
-        const data = Array.isArray(rrdData) ? rrdData : (rrdData.data || []);
-        
-        if (data.length > 0) {
-            drawCharts(data, timeframe);
+        let rrdData = null;
+        // WS request-response
+        if (typeof sendWsRequest === 'function') {
+            try {
+                const resp = await sendWsRequest('get_rrd', {
+                    server_id: serverId, vmid, inst_type: instanceType,
+                    node: instanceNode, timeframe
+                });
+                if (resp && resp.data) rrdData = resp.data;
+            } catch { rrdData = null; }
         }
+        const data = Array.isArray(rrdData) ? rrdData : (rrdData.data || []);
+        if (data.length > 0) drawCharts(data, timeframe);
     } catch (error) {
         console.error('Error loading RRD data:', error);
     }
@@ -2159,13 +2163,95 @@ function initPage() {
     
     loadInstanceData();
     loadHAStatus();
-    
-    // Автообновление каждые 2 секунды
+
+    // Auto-refresh RRD charts every 30 s via WS (Proxmox RRD updates ~60 s)
     setInterval(() => {
-        if (document.getElementById('instance-content').style.display !== 'none') {
-            loadStatus();
+        const content = document.getElementById('instance-content');
+        if (content && content.style.display !== 'none') {
+            loadRRDData(currentTimeframe);
         }
-    }, 2000);
+    }, 30000);
+
+    // Subscribe to WS push for live metrics; fall back to polling without WS.
+    const _instCh = `instance_metrics:${serverId}_${vmid}_${instanceType}_${instanceNode}`;
+
+    if (typeof registerWsHandler === 'function') {
+        registerWsHandler('metrics_update', (msg) => {
+            if (msg.channel !== _instCh) return;
+            const status = msg.data;
+            if (!status) return;
+            const el = document.getElementById('instance-content');
+            if (!el || el.style.display === 'none') return;
+
+            const cpuPercent = ((status.cpu || 0) * 100).toFixed(1);
+            const cpuEl = document.getElementById('metric-cpu');
+            const cpuBar = document.getElementById('metric-cpu-bar');
+            if (cpuEl) cpuEl.textContent = `${cpuPercent}%`;
+            if (cpuBar) {
+                cpuBar.style.width = `${cpuPercent}%`;
+                cpuBar.className = `progress-fill ${cpuPercent > 80 ? 'danger' : cpuPercent > 60 ? 'warning' : ''}`;
+            }
+
+            const memUsed = status.mem || 0;
+            const memMax = status.maxmem || 1;
+            const memPercent = ((memUsed / memMax) * 100).toFixed(1);
+            const memEl = document.getElementById('metric-memory');
+            const memDetail = document.getElementById('metric-memory-detail');
+            const memBar = document.getElementById('metric-memory-bar');
+            if (memEl) memEl.textContent = `${memPercent}%`;
+            if (memDetail) memDetail.textContent = `${formatBytes(memUsed)} / ${formatBytes(memMax)}`;
+            if (memBar) {
+                memBar.style.width = `${memPercent}%`;
+                memBar.className = `progress-fill ${memPercent > 80 ? 'danger' : memPercent > 60 ? 'warning' : ''}`;
+            }
+
+            const diskUsed = status.disk || 0;
+            const diskMax = status.maxdisk || 0;
+            const diskCard = document.getElementById('disk-metric-card');
+            if (diskMax > 0 && diskUsed > 0) {
+                const diskPercent = ((diskUsed / diskMax) * 100).toFixed(1);
+                const diskEl = document.getElementById('metric-disk');
+                const diskDetail = document.getElementById('metric-disk-detail');
+                const diskBar = document.getElementById('metric-disk-bar');
+                if (diskEl) diskEl.textContent = `${diskPercent}%`;
+                if (diskDetail) diskDetail.textContent = `${formatBytes(diskUsed)} / ${formatBytes(diskMax)}`;
+                if (diskBar) {
+                    diskBar.style.width = `${diskPercent}%`;
+                    diskBar.className = `progress-fill ${diskPercent > 80 ? 'danger' : diskPercent > 60 ? 'warning' : ''}`;
+                    diskBar.style.display = '';
+                }
+                if (diskCard) diskCard.style.display = '';
+            } else if (diskCard && diskMax <= 0) {
+                diskCard.style.display = 'none';
+            }
+
+            const uptEl = document.getElementById('metric-uptime');
+            if (uptEl) uptEl.textContent = formatUptime(status.uptime);
+
+            const netinEl = document.getElementById('metric-netin');
+            const netoutEl = document.getElementById('metric-netout');
+            if (netinEl) netinEl.textContent = formatBytes(status.netin || 0);
+            if (netoutEl) netoutEl.textContent = formatBytes(status.netout || 0);
+
+            const drEl = document.getElementById('metric-diskread');
+            const dwEl = document.getElementById('metric-diskwrite');
+            if (drEl) drEl.textContent = formatBytes(status.diskread || 0);
+            if (dwEl) dwEl.textContent = formatBytes(status.diskwrite || 0);
+
+            instanceStatus = status.status;
+            updateStatus(status.status);
+            updateButtons(status.status);
+        });
+    }
+
+    // Subscribe to WS push — queued and sent when WS opens/reconnects
+    if (typeof subscribeWsChannel === 'function') {
+        subscribeWsChannel(_instCh);
+    }
+
+    window.addEventListener('beforeunload', () => {
+        if (typeof unsubscribeWsChannel === 'function') unsubscribeWsChannel(_instCh);
+    });
     
     // Check if we should auto-open VNC console
     const urlParams = new URLSearchParams(window.location.search);

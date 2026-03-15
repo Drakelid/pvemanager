@@ -278,12 +278,6 @@
             
             <form id="panel-form" class="settings-form">
                 <div class="form-group">
-                    <label for="refresh_interval">{{ t('refresh_interval_label') }}</label>
-                    <input type="number" id="refresh_interval" min="1" max="60" value="5">
-                    <small>{{ t('refresh_interval_help') }}</small>
-                </div>
-
-                <div class="form-group">
                     <label for="log_retention_days">{{ t('log_retention_label') }}</label>
                     <input type="number" id="log_retention_days" min="1" max="365" value="30">
                     <small>{{ t('log_retention_help') }}</small>
@@ -1222,7 +1216,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const oldLang = panelSettings ? panelSettings.language : 'ru';
         
         const data = {
-            refresh_interval: parseInt(document.getElementById('refresh_interval').value),
             log_retention_days: parseInt(document.getElementById('log_retention_days').value),
             language: currentLang
         };
@@ -1398,7 +1391,6 @@ document.addEventListener('DOMContentLoaded', function() {
         displayPanelInfo(settings);
         
         // Fill form (only for admins)
-        document.getElementById('refresh_interval').value = settings.refresh_interval;
         document.getElementById('log_retention_days').value = settings.log_retention_days;
         document.getElementById('language').value = settings.language || 'ru';
     }
@@ -1412,10 +1404,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         panelInfo.innerHTML = `
-            <div class="info-item">
-                <label>${t('refresh_interval')}</label>
-                <div class="value">${settings.refresh_interval} ${t('sec')}</div>
-            </div>
             <div class="info-item">
                 <label>${t('log_retention_days')}</label>
                 <div class="value">${settings.log_retention_days} ${t('days')}</div>

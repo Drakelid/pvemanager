@@ -33,9 +33,11 @@ def vms_page(request: Request, db: Session = Depends(get_db)):
     """Страница управления Proxmox серверами, VM и LXC"""
     from ...i18n import t
     lang = request.cookies.get("language", "en")
-    
+
+    # All servers are needed for cluster modals (admin operations).
+    # The main servers table is rendered dynamically via JS with workspace filtering.
     proxmox_servers = db.query(ProxmoxServer).all()
-    
+
     context = {
         "request": request,
         "proxmox_servers": proxmox_servers,

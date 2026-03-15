@@ -469,10 +469,10 @@ function escapeHtml(str) {
 }
 
 // Two-speed refresh:
-//   • refreshVMs()       — every refresh_interval (fast, 1 request)
+//   • WS push (dashboard_metrics channel) — every 10 s from server
 //   • _refreshNodeStats  — max once per 60 s (slow, many requests)
 let _lastNodeRefresh = 0;
-const NODE_REFRESH_MIN_MS = 60000; // node charts refresh at most every 60 s
+const NODE_REFRESH_MIN_MS = 300000; // HTTP fallback every 5 min (WS provides node data normally)
 
 async function refreshVMs() {
     showRefreshSpin(true);
@@ -480,6 +480,17 @@ async function refreshVMs() {
         const res = await fetchWithAuth('/proxmox/api/resources/all', { hideOnForbidden: true });
         if (!res || !res.ok || res.forbidden) { showRefreshSpin(false); return; }
         const data = await res.json();
+        renderDashboardData(data);
+    } catch (e) {
+        // silent
+    } finally {
+        showRefreshSpin(false);
+    }
+}
+
+function renderDashboardData(data) {
+    showRefreshSpin(true);
+    try {
 
         let totalVms = 0, runningVms = 0, totalCt = 0, runningCt = 0;
         const allVms = [];
@@ -532,15 +543,89 @@ async function refreshVMs() {
             }
         }
 
-        // Trigger node chart refresh if enough time has passed
-        const now = Date.now();
-        if (now - _lastNodeRefresh >= NODE_REFRESH_MIN_MS) {
-            _lastNodeRefresh = now;
-            const onlineServers = (data.servers || []).filter(s => !s.error && s.id);
-            if (onlineServers.length > 0) {
-                _refreshNodeStats(onlineServers).then(() => {
-                    markLastUpdated();
+        // Use node data from WS payload (cpu_pct/ram_pct/disk_pct/rrd_*) if available
+        const allNodes = [];
+        for (const server of (data.servers || [])) {
+            if (Array.isArray(server.nodes)) {
+                for (const node of server.nodes) allNodes.push(node);
+            }
+        }
+        if (allNodes.length > 0) {
+            const avgCpu  = Math.round(allNodes.reduce((s, n) => s + (n.cpu_pct  || 0), 0) / allNodes.length);
+            const avgRam  = Math.round(allNodes.reduce((s, n) => s + (n.ram_pct  || 0), 0) / allNodes.length);
+            const avgDisk = Math.round(allNodes.reduce((s, n) => s + (n.disk_pct || 0), 0) / allNodes.length);
+            const cpuPctEl  = document.getElementById('cpuPct');
+            const ramPctEl  = document.getElementById('ramPct');
+            const diskPctEl = document.getElementById('diskPct');
+            if (cpuPctEl)  { cpuPctEl.textContent  = avgCpu  + '%'; setPctBadgeColor(cpuPctEl,  avgCpu);  document.getElementById('cpuBar').style.width  = avgCpu  + '%'; }
+            if (ramPctEl)  { ramPctEl.textContent   = avgRam  + '%'; setPctBadgeColor(ramPctEl,  avgRam);  document.getElementById('ramBar').style.width  = avgRam  + '%'; }
+            if (diskPctEl) { diskPctEl.textContent  = avgDisk + '%'; setPctBadgeColor(diskPctEl, avgDisk); document.getElementById('diskBar').style.width = avgDisk + '%'; }
+
+            // Mini charts from WS-provided RRD slices
+            const cpuHistoryAll = [], ramHistoryAll = [], diskHistoryAll = [];
+            for (const node of allNodes) {
+                if (Array.isArray(node.rrd_cpu) && node.rrd_cpu.length > 0) {
+                    cpuHistoryAll.push(node.rrd_cpu);
+                    ramHistoryAll.push(node.rrd_ram || []);
+                    diskHistoryAll.push(node.rrd_disk || []);
+                }
+            }
+            if (cpuHistoryAll.length > 0) {
+                const len = Math.max(...cpuHistoryAll.map(a => a.length));
+                const avgH = arrays => Array.from({ length: len }, (_, i) => {
+                    const vals = arrays.map(a => i < a.length ? a[i] : (a[a.length - 1] || 0));
+                    return vals.reduce((s, v) => s + v, 0) / vals.length;
                 });
+                const cpuSlice  = avgH(cpuHistoryAll);
+                const ramSlice  = avgH(ramHistoryAll);
+                const diskSlice = avgH(diskHistoryAll);
+                requestAnimationFrame(() => {
+                    drawMiniLineChart('cpuMiniChart',  cpuSlice, '#3b82f6', 'rgba(59,130,246,0.15)');
+                    drawMiniLineChart('ramMiniChart',  ramSlice, '#8b5cf6', 'rgba(139,92,246,0.15)');
+                    if (diskSlice.some(v => v > 0)) {
+                        drawMiniBarChart('diskMiniChart', diskSlice, 'rgba(16,185,129,0.7)');
+                    } else {
+                        drawMiniBarChart('diskMiniChart', Array(24).fill(0).map((_, i) => (i / 23) * avgDisk * 0.9 + avgDisk * 0.1), 'rgba(16,185,129,0.7)');
+                    }
+                });
+            }
+
+            // Nodes panel
+            const panel      = document.getElementById('nodesPanel');
+            const onlineMeta = document.getElementById('nodesOnlineMeta');
+            if (onlineMeta) onlineMeta.textContent = allNodes.length + '/' + allNodes.length + ' ' + t('online').toLowerCase();
+            if (panel) {
+                panel.innerHTML = allNodes.map(node => `
+                    <div class="node-item">
+                        <div class="node-item-header">
+                            <div class="node-item-name">
+                                <span class="node-dot-online"></span>
+                                ${escapeHtml(node.name)}
+                            </div>
+                        </div>
+                        <div class="node-bar-row">
+                            <span class="node-bar-lbl">CPU</span>
+                            <div class="node-bar-wrap"><div class="node-bar-fill cpu" style="width:${node.cpu_pct}%"></div></div>
+                            <span class="node-bar-pct">${node.cpu_pct}%</span>
+                        </div>
+                        <div class="node-bar-row">
+                            <span class="node-bar-lbl">RAM</span>
+                            <div class="node-bar-wrap"><div class="node-bar-fill ram" style="width:${node.ram_pct}%"></div></div>
+                            <span class="node-bar-pct">${node.ram_pct}%</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            _lastNodeRefresh = Date.now();
+        } else {
+            // Fallback: HTTP poll if WS has no node data yet
+            const now = Date.now();
+            if (now - _lastNodeRefresh >= NODE_REFRESH_MIN_MS) {
+                _lastNodeRefresh = now;
+                const onlineServers = (data.servers || []).filter(s => !s.error && s.id);
+                if (onlineServers.length > 0) {
+                    _refreshNodeStats(onlineServers).then(() => { markLastUpdated(); });
+                }
             }
         }
 
@@ -552,7 +637,7 @@ async function refreshVMs() {
     }
 }
 
-// Init — reads refresh_interval from panel settings, falls back to 10s
+// Init — loads initial data then subscribes to WebSocket push updates
 document.addEventListener('DOMContentLoaded', async function() {
     // Initial full load (VMs + nodes)
     showRefreshSpin(true);
@@ -569,18 +654,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     } catch (e) {/* ignore */}
     await refreshVMs();
 
-    let intervalMs = 10000; // default 10s
-    try {
-        const r = await fetchWithAuth('/settings/api/panel');
-        if (r && r.ok) {
-            const cfg = await r.json();
-            if (cfg.refresh_interval && cfg.refresh_interval > 0) {
-                intervalMs = cfg.refresh_interval * 1000;
+    // Subscribe to WebSocket push updates.
+    // subscribeWsChannel queues the subscription and sends it on WS open/reconnect.
+    if (typeof subscribeWsChannel === 'function') {
+        subscribeWsChannel('dashboard_metrics');
+    }
+    if (typeof registerWsHandler === 'function') {
+        registerWsHandler('metrics_update', (msg) => {
+            if (msg.channel === 'dashboard_metrics') {
+                renderDashboardData(msg.data);
             }
-        }
-    } catch (e) {/* use default */}
-
-    setInterval(refreshVMs, intervalMs);
+        });
+    }
+    window.addEventListener('beforeunload', () => {
+        if (typeof unsubscribeWsChannel === 'function') unsubscribeWsChannel('dashboard_metrics');
+    });
 });
 
 // ======== Alerts Modal ========

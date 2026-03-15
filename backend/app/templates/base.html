@@ -169,8 +169,61 @@
         
         // Also define as local function for scripts that don't use window prefix
         var fetchWithAuth = window.fetchWithAuth;
-        
-        // Global ESC handler for closing modals
+
+        // ==================== Auto token refresh ====================
+        // Decodes JWT payload (base64url) without verifying signature
+        function _jwtPayload(token) {
+            try {
+                const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+                return JSON.parse(atob(base64));
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // Refresh the JWT token silently; returns true on success
+        async function _refreshToken() {
+            const token = localStorage.getItem('access_token');
+            if (!token) return false;
+            try {
+                const resp = await fetch('/api/auth/refresh', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    localStorage.setItem('access_token', data.access_token);
+                    _scheduleTokenRefresh();   // reschedule with new expiry
+                    return true;
+                }
+            } catch (e) { /* network error */ }
+            return false;
+        }
+
+        // Schedule a proactive refresh 2 minutes before JWT expiry
+        function _scheduleTokenRefresh() {
+            if (window._tokenRefreshTimer) clearTimeout(window._tokenRefreshTimer);
+            const token = localStorage.getItem('access_token');
+            if (!token) return;
+            const payload = _jwtPayload(token);
+            if (!payload || !payload.exp) return;
+            const nowSec = Math.floor(Date.now() / 1000);
+            const msUntilRefresh = (payload.exp - nowSec - 120) * 1000;  // 2 min before expiry
+            if (msUntilRefresh <= 0) {
+                // Token already expired or about to expire - try immediately
+                _refreshToken();
+                return;
+            }
+            window._tokenRefreshTimer = setTimeout(_refreshToken, msUntilRefresh);
+        }
+
+        // Kick off the scheduler on every page load (except login)
+        if (window.location.pathname !== '/login') {
+            _scheduleTokenRefresh();
+        }
+        // ==================== End auto token refresh ====================
+
+
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 // Find all visible modals and close the topmost one
@@ -1575,7 +1628,7 @@ body.update-in-progress .layout {
     // Task Drawer — global WebSocket-based live task indicator
     // ================================================================
     let taskDrawerOpen = false;
-    let taskDrawerWS = null;
+    var taskDrawerWS = null;   // var → exposes as window.taskDrawerWS for child templates
     let taskDrawerTasks = {};
     let taskDrawerReconnectTimer = null;
     let taskDrawerReconnectDelay = 2000;
@@ -1679,6 +1732,16 @@ body.update-in-progress .layout {
                 }
                 updateTaskBadge();
                 if (taskDrawerOpen) renderTaskDrawer();
+                // Route to registered per-type handlers
+                if (_wsHandlers[msg.type]) { try { _wsHandlers[msg.type](msg); } catch(e) {} }
+                // Resolve pending request-response promises
+                if (msg.type === 'rrd_response' && msg.request_id && _wsPendingRequests[msg.request_id]) {
+                    const { resolve, timer } = _wsPendingRequests[msg.request_id];
+                    clearTimeout(timer);
+                    delete _wsPendingRequests[msg.request_id];
+                    if (msg.error) { /* still resolve — caller decides what to do */ }
+                    resolve(msg);
+                }
             } catch {}
         };
         taskDrawerWS.onclose = () => {
@@ -1690,7 +1753,94 @@ body.update-in-progress .layout {
             setInterval(() => {
                 if (taskDrawerWS && taskDrawerWS.readyState === WebSocket.OPEN) taskDrawerWS.send(JSON.stringify({type:'ping'}));
             }, 20000);
+            // Re-subscribe to all active channels after reconnect
+            _wsActiveSubscriptions.forEach(channel => {
+                taskDrawerWS.send(JSON.stringify({type: 'subscribe', channel}));
+            });
         };
+    }
+
+    // ── WebSocket utility API (usable from any page script) ──────────────────
+
+    /** Registry of per-message-type handlers. */
+    const _wsHandlers = {};
+
+    /** Pending request-response promises keyed by request_id. */
+    const _wsPendingRequests = {};
+
+    /** Channels this page is currently subscribed to (for reconnect restore). */
+    const _wsActiveSubscriptions = new Set();
+
+    let _wsReqCounter = 0;
+
+    /**
+     * Register a handler function for a specific WebSocket message type.
+     * Multiple calls with the same type replace the previous handler.
+     */
+    function registerWsHandler(type, fn) {
+        _wsHandlers[type] = fn;
+    }
+
+    /**
+     * Call fn immediately if the WebSocket is open, otherwise wait for onopen.
+     */
+    function onWsReady(fn) {
+        if (taskDrawerWS && taskDrawerWS.readyState === WebSocket.OPEN) {
+            fn();
+        } else if (taskDrawerWS) {
+            const prev = taskDrawerWS.onopen;
+            taskDrawerWS.onopen = function(e) {
+                if (prev) prev.call(this, e);
+                fn();
+            };
+        }
+    }
+
+    /**
+     * Subscribe this tab to a named metrics channel.
+     * The subscription is remembered so it can be re-sent after reconnect.
+     */
+    function subscribeWsChannel(channel) {
+        _wsActiveSubscriptions.add(channel);
+        if (taskDrawerWS && taskDrawerWS.readyState === WebSocket.OPEN) {
+            taskDrawerWS.send(JSON.stringify({type: 'subscribe', channel}));
+        }
+    }
+
+    /**
+     * Unsubscribe from a channel and remove it from the reconnect set.
+     */
+    function unsubscribeWsChannel(channel) {
+        _wsActiveSubscriptions.delete(channel);
+        if (taskDrawerWS && taskDrawerWS.readyState === WebSocket.OPEN) {
+            taskDrawerWS.send(JSON.stringify({type: 'unsubscribe', channel}));
+        }
+    }
+
+    /**
+     * Send an on-demand request over WebSocket and return a Promise that
+     * resolves with the server's rrd_response message.
+     * Automatically falls back gracefully if WS is unavailable.
+     * @param {string} action  — "get_rrd" or "get_node_rrd"
+     * @param {object} params  — { server_id, node, timeframe, vmid?, inst_type? }
+     * @returns {Promise<object>}  resolves with { data, error? }
+     */
+    function sendWsRequest(action, params) {
+        return new Promise((resolve, reject) => {
+            if (!taskDrawerWS || taskDrawerWS.readyState !== WebSocket.OPEN) {
+                reject(new Error('WebSocket not open'));
+                return;
+            }
+            const request_id = `req_${++_wsReqCounter}_${Date.now()}`;
+            const timer = setTimeout(() => {
+                if (_wsPendingRequests[request_id]) {
+                    delete _wsPendingRequests[request_id];
+                    reject(new Error('WS request timed out'));
+                }
+            }, 12000);
+            _wsPendingRequests[request_id] = { resolve, timer };
+            taskDrawerWS.send(JSON.stringify({type: 'request', action, request_id, params}));
+        });
     }
 </script>
 <!-- Bootstrap 5 JS Bundle -->

@@ -212,17 +212,16 @@ function showHostMonitorModal() {
         <span id="updateIndicator" style="display: inline-block; margin-left: 0.5rem; width: 8px; height: 8px; background: var(--accent); border-radius: 50%; opacity: 0; transition: opacity 0.3s ease;"></span>
     `;
     document.getElementById('monitorContent').innerHTML = `<div style="text-align: center; padding: 2rem; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> ${t('loading_data')}...</div>`;
+    delete document.getElementById('monitorContent').dataset.inVmMode;
     
     modal.style.display = 'flex';
     
     loadHostMonitorData();
     
-    if (window.monitorInterval) clearInterval(window.monitorInterval);
-    window.monitorInterval = setInterval(() => {
-        if (modal.style.display === 'flex') {
-            loadHostMonitorData();
-        }
-    }, 5000);
+    // Subscribe to WS push for live node status
+    if (typeof subscribeWsChannel === 'function') {
+        subscribeWsChannel(`server_metrics:${serverId}_${hostNode}`);
+    }
 }
 
 async function loadHostMonitorData() {
@@ -233,30 +232,42 @@ async function loadHostMonitorData() {
         const updateIndicator = document.getElementById('updateIndicator');
         if (updateIndicator) updateIndicator.style.opacity = '1';
         
-        // Загружаем статус и RRD данные отдельно
-        const statusRes = await fetchWithAuth(`/proxmox/api/${serverId}/node/status?node=${hostNode}`);
-        
-        if (!statusRes.ok) {
-            throw new Error(`HTTP error: ${statusRes.status}`);
+        // Use cached WS status if available, otherwise fall back to HTTP
+        let status = window._lastServerMetrics || null;
+        if (!status) {
+            const statusRes = await fetchWithAuth(`/proxmox/api/${serverId}/node/status?node=${hostNode}`);
+            if (!statusRes.ok) throw new Error(`HTTP error: ${statusRes.status}`);
+            status = await statusRes.json();
         }
-        
-        const status = await statusRes.json();
-        
-        // Пытаемся загрузить RRD данные, но не падаем если не получилось
+
+        // RRD data via WS request
         let rrdData = { data: [] };
         try {
-            const rrdRes = await fetchWithAuth(`/proxmox/api/${serverId}/node/rrddata?node=${hostNode}&timeframe=hour`);
-            
-            if (rrdRes.ok) {
-                rrdData = await rrdRes.json();
+            if (typeof sendWsRequest === 'function') {
+                const resp = await sendWsRequest('get_node_rrd', { server_id: serverId, node: hostNode, timeframe: 'hour' });
+                if (resp && resp.data) rrdData = resp.data;
             }
-        } catch (rrdError) {
-            // RRD data error - charts will be unavailable
-        }
+        } catch { /* charts will be unavailable */ }
         
         if (isFirstLoad) {
             renderHostMonitorData(status, rrdData);
             monitorContent.dataset.initialized = 'true';
+            // Auto-refresh RRD charts every 30 s while modal is open
+            if (window.monitorInterval) clearInterval(window.monitorInterval);
+            window.monitorInterval = setInterval(async () => {
+                const _modal = document.getElementById('monitorModal');
+                if (!_modal || _modal.style.display !== 'flex' || document.getElementById('monitorContent')?.dataset.inVmMode) {
+                    clearInterval(window.monitorInterval);
+                    window.monitorInterval = null;
+                    return;
+                }
+                try {
+                    if (typeof sendWsRequest === 'function') {
+                        const resp = await sendWsRequest('get_node_rrd', { server_id: serverId, node: hostNode, timeframe: 'hour' });
+                        if (resp && resp.data) updateHostCharts(resp.data);
+                    }
+                } catch { /* silent */ }
+            }, 30000);
         } else {
             updateHostMonitorData(status, rrdData);
         }
@@ -651,6 +662,12 @@ function updateHostCharts(rrdResponse) {
     }
 }
 
+// Global: called from loadResources() when hostNode is first discovered
+function _subscribeToServerMetrics() {
+    if (!hostNode || typeof subscribeWsChannel !== 'function') return;
+    subscribeWsChannel(`server_metrics:${serverId}_${hostNode}`);
+}
+
 async function loadResources() {
     const container = document.getElementById('resources-container');
     const loading = document.getElementById('loading');
@@ -677,6 +694,7 @@ async function loadResources() {
             hostNode = vms[0]?.node || containers[0]?.node;
             if (hostNode) {
                 loadHostMetrics();
+                _subscribeToServerMetrics();
             }
         }
         
@@ -891,13 +909,70 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     
     loadResources();
-    
-    // Автообновление метрик хоста каждые 5 секунд
-    setInterval(() => {
-        if (hostNode && document.getElementById('host-metrics').style.display !== 'none') {
-            loadHostMetrics();
+
+    if (typeof registerWsHandler === 'function') {
+        registerWsHandler('metrics_update', (msg) => {
+            if (!msg.channel) return;
+
+            // ── server / node metrics ────────────────────────────────────────
+            if (msg.channel.startsWith('server_metrics:')) {
+                const status = msg.data && msg.data.status;
+                if (!status) return;
+                // Cache for use by host monitor modal (avoids HTTP fetch)
+                window._lastServerMetrics = status;
+                // Update header host-metrics panel
+                const headerEl = document.getElementById('host-metrics');
+                if (headerEl && headerEl.style.display !== 'none') {
+                    const cpuPercent = ((status.cpu || 0) * 100).toFixed(1);
+                    const cpuEl = document.getElementById('host-cpu');
+                    const cpuBar = document.getElementById('host-cpu-bar');
+                    if (cpuEl) cpuEl.textContent = `${cpuPercent}%`;
+                    if (cpuBar) {
+                        cpuBar.style.width = `${cpuPercent}%`;
+                        cpuBar.className = `progress-fill ${cpuPercent > 80 ? 'danger' : cpuPercent > 60 ? 'warning' : ''}`;
+                    }
+                    const memPercent = (((status.memory?.used || 0) / (status.memory?.total || 1)) * 100).toFixed(1);
+                    const memEl = document.getElementById('host-memory');
+                    const memBar = document.getElementById('host-memory-bar');
+                    if (memEl) memEl.textContent = `${memPercent}%`;
+                    if (memBar) {
+                        memBar.style.width = `${memPercent}%`;
+                        memBar.className = `progress-fill ${memPercent > 80 ? 'danger' : memPercent > 60 ? 'warning' : ''}`;
+                    }
+                    const uptime = status.uptime || 0;
+                    const days = Math.floor(uptime / 86400);
+                    const hours = Math.floor((uptime % 86400) / 3600);
+                    const uptEl = document.getElementById('host-uptime');
+                    if (uptEl) uptEl.textContent = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+                    const loadavg = status.loadavg || [0, 0, 0];
+                    const lv = typeof loadavg === 'string' ? parseFloat(loadavg) : (Array.isArray(loadavg) ? loadavg[0] : 0);
+                    const laEl = document.getElementById('host-loadavg');
+                    if (laEl) laEl.textContent = (Number(lv) || 0).toFixed(2);
+                }
+                // Update host monitor modal if open (not in VM mode)
+                const modal = document.getElementById('monitorModal');
+                if (modal && modal.style.display === 'flex' && !document.getElementById('monitorContent')?.dataset.inVmMode) {
+                    updateHostMonitorData(status, null);
+                }
+                return;
+            }
+
+            // ── VM / LXC instance metrics ────────────────────────────────────
+            if (msg.channel.startsWith('instance_metrics:')) {
+                const modal = document.getElementById('monitorModal');
+                if (!modal || modal.style.display !== 'flex') return;
+                const mc = document.getElementById('monitorContent');
+                if (!mc || mc.dataset.vmChannel !== msg.channel) return;
+                updateMonitorData(msg.data, null);
+            }
+        });
+    }
+
+    window.addEventListener('beforeunload', () => {
+        if (hostNode && typeof unsubscribeWsChannel === 'function') {
+            unsubscribeWsChannel(`server_metrics:${serverId}_${hostNode}`);
         }
-    }, 5000);
+    });
 });
 
 // === ФУНКЦИИ МОНИТОРИНГА ===
@@ -909,17 +984,17 @@ function showMonitorModal(serverId, node, vmid, type, name) {
         <span id="updateIndicator" style="display: inline-block; margin-left: 0.5rem; width: 8px; height: 8px; background: var(--accent); border-radius: 50%; opacity: 0; transition: opacity 0.3s ease;"></span>
     `;
     document.getElementById('monitorContent').innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Загрузка данных...</div>';
+    document.getElementById('monitorContent').dataset.inVmMode = '1';
+    document.getElementById('monitorContent').dataset.vmChannel = `instance_metrics:${serverId}_${vmid}_${type}_${node}`;
     
     modal.style.display = 'flex';
     
     loadMonitorData(serverId, node, vmid, type);
     
-    if (window.monitorInterval) clearInterval(window.monitorInterval);
-    window.monitorInterval = setInterval(() => {
-        if (modal.style.display === 'flex') {
-            loadMonitorData(serverId, node, vmid, type);
-        }
-    }, 5000);
+    // Subscribe to WS push for live instance status
+    if (typeof subscribeWsChannel === 'function') {
+        subscribeWsChannel(`instance_metrics:${serverId}_${vmid}_${type}_${node}`);
+    }
 }
 
 function closeMonitorModal() {
@@ -929,7 +1004,12 @@ function closeMonitorModal() {
     modal.style.display = 'none';
     
     if (monitorContent) {
+        // Unsubscribe from WS channels set during open
+        const vmCh = monitorContent.dataset.vmChannel;
+        if (vmCh && typeof unsubscribeWsChannel === 'function') unsubscribeWsChannel(vmCh);
         delete monitorContent.dataset.initialized;
+        delete monitorContent.dataset.inVmMode;
+        delete monitorContent.dataset.vmChannel;
     }
     
     if (window.monitorInterval) {
@@ -949,17 +1029,20 @@ async function loadMonitorData(serverId, node, vmid, type) {
         // Конвертировать тип: qemu -> vm, lxc -> container
         const apiType = type === 'qemu' ? 'vm' : 'container';
         
-        const [statusRes, rrdRes] = await Promise.all([
-            fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}/status?node=${node}`),
-            fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}/rrddata?node=${node}&timeframe=hour`)
-        ]);
-        
-        if (!statusRes.ok || !rrdRes.ok) {
-            throw new Error(`HTTP error: ${statusRes.status} / ${rrdRes.status}`);
+        const statusRes = await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}/status?node=${node}`);
+        if (!statusRes.ok) {
+            throw new Error(`HTTP error: ${statusRes.status}`);
         }
-        
         const status = await statusRes.json();
-        const rrdData = await rrdRes.json();
+
+        // RRD data via WS request
+        let rrdData = { data: [] };
+        try {
+            if (typeof sendWsRequest === 'function') {
+                const resp = await sendWsRequest('get_rrd', { server_id: serverId, node, vmid, inst_type: type, timeframe: 'hour' });
+                if (resp && resp.data) rrdData = resp.data;
+            }
+        } catch { /* charts unavailable */ }
         
         if (isFirstLoad) {
             renderMonitorData(status, rrdData, type);

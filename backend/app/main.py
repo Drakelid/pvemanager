@@ -166,6 +166,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Backup scheduler startup failed: {e}")
 
+    # Start WebSocket metrics broadcaster
+    try:
+        from .services.metrics_broadcaster import start_metrics_broadcaster
+        from .db import SessionLocal
+        start_metrics_broadcaster(SessionLocal)
+    except Exception as e:
+        logger.warning(f"Metrics broadcaster startup failed: {e}")
+
     logger.info("Application startup complete")
     yield
 
@@ -335,6 +343,7 @@ def create_app() -> FastAPI:
         from .db import SessionLocal
         from .models import TaskQueue, ProxmoxTask, User
         from .websocket_manager import ws_manager
+        import asyncio
         import json
 
         # --- Authenticate --------------------------------------------------
@@ -382,9 +391,50 @@ def create_app() -> FastAPI:
             # Keep connection alive – wait for client messages / ping-pong
             while True:
                 try:
-                    msg = await websocket.receive_text()
-                    if msg == "ping":
+                    raw = await websocket.receive_text()
+                    # Legacy plain-text ping
+                    if raw == "ping":
                         await websocket.send_text(json.dumps({"type": "pong"}))
+                        continue
+                    # JSON message dispatcher
+                    try:
+                        msg = json.loads(raw)
+                    except Exception:
+                        continue
+                    msg_type = msg.get("type", "")
+                    if msg_type == "ping":
+                        await websocket.send_text(json.dumps({"type": "pong"}))
+                    elif msg_type == "subscribe":
+                        channel = msg.get("channel", "")
+                        if channel:
+                            ws_manager.subscribe(websocket, channel)
+                            # Immediately send cached payload so client sees data without waiting
+                            from .services.metrics_broadcaster import get_cached_metrics
+                            _cached = get_cached_metrics(channel)
+                            if _cached:
+                                try:
+                                    await websocket.send_text(json.dumps(_cached, default=str))
+                                except Exception:
+                                    pass
+                    elif msg_type == "unsubscribe":
+                        channel = msg.get("channel", "")
+                        if channel:
+                            ws_manager.unsubscribe(websocket, channel)
+                    elif msg_type == "request":
+                        action = msg.get("action", "")
+                        request_id = msg.get("request_id", "")
+                        if action in ("get_rrd", "get_node_rrd") and request_id:
+                            from .services.metrics_broadcaster import handle_rrd_request
+                            from .db import SessionLocal as _SL
+                            asyncio.create_task(
+                                handle_rrd_request(
+                                    websocket,
+                                    request_id,
+                                    action,
+                                    msg.get("params", {}),
+                                    _SL,
+                                )
+                            )
                 except WebSocketDisconnect:
                     break
                 except Exception:
