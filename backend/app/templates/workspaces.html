@@ -1,0 +1,485 @@
+{% extends "base.html" %}
+
+{% block title %}Workspaces{% endblock %}
+
+{% block content %}
+<div class="page-header-block">
+    <div class="page-header-left">
+        <nav class="breadcrumb-nav">Dashboard / Workspaces</nav>
+        <h1 class="page-header-title">
+            <svg style="width:1.25rem;height:1.25rem;vertical-align:-3px;margin-right:6px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+            Workspaces
+        </h1>
+    </div>
+    <div class="page-header-right">
+        <button class="btn btn-success" onclick="showCreateModal()">
+            <i class="fa-solid fa-plus"></i> Создать Workspace
+        </button>
+    </div>
+</div>
+
+<!-- Workspace Cards -->
+<div id="workspacesGrid" class="ws-grid">
+    <div class="loading-placeholder">
+        <i class="fa-solid fa-spinner fa-spin"></i> Загрузка...
+    </div>
+</div>
+
+<!-- ============================================================
+     Create / Edit Modal
+     ============================================================ -->
+<div id="wsModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeWsModal()">
+    <div class="modal-container" style="max-width:600px;">
+        <div class="modal-header">
+            <h3 id="wsModalTitle">Создать Workspace</h3>
+            <button class="modal-close" onclick="closeWsModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Название <span style="color:var(--danger)">*</span></label>
+                <input type="text" id="wsName" class="form-input" placeholder="Production" maxlength="100">
+            </div>
+            <div class="form-group">
+                <label>Описание</label>
+                <textarea id="wsDescription" class="form-input" rows="2" placeholder="Описание workspace" maxlength="500"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Цвет</label>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <input type="color" id="wsColor" value="#667eea" style="width:48px;height:36px;border:none;background:none;cursor:pointer;padding:0;">
+                    <div class="ws-color-presets">
+                        <button class="ws-color-preset" style="background:#667eea;" onclick="document.getElementById('wsColor').value='#667eea'"></button>
+                        <button class="ws-color-preset" style="background:#10b981;" onclick="document.getElementById('wsColor').value='#10b981'"></button>
+                        <button class="ws-color-preset" style="background:#f59e0b;" onclick="document.getElementById('wsColor').value='#f59e0b'"></button>
+                        <button class="ws-color-preset" style="background:#ef4444;" onclick="document.getElementById('wsColor').value='#ef4444'"></button>
+                        <button class="ws-color-preset" style="background:#8b5cf6;" onclick="document.getElementById('wsColor').value='#8b5cf6'"></button>
+                        <button class="ws-color-preset" style="background:#06b6d4;" onclick="document.getElementById('wsColor').value='#06b6d4'"></button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" id="wsServersGroup">
+                <label>Серверы</label>
+                <div id="wsServersList" class="ws-assign-list">
+                    <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i></div>
+                </div>
+            </div>
+
+            <div class="form-group" id="wsUsersGroup">
+                <label>Пользователи с доступом</label>
+                <div id="wsUsersList" class="ws-assign-list">
+                    <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeWsModal()">Отмена</button>
+            <button class="btn btn-primary" id="wsModalSaveBtn" onclick="saveWorkspace()">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.ws-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.25rem;
+    margin-top: 0.5rem;
+}
+
+.ws-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    position: relative;
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+}
+
+.ws-card:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.ws-card-accent {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.ws-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 0.75rem;
+}
+
+.ws-card-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.ws-card-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+.ws-card-badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    background: rgba(102,126,234,0.18);
+    color: #99aaff;
+    border: 1px solid rgba(102,126,234,0.3);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.ws-card-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    min-height: 1.2em;
+}
+
+.ws-card-stats {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.ws-stat {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.ws-stat i { opacity: 0.6; }
+
+.ws-card-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+.ws-assign-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-body);
+    padding: 4px;
+}
+
+.ws-assign-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 0.84rem;
+    color: var(--text-secondary);
+}
+
+.ws-assign-item:hover { background: var(--bg-hover); }
+.ws-assign-item input[type=checkbox] { cursor: pointer; accent-color: var(--accent); }
+
+.ws-color-presets {
+    display: flex;
+    gap: 6px;
+}
+
+.ws-color-preset {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s;
+}
+
+.ws-color-preset:hover {
+    transform: scale(1.25);
+    border-color: rgba(255,255,255,0.5);
+}
+
+.loading-placeholder {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    padding: 1rem;
+    text-align: center;
+}
+
+.ws-empty {
+    grid-column: 1/-1;
+    text-align: center;
+    color: var(--text-muted);
+    padding: 3rem;
+    font-size: 0.9rem;
+}
+</style>
+
+<script>
+let _allServers = [];
+let _allUsers = [];
+let _editingId = null;  // null = create mode
+
+// -----------------------------------------------------------------------
+// Load & Render workspaces
+// -----------------------------------------------------------------------
+async function loadWorkspaces() {
+    const grid = document.getElementById('workspacesGrid');
+    try {
+        const resp = await fetchWithAuth('/api/workspaces');
+        if (!resp || !resp.ok) throw new Error('Failed');
+        const workspaces = await resp.json();
+
+        if (workspaces.length === 0) {
+            grid.innerHTML = '<div class="ws-empty"><i class="fa-solid fa-layer-group" style="font-size:2rem;opacity:0.2;display:block;margin-bottom:0.5rem;"></i>Нет workspaces</div>';
+            return;
+        }
+
+        grid.innerHTML = workspaces.map(ws => `
+            <div class="ws-card" id="wsCard_${ws.id}">
+                <div class="ws-card-accent" style="background:${ws.color || '#667eea'};"></div>
+                <div class="ws-card-header">
+                    <span class="ws-card-dot" style="background:${ws.color || '#667eea'};"></span>
+                    <span class="ws-card-name">${escapeHtml(ws.name)}</span>
+                    ${ws.is_default ? '<span class="ws-card-badge">Default</span>' : ''}
+                </div>
+                <div class="ws-card-desc">${escapeHtml(ws.description || '')}</div>
+                <div class="ws-card-stats">
+                    <span class="ws-stat"><i class="fa-solid fa-server"></i>${ws.server_count} серверов</span>
+                    <span class="ws-stat"><i class="fa-solid fa-users"></i>${ws.user_count} пользователей</span>
+                </div>
+                <div class="ws-card-actions">
+                    <button class="btn btn-sm btn-secondary" onclick="showEditModal(${ws.id})">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    ${!ws.is_default ? `<button class="btn btn-sm btn-danger" onclick="deleteWorkspace(${ws.id}, '${escapeHtml(ws.name)}')">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>` : ''}
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        grid.innerHTML = '<div class="ws-empty">Ошибка загрузки</div>';
+    }
+}
+
+// -----------------------------------------------------------------------
+// Load servers + users for checkboxes
+// -----------------------------------------------------------------------
+async function loadAssignLists() {
+    try {
+        const [sResp, uResp] = await Promise.all([
+            fetchWithAuth('/proxmox/api/servers'),
+            fetchWithAuth('/admin/api/users')
+        ]);
+        if (sResp && sResp.ok) _allServers = await sResp.json();
+        if (uResp && uResp.ok) {
+            const data = await uResp.json();
+            _allUsers = Array.isArray(data) ? data : (data.users || []);
+        }
+    } catch (e) { /* ignore */ }
+}
+
+function renderServerCheckboxes(selectedIds = []) {
+    const container = document.getElementById('wsServersList');
+    if (_allServers.length === 0) {
+        container.innerHTML = '<div class="ws-assign-item" style="color:var(--text-muted)">Нет серверов</div>';
+        return;
+    }
+    const selectedSet = new Set(selectedIds);
+    container.innerHTML = _allServers.map(s => `
+        <label class="ws-assign-item">
+            <input type="checkbox" value="${s.id}" ${selectedSet.has(s.id) ? 'checked' : ''}>
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.is_online ? '#10b981' : '#ef4444'};margin-right:2px;"></span>
+            ${escapeHtml(s.name)}
+            <small style="margin-left:auto;color:var(--text-muted)">${escapeHtml(s.ip_address || '')}</small>
+        </label>
+    `).join('');
+}
+
+function renderUserCheckboxes(selectedIds = []) {
+    const container = document.getElementById('wsUsersList');
+    if (_allUsers.length === 0) {
+        container.innerHTML = '<div class="ws-assign-item" style="color:var(--text-muted)">Нет пользователей</div>';
+        return;
+    }
+    const selectedSet = new Set(selectedIds);
+    container.innerHTML = _allUsers.map(u => `
+        <label class="ws-assign-item">
+            <input type="checkbox" value="${u.id}" ${selectedSet.has(u.id) ? 'checked' : ''}>
+            <i class="fa-solid fa-user" style="opacity:0.5;font-size:.75rem;"></i>
+            ${escapeHtml(u.username)}
+            <small style="margin-left:auto;color:var(--text-muted)">${escapeHtml(u.email || '')}</small>
+        </label>
+    `).join('');
+}
+
+// -----------------------------------------------------------------------
+// Modal: Create
+// -----------------------------------------------------------------------
+async function showCreateModal() {
+    _editingId = null;
+    document.getElementById('wsModalTitle').textContent = 'Создать Workspace';
+    document.getElementById('wsName').value = '';
+    document.getElementById('wsDescription').value = '';
+    document.getElementById('wsColor').value = '#667eea';
+
+    await loadAssignLists();
+    renderServerCheckboxes([]);
+    renderUserCheckboxes([]);
+
+    document.getElementById('wsModal').style.display = 'flex';
+}
+
+// -----------------------------------------------------------------------
+// Modal: Edit
+// -----------------------------------------------------------------------
+async function showEditModal(id) {
+    _editingId = id;
+    document.getElementById('wsModalTitle').textContent = 'Редактировать Workspace';
+
+    try {
+        const resp = await fetchWithAuth(`/api/workspaces/${id}`);
+        if (!resp || !resp.ok) throw new Error();
+        const ws = await resp.json();
+
+        document.getElementById('wsName').value = ws.name;
+        document.getElementById('wsDescription').value = ws.description || '';
+        document.getElementById('wsColor').value = ws.color || '#667eea';
+
+        await loadAssignLists();
+        const selServerIds = (ws.servers || []).map(s => s.id);
+        const selUserIds   = (ws.users || []).map(u => u.id);
+        renderServerCheckboxes(selServerIds);
+        renderUserCheckboxes(selUserIds);
+
+        document.getElementById('wsModal').style.display = 'flex';
+    } catch (e) {
+        showAlertModal('Ошибка', 'Не удалось загрузить данные workspace');
+    }
+}
+
+function closeWsModal() {
+    document.getElementById('wsModal').style.display = 'none';
+    _editingId = null;
+}
+
+// -----------------------------------------------------------------------
+// Save (create or update)
+// -----------------------------------------------------------------------
+async function saveWorkspace() {
+    const name = document.getElementById('wsName').value.trim();
+    if (!name) {
+        showAlertModal('Ошибка', 'Введите название workspace');
+        return;
+    }
+
+    const color = document.getElementById('wsColor').value || '#667eea';
+    const description = document.getElementById('wsDescription').value.trim() || null;
+
+    const serverIds = [...document.querySelectorAll('#wsServersList input[type=checkbox]:checked')].map(el => parseInt(el.value));
+    const userIds   = [...document.querySelectorAll('#wsUsersList input[type=checkbox]:checked')].map(el => parseInt(el.value));
+
+    const btn = document.getElementById('wsModalSaveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+    try {
+        let resp;
+        if (_editingId === null) {
+            // Create
+            resp = await fetchWithAuth('/api/workspaces', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description, color, server_ids: serverIds, user_ids: userIds })
+            });
+        } else {
+            // Update name/color/desc
+            resp = await fetchWithAuth(`/api/workspaces/${_editingId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description, color })
+            });
+            if (resp && resp.ok) {
+                // Update servers
+                await fetchWithAuth(`/api/workspaces/${_editingId}/servers`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: serverIds })
+                });
+                // Update users
+                await fetchWithAuth(`/api/workspaces/${_editingId}/users`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: userIds })
+                });
+            }
+        }
+
+        if (resp && resp.ok) {
+            closeWsModal();
+            await loadWorkspaces();
+            // Refresh sidebar workspace list
+            if (typeof loadSidebarWorkspace === 'function') loadSidebarWorkspace();
+        } else {
+            const err = await resp.json().catch(() => ({}));
+            showAlertModal('Ошибка', err.detail || 'Не удалось сохранить');
+        }
+    } catch (e) {
+        showAlertModal('Ошибка', e.message || 'Произошла ошибка');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Сохранить';
+    }
+}
+
+// -----------------------------------------------------------------------
+// Delete
+// -----------------------------------------------------------------------
+async function deleteWorkspace(id, name) {
+    showConfirmModal(
+        'Удалить Workspace',
+        `Удалить workspace «${name}»? Серверы и пользователи не будут удалены.`,
+        async () => {
+            const resp = await fetchWithAuth(`/api/workspaces/${id}`, { method: 'DELETE' });
+            if (resp && (resp.ok || resp.status === 204)) {
+                await loadWorkspaces();
+                if (typeof loadSidebarWorkspace === 'function') loadSidebarWorkspace();
+            } else {
+                const err = await resp.json().catch(() => ({}));
+                showAlertModal('Ошибка', err.detail || 'Не удалось удалить');
+            }
+        }
+    );
+}
+
+// -----------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// -----------------------------------------------------------------------
+// Init
+// -----------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+    loadWorkspaces();
+});
+</script>
+{% endblock %}

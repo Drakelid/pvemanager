@@ -84,11 +84,17 @@ def instance_detail_page(request: Request, server_id: int, vmid: int, type: str 
 
 @router.get("/api/servers", response_model=List[ProxmoxServerResponse])
 def list_proxmox_servers(
-    db: Session = Depends(get_db), 
+    request: Request,
+    db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("proxmox.view"))
 ):
-    """Получить список всех Proxmox серверов"""
-    servers = db.query(ProxmoxServer).all()
+    """Получить список всех Proxmox серверов (фильтруется по активному workspace)"""
+    from ...api.workspaces import get_workspace_server_ids
+    server_ids = get_workspace_server_ids(request, db, current_user)
+    query = db.query(ProxmoxServer)
+    if server_ids is not None:
+        query = query.filter(ProxmoxServer.id.in_(server_ids))
+    servers = query.all()
     return servers
 
 
@@ -705,7 +711,7 @@ def get_storages(
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
         
-        storages = client.get_storages(node)
+        storages = client.get_node_storages(node)
         
         # Фильтрация по типу контента если указано
         if content_type and storages:

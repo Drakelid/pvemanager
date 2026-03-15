@@ -8,6 +8,7 @@ from . import logs
 from . import settings
 from . import notifications
 from . import users
+from . import workspaces
 
 __all__ = [
     "auth",
@@ -18,5 +19,6 @@ __all__ = [
     "logs",
     "settings",
     "notifications",
-    "users"
+    "users",
+    "workspaces",
 ]

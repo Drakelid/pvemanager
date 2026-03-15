@@ -32,8 +32,36 @@ async def backups_page(
     db: Session = Depends(get_db),
 ):
     from ...i18n import t
+    from ...api.workspaces import get_workspace_server_ids
+    from ...auth import get_current_user_optional
+
     lang = request.cookies.get("language", "ru")
-    servers = db.query(ProxmoxServer).filter(ProxmoxServer.is_online.is_(True)).all()
+
+    # Workspace filtering (best-effort, page may be loaded unauthenticated)
+    server_ids = None
+    try:
+        token = request.cookies.get("access_token") or (
+            request.headers.get("Authorization", "").removeprefix("Bearer ").strip() or None
+        )
+        if token:
+            from ...auth import decode_access_token
+            from ...models import User as UserModel
+            payload = decode_access_token(token)
+            username = payload.get("sub")
+            if username:
+                user_obj = db.query(UserModel).filter(
+                    UserModel.username == username, UserModel.is_active == True
+                ).first()
+                if user_obj:
+                    server_ids = get_workspace_server_ids(request, db, user_obj)
+    except Exception:
+        pass
+
+    servers_q = db.query(ProxmoxServer).filter(ProxmoxServer.is_online.is_(True))
+    if server_ids is not None:
+        servers_q = servers_q.filter(ProxmoxServer.id.in_(server_ids))
+    servers = servers_q.all()
+
     context = {
         "request": request,
         "page_title": t("nav_backups", lang),
@@ -57,7 +85,7 @@ def get_storages(
         raise HTTPException(status_code=404, detail="Server not found")
     try:
         client = _get_proxmox_client(server)
-        storages = client.get_storages()
+        storages = client.get_cluster_storages()
         return JSONResponse(content={"storages": storages})
     except Exception as e:
         logger.error(f"Error listing storages for server {server_id}: {e}")

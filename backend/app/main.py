@@ -22,6 +22,7 @@ from .api import logs as logs_router
 from .api import settings as settings_router
 from .api import notifications as notifications_router
 from .api import users as users_router
+from .api import workspaces as workspaces_router
 from .logging_middleware import RequestLoggingMiddleware
 from .language_middleware import LanguageMiddleware
 from .i18n import I18nService
@@ -401,6 +402,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
     app.include_router(notifications_router.router, tags=["notifications"])
     app.include_router(users_router.router, prefix="/admin", tags=["users", "admin"])
+    app.include_router(workspaces_router.router, tags=["workspaces"])
 
     # Mount static files for noVNC
     static_dir = Path(__file__).parent / "static"

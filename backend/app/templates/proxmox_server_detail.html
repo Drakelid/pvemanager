@@ -2241,6 +2241,148 @@ async function doReinstall(modal, serverId, node, vmid, type, name, templateId, 
 function closeReinstallModal() {
     document.getElementById('reinstallModal').style.display = 'none';
 }
+
+/**
+ * Разбирает сырую конфигурацию Proxmox и возвращает объект с параметрами
+ * для передачи в /templates/api/deploy при переустановке.
+ */
+function parseVmConfig(raw, type) {
+    const saved = {};
+
+    // CPU и память
+    if (raw.cores)  saved.cores  = parseInt(raw.cores);
+    if (raw.memory) saved.memory = parseInt(raw.memory);
+    if (raw.onboot !== undefined) saved.onboot = raw.onboot === 1 || raw.onboot === '1';
+
+    if (type === 'qemu') {
+        // Cloud-init user (пароль не сохраняем из соображений безопасности)
+        if (raw.ciuser) saved.cloud_init_user = raw.ciuser;
+
+        // Network bridge из net0 (формат: "virtio=XX:XX...,bridge=vmbr0,...")
+        if (raw.net0) {
+            const bridgeMatch = raw.net0.match(/bridge=([^,]+)/);
+            if (bridgeMatch) saved.network_bridge = bridgeMatch[1];
+        }
+
+        // IP и gateway из ipconfig0 (формат: "ip=1.2.3.4/24,gw=1.2.3.1")
+        if (raw.ipconfig0 && raw.ipconfig0 !== 'ip=dhcp') {
+            const ipMatch  = raw.ipconfig0.match(/ip=([^/,]+)/);
+            const gwMatch  = raw.ipconfig0.match(/gw=([^,]+)/);
+            if (ipMatch) saved.ip_address = ipMatch[1];
+            if (gwMatch) saved.gateway    = gwMatch[1];
+        }
+
+        // Диск и хранилище из первого подходящего диска
+        for (const key of ['scsi0', 'virtio0', 'sata0', 'scsi1', 'virtio1']) {
+            if (raw[key] && !raw[key].includes('cdrom') && !raw[key].includes('cloudinit')) {
+                const storageMatch = raw[key].match(/^([^:]+):/);
+                const sizeMatch    = raw[key].match(/size=(\d+)([GMK])/i);
+                if (storageMatch) saved.target_storage = storageMatch[1];
+                if (sizeMatch) {
+                    let sizeGb = parseInt(sizeMatch[1]);
+                    if (sizeMatch[2].toUpperCase() === 'M') sizeGb = Math.ceil(sizeGb / 1024);
+                    if (sizeMatch[2].toUpperCase() === 'K') sizeGb = Math.ceil(sizeGb / (1024 * 1024));
+                    saved.disk = sizeGb;
+                }
+                break;
+            }
+        }
+
+    } else {
+        // LXC
+
+        // Network bridge и IP из net0 (формат: "name=eth0,bridge=vmbr0,ip=1.2.3.4/24,gw=1.2.3.1,...")
+        if (raw.net0) {
+            const bridgeMatch = raw.net0.match(/bridge=([^,]+)/);
+            const ipMatch     = raw.net0.match(/ip=([^/,]+)/);
+            const gwMatch     = raw.net0.match(/gw=([^,]+)/);
+            if (bridgeMatch) saved.network_bridge = bridgeMatch[1];
+            if (ipMatch && ipMatch[1] !== 'dhcp') saved.ip_address = ipMatch[1];
+            if (gwMatch) saved.gateway = gwMatch[1];
+        }
+
+        // LXC rootfs: "local-lvm:vm-100-disk-0,size=8G"
+        if (raw.rootfs) {
+            const storageMatch = raw.rootfs.match(/^([^:]+):/);
+            const sizeMatch    = raw.rootfs.match(/size=(\d+)([GMK])/i);
+            if (storageMatch) saved.target_storage = storageMatch[1];
+            if (sizeMatch) {
+                let sizeGb = parseInt(sizeMatch[1]);
+                if (sizeMatch[2].toUpperCase() === 'M') sizeGb = Math.ceil(sizeGb / 1024);
+                if (sizeMatch[2].toUpperCase() === 'K') sizeGb = Math.ceil(sizeGb / (1024 * 1024));
+                saved.disk = sizeGb;
+            }
+        }
+    }
+
+    return saved;
+}
+
+async function doReinstall(modal, serverId, node, vmid, type, name, templateId, templateVmid, templateNode) {
+    const apiType = type === 'qemu' ? 'vm' : 'container';
+
+    try {
+        // Шаг 0: Сохранить текущую конфигурацию VM перед любыми изменениями
+        let savedConfig = {};
+        try {
+            const configResponse = await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}/config?node=${node}`);
+            if (configResponse.ok) {
+                const rawConfig = await configResponse.json();
+                savedConfig = parseVmConfig(rawConfig, type);
+            }
+        } catch (configErr) {
+            console.warn('Не удалось сохранить конфигурацию VM перед переустановкой:', configErr);
+        }
+
+        // Шаг 1: Остановить VM если запущена
+        const statusResponse = await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}/status?node=${node}`);
+        if (statusResponse.ok) {
+            const status = await statusResponse.json();
+            if (status.status === 'running') {
+                await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}/stop?node=${node}`, { method: 'POST' });
+                // Ждем остановки
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        }
+
+        // Шаг 2: Удалить старую VM
+        const deleteResponse = await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}?node=${node}&force=true`, {
+            method: 'DELETE'
+        });
+
+        if (!deleteResponse.ok) {
+            throw new Error('Не удалось удалить старую VM');
+        }
+
+        // Ждем удаления
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // Шаг 3: Развернуть новую VM из шаблона с тем же VMID и восстановленными параметрами
+        const deployResponse = await fetchWithAuth('/templates/api/deploy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                template_id: parseInt(templateId),
+                vmid: parseInt(vmid),
+                name: name,
+                target_node: node,
+                ...savedConfig
+            })
+        });
+
+        if (deployResponse.ok) {
+            showToast('success', t('success'), t('reinstall_started') || 'Переустановка запущена. VM будет доступна через несколько минут.');
+            closeReinstallModal();
+            setTimeout(() => loadResources(), 5000);
+        } else {
+            const error = await deployResponse.json();
+            throw new Error(error.detail || 'Ошибка развертывания');
+        }
+    } catch (error) {
+        console.error('Reinstall error:', error);
+        showToast('error', t('error'), `${t('reinstall_error')}: ${error.message}`);
+    }
+}
 </script>
 
 {% endblock %}

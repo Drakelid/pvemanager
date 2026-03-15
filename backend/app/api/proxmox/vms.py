@@ -77,6 +77,7 @@ def sync_vms_now(
 
 @router.get("/api/virtual-machines")
 def get_all_virtual_machines(
+    request: Request,
     db: Session = Depends(get_db), 
     current_user: User = Depends(PermissionChecker("vms.view"))
 ):
@@ -88,9 +89,16 @@ def get_all_virtual_machines(
     Для пользователей с ролью 'user' возвращаются только их собственные инстансы.
     """
     from ...models import VMInstance
-    
-    # Get servers for name lookup
-    servers = db.query(ProxmoxServer).all()
+    from ...api.workspaces import get_workspace_server_ids
+
+    # Workspace filtering
+    workspace_server_ids = get_workspace_server_ids(request, db, current_user)
+
+    # Get servers for name lookup (filtered by workspace)
+    servers_q = db.query(ProxmoxServer)
+    if workspace_server_ids is not None:
+        servers_q = servers_q.filter(ProxmoxServer.id.in_(workspace_server_ids))
+    servers = servers_q.all()
     server_map = {s.id: s for s in servers}
     
     # Pre-load IPAM allocations for IP lookup
@@ -121,6 +129,10 @@ def get_all_virtual_machines(
         VMInstance.deleted_at.is_(None),
         VMInstance.is_template == False
     )
+
+    # Workspace filter: only show VMs from servers in the active workspace
+    if workspace_server_ids is not None:
+        query = query.filter(VMInstance.server_id.in_(workspace_server_ids))
     
     # VPS-style user isolation: users with 'user' role see only their own instances
     # Check if user has 'vms.view' but not 'vms.view:all' (or is user role)

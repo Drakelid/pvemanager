@@ -2700,16 +2700,17 @@ body {
 }
 
 /* ============================================
-   Sidebar - Cluster Selector Section
+   Sidebar - Workspace Selector Section
    ============================================ */
 
-.sidebar-cluster-section {
+.sidebar-workspace-section {
     padding: 0 var(--spacing-md) var(--spacing-md);
     border-bottom: 1px solid rgba(100,100,150,0.15);
     margin-bottom: var(--spacing-sm);
+    position: relative;
 }
 
-.sidebar-cluster-label {
+.sidebar-workspace-label {
     font-size: 0.625rem;
     font-weight: 700;
     letter-spacing: 0.1em;
@@ -2719,7 +2720,7 @@ body {
     padding-left: 2px;
 }
 
-.cluster-selector-btn {
+.workspace-selector-btn {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -2737,22 +2738,86 @@ body {
     gap: 8px;
 }
 
-.cluster-selector-btn:hover {
+.workspace-selector-btn:hover {
     background: rgba(102,126,234,0.18);
     border-color: rgba(102,126,234,0.4);
     color: #fff;
 }
 
-.cluster-name-text {
+.workspace-color-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.workspace-name-text {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.sidebar.collapsed .sidebar-cluster-section {
+.workspace-dropdown {
+    position: absolute;
+    top: calc(100% - 4px);
+    left: var(--spacing-md);
+    right: var(--spacing-md);
+    background: var(--bg-card, #1a1f35);
+    border: 1px solid rgba(102,126,234,0.3);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 200;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.workspace-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    cursor: pointer;
+    font-size: 0.84rem;
+    color: var(--text-secondary);
+    transition: background var(--transition-fast);
+    border-bottom: 1px solid rgba(100,100,150,0.08);
+}
+
+.workspace-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.workspace-dropdown-item:hover,
+.workspace-dropdown-item.active {
+    background: rgba(102,126,234,0.12);
+    color: #e0e3ff;
+}
+
+.workspace-dropdown-item.active {
+    font-weight: 600;
+}
+
+.workspace-dropdown-item small {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.workspace-dropdown-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.sidebar.collapsed .sidebar-workspace-section {
     display: none;
 }
+
+/* Removed old cluster selector styles — replaced by workspace */
+.sidebar-cluster-section { display: none; }
 
 /* ============================================
    Page Subtitle & Header Status

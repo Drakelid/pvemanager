@@ -17,18 +17,52 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 @router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 def dashboard(request: Request, db: Session = Depends(get_db)):
-    total_servers = db.query(ProxmoxServer).count()
-    online_servers = db.query(ProxmoxServer).filter(ProxmoxServer.is_online == True).count()
-    offline_servers = db.query(ProxmoxServer).filter(ProxmoxServer.is_online == False).count()
+    from .workspaces import get_workspace_server_ids
 
-    # Count distinct clusters (non-null cluster_name counts as one cluster each)
-    named_clusters = db.query(func.count(distinct(ProxmoxServer.cluster_name))).filter(
+    # Try to get current user for workspace filtering (best-effort)
+    try:
+        token = request.cookies.get("access_token") or (
+            request.headers.get("Authorization", "").removeprefix("Bearer ").strip() or None
+        )
+        current_user_obj = None
+        if token:
+            from ..auth import decode_access_token
+            from ..models import User as UserModel
+            try:
+                payload = decode_access_token(token)
+                username = payload.get("sub")
+                if username:
+                    current_user_obj = db.query(UserModel).filter(
+                        UserModel.username == username, UserModel.is_active == True
+                    ).first()
+            except Exception:
+                pass
+
+        server_ids = get_workspace_server_ids(request, db, current_user_obj) if current_user_obj else None
+    except Exception:
+        server_ids = None
+
+    base_q = db.query(ProxmoxServer)
+    if server_ids is not None:
+        base_q = base_q.filter(ProxmoxServer.id.in_(server_ids))
+
+    total_servers = base_q.count()
+    online_servers = base_q.filter(ProxmoxServer.is_online == True).count()
+    offline_servers = base_q.filter(ProxmoxServer.is_online == False).count()
+
+    # Count distinct clusters within the filtered servers
+    cluster_q = db.query(func.count(distinct(ProxmoxServer.cluster_name))).filter(
         ProxmoxServer.cluster_name.isnot(None),
         ProxmoxServer.cluster_name != ''
-    ).scalar() or 0
-    standalone_count = db.query(ProxmoxServer).filter(
+    )
+    standalone_q = db.query(ProxmoxServer).filter(
         (ProxmoxServer.cluster_name == None) | (ProxmoxServer.cluster_name == '')
-    ).count()
+    )
+    if server_ids is not None:
+        cluster_q = cluster_q.filter(ProxmoxServer.id.in_(server_ids))
+        standalone_q = standalone_q.filter(ProxmoxServer.id.in_(server_ids))
+    named_clusters = cluster_q.scalar() or 0
+    standalone_count = standalone_q.count()
     total_clusters = named_clusters + standalone_count
 
     # Alerts in last 24 hours
@@ -47,7 +81,10 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         AuditLog.created_at.desc()
     ).limit(5).all()
 
-    recent_servers = db.query(ProxmoxServer).order_by(ProxmoxServer.id.desc()).limit(6).all()
+    recent_servers_q = db.query(ProxmoxServer)
+    if server_ids is not None:
+        recent_servers_q = recent_servers_q.filter(ProxmoxServer.id.in_(server_ids))
+    recent_servers = recent_servers_q.order_by(ProxmoxServer.id.desc()).limit(6).all()
     
     stats = {
         "total_servers": total_servers,

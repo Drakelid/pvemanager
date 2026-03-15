@@ -4769,6 +4769,14 @@ class I18nService:
             "ru": "Можно указать несколько ключей (каждый с новой строки)",
             "en": "You can specify multiple keys (one per line)"
         },
+        "use_profile_ssh_key": {
+            "ru": "Вставить ключ из профиля",
+            "en": "Use key from profile"
+        },
+        "no_profile_ssh_key": {
+            "ru": "В вашем профиле не добавлен SSH ключ",
+            "en": "No SSH key found in your profile"
+        },
         "confirm_data_loss": {
             "ru": "Я понимаю, что все данные будут потеряны",
             "en": "I understand that all data will be lost"

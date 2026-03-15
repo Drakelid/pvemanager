@@ -3078,7 +3078,7 @@ class ProxmoxClient:
 
     # ==================== Storage Methods ====================
 
-    def get_storages(self) -> List[Dict]:
+    def get_cluster_storages(self) -> List[Dict]:
         """Get all storages configured on this Proxmox cluster"""
         if not self.proxmox:
             return []

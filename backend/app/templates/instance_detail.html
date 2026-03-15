@@ -1798,7 +1798,10 @@ async function showReinstallModal() {
                     </div>
                     
                     <div style="margin-bottom: 0;">
-                        <label style="display: block; color: var(--text-secondary); margin-bottom: 0.25rem; font-size: 0.875rem;">${t('ssh_public_key')}:</label>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
+                            <label style="color: var(--text-secondary); font-size: 0.875rem;">${t('ssh_public_key')}:</label>
+                            <button type="button" onclick="loadProfileSshKey()" style="background: none; border: 1px solid var(--border-color); border-radius: 4px; padding: 0.2rem 0.6rem; color: var(--text-secondary); font-size: 0.75rem; cursor: pointer; white-space: nowrap;"><i class="fa-solid fa-key"></i> ${t('use_profile_ssh_key')}</button>
+                        </div>
                         <textarea id="reinstall-sshkey" placeholder="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..." rows="3" style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); font-family: monospace; font-size: 0.75rem; resize: vertical;"></textarea>
                         <small style="color: var(--text-muted); font-size: 0.75rem;">${t('multiple_keys_hint')}</small>
                     </div>
@@ -1822,6 +1825,26 @@ async function showReinstallModal() {
     }
 }
 
+async function loadProfileSshKey() {
+    try {
+        const res = await fetchWithAuth('/settings/api/profile');
+        if (!res.ok) throw new Error('profile_load_error');
+        const profile = await res.json();
+        const key = profile.ssh_public_key;
+        if (!key) {
+            showNotification('<i class="fa-solid fa-circle-xmark"></i> ' + (t('no_profile_ssh_key') || 'No SSH key in profile'), 'warning');
+            return;
+        }
+        const textarea = document.getElementById('reinstall-sshkey');
+        if (textarea) {
+            textarea.value = key;
+            showNotification('<i class="fa-solid fa-key"></i> ' + (t('use_profile_ssh_key') || 'Key loaded from profile'), 'success');
+        }
+    } catch (e) {
+        showNotification('<i class="fa-solid fa-circle-xmark"></i> ' + e.message, 'error');
+    }
+}
+
 async function executeReinstall(event) {
     event.preventDefault();
     
@@ -1838,10 +1861,16 @@ async function executeReinstall(event) {
     const cloudInitPassword = document.getElementById('reinstall-password').value;
     const sshKeys = document.getElementById('reinstall-sshkey').value.trim();
     
-    const confirmed = await showDeleteConfirm(
-        t('reinstall') || 'Reinstall',
-        t('reinstall_confirm').replace('{name}', instanceName)
-    );
+    const confirmed = await showDialog({
+        type: 'warning',
+        icon: '<i class="fa-solid fa-triangle-exclamation"></i>',
+        title: t('reinstall') || 'Reinstall',
+        message: t('reinstall_confirm').replace('{name}', instanceName),
+        confirm: true,
+        confirmText: t('do_reinstall') || 'Reinstall',
+        cancelText: t('cancel') || 'Cancel',
+        confirmClass: 'danger'
+    });
     
     if (!confirmed) return;
     

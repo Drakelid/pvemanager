@@ -1117,6 +1117,70 @@ def migrate_proxmox_tasks(conn):
     logger.info("✓ proxmox_tasks table created")
 
 
+def migrate_workspaces(conn):
+    """Migration 19: Create workspaces, workspace_servers, workspace_users tables."""
+    logger.info("Migration 19: Creating workspaces tables...")
+
+    if table_exists(conn, 'workspaces'):
+        logger.info("Table workspaces already exists, skipping")
+        return
+
+    # Create workspaces table
+    conn.execute(text("""
+        CREATE TABLE workspaces (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            description TEXT,
+            color VARCHAR(20) DEFAULT '#667eea',
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+        )
+    """))
+    conn.execute(text("CREATE INDEX idx_workspaces_name ON workspaces(name)"))
+
+    # Create workspace_servers junction table
+    conn.execute(text("""
+        CREATE TABLE workspace_servers (
+            id SERIAL PRIMARY KEY,
+            workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            server_id INTEGER NOT NULL REFERENCES proxmox_servers(id) ON DELETE CASCADE,
+            UNIQUE(workspace_id, server_id)
+        )
+    """))
+    conn.execute(text("CREATE INDEX idx_ws_servers_workspace ON workspace_servers(workspace_id)"))
+    conn.execute(text("CREATE INDEX idx_ws_servers_server ON workspace_servers(server_id)"))
+
+    # Create workspace_users junction table
+    conn.execute(text("""
+        CREATE TABLE workspace_users (
+            id SERIAL PRIMARY KEY,
+            workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(workspace_id, user_id)
+        )
+    """))
+    conn.execute(text("CREATE INDEX idx_ws_users_workspace ON workspace_users(workspace_id)"))
+    conn.execute(text("CREATE INDEX idx_ws_users_user ON workspace_users(user_id)"))
+
+    # Insert default workspace containing all existing servers
+    conn.execute(text("""
+        INSERT INTO workspaces (name, description, color, is_default)
+        VALUES ('Default', 'Default workspace containing all servers', '#667eea', TRUE)
+    """))
+
+    # Add all existing servers to the default workspace
+    conn.execute(text("""
+        INSERT INTO workspace_servers (workspace_id, server_id)
+        SELECT w.id, s.id
+        FROM workspaces w, proxmox_servers s
+        WHERE w.is_default = TRUE
+    """))
+
+    logger.info("✓ workspaces tables created, Default workspace populated")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1273,6 +1337,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Proxmox tasks migration: {e}")
+                conn.rollback()
+
+            # Migration 19: Workspaces
+            try:
+                migrate_workspaces(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Workspaces migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

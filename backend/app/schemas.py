@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import ipaddress
 
 from pydantic import BaseModel, Field, field_validator, model_validator, EmailStr
@@ -734,3 +734,56 @@ class NotificationPreferenceResponse(BaseModel):
 
 
 # Notification schemas added above
+
+
+# ==================== Workspace Schemas ====================
+
+class WorkspaceCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="Workspace name")
+    description: Optional[str] = Field(None, max_length=500)
+    color: Optional[str] = Field("#667eea", max_length=20, description="Accent color (CSS hex)")
+    server_ids: Optional[List[int]] = Field(default_factory=list, description="Initial server IDs")
+    user_ids: Optional[List[int]] = Field(default_factory=list, description="Initial user IDs with access")
+
+
+class WorkspaceUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    color: Optional[str] = Field(None, max_length=20)
+
+
+class WorkspaceServerItem(BaseModel):
+    id: int
+    name: str
+    ip_address: str
+    is_online: bool
+    cluster_name: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class WorkspaceUserItem(BaseModel):
+    id: int
+    username: str
+    email: str
+    full_name: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class WorkspaceResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    color: Optional[str] = None
+    is_default: bool
+    server_count: int = 0
+    user_count: int = 0
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WorkspaceDetail(WorkspaceResponse):
+    servers: List[WorkspaceServerItem] = []
+    users: List[WorkspaceUserItem] = []

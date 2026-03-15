@@ -2251,7 +2251,11 @@ async function loadCreateVMForm() {
     const content = document.getElementById('createVMContent');
     
     try {
-        // Load templates for all servers FIRST
+        // Load all servers from API
+        const serversResponse = await fetchWithAuth('/proxmox/api/servers');
+        const allServersData = serversResponse.ok ? await serversResponse.json() : [];
+
+        // Load templates for all servers
         const templatesResponse = await fetchWithAuth('/templates/api/templates');
         const allTemplates = templatesResponse.ok ? await templatesResponse.json() : [];
         
@@ -2259,32 +2263,23 @@ async function loadCreateVMForm() {
         const groupsResponse = await fetchWithAuth('/templates/api/groups');
         const groups = groupsResponse.ok ? await groupsResponse.json() : [];
         
-        if (allTemplates.length === 0) {
+        if (allServersData.length === 0) {
             content.innerHTML = `
                 <div style="text-align: center; padding: 2rem;">
                     <div style="font-size: 3rem; margin-bottom: 1rem; color: var(--text-muted);"><i class="fa-solid fa-box-open"></i></div>
-                    <p style="color: var(--text-secondary);">{{ t('no_templates') }}</p>
-                    <p style="color: var(--text-muted); font-size: 0.875rem; margin-top: 0.5rem;">
-                        {{ t('go_to') }} <a href="/templates" style="color: var(--accent);">{{ t('nav_templates') }}</a> {{ t('and_add_templates') }}
-                    </p>
+                    <p style="color: var(--text-secondary);">{{ t('no_servers') }}</p>
                     <button onclick="closeCreateVMModal()" class="btn" style="margin-top: 1rem;">{{ t('close') }}</button>
                 </div>`;
             return;
         }
         
-        // Build servers map from templates (only servers with templates)
-        const serversMap = new Map();
-        allTemplates.forEach(t => {
-            if (!serversMap.has(t.server_id)) {
-                serversMap.set(t.server_id, {
-                    id: t.server_id,
-                    name: t.server_name || `Server ${t.server_id}`
-                });
-            }
-        });
-        const allServers = Array.from(serversMap.values());
+        // Build servers list from API (all servers, not just those with templates)
+        const allServers = allServersData.map(s => ({
+            id: s.id,
+            name: s.name || `Server ${s.id}`
+        }));
         
-        // Use first server with templates
+        // Use first server
         createVMServerId = allServers[0].id;
         
         // Filter templates for selected server
@@ -2340,7 +2335,7 @@ async function loadCreateVMForm() {
                     </div>
                     <div class="form-group">
                         <label>{{ t('target_node') }}</label>
-                        <select id="vmNodeSelect" class="form-control">
+                        <select id="vmNodeSelect" onchange="onVMNodeChange(this.value)" class="form-control">
                             <option value="">{{ t('auto') }}</option>
                             ${nodeOptions}
                         </select>
@@ -2524,11 +2519,25 @@ async function loadStoragesForServer(serverId, preferredNode = null) {
             const response = await fetchWithAuth(`/proxmox/api/${serverId}/storages?node=${node}`);
             if (response.ok) {
                 const data = await response.json();
-                createVMStorages = (data.storages || []).filter(s => s.content && s.content.includes('images'));
+                const allStorages = data.storages || [];
+                // Show all active/available storages — Proxmox will reject incompatible ones on create
+                createVMStorages = allStorages.filter(s => s.active !== 0 && s.enabled !== 0);
+                if (createVMStorages.length === 0) createVMStorages = allStorages;
             }
         }
     } catch (e) {
         createVMStorages = [];
+    }
+}
+
+async function onVMNodeChange(nodeValue) {
+    const node = nodeValue || (createVMNodes.length > 0 ? createVMNodes[0].node : null);
+    await loadStoragesForServer(createVMServerId, node);
+    const storageSelect = document.getElementById('vmStorageSelect');
+    if (storageSelect) {
+        storageSelect.innerHTML = createVMStorages.length > 0
+            ? createVMStorages.map((s, idx) => `<option value="${s.storage}" ${idx === 0 ? 'selected' : ''}>${s.storage}</option>`).join('')
+            : '<option value="local-lvm">local-lvm</option>';
     }
 }
 
