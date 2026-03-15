@@ -774,9 +774,14 @@ body.update-in-progress .layout {
     <div id="taskDrawer" class="task-drawer" style="display:none;">
         <div class="task-drawer-header">
             <h3><i class="fa-solid fa-list-check" style="color:var(--primary); margin-right:.5rem;"></i> Задачи</h3>
-            <button class="task-drawer-close" onclick="toggleTaskDrawer()">
-                <i class="fa-solid fa-xmark"></i>
-            </button>
+            <div style="display:flex; gap:.4rem; align-items:center; margin-left:auto;">
+                <button id="taskDrawerClearBtn" onclick="clearCompletedTasks()" title="Очистить завершённые" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:.3rem .5rem; border-radius:6px; font-size:.75rem; display:none;">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+                <button class="task-drawer-close" onclick="toggleTaskDrawer()">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
         </div>
         <div class="task-drawer-body" id="taskDrawerBody">
             <div class="task-drawer-empty" id="taskDrawerEmpty">
@@ -1634,6 +1639,13 @@ body.update-in-progress .layout {
     let taskDrawerReconnectTimer = null;
     let taskDrawerReconnectDelay = 2000;
 
+    // Task Drawer: задачи старше 24 ч скрываются из панели (в /tasks они остаются)
+    const DRAWER_TASK_TTL = 24 * 60 * 60 * 1000;
+    function isDrawerTaskExpired(t) {
+        if (!t || !t.created_at) return false;
+        return (Date.now() - new Date(t.created_at).getTime()) > DRAWER_TASK_TTL;
+    }
+
     function toggleTaskDrawer() {
         const drawer = document.getElementById('taskDrawer');
         taskDrawerOpen = !taskDrawerOpen;
@@ -1725,9 +1737,13 @@ body.update-in-progress .layout {
                 const msg = JSON.parse(data);
                 if (msg.type === 'task_list') {
                     taskDrawerTasks = {};
-                    (msg.tasks||[]).forEach(t => { taskDrawerTasks[`${t.kind}_${t.id}`] = t; });
+                    (msg.tasks||[]).forEach(t => {
+                        if (!isDrawerTaskExpired(t))
+                            taskDrawerTasks[`${t.kind}_${t.id}`] = t;
+                    });
                 } else if (msg.type === 'task_update' || msg.type === 'task_created') {
-                    if (msg.task) taskDrawerTasks[`${msg.task.kind}_${msg.task.id}`] = msg.task;
+                    if (msg.task && !isDrawerTaskExpired(msg.task))
+                        taskDrawerTasks[`${msg.task.kind}_${msg.task.id}`] = msg.task;
                 } else if (msg.type === 'task_removed') {
                     if (msg.task) delete taskDrawerTasks[`${msg.task.kind}_${msg.task.id}`];
                 }
@@ -1760,6 +1776,21 @@ body.update-in-progress .layout {
             });
         };
     }
+
+    // Периодически удаляем задачи старше 24 ч из Drawer (каждые 5 минут)
+    setInterval(() => {
+        let changed = false;
+        for (const key of Object.keys(taskDrawerTasks)) {
+            if (isDrawerTaskExpired(taskDrawerTasks[key])) {
+                delete taskDrawerTasks[key];
+                changed = true;
+            }
+        }
+        if (changed) {
+            updateTaskBadge();
+            if (taskDrawerOpen) renderTaskDrawer();
+        }
+    }, 5 * 60 * 1000);
 
     // ── WebSocket utility API (usable from any page script) ──────────────────
 
@@ -1842,6 +1873,59 @@ body.update-in-progress .layout {
             _wsPendingRequests[request_id] = { resolve, timer };
             taskDrawerWS.send(JSON.stringify({type: 'request', action, request_id, params}));
         });
+    }
+
+    // ── Task Drawer utilities ─────────────────────────────────────────────────
+
+    /**
+     * Открыть Task Drawer и подсветить задачу (используется внешними страницами).
+     * Вызывается при запуске bulk-операций вместо нижнего тоста.
+     */
+    function openTaskDrawer() {
+        if (!taskDrawerOpen) {
+            taskDrawerOpen = true;
+            document.getElementById('taskDrawer').style.display = 'flex';
+            renderTaskDrawer();
+        }
+    }
+
+    /** Обновить видимость кнопки очистки в зависимости от состава задач. */
+    function _updateClearButton() {
+        const hasDone = Object.values(taskDrawerTasks).some(t => {
+            const s = normalizeTaskStatus(t.status);
+            return s === 'completed' || s === 'failed' || s === 'cancelled';
+        });
+        const btn = document.getElementById('taskDrawerClearBtn');
+        if (btn) btn.style.display = hasDone ? 'flex' : 'none';
+    }
+
+    /** Оригинальная renderTaskDrawer расширяется — вызываем _updateClearButton после. */
+    const _origRenderTaskDrawer = renderTaskDrawer;
+    renderTaskDrawer = function() {
+        _origRenderTaskDrawer();
+        _updateClearButton();
+    };
+
+    /** Удалить все завершённые/ошибочные/отменённые задачи. */
+    async function clearCompletedTasks() {
+        try {
+            const resp = await fetchWithAuth('/proxmox/api/all-tasks/completed', { method: 'DELETE' });
+            if (resp && resp.ok) {
+                const data = await resp.json();
+                // Remove done tasks from local state
+                for (const key of Object.keys(taskDrawerTasks)) {
+                    const s = normalizeTaskStatus(taskDrawerTasks[key].status);
+                    if (s === 'completed' || s === 'failed' || s === 'cancelled') {
+                        delete taskDrawerTasks[key];
+                    }
+                }
+                renderTaskDrawer();
+                updateTaskBadge();
+                if (data.deleted > 0) showToast('success', 'Очищено', `Удалено ${data.deleted} задач`);
+            }
+        } catch(e) {
+            console.error('clearCompletedTasks error', e);
+        }
     }
 </script>
 <!-- Bootstrap 5 JS Bundle -->

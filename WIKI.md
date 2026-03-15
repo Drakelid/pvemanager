@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.1.4
+> Complete guide for installation, configuration and usage of PVEmanager v1.1.5
 
 ---
 
@@ -255,6 +255,7 @@ This section summarizes key API endpoints. All require JWT authentication.
 ### Misc
 
 - `POST /api/sync-vms` — force immediate VM sync from all Proxmox servers
+- `DELETE /proxmox/api/all-tasks/completed` — delete all completed/failed/cancelled tasks for the current user (both ProxmoxTask and TaskQueue)
 
 ---
 
@@ -511,24 +512,18 @@ Bulk operations allow you to perform the same action on multiple VMs or containe
 4. **Click desired action** button
 5. **Confirm** if prompted (for delete operations)
 
-### Task Queue
+### Task Drawer
 
-When you initiate a bulk operation:
+When you initiate a bulk operation the **Task Drawer** opens automatically in the sidebar. It shows real-time progress for each task:
 
-1. **Task is created** and added to the queue
-2. **Background processing** starts automatically
-3. **Progress is tracked** (completed/failed items)
-4. **Results are saved** for each item
+- **Running** tasks show a spinner and current progress (`completed / total`)
+- **Completed** tasks are shown in green; **Failed** in red
+- Tasks older than **24 hours** are automatically hidden from the drawer (they remain accessible on the `/tasks` page)
+- Use the **trash icon** (🗑) in the drawer header to remove all finished/failed/cancelled tasks in one click
 
-### Viewing Task Status
+### Proxmox UPID Tracking
 
-Currently, tasks can be viewed via API:
-
-```bash
-# Get your recent tasks
-curl -X GET "http://localhost:8000/api/tasks" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
+Starting from v1.1.5, individual VM/LXC control actions (start / stop / restart) are linked to the real Proxmox task UPID. The UPID is registered as a `ProxmoxTask` entry and polled in real time, so the Task Drawer reflects the actual Proxmox-side task state.
 
 ### Limitations
 

@@ -788,12 +788,19 @@ class TaskQueue(Base):
         return int((self.completed_items + self.failed_items) / self.total_items * 100)
     
     def to_dict(self) -> dict:
+        _desc_map = {
+            'bulk_start':    'Массовый запуск ВМ/LXC',
+            'bulk_stop':     'Массовая остановка ВМ/LXC',
+            'bulk_restart':  'Массовый перезапуск ВМ/LXC',
+            'bulk_delete':   'Массовое удаление ВМ/LXC',
+            'bulk_shutdown': 'Массовое выключение ВМ/LXC',
+        }
         return {
             'id': self.id,
             'kind': 'bulk',
             'user_id': self.user_id,
             'task_type': self.task_type,
-            'description': self.task_type,
+            'description': _desc_map.get(self.task_type, self.task_type),
             'status': self.status,
             'total_items': self.total_items,
             'completed_items': self.completed_items,

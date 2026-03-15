@@ -279,3 +279,22 @@ def get_proxmox_task_log_db(
         raise HTTPException(status_code=404, detail="Task not found")
     return {"log_text": task.log_text or "", "status": task.status, "exit_status": task.exit_status}
 
+
+@router.delete("/api/all-tasks/completed")
+def clear_completed_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete all completed/failed/cancelled tasks for the current user."""
+    done_statuses = ["completed", "failed", "cancelled"]
+    bulk_deleted = db.query(TaskQueue).filter(
+        TaskQueue.user_id == current_user.id,
+        TaskQueue.status.in_(done_statuses),
+    ).delete(synchronize_session=False)
+    proxmox_deleted = db.query(ProxmoxTask).filter(
+        ProxmoxTask.user_id == current_user.id,
+        ProxmoxTask.status.in_(done_statuses),
+    ).delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": bulk_deleted + proxmox_deleted}
+

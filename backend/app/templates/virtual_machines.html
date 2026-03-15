@@ -1177,7 +1177,8 @@ async function bulkAction(action) {
             updateVMStatusUI(item.server_id, item.vmid, 'pending', action);
         });
         
-        // Show progress toast
+        // Открыть Task Drawer вместо нижнего тоста
+        if (typeof openTaskDrawer === 'function') openTaskDrawer();
         showTaskProgress(action, items.length);
         
         // Start polling for progress
@@ -1193,27 +1194,13 @@ async function bulkAction(action) {
 }
 
 function showTaskProgress(action, totalItems) {
-    const toast = document.getElementById('taskProgressToast');
-    const title = document.getElementById('taskProgressTitle');
+    // Тост заменён на Task Drawer — просто сбрасываем состояние элементов без показа тоста
     const bar = document.getElementById('taskProgressBar');
     const text = document.getElementById('taskProgressText');
     const results = document.getElementById('taskProgressResults');
-    
-    const actionNames = {
-        start: '{{ t("starting") }}',
-        stop: '{{ t("stopping") }}',
-        restart: '{{ t("restarting") }}',
-        shutdown: '{{ t("shutting_down") }}',
-        delete: '{{ t("deleting") }}'
-    };
-    
-    title.textContent = `${actionNames[action] || action}...`;
-    bar.style.width = '0%';
-    bar.className = 'task-progress-bar';
-    text.textContent = `0 / ${totalItems}`;
-    results.innerHTML = '';
-    
-    toast.classList.remove('hidden');
+    if (bar) { bar.style.width = '0%'; bar.className = 'task-progress-bar'; }
+    if (text) text.textContent = `0 / ${totalItems}`;
+    if (results) results.innerHTML = '';
 }
 
 // Track which VMs have already been updated in UI
@@ -1312,7 +1299,7 @@ function updateTaskProgress(task) {
 }
 
 function hideTaskProgress() {
-    document.getElementById('taskProgressToast').classList.add('hidden');
+    // Toast заменён на Task Drawer — просто останавливаем поллинг
     stopTaskPolling();
 }
 

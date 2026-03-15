@@ -339,18 +339,38 @@ def control_vm(
         except Exception:
             pass
         
+        upid = None
         if action == 'start':
-            success = client.start_vm(node, vmid)
+            upid = client.start_vm(node, vmid)
+            success = bool(upid)
         elif action == 'stop':
             if force:
                 success = client.force_stop_vm(node, vmid)
             else:
-                success = client.stop_vm(node, vmid, force=False)
+                upid = client.stop_vm(node, vmid, force=False)
+                success = bool(upid)
         else:  # restart
-            success = client.restart_vm(node, vmid)
-        
+            upid = client.restart_vm(node, vmid)
+            success = bool(upid)
+
         action_name = 'kill' if action == 'stop' and force else action
         if success:
+            # Register ProxmoxTask for UPID-based tracking
+            if upid:
+                _desc_map = {
+                    'start': f"Запуск VM {vm_name or vmid}",
+                    'stop': f"Остановка VM {vm_name or vmid}",
+                    'restart': f"Перезапуск VM {vm_name or vmid}",
+                }
+                try:
+                    ProxmoxTaskService.register(
+                        db=db, upid=upid, server_id=server_id,
+                        user_id=current_user.id, action=action_name,
+                        node=node, vmid=vmid, vm_type='qemu',
+                        description=_desc_map.get(action, action_name),
+                    )
+                except Exception as _te:
+                    logger.warning(f"Failed to register ProxmoxTask for VM {vmid} {action_name}: {_te}")
             # Log successful action
             LoggingService.log_proxmox_action(
                 db=db,
@@ -366,7 +386,7 @@ def control_vm(
                 success=True
             )
             logger.info(f"User {current_user.username} executed {action_name} on VM {vmid} at {server.name}")
-            return JSONResponse(content={"status": "success", "action": action_name, "vmid": vmid, "node": node})
+            return JSONResponse(content={"status": "success", "action": action_name, "vmid": vmid, "node": node, "upid": upid})
         else:
             # Log failed action
             LoggingService.log_proxmox_action(
@@ -1163,20 +1183,40 @@ def control_container(
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
         
+        upid = None
         if action == 'start':
-            success = client.start_container(node, vmid)
+            upid = client.start_container(node, vmid)
+            success = bool(upid)
         elif action == 'stop':
             if force:
                 success = client.force_stop_container(node, vmid)
             else:
-                success = client.stop_container(node, vmid, force=False)
+                upid = client.stop_container(node, vmid, force=False)
+                success = bool(upid)
         else:  # restart
-            success = client.restart_container(node, vmid)
-        
+            upid = client.restart_container(node, vmid)
+            success = bool(upid)
+
         action_name = 'kill' if action == 'stop' and force else action
         if success:
+            # Register ProxmoxTask for UPID-based tracking
+            if upid:
+                _desc_map = {
+                    'start': f"Запуск LXC {vmid}",
+                    'stop': f"Остановка LXC {vmid}",
+                    'restart': f"Перезапуск LXC {vmid}",
+                }
+                try:
+                    ProxmoxTaskService.register(
+                        db=db, upid=upid, server_id=server_id,
+                        user_id=current_user.id, action=action_name,
+                        node=node, vmid=vmid, vm_type='lxc',
+                        description=_desc_map.get(action, action_name),
+                    )
+                except Exception as _te:
+                    logger.warning(f"Failed to register ProxmoxTask for LXC {vmid} {action_name}: {_te}")
             logger.info(f"User {current_user.username} executed {action_name} on container {vmid} at {server.name}")
-            return JSONResponse(content={"status": "success", "action": action_name, "vmid": vmid, "node": node})
+            return JSONResponse(content={"status": "success", "action": action_name, "vmid": vmid, "node": node, "upid": upid})
         else:
             raise HTTPException(status_code=500, detail="Failed to execute action")
     except Exception as e:

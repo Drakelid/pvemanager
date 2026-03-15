@@ -4,6 +4,23 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.1.5] - 2026-03-15
+
+### 🗂️ Task Drawer — UPID Tracking & Clear Completed
+
+- **UPID-based task tracking** — VM/LXC control methods (`start`, `stop`, `restart`) in `proxmox_client.py` now return the Proxmox task UPID instead of a boolean; each action automatically registers a `ProxmoxTask` entry for real-time Proxmox-side progress polling
+- **`DELETE /proxmox/api/all-tasks/completed`** — new API endpoint: removes all `completed` / `failed` / `cancelled` tasks (both `ProxmoxTask` and `TaskQueue`) for the current user in one request
+- **Clear button in Task Drawer** — trash icon appears in the drawer header whenever there are finished tasks; clicking it calls the new endpoint and updates the drawer instantly
+- **Auto-expire old tasks in Drawer** — tasks older than 24 h are hidden from the Task Drawer on load and every 5 minutes; they remain accessible on the `/tasks` page
+- **`openTaskDrawer()` global helper** — bulk VM operations now open the Task Drawer instead of showing a bottom progress toast, providing a unified task-tracking experience
+- **Human-readable bulk task descriptions** — `TaskQueue.to_dict()` now maps internal `task_type` keys (`bulk_start`, `bulk_stop`, etc.) to localised Russian descriptions
+
+### 🔧 Fixes
+
+- **`pve` CLI nginx detection** — mode resolution now checks for the nginx config file (`nginx/conf.d/serverpanel.conf`) in addition to the running `serverpanel-nginx` container, fixing prod-mode detection on already-deployed hosts after container restarts
+
+---
+
 ## [v1.1.4] - 2026-03-15
 
 ### 🗂️ Workspaces — Scoped Server Groups

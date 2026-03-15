@@ -37,11 +37,12 @@ step()  { echo -e "\n${BOLD}▶  $*${NC}"; }
 declare -a _CF_ARGS
 
 # Авто-определение режима: prod (nginx) vs standalone
-# Логика: если контейнер serverpanel-nginx существует — prod-режим
+# Логика: compose.prod.yml + (контейнер nginx существует ИЛИ nginx сконфигурирован deploy.sh)
 _resolve_compose() {
     _CF_ARGS=("-f" "compose.yml")
     if [ -f "$PVE_DIR/compose.prod.yml" ] && \
-       docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "serverpanel-nginx"; then
+       { docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "serverpanel-nginx" || \
+         [ -f "$PVE_DIR/nginx/conf.d/serverpanel.conf" ]; }; then
         _CF_ARGS=("-f" "compose.yml" "-f" "compose.prod.yml")
     fi
 }

@@ -271,81 +271,77 @@ class ProxmoxClient:
         """Получить статистику LXC контейнера (CPU, память, диск)"""
         return self.get_container_status(node, vmid)
     
-    def start_vm(self, node: str, vmid: int) -> bool:
-        """Запустить VM"""
+    def start_vm(self, node: str, vmid: int) -> Optional[str]:
+        """Запустить VM. Возвращает UPID задачи или None при ошибке."""
         if not self.proxmox:
-            return False
+            return None
         
         try:
-            self.proxmox.nodes(node).qemu(vmid).status.start.post()
-            return True
+            upid = self.proxmox.nodes(node).qemu(vmid).status.start.post()
+            return upid if isinstance(upid, str) else None
         except Exception as e:
             logger.error(f"Ошибка запуска VM {vmid} на {node}: {e}")
-            return False
+            return None
     
-    def stop_vm(self, node: str, vmid: int, force: bool = False) -> bool:
-        """Остановить VM"""
+    def stop_vm(self, node: str, vmid: int, force: bool = False) -> Optional[str]:
+        """Остановить VM. Возвращает UPID задачи или None при ошибке."""
         if not self.proxmox:
-            return False
+            return None
         
         try:
-            # Proxmox не поддерживает force параметр через stop endpoint
-            # Используем обычную остановку
-            self.proxmox.nodes(node).qemu(vmid).status.stop.post()
-            return True
+            upid = self.proxmox.nodes(node).qemu(vmid).status.stop.post()
+            return upid if isinstance(upid, str) else None
         except Exception as e:
             logger.error(f"Ошибка остановки VM {vmid} на {node}: {e}")
-            return False
+            return None
     
-    def restart_vm(self, node: str, vmid: int) -> bool:
-        """Перезапустить VM"""
+    def restart_vm(self, node: str, vmid: int) -> Optional[str]:
+        """Перезапустить VM. Возвращает UPID задачи или None при ошибке."""
         if not self.proxmox:
-            return False
+            return None
         
         try:
-            self.proxmox.nodes(node).qemu(vmid).status.reboot.post()
-            return True
+            upid = self.proxmox.nodes(node).qemu(vmid).status.reboot.post()
+            return upid if isinstance(upid, str) else None
         except Exception as e:
             logger.error(f"Ошибка перезапуска VM {vmid} на {node}: {e}")
-            return False
+            return None
     
-    def start_container(self, node: str, vmid: int) -> bool:
-        """Запустить LXC контейнер"""
+    def start_container(self, node: str, vmid: int) -> Optional[str]:
+        """Запустить LXC контейнер. Возвращает UPID задачи или None при ошибке."""
         if not self.proxmox:
-            return False
+            return None
         
         try:
-            self.proxmox.nodes(node).lxc(vmid).status.start.post()
-            return True
+            upid = self.proxmox.nodes(node).lxc(vmid).status.start.post()
+            return upid if isinstance(upid, str) else None
         except Exception as e:
             logger.error(f"Ошибка запуска LXC {vmid} на {node}: {e}")
-            return False
+            return None
     
-    def stop_container(self, node: str, vmid: int, force: bool = False) -> bool:
-        """Остановить LXC контейнер"""
+    def stop_container(self, node: str, vmid: int, force: bool = False) -> Optional[str]:
+        """Остановить LXC контейнер. Возвращает UPID задачи или None при ошибке."""
         if not self.proxmox:
-            return False
+            return None
         
         try:
-            # Proxmox не поддерживает force параметр через stop endpoint
-            # Используем обычную остановку
-            self.proxmox.nodes(node).lxc(vmid).status.stop.post()
-            return True
+            upid = self.proxmox.nodes(node).lxc(vmid).status.stop.post()
+            return upid if isinstance(upid, str) else None
         except Exception as e:
             logger.error(f"Ошибка остановки LXC {vmid} на {node}: {e}")
-            return False
+            return None
     
-    def restart_container(self, node: str, vmid: int) -> bool:
-        """Перезапустить LXC контейнер"""
+    def restart_container(self, node: str, vmid: int) -> Optional[str]:
+        """Перезапустить LXC контейнер. Возвращает UPID задачи или None при ошибке."""
         if not self.proxmox:
-            return False
+            return None
         
         try:
-            self.proxmox.nodes(node).lxc(vmid).status.reboot.post()
-            return True
+            upid = self.proxmox.nodes(node).lxc(vmid).status.reboot.post()
+            return upid if isinstance(upid, str) else None
         except Exception as e:
             logger.error(f"Ошибка перезапуска LXC {vmid} на {node}: {e}")
-            return False
+            return None
     
     def force_stop_vm(self, node: str, vmid: int) -> bool:
         """Принудительно остановить ВМ (через SSH - аналог kill -9)"""
