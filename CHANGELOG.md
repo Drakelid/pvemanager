@@ -4,6 +4,26 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.1.4] - 2026-03-15
+
+### 🗂️ Workspaces — Scoped Server Groups
+
+- New **Workspace** entity: named group of Proxmox servers with scoped user access
+- DB models: `Workspace`, `WorkspaceServer`, `WorkspaceUser` with automatic DB migration
+- Full CRUD REST API (`/api/workspaces`, `/api/workspaces/{id}`) — admin-only create/update/delete, filtered list for regular users
+- `X-Active-Workspace` request header propagated from frontend — filters server/VM/backup API responses to the active workspace
+- Default workspace created on first run; all existing servers assigned to it
+- Admin workspace management page (`/workspaces`) — create/edit/delete workspaces, assign servers and users
+- **Sidebar workspace selector** — active workspace label shown in sidebar, switch without page reload
+- `proxmox_server_detail.html` — dedicated server detail page (new template)
+- i18n keys added for all workspace UI strings (EN + RU)
+
+### 🔧 Fixes
+
+- Fixed `PermissionChecker` import error in `dashboard.py`
+
+---
+
 ## [v1.1.3] - 2026-03-10
 
 ### 🚨 Dashboard — Alerts Panel & Real-time Node Stats

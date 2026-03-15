@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.1.3
+> Complete guide for installation, configuration and usage of PVEmanager v1.1.4
 
 ---
 
@@ -24,10 +24,11 @@
 16. [Settings](#-settings)
 17. [pve CLI Tool](#-pve-cli-tool)
 18. [API Reference](#-api-reference)
-19. [Deployment Guide](#-installation-and-deployment)
-20. [Private Repo Updates](#-settings)
-21. [Troubleshooting](#-troubleshooting)
-22. [FAQ](#-faq)
+19. [Workspaces](#-workspaces)
+20. [Deployment Guide](#-installation-and-deployment)
+21. [Private Repo Updates](#-settings)
+22. [Troubleshooting](#-troubleshooting)
+23. [FAQ](#-faq)
 
 ---
 
@@ -1409,7 +1410,52 @@ Available at: `http://localhost:8000/docs`
 
 ---
 
-## 🔧 Troubleshooting
+## �️ Workspaces
+
+Workspaces are named groups of Proxmox servers with scoped user access. They allow administrators to partition the infrastructure and grant users access to only their servers.
+
+### Key Concepts
+
+| Concept | Description |
+|---|---|
+| **Workspace** | Named group with optional color and description |
+| **Default Workspace** | Created automatically; all servers belong to it by default |
+| **Server assignment** | One server can belong to multiple workspaces |
+| **User assignment** | Users see only workspaces they are assigned to |
+
+### Managing Workspaces (Admin)
+
+1. Open **Settings → Workspaces** (sidebar menu item) or navigate to `/workspaces`
+2. Click **New Workspace** to create a workspace
+3. Assign servers from the **Servers** tab inside the workspace detail
+4. Assign users from the **Users** tab
+
+### Switching Workspaces (Sidebar)
+
+- The active workspace is shown in the sidebar below the logo
+- Click the workspace name to open the switcher
+- Select a workspace — all VM/server lists are immediately filtered
+- Select **All Workspaces** (admin only) to remove the filter
+
+### API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/workspaces` | List workspaces (filtered for non-admins) |
+| `POST` | `/api/workspaces` | Create workspace (admin) |
+| `GET` | `/api/workspaces/{id}` | Get workspace detail with servers/users |
+| `PUT` | `/api/workspaces/{id}` | Update workspace (admin) |
+| `DELETE` | `/api/workspaces/{id}` | Delete workspace (admin) |
+| `POST` | `/api/workspaces/{id}/servers` | Add server to workspace |
+| `DELETE` | `/api/workspaces/{id}/servers/{server_id}` | Remove server from workspace |
+| `POST` | `/api/workspaces/{id}/users` | Add user to workspace |
+| `DELETE` | `/api/workspaces/{id}/users/{user_id}` | Remove user from workspace |
+
+Pass the `X-Active-Workspace: {id}` header in API requests to filter responses by workspace.
+
+---
+
+## �🔧 Troubleshooting
 
 ### Startup Issues
 
