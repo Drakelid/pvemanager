@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ lang }}" data-theme="dark">
+<html lang="{{ lang }}" data-theme="light">
 <head>
     <meta charset="utf-8">
     <title>{{ title or t('app_name') }}</title>
@@ -374,7 +374,7 @@
         }
         
         .custom-dialog-icon.question {
-            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
         }
         
         .custom-dialog-title {
@@ -446,14 +446,15 @@
         }
         
         .custom-dialog-btn.primary {
-            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            background: #0ea5e9;
             color: #ffffff !important;
-            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 2px 8px rgba(14, 165, 233, 0.3);
         }
         
         .custom-dialog-btn.primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(99, 102, 241, 0.5);
+            transform: translateY(-1px);
+            background: #0284c7;
+            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
         }
         
         .custom-dialog-btn.secondary {
@@ -601,7 +602,7 @@ body.update-in-progress .layout {
         <div class="sidebar-workspace-section" id="sidebarWorkspaceSection">
             <div class="sidebar-workspace-label">Workspace</div>
             <button class="workspace-selector-btn" id="sidebarWorkspaceBtn" title="Active workspace" onclick="toggleWorkspaceDropdown(event)">
-                <span class="workspace-color-dot" id="sidebarWorkspaceColorDot" style="background:#667eea;"></span>
+                <span class="workspace-color-dot" id="sidebarWorkspaceColorDot" style="background:#0ea5e9;"></span>
                 <span class="workspace-name-text" id="sidebarWorkspaceName">—</span>
                 <i class="fa-solid fa-chevron-down" id="sidebarWorkspaceChevron" style="font-size:0.65rem; opacity:0.6; transition:transform 0.2s;"></i>
             </button>
@@ -647,7 +648,7 @@ body.update-in-progress .layout {
                 <li><a href="/tasks" class="{{ 'active' if request.path.startswith('/tasks') else '' }}" title="Менеджер задач">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
                     <span>Задачи</span>
-                    <span id="sidebarTasksBadge" style="display:none; background:#667eea; color:#fff; font-size:.62rem; font-weight:700; border-radius:9999px; padding:1px 6px; margin-left:auto; line-height:1.5;"></span>
+                    <span id="sidebarTasksBadge" style="display:none; background:#0ea5e9; color:#fff; font-size:.62rem; font-weight:700; border-radius:9999px; padding:1px 6px; margin-left:auto; line-height:1.5;"></span>
                 </a></li>
                 <li><a href="/settings" class="{{ 'active' if request.path.startswith('/settings') else '' }}" title="{{ t('nav_settings') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -772,7 +773,7 @@ body.update-in-progress .layout {
     <!-- Task Drawer -->
     <div id="taskDrawer" class="task-drawer" style="display:none;">
         <div class="task-drawer-header">
-            <h3><i class="fa-solid fa-list-check" style="color:#667eea; margin-right:.5rem;"></i> Задачи</h3>
+            <h3><i class="fa-solid fa-list-check" style="color:var(--primary); margin-right:.5rem;"></i> Задачи</h3>
             <button class="task-drawer-close" onclick="toggleTaskDrawer()">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -1039,10 +1040,10 @@ body.update-in-progress .layout {
         if (!nameEl) return;
         if (!ws) {
             nameEl.textContent = 'Все';
-            if (dotEl) { dotEl.style.background = '#667eea'; dotEl.style.opacity = '0.4'; }
+            if (dotEl) { dotEl.style.background = '#0ea5e9'; dotEl.style.opacity = '0.4'; }
         } else {
             nameEl.textContent = ws.name;
-            if (dotEl) { dotEl.style.background = ws.color || '#667eea'; dotEl.style.opacity = '1'; }
+            if (dotEl) { dotEl.style.background = ws.color || '#0ea5e9'; dotEl.style.opacity = '1'; }
         }
     }
 
@@ -1055,7 +1056,7 @@ body.update-in-progress .layout {
         if (isAdmin) {
             const allItem = document.createElement('div');
             allItem.className = 'workspace-dropdown-item' + (_activeWorkspaceId === null ? ' active' : '');
-            allItem.innerHTML = `<span class="workspace-dropdown-dot" style="background:#667eea;opacity:0.4;"></span><span>Все</span>`;
+            allItem.innerHTML = `<span class="workspace-dropdown-dot" style="background:#0ea5e9;opacity:0.4;"></span><span>Все</span>`;
             allItem.onclick = (e) => { e.stopPropagation(); _wsSelect(null, null, isAdmin); };
             container.appendChild(allItem);
         }
@@ -1063,7 +1064,7 @@ body.update-in-progress .layout {
         workspaces.forEach(ws => {
             const item = document.createElement('div');
             item.className = 'workspace-dropdown-item' + (_activeWorkspaceId === ws.id ? ' active' : '');
-            item.innerHTML = `<span class="workspace-dropdown-dot" style="background:${ws.color || '#667eea'};"></span><span>${ws.name}</span><small>${ws.server_count} серв.</small>`;
+            item.innerHTML = `<span class="workspace-dropdown-dot" style="background:${ws.color || '#0ea5e9'};"></span><span>${ws.name}</span><small>${ws.server_count} серв.</small>`;
             item.onclick = (e) => { e.stopPropagation(); _wsSelect(ws.id, ws, isAdmin); };
             container.appendChild(item);
         });

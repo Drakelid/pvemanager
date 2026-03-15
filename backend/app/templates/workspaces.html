@@ -46,9 +46,9 @@
             <div class="form-group">
                 <label>Цвет</label>
                 <div style="display:flex;align-items:center;gap:10px;">
-                    <input type="color" id="wsColor" value="#667eea" style="width:48px;height:36px;border:none;background:none;cursor:pointer;padding:0;">
+                    <input type="color" id="wsColor" value="#0ea5e9" style="width:48px;height:36px;border:none;background:none;cursor:pointer;padding:0;">
                     <div class="ws-color-presets">
-                        <button class="ws-color-preset" style="background:#667eea;" onclick="document.getElementById('wsColor').value='#667eea'"></button>
+                        <button class="ws-color-preset" style="background:#0ea5e9;" onclick="document.getElementById('wsColor').value='#0ea5e9'"></button>
                         <button class="ws-color-preset" style="background:#10b981;" onclick="document.getElementById('wsColor').value='#10b981'"></button>
                         <button class="ws-color-preset" style="background:#f59e0b;" onclick="document.getElementById('wsColor').value='#f59e0b'"></button>
                         <button class="ws-color-preset" style="background:#ef4444;" onclick="document.getElementById('wsColor').value='#ef4444'"></button>
@@ -333,9 +333,9 @@ async function loadWorkspaces() {
 
         grid.innerHTML = workspaces.map(ws => `
             <div class="ws-card" id="wsCard_${ws.id}">
-                <div class="ws-card-accent" style="background:${ws.color || '#667eea'};"></div>
+                <div class="ws-card-accent" style="background:${ws.color || '#0ea5e9'};"></div>
                 <div class="ws-card-header">
-                    <span class="ws-card-dot" style="background:${ws.color || '#667eea'};"></span>
+                    <span class="ws-card-dot" style="background:${ws.color || '#0ea5e9'};"></span>
                     <span class="ws-card-name">${escapeHtml(ws.name)}</span>
                     ${ws.is_default ? '<span class="ws-card-badge">Default</span>' : ''}
                 </div>
@@ -418,7 +418,7 @@ async function showCreateModal() {
     document.getElementById('wsModalTitle').textContent = 'Создать Workspace';
     document.getElementById('wsName').value = '';
     document.getElementById('wsDescription').value = '';
-    document.getElementById('wsColor').value = '#667eea';
+    document.getElementById('wsColor').value = '#0ea5e9';
 
     await loadAssignLists();
     renderServerCheckboxes([]);
@@ -441,7 +441,7 @@ async function showEditModal(id) {
 
         document.getElementById('wsName').value = ws.name;
         document.getElementById('wsDescription').value = ws.description || '';
-        document.getElementById('wsColor').value = ws.color || '#667eea';
+        document.getElementById('wsColor').value = ws.color || '#0ea5e9';
 
         await loadAssignLists();
         const selServerIds = (ws.servers || []).map(s => s.id);
@@ -470,7 +470,7 @@ async function saveWorkspace() {
         return;
     }
 
-    const color = document.getElementById('wsColor').value || '#667eea';
+    const color = document.getElementById('wsColor').value || '#0ea5e9';
     const description = document.getElementById('wsDescription').value.trim() || null;
 
     const serverIds = [...document.querySelectorAll('#wsServersList input[type=checkbox]:checked')].map(el => parseInt(el.value));

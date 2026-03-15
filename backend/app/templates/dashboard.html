@@ -45,12 +45,12 @@
     </div>
     <div class="stat-card-v2">
         <div class="stat-card-lbl">{{ t('vms') }}</div>
-        <div class="stat-card-val" id="statVmCount">—</div>
+        <div class="stat-card-val skeleton" id="statVmCount">—</div>
         <div class="stat-card-sub" id="statVmSub">{{ t('loading') }}…</div>
     </div>
     <div class="stat-card-v2">
         <div class="stat-card-lbl">{{ t('containers') }}</div>
-        <div class="stat-card-val" id="statCtCount">—</div>
+        <div class="stat-card-val skeleton" id="statCtCount">—</div>
         <div class="stat-card-sub" id="statCtSub">{{ t('loading') }}…</div>
     </div>
     <div class="stat-card-v2">
@@ -87,7 +87,7 @@
     <div class="resource-card">
         <div class="resource-card-header">
             <span class="resource-card-title">{{ t('cpu_usage') }}</span>
-            <span class="resource-pct-badge" id="cpuPct">—</span>
+            <span class="resource-pct-badge skeleton" id="cpuPct">—</span>
         </div>
         <div class="resource-mini-chart">
             <canvas id="cpuMiniChart"></canvas>
@@ -99,7 +99,7 @@
     <div class="resource-card">
         <div class="resource-card-header">
             <span class="resource-card-title">{{ t('ram_usage') }}</span>
-            <span class="resource-pct-badge" id="ramPct">—</span>
+            <span class="resource-pct-badge skeleton" id="ramPct">—</span>
         </div>
         <div class="resource-mini-chart">
             <canvas id="ramMiniChart"></canvas>
@@ -111,7 +111,7 @@
     <div class="resource-card">
         <div class="resource-card-header">
             <span class="resource-card-title">{{ t('storage') }}</span>
-            <span class="resource-pct-badge" id="diskPct">—</span>
+            <span class="resource-pct-badge skeleton" id="diskPct">—</span>
         </div>
         <div class="resource-mini-chart">
             <canvas id="diskMiniChart"></canvas>
@@ -397,9 +397,9 @@ async function _refreshNodeStats(onlineServers) {
             const cpuPctEl  = document.getElementById('cpuPct');
             const ramPctEl  = document.getElementById('ramPct');
             const diskPctEl = document.getElementById('diskPct');
-            if (cpuPctEl)  { cpuPctEl.textContent  = avgCpu  + '%'; setPctBadgeColor(cpuPctEl,  avgCpu);  document.getElementById('cpuBar').style.width  = avgCpu  + '%'; }
-            if (ramPctEl)  { ramPctEl.textContent   = avgRam  + '%'; setPctBadgeColor(ramPctEl,  avgRam);  document.getElementById('ramBar').style.width  = avgRam  + '%'; }
-            if (diskPctEl) { diskPctEl.textContent  = avgDisk + '%'; setPctBadgeColor(diskPctEl, avgDisk); document.getElementById('diskBar').style.width = avgDisk + '%'; }
+            if (cpuPctEl)  { cpuPctEl.classList.remove('skeleton');  cpuPctEl.textContent  = avgCpu  + '%'; setPctBadgeColor(cpuPctEl,  avgCpu);  document.getElementById('cpuBar').style.width  = avgCpu  + '%'; }
+            if (ramPctEl)  { ramPctEl.classList.remove('skeleton');  ramPctEl.textContent   = avgRam  + '%'; setPctBadgeColor(ramPctEl,  avgRam);  document.getElementById('ramBar').style.width  = avgRam  + '%'; }
+            if (diskPctEl) { diskPctEl.classList.remove('skeleton'); diskPctEl.textContent  = avgDisk + '%'; setPctBadgeColor(diskPctEl, avgDisk); document.getElementById('diskBar').style.width = avgDisk + '%'; }
         }
 
         // Mini charts
@@ -509,9 +509,9 @@ function renderDashboardData(data) {
         const vmSub   = document.getElementById('statVmSub');
         const ctCount = document.getElementById('statCtCount');
         const ctSub   = document.getElementById('statCtSub');
-        if (vmCount) vmCount.textContent = totalVms;
+        if (vmCount) { vmCount.classList.remove('skeleton'); vmCount.textContent = totalVms; }
         if (vmSub)   vmSub.textContent   = runningVms + ' ' + t('running').toLowerCase();
-        if (ctCount) ctCount.textContent = totalCt;
+        if (ctCount) { ctCount.classList.remove('skeleton'); ctCount.textContent = totalCt; }
         if (ctSub)   ctSub.textContent   = runningCt + ' ' + t('running').toLowerCase();
 
         const tbody = document.getElementById('vmTableBody');
@@ -524,7 +524,7 @@ function renderDashboardData(data) {
             });
             const shown = allVms.slice(0, 8);
             if (shown.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem 1.25rem;">${t('no_vms_found')}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5"><div style="text-align:center;padding:3rem 1.25rem;color:var(--text-muted);"><i class="fa-solid fa-server" style="font-size:2rem;margin-bottom:.75rem;display:block;opacity:.3;"></i><div style="font-size:.875rem;">${t('no_vms_found')}</div></div></td></tr>`;
             } else {
                 tbody.innerHTML = shown.map(vm => {
                     const cpuPct = vm.cpu != null ? (vm.cpu * 100).toFixed(0) + '%' : '—';
@@ -557,9 +557,9 @@ function renderDashboardData(data) {
             const cpuPctEl  = document.getElementById('cpuPct');
             const ramPctEl  = document.getElementById('ramPct');
             const diskPctEl = document.getElementById('diskPct');
-            if (cpuPctEl)  { cpuPctEl.textContent  = avgCpu  + '%'; setPctBadgeColor(cpuPctEl,  avgCpu);  document.getElementById('cpuBar').style.width  = avgCpu  + '%'; }
-            if (ramPctEl)  { ramPctEl.textContent   = avgRam  + '%'; setPctBadgeColor(ramPctEl,  avgRam);  document.getElementById('ramBar').style.width  = avgRam  + '%'; }
-            if (diskPctEl) { diskPctEl.textContent  = avgDisk + '%'; setPctBadgeColor(diskPctEl, avgDisk); document.getElementById('diskBar').style.width = avgDisk + '%'; }
+            if (cpuPctEl)  { cpuPctEl.classList.remove('skeleton');  cpuPctEl.textContent  = avgCpu  + '%'; setPctBadgeColor(cpuPctEl,  avgCpu);  document.getElementById('cpuBar').style.width  = avgCpu  + '%'; }
+            if (ramPctEl)  { ramPctEl.classList.remove('skeleton');  ramPctEl.textContent   = avgRam  + '%'; setPctBadgeColor(ramPctEl,  avgRam);  document.getElementById('ramBar').style.width  = avgRam  + '%'; }
+            if (diskPctEl) { diskPctEl.classList.remove('skeleton'); diskPctEl.textContent  = avgDisk + '%'; setPctBadgeColor(diskPctEl, avgDisk); document.getElementById('diskBar').style.width = avgDisk + '%'; }
 
             // Mini charts from WS-provided RRD slices
             const cpuHistoryAll = [], ramHistoryAll = [], diskHistoryAll = [];
@@ -716,7 +716,7 @@ async function openAlertsModal() {
                 <i class="fa-solid fa-triangle-exclamation" style="color:var(--warning,#f59e0b);margin-right:.5rem;"></i>
                 {{ t('alerts_label') }} — {{ t('last_24h') }}
             </h3>
-            <button onclick="closeAlertsModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+            <button onclick="closeAlertsModal()" aria-label="Закрыть" class="modal-close-btn">&times;</button>
         </div>
         <div id="alertsModalBody" style="overflow-y:auto;flex:1;min-height:80px;"></div>
         <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border, rgba(255,255,255,.06));text-align:right;">

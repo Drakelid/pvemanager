@@ -10,19 +10,15 @@
     const DARK_THEME = 'dark';
     const LIGHT_THEME = 'light';
 
-    // Get saved theme or system preference
+    // Get saved theme or default to light
     function getPreferredTheme() {
         const savedTheme = localStorage.getItem(THEME_KEY);
         if (savedTheme) {
             return savedTheme;
         }
         
-        // Check system preference
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-            return LIGHT_THEME;
-        }
-        
-        return DARK_THEME;
+        // Default to light theme (cloud panel style)
+        return LIGHT_THEME;
     }
 
     // Apply theme to document

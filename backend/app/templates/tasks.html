@@ -435,8 +435,8 @@ const TaskManager = (() => {
         ['tabResultsBtn','tabLogBtn'].forEach(id => {
             const btn = document.getElementById(id);
             const isActive = btn.classList.contains('active');
-            btn.style.color = isActive ? '#667eea' : 'var(--text-muted)';
-            btn.style.borderBottom = isActive ? '2px solid #667eea' : '2px solid transparent';
+            btn.style.color = isActive ? 'var(--primary)' : 'var(--text-muted)';
+            btn.style.borderBottom = isActive ? '2px solid var(--primary)' : '2px solid transparent';
         });
     }
 
