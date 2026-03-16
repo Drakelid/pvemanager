@@ -1654,10 +1654,12 @@ async def vnc_websocket_proxy(
     if auth_ticket:
         logger.info(f"Using auth_ticket from frontend for VNC WebSocket")
     
-    # Отправляем VNC пароль клиенту первым сообщением (для noVNC credentials)
-    if vnc_password:
-        logger.info("Sending VNC password to client as first message")
-        await websocket.send_text(vnc_password)
+    # Отправляем пароль клиенту первым сообщением (для noVNC credentials).
+    # В Proxmox 9.x generate-password убран — VNC использует NoAuth (Type 1),
+    # поэтому отправляем пустую строку, чтобы onFirstMessage на фронтенде всегда срабатывал.
+    password_to_send = vnc_password if vnc_password else ""
+    logger.info(f"Sending VNC password to client as first message (len={len(password_to_send)})")
+    await websocket.send_text(password_to_send)
     
     # Построить URL для Proxmox WebSocket
     # Преобразуем vmtype: vm -> qemu, container -> lxc
