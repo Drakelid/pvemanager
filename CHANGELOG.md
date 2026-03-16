@@ -4,6 +4,18 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.1.7] - 2026-03-16
+
+### 🌍 i18n — Translation Files Refactored
+
+- **Translations moved to JSON locale files** — all 1 149 translation keys extracted from the Python source into `backend/app/locales/ru.json` and `backend/app/locales/en.json`
+- **`i18n.py` reduced from 5 287 → 128 lines** — now a lightweight JSON loader with lazy initialisation; zero changes to the public API (`t()`, `I18nService.get()`, `.get_all()`, `.add_translation()`)
+- **Adding a new language requires no code changes** — drop a `xx.json` file into `backend/app/locales/` and it is picked up automatically on next startup
+- **`I18nService.reload()`** — new method that reloads all locale files at runtime without a container restart; useful for live translation editing
+- **`I18nService.available_languages()`** — returns the list of language codes currently loaded from disk
+
+---
+
 ## [v1.1.6] - 2026-03-16
 
 ### 🖥️ LXC Terminal — xterm.js Console Fixed

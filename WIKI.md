@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.1.6
+> Complete guide for installation, configuration and usage of PVEmanager v1.1.7
 
 ---
 
@@ -1191,16 +1191,20 @@ Access via **Settings → Security**:
 
 ### Adding New Language
 
-1. Open `backend/app/i18n.py`
-2. Add translation for each key:
+Translations are stored as flat JSON files in `backend/app/locales/`.
+To add a new language, simply create a new file — no code changes required:
 
-```python
-"key_name": {
-    "ru": "Russian text",
-    "en": "English text",
-    "uz": "O'zbek matni"  # New language
-}
+```bash
+# Create a new locale file for Uzbek
+cp backend/app/locales/en.json backend/app/locales/uz.json
+# Then translate the values in uz.json
 ```
+
+The file name becomes the language code (`uz.json` → `"uz"`). The panel picks
+it up automatically on next startup (or call `I18nService.reload()` at runtime).
+
+> **Structure:** each file is a flat `{"key": "translated string"}` JSON object.
+> Keys must match the existing keys in `ru.json` / `en.json`.
 
 ---
 
