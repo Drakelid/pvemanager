@@ -44,21 +44,24 @@
                     <th class="sortable" data-sort="node" onclick="sortTable('node')">
                         {{ t('node') or 'Node' }} <i class="fa-solid fa-sort sort-icon"></i>
                     </th>
-                    <th class="sortable" data-sort="vms" onclick="sortTable('vms')">
+                    <th class="sortable" data-sort="vms" onclick="sortTable('vms')" style="text-align:center;">
                         VM <i class="fa-solid fa-sort sort-icon"></i>
                     </th>
-                    <th class="sortable" data-sort="lxc" onclick="sortTable('lxc')">
+                    <th class="sortable" data-sort="lxc" onclick="sortTable('lxc')" style="text-align:center;">
                         LXC <i class="fa-solid fa-sort sort-icon"></i>
                     </th>
-                    <th class="sortable" data-sort="status" onclick="sortTable('status')">
+                    <th class="sortable" data-sort="status" onclick="sortTable('status')" style="text-align:center;">
                         {{ t('status') }} <i class="fa-solid fa-sort sort-icon"></i>
+                    </th>
+                    <th data-sort="uptime" style="text-align:center; white-space:nowrap;">
+                        Uptime
                     </th>
                     <th style="text-align: right;">{{ t('actions') }}</th>
                 </tr>
             </thead>
             <tbody id="serversTableBody">
                 <tr id="servers-loading-row">
-                    <td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">
+                    <td colspan="8" style="text-align:center; color:var(--text-muted); padding:2rem;">
                         <i class="fa-solid fa-spinner fa-spin"></i> {{ t('loading') }}
                     </td>
                 </tr>
@@ -317,31 +320,39 @@
             <div style="margin-bottom: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: 0.5rem;">
                 <div class="checkbox-row">
                     <label style="display: flex; align-items: center; gap: 0.5rem;">
-                        <input type="checkbox" id="editUsePassword" onchange="toggleEditAuthMethod()">
-                        <span>{{ t('use_password_less_secure') }}</span>
+                            <input type="checkbox" id="editChangeCredentials" onchange="toggleEditCredentialsSection()">
+                            <span>{{ t('change_credentials') or 'Изменить учётные данные' }}</span>
                     </label>
                 </div>
             </div>
-            
-            <div id="editTokenFields">
-                <div class="form-row">
-                    <div>
-                        <label title="TokenID из Proxmox">TokenID * <span style="color: var(--text-secondary); cursor: help;"><i class="fa-solid fa-circle-info"></i></span></label>
-                        <input type="text" id="editTokenName" name="api_token_name" placeholder="mytoken">
-                    </div>
-                    <div>
-                        <label title="Secret из Proxmox">Secret * <span style="color: var(--text-secondary); cursor: help;"><i class="fa-solid fa-circle-info"></i></span></label>
-                        <input type="text" id="editTokenValue" name="api_token_value" placeholder="xxxxxxxx-xxxx-xxxx">
+
+            <div id="editCredentialsSection" style="display: none;">
+                <div style="margin-bottom: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: 0.5rem;">
+                    <div class="checkbox-row">
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                <input type="checkbox" id="editUsePassword" onchange="toggleEditAuthMethod()">
+                                <span>{{ t('use_password_less_secure') }}</span>
+                        </label>
                     </div>
                 </div>
-            </div>
-            
-            <div id="editPasswordField" style="display: none;">
-                <label>{{ t('password') }} *</label>
-                <input type="password" id="editPassword" name="password" placeholder="{{ t('password') }}">
-            </div>
-            
-            <div style="margin: 1rem 0;">
+
+                <div id="editTokenFields">
+                    <div class="form-row">
+                        <div>
+                            <label title="TokenID из Proxmox">TokenID * <span style="color: var(--text-secondary); cursor: help;"><i class="fa-solid fa-circle-info"></i></span></label>
+                            <input type="text" id="editTokenName" name="api_token_name" placeholder="mytoken">
+                        </div>
+                        <div>
+                            <label title="Secret из Proxmox">Secret * <span style="color: var(--text-secondary); cursor: help;"><i class="fa-solid fa-circle-info"></i></span></label>
+                            <input type="text" id="editTokenValue" name="api_token_value" placeholder="xxxxxxxx-xxxx-xxxx">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="editPasswordField" style="display: none;">
+                    <label>{{ t('password') }} *</label>
+                    <input type="password" id="editPassword" name="password" placeholder="{{ t('password') }}">
+                </div>
                 <div class="checkbox-row">
                     <label style="display: flex; align-items: center; gap: 0.5rem;">
                         <input type="checkbox" id="editVerifySsl" name="verify_ssl">
@@ -717,9 +728,27 @@ function showEditServerModal() {
 function closeEditServerModal() {
     document.getElementById('editServerModal').style.display = 'none';
     document.getElementById('editServerForm').reset();
+    document.getElementById('editCredentialsSection').style.display = 'none';
+    document.getElementById('editChangeCredentials').checked = false;
     document.getElementById('editTokenFields').style.display = 'block';
     document.getElementById('editPasswordField').style.display = 'none';
     document.getElementById('editUsePassword').checked = false;
+    document.getElementById('editTokenName').removeAttribute('required');
+    document.getElementById('editTokenValue').removeAttribute('required');
+    document.getElementById('editPassword').removeAttribute('required');
+}
+
+function toggleEditCredentialsSection() {
+    const show = document.getElementById('editChangeCredentials').checked;
+    document.getElementById('editCredentialsSection').style.display = show ? 'block' : 'none';
+    if (show) {
+        document.getElementById('editUsePassword').checked = false;
+        toggleEditAuthMethod();
+    } else {
+        document.getElementById('editTokenName').removeAttribute('required');
+        document.getElementById('editTokenValue').removeAttribute('required');
+        document.getElementById('editPassword').removeAttribute('required');
+    }
 }
 
 function toggleEditAuthMethod() {
@@ -761,8 +790,12 @@ async function editServer(serverId) {
             document.getElementById('editDescription').value = server.description || '';
             
             // Note: We don't populate token/password fields for security
+            document.getElementById('editChangeCredentials').checked = false;
+            document.getElementById('editCredentialsSection').style.display = 'none';
             document.getElementById('editUsePassword').checked = false;
-            toggleEditAuthMethod();
+            document.getElementById('editTokenName').removeAttribute('required');
+            document.getElementById('editTokenValue').removeAttribute('required');
+            document.getElementById('editPassword').removeAttribute('required');
             
             showEditServerModal();
         } else {
@@ -790,20 +823,23 @@ async function submitEditServer(event) {
         verify_ssl: formData.get('verify_ssl') === 'on'
     };
     
-    // Only update auth credentials if provided
-    if (usePassword) {
-        const password = formData.get('password');
-        if (password) {
-            data.use_password = true;
-            data.password = password;
-        }
-    } else {
-        const tokenName = formData.get('api_token_name');
-        const tokenValue = formData.get('api_token_value');
-        if (tokenName && tokenValue) {
-            data.use_password = false;
-            data.api_token_name = tokenName;
-            data.api_token_value = tokenValue;
+    // Only update auth credentials if user explicitly chose to change them
+    const changeCredentials = document.getElementById('editChangeCredentials').checked;
+    if (changeCredentials) {
+        if (usePassword) {
+            const password = formData.get('password');
+            if (password) {
+                data.use_password = true;
+                data.password = password;
+            }
+        } else {
+            const tokenName = formData.get('api_token_name');
+            const tokenValue = formData.get('api_token_value');
+            if (tokenName && tokenValue) {
+                data.use_password = false;
+                data.api_token_name = tokenName;
+                data.api_token_value = tokenValue;
+            }
         }
     }
     
@@ -888,6 +924,7 @@ async function loadServerStatus(serverId) {
     const statusCell = document.getElementById(`server-status-${serverId}`);
     const vmsCell = document.getElementById(`server-vms-${serverId}`);
     const lxcCell = document.getElementById(`server-lxc-${serverId}`);
+    const uptimeCell = document.getElementById(`server-uptime-${serverId}`);
     const row = document.getElementById(`server-row-${serverId}`);
     
     try {
@@ -915,6 +952,22 @@ async function loadServerStatus(serverId) {
             // Update status
             statusCell.innerHTML = `<span class="status-badge status-online"><i class="fa-solid fa-circle"></i> Online</span>`;
             
+            // Update uptime
+            if (uptimeCell) {
+                const totalSeconds = data.node_uptime || 0;
+                if (totalSeconds > 0) {
+                    const days = Math.floor(totalSeconds / 86400);
+                    const hours = Math.floor((totalSeconds % 86400) / 3600);
+                    const mins = Math.floor((totalSeconds % 3600) / 60);
+                    let uptimeStr = days > 0
+                        ? `${days}d ${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}`
+                        : `${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
+                    uptimeCell.innerHTML = `<span style="color:var(--text-primary);">${uptimeStr}</span>`;
+                } else {
+                    uptimeCell.innerHTML = `<span style="color:var(--text-muted);">—</span>`;
+                }
+            }
+            
             // Update data attributes for sorting
             if (row) {
                 row.dataset.vms = vmsCount;
@@ -929,6 +982,7 @@ async function loadServerStatus(serverId) {
             vmsCell.innerHTML = `<span style="color: var(--text-muted);">—</span>`;
             lxcCell.innerHTML = `<span style="color: var(--text-muted);">—</span>`;
             statusCell.innerHTML = `<span class="status-badge status-offline"><i class="fa-solid fa-circle-xmark"></i> Offline</span>`;
+            if (uptimeCell) uptimeCell.innerHTML = `<span style="color:var(--text-muted);">—</span>`;
             if (row) row.dataset.status = 'offline';
         }
     } catch (error) {
@@ -1922,7 +1976,7 @@ async function loadServersTable() {
     const tbody = document.getElementById('serversTableBody');
     if (!tbody) return;
 
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;"><i class="fa-solid fa-spinner fa-spin"></i> ${t('loading') || 'Загрузка...'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:2rem;"><i class="fa-solid fa-spinner fa-spin"></i> ${t('loading') || 'Загрузка...'}</td></tr>`;
 
     try {
         const resp = await fetchWithAuth('/proxmox/api/servers');
@@ -1930,7 +1984,7 @@ async function loadServersTable() {
         const servers = await resp.json();
 
         if (!servers || servers.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:2rem;">
                 ${t('no_proxmox_servers') || 'Нет серверов.'} <a href="#" onclick="showAddServerModal();return false;" style="color:var(--success);">${t('add_first_server') || 'Добавить первый'}</a>
             </td></tr>`;
             return;
@@ -1963,6 +2017,9 @@ async function loadServersTable() {
                 <td id="server-status-${server.id}" style="text-align:center;">
                     <span class="status-badge status-loading"><i class="fa-solid fa-spinner fa-spin"></i> ${t('loading') || 'Загрузка'}</span>
                 </td>
+                <td id="server-uptime-${server.id}" style="text-align:center;color:var(--text-muted);font-size:0.8rem;">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                </td>
                 <td style="text-align:right;">
                     <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
                         <button onclick="testConnection(${server.id})" class="btn btn-sm" style="background:var(--success);color:var(--text-on-success);" title="${t('test') || 'Тест'}">
@@ -1971,10 +2028,10 @@ async function loadServersTable() {
                         <button onclick="window.location.href='/proxmox/server/${server.id}'" class="btn btn-sm" style="background:var(--info);color:var(--text-on-info);" title="${t('details') || 'Детали'}">
                             <i class="fa-solid fa-chart-simple"></i> ${t('details') || 'Детали'}
                         </button>
-                        <button onclick="editServer(${server.id}, ${JSON.stringify(server.name)})" class="btn btn-sm" style="background:var(--warning);color:var(--text-on-warning);" title="${t('edit') || 'Изменить'}" data-permission="proxmox.servers.edit">
+                        <button onclick="editServer(${server.id})" class="btn btn-sm" style="background:var(--warning);color:var(--text-on-warning);" title="${t('edit') || 'Изменить'}" data-permission="proxmox.servers.edit">
                             <i class="fa-solid fa-pen"></i>
                         </button>
-                        <button onclick="deleteServer(${server.id}, ${JSON.stringify(server.name)})" class="btn btn-sm btn-delete" title="${t('delete') || 'Удалить'}" data-permission="proxmox.servers.delete">
+                        <button onclick="deleteServer(${server.id}, '${server.name.replace(/'/g, "\\'")}')" class="btn btn-sm btn-delete" title="${t('delete') || 'Удалить'}" data-permission="proxmox.servers.delete">
                             <i class="fa-solid fa-trash"></i>
                         </button>
                     </div>

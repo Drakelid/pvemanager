@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, EmailStr
 from loguru import logger
 
 from ..db import get_db
-from ..models import User, Role
+from ..models import User, Role, ProxmoxServer, Workspace, WorkspaceServer, WorkspaceUser
 from ..auth import (
     get_password_hash,
     get_current_user,
@@ -75,6 +75,7 @@ class RoleResponse(BaseModel):
     is_system: bool
     is_active: bool
     created_at: datetime
+    user_count: int = 0
     
     class Config:
         from_attributes = True
@@ -140,7 +141,6 @@ class SecuritySettingsUpdate(BaseModel):
 @router.get("/", response_class=HTMLResponse)
 async def users_page(
     request: Request,
-    current_user: User = Depends(PermissionChecker("users.view"))
 ):
     """Render users management page"""
     from ..i18n import t
@@ -162,8 +162,31 @@ async def list_roles(
     current_user: User = Depends(PermissionChecker("roles.view"))
 ):
     """Get all roles"""
+    from sqlalchemy import func
     roles = SecurityService.get_all_roles(db, include_inactive=True)
-    return roles
+
+    # Count users per role
+    counts = dict(
+        db.query(User.role_id, func.count(User.id))
+        .filter(User.role_id.isnot(None))
+        .group_by(User.role_id)
+        .all()
+    )
+
+    result = []
+    for role in roles:
+        result.append({
+            "id": role.id,
+            "name": role.name,
+            "display_name": role.display_name,
+            "description": role.description,
+            "permissions": role.permissions or {},
+            "is_system": role.is_system,
+            "is_active": role.is_active,
+            "created_at": role.created_at,
+            "user_count": counts.get(role.id, 0),
+        })
+    return result
 
 
 @router.get("/api/roles/{role_id}", response_model=RoleResponse)
@@ -583,6 +606,162 @@ async def delete_user(
     )
     
     return {"message": "User deleted"}
+
+
+# ==================== Server Assignment API ====================
+
+def _get_user_workspace_ids(db: Session, user_id: int) -> set:
+    """Return set of workspace IDs the user belongs to."""
+    rows = db.query(WorkspaceUser.workspace_id).filter(WorkspaceUser.user_id == user_id).all()
+    return {r.workspace_id for r in rows}
+
+
+def _get_server_workspace_info(db: Session, server_id: int):
+    """Return list of {id, name} workspaces that own this server."""
+    rows = (
+        db.query(WorkspaceServer.workspace_id, Workspace.name)
+        .join(Workspace, Workspace.id == WorkspaceServer.workspace_id)
+        .filter(WorkspaceServer.server_id == server_id)
+        .all()
+    )
+    return [{"id": r.workspace_id, "name": r.name} for r in rows]
+
+
+@router.get("/api/users/{user_id}/servers")
+async def get_user_servers(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("users.view"))
+):
+    """Get list of Proxmox servers assigned to a specific user"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return [
+        {"id": s.id, "name": s.name, "hostname": s.hostname, "ip_address": s.ip_address, "is_online": s.is_online}
+        for s in user.assigned_servers
+    ]
+
+
+@router.get("/api/users/{user_id}/server-assignments")
+async def get_user_server_assignments(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("users.view"))
+):
+    """
+    Return all Proxmox servers enriched with:
+    - workspaces each server belongs to
+    - whether the server is compatible with the user (user is in at least one of its workspaces)
+    - whether the server is currently assigned to the user
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_ws_ids = _get_user_workspace_ids(db, user_id)
+    assigned_ids = {s.id for s in user.assigned_servers}
+
+    # User's own workspaces info
+    user_workspaces = [
+        {"id": ws.id, "name": ws.name}
+        for ws in db.query(Workspace).filter(Workspace.id.in_(user_ws_ids)).all()
+    ] if user_ws_ids else []
+
+    all_servers = db.query(ProxmoxServer).all()
+    result = []
+    for server in all_servers:
+        server_workspaces = _get_server_workspace_info(db, server.id)
+        server_ws_ids = {w["id"] for w in server_workspaces}
+        # Compatible = user's workspaces and server's workspaces intersect
+        compatible = bool(user_ws_ids & server_ws_ids) if (user_ws_ids and server_ws_ids) else False
+        result.append({
+            "id": server.id,
+            "name": server.name,
+            "ip_address": server.ip_address,
+            "is_online": server.is_online,
+            "workspaces": server_workspaces,
+            "compatible": compatible,
+            "assigned": server.id in assigned_ids,
+        })
+
+    return {
+        "servers": result,
+        "user_workspaces": user_workspaces,
+    }
+
+
+@router.put("/api/users/{user_id}/servers")
+async def set_user_servers(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("users.edit"))
+):
+    """Assign a list of Proxmox servers to a user (replaces current assignment).
+    Rejects the operation if any server's workspaces don't intersect with the user's workspaces.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    data = await request.json()
+    server_ids = data.get("server_ids", [])
+
+    if not server_ids:
+        user.assigned_servers = []
+        db.commit()
+        return {"message": "Servers cleared", "server_ids": []}
+
+    servers = db.query(ProxmoxServer).filter(ProxmoxServer.id.in_(server_ids)).all()
+
+    # Workspace compatibility validation
+    user_ws_ids = _get_user_workspace_ids(db, user_id)
+    conflicts = []
+    for server in servers:
+        server_workspaces = _get_server_workspace_info(db, server.id)
+        server_ws_ids = {w["id"] for w in server_workspaces}
+        # No overlap between user workspaces and server workspaces → conflict
+        if user_ws_ids and server_ws_ids and not (user_ws_ids & server_ws_ids):
+            user_workspaces_info = [
+                {"id": ws.id, "name": ws.name}
+                for ws in db.query(Workspace).filter(Workspace.id.in_(user_ws_ids)).all()
+            ]
+            conflicts.append({
+                "server_id": server.id,
+                "server_name": server.name,
+                "server_workspaces": server_workspaces,
+                "user_workspaces": user_workspaces_info,
+            })
+
+    if conflicts:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "workspace_conflict",
+                "message": "Cannot assign: server(s) are not in any workspace the user belongs to",
+                "conflicts": conflicts,
+            }
+        )
+
+    user.assigned_servers = servers
+    db.commit()
+
+    LoggingService.log(
+        db=db,
+        level=LoggingService.INFO,
+        category=LoggingService.AUTH,
+        action="user_servers_updated",
+        message=f"Servers assigned to '{user.username}' by {current_user.username}: {[s.id for s in servers]}",
+        username=current_user.username,
+        user_id=current_user.id,
+        ip_address=get_client_ip(request),
+        resource_type="user",
+        resource_id=str(user.id),
+        resource_name=user.username
+    )
+
+    return {"message": "Servers assigned successfully", "server_ids": [s.id for s in servers]}
 
 
 @router.post("/api/users/{user_id}/reset-password")

@@ -127,7 +127,7 @@ NEW_DEFAULT_ROLES = [
         "description": "Standard user with limited access",
         "is_system": True,
         "permissions": {
-            "dashboard:view": True,
+            "dashboard:view": False,
             "server:view": True,
             "vm:view": True,
             "vm:start": True,
@@ -377,22 +377,25 @@ def ensure_default_roles_new_format(conn) -> None:
         
         if existing:
             role_id, current_perms = existing
-            
+
             # Parse current permissions
             if isinstance(current_perms, str):
                 try:
                     current_perms = json.loads(current_perms)
                 except Exception:
                     current_perms = {}
-            
-            # Check if needs update
+
+            # Migrate any old dot-format keys to new colon-format in-place
             has_old_format = any("." in k and ":" not in k for k in (current_perms or {}).keys())
-            
-            if has_old_format or not current_perms:
-                # Update to new format
+            if has_old_format:
+                current_perms = convert_permissions_to_new_format(current_perms)
+                logger.info(f"Converted old-format permissions for role '{role_data['name']}'")
+
+            if not current_perms:
+                # Role has no permissions at all — seed with defaults
                 conn.execute(
                     text("""
-                        UPDATE roles 
+                        UPDATE roles
                         SET permissions = :perms,
                             display_name = :display_name,
                             description = :description
@@ -402,10 +405,26 @@ def ensure_default_roles_new_format(conn) -> None:
                         "perms": json.dumps(role_data["permissions"]),
                         "display_name": role_data["display_name"],
                         "description": role_data["description"],
-                        "id": role_id
-                    }
+                        "id": role_id,
+                    },
                 )
-                logger.info(f"Updated role '{role_data['name']}' with new permission format")
+                logger.info(f"Seeded empty role '{role_data['name']}' with default permissions")
+            else:
+                # Role already has permissions — only add keys that are completely missing.
+                # NEVER overwrite keys that already exist (preserves admin UI changes).
+                missing = {k: v for k, v in role_data["permissions"].items() if k not in current_perms}
+                if missing or has_old_format:
+                    merged = {**current_perms, **missing}
+                    conn.execute(
+                        text("UPDATE roles SET permissions = :perms WHERE id = :id"),
+                        {"perms": json.dumps(merged), "id": role_id},
+                    )
+                    if missing:
+                        logger.info(f"Added {len(missing)} missing permission(s) to role '{role_data['name']}'")
+                    if has_old_format:
+                        logger.info(f"Saved converted permissions for role '{role_data['name']}'")
+                else:
+                    logger.debug(f"Role '{role_data['name']}' permissions already up to date")
         else:
             # Create new role
             conn.execute(

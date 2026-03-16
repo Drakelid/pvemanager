@@ -226,10 +226,33 @@
                     // Save token to localStorage
                     localStorage.setItem('access_token', data.access_token);
                     
-                    // Redirect to original page or dashboard
                     const urlParams = new URLSearchParams(window.location.search);
-                    const returnUrl = urlParams.get('returnUrl') ? decodeURIComponent(urlParams.get('returnUrl')) : '/dashboard';
-                    window.location.href = returnUrl;
+                    if (urlParams.get('returnUrl')) {
+                        window.location.href = decodeURIComponent(urlParams.get('returnUrl'));
+                    } else {
+                        // Fetch profile to decide landing page based on actual permissions
+                        try {
+                            const meResp = await fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${data.access_token}` } });
+                            const me = meResp.ok ? await meResp.json() : {};
+                            const perms = me.permissions || {};
+                            const isAdmin = me.is_admin === true || me.role?.name === 'admin';
+                            if (isAdmin || perms['dashboard:view'] || perms['dashboard.view']) {
+                                window.location.href = '/dashboard';
+                            } else if (perms['vm:view'] || perms['vms.view']) {
+                                window.location.href = '/virtual-machines';
+                            } else if (perms['server:view'] || perms['proxmox.view']) {
+                                window.location.href = '/vms';
+                            } else if (perms['backup:view'] || perms['backups.view']) {
+                                window.location.href = '/backups';
+                            } else if (perms['ipam:view'] || perms['ipam.view']) {
+                                window.location.href = '/ipam';
+                            } else if (perms['log:view'] || perms['logs.view']) {
+                                window.location.href = '/logs';
+                            } else {
+                                window.location.href = '/settings';
+                            }
+                        } catch { window.location.href = '/settings'; }
+                    }
                 } else {
                     // Show error
                     errorMessage.textContent = data.detail || '{{ t('login_error_check_credentials') }}';
@@ -255,11 +278,34 @@
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
-            }).then(response => {
+            }).then(async response => {
                 if (response.ok) {
                     const urlParams = new URLSearchParams(window.location.search);
-                    const returnUrl = urlParams.get('returnUrl') ? decodeURIComponent(urlParams.get('returnUrl')) : '/dashboard';
-                    window.location.href = returnUrl;
+                    if (urlParams.get('returnUrl')) {
+                        window.location.href = decodeURIComponent(urlParams.get('returnUrl'));
+                    } else {
+                        try {
+                            const meResp = await fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+                            const me = meResp.ok ? await meResp.json() : {};
+                            const perms = me.permissions || {};
+                            const isAdmin = me.is_admin === true || me.role?.name === 'admin';
+                            if (isAdmin || perms['dashboard:view'] || perms['dashboard.view']) {
+                                window.location.href = '/dashboard';
+                            } else if (perms['vm:view'] || perms['vms.view']) {
+                                window.location.href = '/virtual-machines';
+                            } else if (perms['server:view'] || perms['proxmox.view']) {
+                                window.location.href = '/vms';
+                            } else if (perms['backup:view'] || perms['backups.view']) {
+                                window.location.href = '/backups';
+                            } else if (perms['ipam:view'] || perms['ipam.view']) {
+                                window.location.href = '/ipam';
+                            } else if (perms['log:view'] || perms['logs.view']) {
+                                window.location.href = '/logs';
+                            } else {
+                                window.location.href = '/settings';
+                            }
+                        } catch { window.location.href = '/settings'; }
+                    }
                 }
             });
         }

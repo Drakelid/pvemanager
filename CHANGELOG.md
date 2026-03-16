@@ -4,6 +4,40 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.1.8] - 2026-03-16
+
+### 👤 User → Server Assignment
+
+- **`user_servers` table** (Migration 20) — новая таблица-связка `User ↔ ProxmoxServer`; позволяет напрямую закреплять конкретные серверы за пользователями
+- **API `GET /api/users/{id}/servers`** — список серверов, назначенных пользователю
+- **API `GET /api/users/{id}/server-assignments`** — расширенный список всех серверов с флагами `assigned` и `compatible` (совместимость по воркспейсам)
+- **API `PUT /api/users/{id}/servers`** — установка набора серверов для пользователя; проверяет пересечение воркспейсов — если сервер и пользователь не состоят ни в одном общем воркспейсе, возвращает `409 workspace_conflict`
+- **Фильтрация серверов для non-admin** — обычный пользователь видит только серверы, которые ему назначены **и** входят в его воркспейс
+
+### 🖥️ VM / LXC Owner
+
+- **API `GET /api/{server_id}/vm/{vmid}/owner`** — получить текущего владельца VM/LXC и список доступных пользователей
+- **API `PUT /api/{server_id}/vm/{vmid}/owner`** — назначить или снять владельца (admin-only); действие логируется в audit
+
+### 🔐 RBAC & Роли
+
+- **Migration 21** — `dashboard:view` принудительно выставлен в `false` для роли `user` (новый формат ключей)
+- **Migration 22** — ключ `proxmox.cluster.manage` → `cluster:manage` в роли `admin`; старый dot-формат удаляется, чтобы не сбрасывать весь permission-map
+- **`user_count`** в ответе `GET /api/roles` — для каждой роли возвращается количество активных пользователей
+
+### 🚀 Умный редирект после логина
+
+- После успешного входа производится запрос `GET /api/auth/me` — пользователь автоматически перенаправляется на первую страницу, к которой у него есть доступ (`/dashboard` → `/virtual-machines` → `/vms` → `/backups` → `/ipam` → `/logs` → `/settings`)
+- Поддержка параметра `?returnUrl=` — возврат на запрошенную страницу после логина
+
+### 🔧 Прочие улучшения
+
+- `GET /api/servers` для не-привилегированного пользователя объединяет фильтры `assigned_servers` и `WorkspaceServer` — пользователь видит только серверы из своего воркспейса, которые ему назначены
+- `node_uptime` добавлен в ответ детального API сервера
+- Удалена лишняя проверка `PermissionChecker` на GET-роуте страницы `/users` (HTML)
+
+---
+
 ## [v1.1.7] - 2026-03-16
 
 ### 🌍 i18n — Translation Files Refactored

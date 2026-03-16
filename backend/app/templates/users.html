@@ -295,6 +295,20 @@
     </div>
 </div>
 
+<!-- Generic Alert Modal -->
+<div id="alertModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 3000; align-items: center; justify-content: center;">
+    <div class="card" style="max-width: 520px; width: 95%; max-height: 85vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 id="alertModalTitle" style="margin: 0; color: var(--text-primary);"></h3>
+            <button onclick="closeModal('alertModal')" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer;">&times;</button>
+        </div>
+        <div id="alertModalBody" style="color: var(--text-secondary); line-height: 1.5;"></div>
+        <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+            <button class="btn btn-secondary" onclick="closeModal('alertModal')">OK</button>
+        </div>
+    </div>
+</div>
+
 <!-- Add User Modal -->
 <div id="addUserModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center;">
     <div class="card" style="max-width: 500px; width: 95%; max-height: 90vh; overflow-y: auto;">
@@ -339,7 +353,7 @@
 
 <!-- Edit User Modal -->
 <div id="editUserModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center;">
-    <div class="card" style="max-width: 500px; width: 95%; max-height: 90vh; overflow-y: auto;">
+    <div class="card" style="max-width: 560px; width: 95%; max-height: 90vh; overflow-y: auto;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
             <h3 style="margin: 0; color: var(--text-primary);"><i class="fa-solid fa-pen"></i> {{ t('edit_user') }}</h3>
             <button onclick="closeModal('editUserModal')" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer;">&times;</button>
@@ -372,10 +386,12 @@
                 <input type="checkbox" class="form-check-input" name="is_admin" id="editIsAdmin">
                 <label class="form-check-label" for="editIsAdmin">{{ t('administrator') }}</label>
             </div>
-            <div class="form-check">
+            <div class="form-check" style="margin-bottom: 1rem;">
                 <input type="checkbox" class="form-check-input" name="is_active" id="editIsActive">
                 <label class="form-check-label" for="editIsActive">{{ t('active') }}</label>
             </div>
+
+
             <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.5rem;">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('editUserModal')">{{ t('cancel') }}</button>
                 <button type="submit" class="btn btn-success">{{ t('save') }}</button>
@@ -520,7 +536,7 @@ function switchTab(tabName) {
 // Show modals
 function showAddUserModal() {
     document.getElementById('addUserModal').style.display = 'flex';
-    loadRolesForSelect('userRoleSelect');
+    loadRoles();
 }
 
 function showAddRoleModal() {
@@ -534,6 +550,12 @@ function showBlockIpModal() {
 // Close modals
 function closeModal(modalId) {
     document.getElementById(modalId).style.display = 'none';
+}
+
+function showAlertModal(title, bodyHtml) {
+    document.getElementById('alertModalTitle').textContent = title;
+    document.getElementById('alertModalBody').innerHTML = bodyHtml;
+    document.getElementById('alertModal').style.display = 'flex';
 }
 
 // Initialize on page load
@@ -589,7 +611,7 @@ async function loadUsers() {
                 <td style="color: var(--text-primary);">${user.full_name || '-'}</td>
                 <td style="color: var(--text-primary);">${user.email}</td>
                 <td>
-                    ${user.role ? `<span class="badge bg-primary">${user.role.display_name}</span>` : '-'}
+                    ${user.role_name ? `<span class="badge bg-primary">${user.role_name}</span>` : '-'}
                 </td>
                 <td>
                     ${user.is_active 
@@ -1018,7 +1040,7 @@ async function editUser(userId) {
         document.getElementById('editRoleSelect').value = user.role_id || '';
         document.getElementById('editIsAdmin').checked = user.is_admin;
         document.getElementById('editIsActive').checked = user.is_active;
-        
+
         document.getElementById('editUserModal').style.display = 'flex';
     } catch (error) {
         console.error('Error:', error);
@@ -1044,6 +1066,7 @@ async function deleteUser(userId, username) {
         if (response.ok) {
             showToast('success', '{{ _("success") }}', '{{ _("user_deleted") }}');
             loadUsers();
+            loadRoles();
         } else {
             const error = await response.json();
             showToast('error', '{{ _("error") }}', error.detail || '{{ _("error") }}');
@@ -1080,6 +1103,7 @@ document.getElementById('addUserForm').addEventListener('submit', async function
             closeModal('addUserModal');
             showToast('{{ _("user_created") }}', 'success');
             loadUsers();
+            loadRoles();
             this.reset();
         } else {
             const error = await response.json();
@@ -1117,14 +1141,16 @@ document.getElementById('editUserForm').addEventListener('submit', async functio
             body: JSON.stringify(data)
         });
         
-        if (response.ok) {
-            closeModal('editUserModal');
-            showToast('{{ _("user_updated") }}', 'success');
-            loadUsers();
-        } else {
+        if (!response.ok) {
             const error = await response.json();
             showToast(error.detail || '{{ _("error") }}', 'danger');
+            return;
         }
+
+        closeModal('editUserModal');
+        showToast('{{ _("user_updated") }}', 'success');
+        loadUsers();
+        loadRoles();
     } catch (error) {
         console.error('Error:', error);
         showToast('{{ _("error") }}', 'danger');

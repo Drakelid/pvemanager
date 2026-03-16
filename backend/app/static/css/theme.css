@@ -2068,13 +2068,15 @@ a:hover {
 }
 
 [data-theme="light"] .theme-toggle,
-[data-theme="light"] .notification-bell {
+[data-theme="light"] .notification-bell,
+[data-theme="light"] .tasks-btn {
     background: rgba(0, 0, 0, 0.04);
     border-color: #dde1e9;
 }
 
 [data-theme="light"] .theme-toggle:hover,
-[data-theme="light"] .notification-bell:hover {
+[data-theme="light"] .notification-bell:hover,
+[data-theme="light"] .tasks-btn:hover {
     background: rgba(0, 0, 0, 0.07);
 }
 
@@ -2423,20 +2425,22 @@ body {
 /* ── Navbar tasks button & badge ──────────────────────────────── */
 .tasks-btn {
     position: relative;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 8px;
-    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-default);
+    background: var(--bg-surface-hover);
     color: var(--text-secondary);
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color var(--transition-fast), background var(--transition-fast);
+    transition: all var(--transition-fast);
 }
 .tasks-btn:hover {
+    background: var(--bg-surface-active);
     color: var(--text-primary);
-    background: var(--bg-hover);
+    transform: scale(1.05);
 }
 .tasks-count-badge {
     position: absolute;
@@ -2880,6 +2884,39 @@ body {
     border-radius: var(--radius-full);
     background: var(--bg-surface-hover);
     white-space: nowrap;
+}
+
+/* Page footer (version + github) */
+.page-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    border-top: 1px solid var(--border-muted);
+    margin-top: auto;
+    flex-shrink: 0;
+}
+
+.github-btn-sm {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    gap: 6px;
+}
+
+/* Sidebar system status section */
+.sidebar-status-section {
+    padding: 0 var(--spacing-md) var(--spacing-sm);
+}
+
+.sidebar-status-section .status-chip {
+    width: 100%;
+    justify-content: flex-start;
+    font-size: 0.75rem;
+    padding: 5px 10px;
+}
+
+.sidebar.collapsed .sidebar-status-section {
+    display: none;
 }
 
 /* Header title block (title + subtitle stacked) */

@@ -92,12 +92,50 @@ def list_proxmox_servers(
 ):
     """Получить список всех Proxmox серверов (фильтруется по активному workspace)"""
     from ...api.workspaces import get_workspace_server_ids
-    server_ids = get_workspace_server_ids(request, db, current_user)
-    query = db.query(ProxmoxServer)
-    if server_ids is not None:
-        query = query.filter(ProxmoxServer.id.in_(server_ids))
-    servers = query.all()
-    return servers
+    from ...models import WorkspaceUser, WorkspaceServer
+
+    is_privileged = current_user.is_admin or (
+        current_user.role and current_user.role.name in ('admin', 'moderator')
+    )
+
+    if is_privileged:
+        # Privileged: use workspace filter only
+        server_ids = get_workspace_server_ids(request, db, current_user)
+        query = db.query(ProxmoxServer)
+        if server_ids is not None:
+            query = query.filter(ProxmoxServer.id.in_(server_ids))
+        return query.all()
+
+    # Non-privileged user: must be directly assigned AND server must be in one of their workspaces
+    assigned_ids = {s.id for s in current_user.assigned_servers}
+
+    # Collect server IDs accessible through user's workspaces
+    user_ws_ids = {
+        r.workspace_id for r in
+        db.query(WorkspaceUser.workspace_id).filter(WorkspaceUser.user_id == current_user.id).all()
+    }
+    if user_ws_ids:
+        ws_server_ids = {
+            r.server_id for r in
+            db.query(WorkspaceServer.server_id).filter(
+                WorkspaceServer.workspace_id.in_(user_ws_ids)
+            ).all()
+        }
+    else:
+        ws_server_ids = set()
+
+    # Intersect: directly assigned AND within user's workspaces
+    effective_ids = assigned_ids & ws_server_ids
+
+    # Also apply active-workspace header filter on top
+    ws_filter = get_workspace_server_ids(request, db, current_user)
+    if ws_filter is not None:
+        effective_ids = effective_ids & set(ws_filter)
+
+    if not effective_ids:
+        return []
+
+    return db.query(ProxmoxServer).filter(ProxmoxServer.id.in_(effective_ids)).all()
 
 
 @router.post("/api/servers", response_model=ProxmoxServerResponse, status_code=status.HTTP_201_CREATED)
@@ -601,6 +639,22 @@ def get_server_resources(
         vms = [vm for vm in resources.get('vms', []) if not vm.get('template', 0)]
         containers = [ct for ct in resources.get('containers', []) if not ct.get('template', 0)]
         
+        # Получаем uptime ноды
+        node_uptime = None
+        try:
+            client = _get_proxmox_client(server)
+            nodes = client.get_nodes()
+            if nodes:
+                target_node = node_filter or (nodes[0].get('node') if nodes else None)
+                for n in nodes:
+                    if target_node and n.get('node') == target_node:
+                        node_uptime = n.get('uptime')
+                        break
+                if node_uptime is None and nodes:
+                    node_uptime = nodes[0].get('uptime')
+        except Exception:
+            pass
+        
         server.update_status(True)
         db.commit()
         
@@ -608,7 +662,8 @@ def get_server_resources(
             "server_id": server_id,
             "server_name": server.name,
             "vms": vms,
-            "containers": containers
+            "containers": containers,
+            "node_uptime": node_uptime
         })
     except Exception as e:
         server.update_status(False, str(e))

@@ -45,6 +45,10 @@ class BulkOperationRequest(BaseModel):
     items: TypingList[BulkOperationItem]
 
 
+class VMOwnerUpdate(BaseModel):
+    user_id: Optional[int] = None
+
+
 @router.post("/api/sync-vms")
 def sync_vms_now(
     db: Session = Depends(get_db), 
@@ -2792,4 +2796,74 @@ def create_bulk_operation(
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ===================== VM Owner Management =====================
+
+@router.get("/api/{server_id}/vm/{vmid}/owner")
+def get_vm_owner(
+    server_id: int,
+    vmid: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get current owner of a VM/LXC. Admin only."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin required")
+
+    instance = db.query(VMInstance).filter(
+        VMInstance.server_id == server_id,
+        VMInstance.vmid == vmid,
+        VMInstance.deleted_at.is_(None)
+    ).first()
+
+    owner = None
+    if instance and instance.owner_id:
+        owner_user = db.query(User).filter(User.id == instance.owner_id).first()
+        if owner_user:
+            owner = {"id": owner_user.id, "username": owner_user.username, "full_name": owner_user.full_name}
+
+    users = (
+        db.query(User)
+        .filter(User.is_active == True, User.is_admin == False)
+        .order_by(User.username)
+        .all()
+    )
+
+    return {
+        "owner_id": instance.owner_id if instance else None,
+        "owner": owner,
+        "users": [{"id": u.id, "username": u.username, "full_name": u.full_name} for u in users]
+    }
+
+
+@router.put("/api/{server_id}/vm/{vmid}/owner")
+def set_vm_owner(
+    server_id: int,
+    vmid: int,
+    body: VMOwnerUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Set (or clear) the owner of a VM/LXC. Admin only."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin required")
+
+    instance = db.query(VMInstance).filter(
+        VMInstance.server_id == server_id,
+        VMInstance.vmid == vmid,
+        VMInstance.deleted_at.is_(None)
+    ).first()
+    if not instance:
+        raise HTTPException(status_code=404, detail="VM not found in cache")
+
+    if body.user_id is not None:
+        target_user = db.query(User).filter(User.id == body.user_id, User.is_active == True).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+    instance.owner_id = body.user_id
+    db.commit()
+    logger.info(f"Admin {current_user.username} set owner of VM {vmid} (server {server_id}) to user_id={body.user_id}")
+    return {"ok": True, "owner_id": body.user_id}
 

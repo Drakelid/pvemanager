@@ -13,7 +13,7 @@
     </div>
     <div class="page-header-right">
         <button class="btn btn-success" onclick="showCreateModal()">
-            <i class="fa-solid fa-plus"></i> Создать Workspace
+            <i class="fa-solid fa-plus"></i> {{ t('create_workspace') }}
         </button>
     </div>
 </div>
@@ -21,7 +21,7 @@
 <!-- Workspace Cards -->
 <div id="workspacesGrid" class="ws-grid">
     <div class="loading-placeholder">
-        <i class="fa-solid fa-spinner fa-spin"></i> Загрузка...
+        <i class="fa-solid fa-spinner fa-spin"></i> {{ t('loading') }}
     </div>
 </div>
 
@@ -31,20 +31,20 @@
 <div id="wsModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeWsModal()">
     <div class="modal-container" style="max-width:600px;">
         <div class="modal-header">
-            <h3 id="wsModalTitle">Создать Workspace</h3>
+            <h3 id="wsModalTitle">{{ t('create_workspace') }}</h3>
             <button class="modal-close" onclick="closeWsModal()">&times;</button>
         </div>
         <div class="modal-body">
             <div class="form-group">
-                <label>Название <span style="color:var(--danger)">*</span></label>
+                <label>{{ t('name') }} <span style="color:var(--danger)">*</span></label>
                 <input type="text" id="wsName" class="form-input" placeholder="Production" maxlength="100">
             </div>
             <div class="form-group">
-                <label>Описание</label>
-                <textarea id="wsDescription" class="form-input" rows="2" placeholder="Описание workspace" maxlength="500"></textarea>
+                <label>{{ t('description') }}</label>
+                <textarea id="wsDescription" class="form-input" rows="2" placeholder="{{ t('workspace_desc_placeholder') }}" maxlength="500"></textarea>
             </div>
             <div class="form-group">
-                <label>Цвет</label>
+                <label>{{ t('color') }}</label>
                 <div style="display:flex;align-items:center;gap:10px;">
                     <input type="color" id="wsColor" value="#0ea5e9" style="width:48px;height:36px;border:none;background:none;cursor:pointer;padding:0;">
                     <div class="ws-color-presets">
@@ -59,22 +59,22 @@
             </div>
 
             <div class="form-group" id="wsServersGroup">
-                <label>Серверы</label>
+                <label>{{ t('servers_label') }}</label>
                 <div id="wsServersList" class="ws-assign-list">
                     <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i></div>
                 </div>
             </div>
 
             <div class="form-group" id="wsUsersGroup">
-                <label>Пользователи с доступом</label>
+                <label>{{ t('users_with_access') }}</label>
                 <div id="wsUsersList" class="ws-assign-list">
                     <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i></div>
                 </div>
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeWsModal()">Отмена</button>
-            <button class="btn btn-primary" id="wsModalSaveBtn" onclick="saveWorkspace()">Сохранить</button>
+            <button class="btn btn-secondary" onclick="closeWsModal()">{{ t('cancel') }}</button>
+            <button class="btn btn-primary" id="wsModalSaveBtn" onclick="saveWorkspace()">{{ t('save') }}</button>
         </div>
     </div>
 </div>
@@ -327,7 +327,7 @@ async function loadWorkspaces() {
         const workspaces = await resp.json();
 
         if (workspaces.length === 0) {
-            grid.innerHTML = '<div class="ws-empty"><i class="fa-solid fa-layer-group" style="font-size:2rem;opacity:0.2;display:block;margin-bottom:0.5rem;"></i>Нет workspaces</div>';
+            grid.innerHTML = `<div class="ws-empty"><i class="fa-solid fa-layer-group" style="font-size:2rem;opacity:0.2;display:block;margin-bottom:0.5rem;"></i>${t('no_workspaces')}</div>`;
             return;
         }
 
@@ -341,8 +341,8 @@ async function loadWorkspaces() {
                 </div>
                 <div class="ws-card-desc">${escapeHtml(ws.description || '')}</div>
                 <div class="ws-card-stats">
-                    <span class="ws-stat"><i class="fa-solid fa-server"></i>${ws.server_count} серверов</span>
-                    <span class="ws-stat"><i class="fa-solid fa-users"></i>${ws.user_count} пользователей</span>
+                    <span class="ws-stat"><i class="fa-solid fa-server"></i>${ws.server_count} ${t('servers_count_sfx')}</span>
+                    <span class="ws-stat"><i class="fa-solid fa-users"></i>${ws.user_count} ${t('users_count_sfx')}</span>
                 </div>
                 <div class="ws-card-actions">
                     <button class="btn btn-sm btn-secondary" onclick="showEditModal(${ws.id})">
@@ -355,7 +355,7 @@ async function loadWorkspaces() {
             </div>
         `).join('');
     } catch (e) {
-        grid.innerHTML = '<div class="ws-empty">Ошибка загрузки</div>';
+        grid.innerHTML = `<div class="ws-empty">${t('loading_error')}</div>`;
     }
 }
 
@@ -379,7 +379,7 @@ async function loadAssignLists() {
 function renderServerCheckboxes(selectedIds = []) {
     const container = document.getElementById('wsServersList');
     if (_allServers.length === 0) {
-        container.innerHTML = '<div class="ws-assign-item" style="color:var(--text-muted)">Нет серверов</div>';
+        container.innerHTML = `<div class="ws-assign-item" style="color:var(--text-muted)">${t('no_servers_available')}</div>`;
         return;
     }
     const selectedSet = new Set(selectedIds);
@@ -396,7 +396,7 @@ function renderServerCheckboxes(selectedIds = []) {
 function renderUserCheckboxes(selectedIds = []) {
     const container = document.getElementById('wsUsersList');
     if (_allUsers.length === 0) {
-        container.innerHTML = '<div class="ws-assign-item" style="color:var(--text-muted)">Нет пользователей</div>';
+        container.innerHTML = `<div class="ws-assign-item" style="color:var(--text-muted)">${t('no_users_available')}</div>`;
         return;
     }
     const selectedSet = new Set(selectedIds);
@@ -415,7 +415,7 @@ function renderUserCheckboxes(selectedIds = []) {
 // -----------------------------------------------------------------------
 async function showCreateModal() {
     _editingId = null;
-    document.getElementById('wsModalTitle').textContent = 'Создать Workspace';
+    document.getElementById('wsModalTitle').textContent = t('create_workspace');
     document.getElementById('wsName').value = '';
     document.getElementById('wsDescription').value = '';
     document.getElementById('wsColor').value = '#0ea5e9';
@@ -432,7 +432,7 @@ async function showCreateModal() {
 // -----------------------------------------------------------------------
 async function showEditModal(id) {
     _editingId = id;
-    document.getElementById('wsModalTitle').textContent = 'Редактировать Workspace';
+    document.getElementById('wsModalTitle').textContent = t('edit_workspace');
 
     try {
         const resp = await fetchWithAuth(`/api/workspaces/${id}`);
@@ -451,7 +451,7 @@ async function showEditModal(id) {
 
         document.getElementById('wsModal').style.display = 'flex';
     } catch (e) {
-        showAlertModal('Ошибка', 'Не удалось загрузить данные workspace');
+        showAlertModal(t('error'), t('failed_to_load_workspace'));
     }
 }
 
@@ -466,7 +466,7 @@ function closeWsModal() {
 async function saveWorkspace() {
     const name = document.getElementById('wsName').value.trim();
     if (!name) {
-        showAlertModal('Ошибка', 'Введите название workspace');
+        showAlertModal(t('error'), t('workspace_name_required'));
         return;
     }
 
@@ -519,13 +519,13 @@ async function saveWorkspace() {
             if (typeof loadSidebarWorkspace === 'function') loadSidebarWorkspace();
         } else {
             const err = await resp.json().catch(() => ({}));
-            showAlertModal('Ошибка', err.detail || 'Не удалось сохранить');
+            showAlertModal(t('error'), err.detail || t('failed_to_save'));
         }
     } catch (e) {
-        showAlertModal('Ошибка', e.message || 'Произошла ошибка');
+        showAlertModal(t('error'), e.message || t('error_occurred'));
     } finally {
         btn.disabled = false;
-        btn.innerHTML = 'Сохранить';
+        btn.innerHTML = t('save');
     }
 }
 
@@ -534,8 +534,8 @@ async function saveWorkspace() {
 // -----------------------------------------------------------------------
 async function deleteWorkspace(id, name) {
     showConfirmModal(
-        'Удалить Workspace',
-        `Удалить workspace «${name}»? Серверы и пользователи не будут удалены.`,
+        t('delete_workspace'),
+        t('delete_workspace_confirm').replace('{name}', name),
         async () => {
             const resp = await fetchWithAuth(`/api/workspaces/${id}`, { method: 'DELETE' });
             if (resp && (resp.ok || resp.status === 204)) {
@@ -543,7 +543,7 @@ async function deleteWorkspace(id, name) {
                 if (typeof loadSidebarWorkspace === 'function') loadSidebarWorkspace();
             } else {
                 const err = await resp.json().catch(() => ({}));
-                showAlertModal('Ошибка', err.detail || 'Не удалось удалить');
+                showAlertModal(t('error'), err.detail || t('failed_to_delete'));
             }
         }
     );

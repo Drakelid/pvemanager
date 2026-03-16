@@ -4,7 +4,7 @@
 
 **Modern web panel for managing Proxmox servers, virtual machines and LXC containers**
 
-[![Version](https://img.shields.io/badge/version-1.1.7-blue?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.8-blue?style=flat-square)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](compose.yml)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](backend/)
@@ -34,7 +34,10 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **xterm.js terminal** — full interactive shell directly in the browser for LXC containers
 - **Remote commands** — execute bash commands via QEMU Guest Agent
 - **RBAC v2** — granular role-based access control with per-resource permissions
+- **Server assignment** — directly assign specific Proxmox servers to users with workspace-conflict validation
+- **VM/LXC ownership** — assign an owner user to any VM or LXC container
 - **Session management** — active session list, remote session revocation, login protection
+- **Smart login redirect** — users are automatically routed to the first page they have access to
 
 ### Monitoring & Alerts
 - **Real-time metrics** — CPU, RAM, Disk, Network charts per node and per VM

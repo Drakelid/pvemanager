@@ -226,6 +226,14 @@
 
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
+                // Close change password modal if open
+                const cpOverlay = document.getElementById('changePasswordOverlay');
+                if (cpOverlay && cpOverlay.classList.contains('show')) {
+                    closeChangePasswordModal();
+                    event.preventDefault();
+                    return;
+                }
+
                 // Find all visible modals and close the topmost one
                 const modals = document.querySelectorAll('[id$="Modal"], [id$="modal"]');
                 let closedAny = false;
@@ -305,6 +313,10 @@
             --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             --transition-slow: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
+
+        /* Hide sidebar nav items until permissions are resolved (prevents flash of admin-only items) */
+        .sidebar-nav { visibility: hidden; }
+        .sidebar-nav.nav-ready { visibility: visible; }
         
         /* Custom Dialog Styles */
         .custom-dialog-overlay {
@@ -488,6 +500,100 @@
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
         }
+
+        /* ---- User Menu ---- */
+        .user-menu-wrapper {
+            position: relative;
+        }
+
+        .user-menu-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: none;
+            border: 1px solid var(--border-default);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            padding: 5px 10px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: background 0.2s;
+            white-space: nowrap;
+            max-width: 160px;
+        }
+
+        .user-menu-btn:hover {
+            background: var(--bg-surface-hover);
+        }
+
+        .user-menu-btn .user-menu-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100px;
+        }
+
+        .user-menu-dropdown {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 6px);
+            min-width: 200px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+            z-index: 5000;
+            overflow: hidden;
+        }
+
+        .user-menu-header {
+            padding: 12px 16px 10px;
+            border-bottom: 1px solid var(--border-default);
+        }
+
+        .user-menu-header-username {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            display: block;
+        }
+
+        .user-menu-header-role {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: block;
+            margin-top: 2px;
+        }
+
+        .user-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            background: none;
+            border: none;
+            padding: 10px 16px;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            text-align: left;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .user-menu-item:hover {
+            background: var(--bg-surface-hover);
+            color: var(--text-primary);
+        }
+
+        .user-menu-item.danger:hover {
+            color: var(--danger, #ef4444);
+        }
+
+        .user-menu-divider {
+            height: 1px;
+            background: var(--border-default);
+            margin: 3px 0;
+        }
     </style>
 </head>
 <body data-is-admin="false">
@@ -495,7 +601,7 @@
 <div id="update-banner" class="update-banner" style="display: none;">
     <div class="update-banner-content">
         <i class="fas fa-sync fa-spin"></i>
-        <span id="update-banner-text">Обновление системы...</span>
+        <span id="update-banner-text">{{ t('updating_system') }}</span>
     </div>
 </div>
 
@@ -598,6 +704,8 @@ body.update-in-progress .layout {
             <span style="font-size: 2rem;"><i class="fa-solid fa-cloud"></i></span>
             {% endif %}
         </div>
+        <!-- System Status -->
+        {% block sidebar_status %}{% endblock %}
         <!-- Workspace Selector -->
         <div class="sidebar-workspace-section" id="sidebarWorkspaceSection">
             <div class="sidebar-workspace-label">Workspace</div>
@@ -613,48 +721,48 @@ body.update-in-progress .layout {
         </div>
         <nav>
             <ul class="sidebar-nav">
-                <li><a href="/" class="{{ 'active' if request.path == '/' or request.path == '/dashboard' else '' }}" title="{{ t('nav_dashboard') }}">
+                <li data-nav-permission="dashboard.view"><a href="/" class="{{ 'active' if request.path == '/' or request.path == '/dashboard' else '' }}" title="{{ t('nav_dashboard') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                     <span>{{ t('nav_dashboard') }}</span>
                 </a></li>
-                <li><a href="/virtual-machines" class="{{ 'active' if request.path.startswith('/virtual-machines') or request.path.startswith('/proxmox/server') else '' }}" title="{{ t('nav_vms') }}">
+                <li data-nav-permission="vms.view"><a href="/virtual-machines" class="{{ 'active' if request.path.startswith('/virtual-machines') or request.path.startswith('/proxmox/server') else '' }}" title="{{ t('nav_vms') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                     <span>{{ t('nav_vms') }}</span>
                 </a></li>
-                <li><a href="/vms" class="{{ 'active' if request.path == '/vms' or (request.path.startswith('/vms/') or (request.path.startswith('/proxmox/') and not request.path.startswith('/proxmox/server') and not request.path.startswith('/proxmox/api/backups'))) else '' }}" title="{{ t('nav_proxmox') }}">
+                <li data-nav-permission="proxmox.view"><a href="/vms" class="{{ 'active' if request.path == '/vms' or (request.path.startswith('/vms/') or (request.path.startswith('/proxmox/') and not request.path.startswith('/proxmox/server') and not request.path.startswith('/proxmox/api/backups'))) else '' }}" title="{{ t('nav_proxmox') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
                     <span>{{ t('nav_proxmox') }}</span>
                 </a></li>
-                <li><a href="/templates" class="{{ 'active' if request.path.startswith('/templates') else '' }}" title="{{ t('nav_templates') }}">
+                <li data-nav-permission="templates.view"><a href="/templates" class="{{ 'active' if request.path.startswith('/templates') else '' }}" title="{{ t('nav_templates') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                     <span>{{ t('nav_templates') }}</span>
                 </a></li>
-                <li><a href="/backups" class="{{ 'active' if request.path.startswith('/backups') or request.path.startswith('/proxmox/api/backups/page') else '' }}" title="{{ t('nav_backups') }}">
+                <li data-nav-permission="backups.view"><a href="/backups" class="{{ 'active' if request.path.startswith('/backups') or request.path.startswith('/proxmox/api/backups/page') else '' }}" title="{{ t('nav_backups') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     <span>{{ t('nav_backups') }}</span>
                 </a></li>
-                <li><a href="/ipam" class="{{ 'active' if request.path.startswith('/ipam') else '' }}" title="{{ t('nav_ipam') }}">
+                <li data-nav-permission="ipam.view"><a href="/ipam" class="{{ 'active' if request.path.startswith('/ipam') else '' }}" title="{{ t('nav_ipam') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
                     <span>{{ t('nav_ipam') }}</span>
                 </a></li>
-                <li><a href="/containers" class="{{ 'active' if request.path.startswith('/containers') else '' }}" title="{{ t('nav_docker') }}">
+                <li data-nav-permission="docker.view"><a href="/containers" class="{{ 'active' if request.path.startswith('/containers') else '' }}" title="{{ t('nav_docker') }}">
                     <i class="fa-brands fa-docker" style="font-size: 1.25rem; width: 24px; text-align: center;"></i>
                     <span>{{ t('nav_docker') }}</span>
                 </a></li>
-                <li><a href="/logs" class="{{ 'active' if request.path.startswith('/logs') else '' }}" title="{{ t('nav_logs') }}">
+                <li data-nav-permission="logs.view"><a href="/logs" class="{{ 'active' if request.path.startswith('/logs') else '' }}" title="{{ t('nav_logs') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
                     <span>{{ t('nav_logs') }}</span>
                 </a></li>
-                <li><a href="/tasks" class="{{ 'active' if request.path.startswith('/tasks') else '' }}" title="Менеджер задач">
+                <li><a href="/tasks" class="{{ 'active' if request.path.startswith('/tasks') else '' }}" title="{{ t('task_manager') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-                    <span>Задачи</span>
+                    <span>{{ t('nav_tasks') }}</span>
                     <span id="sidebarTasksBadge" style="display:none; background:#0ea5e9; color:#fff; font-size:.62rem; font-weight:700; border-radius:9999px; padding:1px 6px; margin-left:auto; line-height:1.5;"></span>
                 </a></li>
-                <li><a href="/settings" class="{{ 'active' if request.path.startswith('/settings') else '' }}" title="{{ t('nav_settings') }}">
+                <li data-nav-permission="settings.view"><a href="/settings" class="{{ 'active' if request.path.startswith('/settings') else '' }}" title="{{ t('nav_settings') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                     <span>{{ t('nav_settings') }}</span>
                 </a></li>
-                <li><a href="/admin/users" class="{{ 'active' if request.path.startswith('/admin/users') else '' }}" title="{{ t('nav_users') }}">
+                <li data-nav-permission="users.view"><a href="/admin/users" class="{{ 'active' if request.path.startswith('/admin/users') else '' }}" title="{{ t('nav_users') }}">
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                     <span>{{ t('nav_users') }}</span>
                 </a></li>
@@ -696,19 +804,6 @@ body.update-in-progress .layout {
                 {% block page_subtitle %}<div class="page-subtitle" id="pageGlobalSubtitle"></div>{% endblock %}
             </div>
             <div class="header-actions">
-                {% block header_status %}{% endblock %}
-                <!-- Version Badge -->
-                <span class="version-badge" title="PVEmanager version">v{{ version }}</span>
-                
-                <!-- GitHub Stars Button -->
-                <a href="https://github.com/markmorado/pvemanager" target="_blank" rel="noopener noreferrer" class="github-btn" title="Star us on GitHub">
-                    <i class="fa-brands fa-github"></i>
-                    <span class="github-text">pvemanager</span>
-                    <svg class="github-star-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.417 3.967 1.481-8.279-6.064-5.828 8.332-1.151z"/>
-                    </svg>
-                    <span class="github-stars" id="githubStars">...</span>
-                </a>
                 
                 <!-- Theme Toggle Button -->
                 <button id="themeToggle" class="theme-toggle" title="{{ t('theme') }}">
@@ -729,7 +824,7 @@ body.update-in-progress .layout {
                 </button>
                 
                 <!-- Task Manager Button -->
-                <button id="tasksBtn" class="tasks-btn" onclick="toggleTaskDrawer()" title="Менеджер задач">
+                <button id="tasksBtn" class="tasks-btn" onclick="toggleTaskDrawer()" title="{{ t('task_manager') }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
                     </svg>
@@ -744,11 +839,46 @@ body.update-in-progress .layout {
                     </svg>
                     <span id="notificationBadge" class="notification-badge" style="display: none;">0</span>
                 </button>
+
+                <!-- User Menu -->
+                <div class="user-menu-wrapper" id="userMenuWrapper">
+                    <button class="user-menu-btn" id="userMenuBtn" onclick="toggleUserMenu(event)">
+                        <i class="fas fa-user-circle" style="font-size:1rem; opacity:0.8;"></i>
+                        <span class="user-menu-name" id="userMenuName">...</span>
+                        <i class="fas fa-chevron-down" style="font-size:0.6rem; opacity:0.6;"></i>
+                    </button>
+                    <div class="user-menu-dropdown" id="userMenuDropdown" style="display:none;">
+                        <div class="user-menu-header">
+                            <span class="user-menu-header-username" id="userMenuFullName">...</span>
+                            <span class="user-menu-header-role" id="userMenuRoleName">...</span>
+                        </div>
+                        <button class="user-menu-item" onclick="openChangePasswordModal(); closeUserMenu();">
+                            <i class="fas fa-key"></i>
+                            <span>{{ t('change_password') }}</span>
+                        </button>
+                        <div class="user-menu-divider"></div>
+                        <button class="user-menu-item danger" onclick="logout(event)">
+                            <i class="fas fa-sign-out-alt"></i>
+                            <span>{{ t('nav_logout') }}</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </header>
         <main>
             {% block content %}{% endblock %}
         </main>
+        <footer class="page-footer">
+            <span class="version-badge" title="PVEmanager version">v{{ version }}</span>
+            <a href="https://github.com/markmorado/pvemanager" target="_blank" rel="noopener noreferrer" class="github-btn github-btn-sm" title="Star us on GitHub">
+                <i class="fa-brands fa-github"></i>
+                <span class="github-text">pvemanager</span>
+                <svg class="github-star-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.417 3.967 1.481-8.279-6.064-5.828 8.332-1.151z"/>
+                </svg>
+                <span class="github-stars" id="githubStars">...</span>
+            </a>
+        </footer>
     </div>
     
     <!-- Notification Center Dropdown -->
@@ -773,9 +903,9 @@ body.update-in-progress .layout {
     <!-- Task Drawer -->
     <div id="taskDrawer" class="task-drawer" style="display:none;">
         <div class="task-drawer-header">
-            <h3><i class="fa-solid fa-list-check" style="color:var(--primary); margin-right:.5rem;"></i> Задачи</h3>
+            <h3><i class="fa-solid fa-list-check" style="color:var(--primary); margin-right:.5rem;"></i> {{ t('nav_tasks') }}</h3>
             <div style="display:flex; gap:.4rem; align-items:center; margin-left:auto;">
-                <button id="taskDrawerClearBtn" onclick="clearCompletedTasks()" title="Очистить завершённые" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:.3rem .5rem; border-radius:6px; font-size:.75rem; display:none;">
+                <button id="taskDrawerClearBtn" onclick="clearCompletedTasks()" title="{{ t('clear_completed_tasks') }}" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:.3rem .5rem; border-radius:6px; font-size:.75rem; display:none;">
                     <i class="fa-solid fa-trash-can"></i>
                 </button>
                 <button class="task-drawer-close" onclick="toggleTaskDrawer()">
@@ -786,18 +916,47 @@ body.update-in-progress .layout {
         <div class="task-drawer-body" id="taskDrawerBody">
             <div class="task-drawer-empty" id="taskDrawerEmpty">
                 <i class="fa-solid fa-inbox" style="font-size:1.8rem; display:block; margin-bottom:.5rem; opacity:.4;"></i>
-                Нет активных задач
+                {{ t('no_active_tasks') }}
             </div>
             <div id="taskDrawerCards"></div>
         </div>
         <div class="task-drawer-footer">
             <a href="/tasks">
                 <i class="fa-solid fa-arrow-right" style="margin-right:.4rem;"></i>
-                Открыть менеджер задач
+                {{ t('open_task_manager') }}
             </a>
         </div>
     </div>
     
+    <!-- Change Password Modal -->
+    <div id="changePasswordOverlay" class="custom-dialog-overlay" onclick="if(event.target===this)closeChangePasswordModal()">
+        <div class="custom-dialog" style="max-width:420px;">
+            <div class="custom-dialog-icon info">
+                <i class="fas fa-key"></i>
+            </div>
+            <div class="custom-dialog-title">{{ t('change_password') }}</div>
+            <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;">
+                <div>
+                    <label style="font-size:.82rem; color:var(--text-secondary); margin-bottom:5px; display:block;">{{ t('current_password') }}</label>
+                    <input type="password" id="cpOldPassword" class="custom-dialog-input" style="text-align:left;" placeholder="{{ t('current_password') }}">
+                </div>
+                <div>
+                    <label style="font-size:.82rem; color:var(--text-secondary); margin-bottom:5px; display:block;">{{ t('new_password') }}</label>
+                    <input type="password" id="cpNewPassword" class="custom-dialog-input" style="text-align:left;" placeholder="{{ t('new_password') }}">
+                </div>
+                <div>
+                    <label style="font-size:.82rem; color:var(--text-secondary); margin-bottom:5px; display:block;">{{ t('confirm_password') }}</label>
+                    <input type="password" id="cpConfirmPassword" class="custom-dialog-input" style="text-align:left;" placeholder="{{ t('confirm_password') }}">
+                </div>
+            </div>
+            <div id="cpError" style="display:none; color:var(--danger,#ef4444); font-size:.85rem; margin-bottom:14px; text-align:center;"></div>
+            <div class="custom-dialog-buttons">
+                <button class="custom-dialog-btn secondary" onclick="closeChangePasswordModal()">{{ t('cancel') }}</button>
+                <button class="custom-dialog-btn primary" id="cpSubmitBtn" onclick="submitChangePassword()">{{ t('change_password') }}</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Custom Dialog Container -->
     <div id="customDialogOverlay" class="custom-dialog-overlay">
         <div class="custom-dialog">
@@ -844,15 +1003,153 @@ body.update-in-progress .layout {
         window.location.href = '/login';
     }
 
+    // ==================== User Menu ====================
+    function toggleUserMenu(e) {
+        e.stopPropagation();
+        const dd = document.getElementById('userMenuDropdown');
+        const isOpen = dd.style.display !== 'none';
+        dd.style.display = isOpen ? 'none' : 'block';
+    }
+
+    function closeUserMenu() {
+        const dd = document.getElementById('userMenuDropdown');
+        if (dd) dd.style.display = 'none';
+    }
+
+    document.addEventListener('click', function(e) {
+        const wrapper = document.getElementById('userMenuWrapper');
+        if (wrapper && !wrapper.contains(e.target)) {
+            closeUserMenu();
+        }
+    });
+
+    // ==================== Change Password Modal ====================
+    function openChangePasswordModal() {
+        document.getElementById('cpOldPassword').value = '';
+        document.getElementById('cpNewPassword').value = '';
+        document.getElementById('cpConfirmPassword').value = '';
+        document.getElementById('cpError').style.display = 'none';
+        document.getElementById('changePasswordOverlay').classList.add('show');
+        setTimeout(() => document.getElementById('cpOldPassword').focus(), 100);
+    }
+
+    function closeChangePasswordModal() {
+        document.getElementById('changePasswordOverlay').classList.remove('show');
+    }
+
+    async function submitChangePassword() {
+        const oldPwd = document.getElementById('cpOldPassword').value.trim();
+        const newPwd = document.getElementById('cpNewPassword').value;
+        const confirmPwd = document.getElementById('cpConfirmPassword').value;
+        const errEl = document.getElementById('cpError');
+        const btn = document.getElementById('cpSubmitBtn');
+
+        errEl.style.display = 'none';
+
+        if (!oldPwd || !newPwd || !confirmPwd) {
+            errEl.textContent = t('fill_all_fields') || 'Please fill all fields';
+            errEl.style.display = 'block';
+            return;
+        }
+        if (newPwd !== confirmPwd) {
+            errEl.textContent = t('passwords_dont_match');
+            errEl.style.display = 'block';
+            return;
+        }
+
+        btn.disabled = true;
+        const origText = btn.textContent;
+        btn.textContent = '...';
+
+        try {
+            const formData = new FormData();
+            formData.append('old_password', oldPwd);
+            formData.append('new_password', newPwd);
+
+            // Use fetch directly — FormData sets its own Content-Type with boundary.
+            // fetchWithAuth would override it with application/json.
+            const token = localStorage.getItem('access_token');
+            const resp = await fetch('/api/auth/change-password', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+
+            if (resp.ok) {
+                closeChangePasswordModal();
+                showToast('success', t('success'), t('password_changed'));
+            } else {
+                const data = await resp.json().catch(() => ({}));
+                errEl.textContent = data.detail || t('error');
+                errEl.style.display = 'block';
+            }
+        } catch(err) {
+            errEl.textContent = t('error');
+            errEl.style.display = 'block';
+        } finally {
+            btn.disabled = false;
+            btn.textContent = origText;
+        }
+    }
+
+    // Allow Enter key in change password fields
+    document.addEventListener('DOMContentLoaded', () => {
+        ['cpOldPassword','cpNewPassword','cpConfirmPassword'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') submitChangePassword(); });
+        });
+    });
+
     // Global user permissions object
     window.userPermissions = {};
     window.isAdmin = false;
-    
-    // Permission checking helper function
+
+    // Bidirectional permission format translation table (legacy dot <-> new colon)
+    const _PERM_LEGACY_TO_NEW = {
+        'dashboard.view':   'dashboard:view',
+        'vms.view':         'vm:view',
+        'vms.create':       'vm:create',
+        'vms.start':        'vm:start',
+        'vms.stop':         'vm:stop',
+        'vms.restart':      'vm:restart',
+        'vms.delete':       'vm:delete',
+        'vms.console':      'vm:console',
+        'vms.migrate':      'vm:migrate',
+        'proxmox.view':     'server:view',
+        'proxmox.manage':   'server:manage',
+        'templates.view':   'template:view',
+        'templates.manage': 'template:manage',
+        'backups.view':     'backup:view',
+        'backups.manage':   'backup:manage',
+        'ipam.view':        'ipam:view',
+        'ipam.manage':      'ipam:manage',
+        'docker.view':      'docker:view',
+        'logs.view':        'log:view',
+        'logs.export':      'log:export',
+        'logs.delete':      'log:delete',
+        'settings.view':    'setting:view',
+        'settings.panel':   'setting:update',
+        'settings.security':'setting:manage',
+        'users.view':       'user:view',
+        'users.create':     'user:create',
+        'users.edit':       'user:update',
+        'users.delete':     'user:delete',
+        'roles.view':       'role:view',
+        'roles.manage':     'role:manage',
+        'notification.view':'notification:view',
+        'notification.manage':'notification:manage',
+    };
+    const _PERM_NEW_TO_LEGACY = Object.fromEntries(Object.entries(_PERM_LEGACY_TO_NEW).map(([k,v])=>[v,k]));
+
+    // Permission checking helper function — supports both legacy (dot) and new (colon) formats
     window.hasPermission = function(permission) {
         if (window.isAdmin) return true;
         if (!permission) return true;
-        return window.userPermissions[permission] === true;
+        if (window.userPermissions[permission] === true) return true;
+        // Try translated format
+        const alt = _PERM_LEGACY_TO_NEW[permission] || _PERM_NEW_TO_LEGACY[permission];
+        if (alt && window.userPermissions[alt] === true) return true;
+        return false;
     };
     
     // Hide elements based on permission
@@ -879,14 +1176,20 @@ body.update-in-progress .layout {
     window.addEventListener('DOMContentLoaded', async () => {
         // Skip check on login page
         if (window.location.pathname === '/login') {
+            // Show nav immediately on login page (no permission filtering needed)
+            const sidebarNav = document.querySelector('.sidebar-nav');
+            if (sidebarNav) sidebarNav.classList.add('nav-ready');
             return;
         }
 
         const token = localStorage.getItem('access_token');
         if (!token) {
-            // Save current URL as query parameter
-            const currentUrl = encodeURIComponent(window.location.pathname + window.location.search);
-            window.location.href = `/login?returnUrl=${currentUrl}`;
+            const currentPath = window.location.pathname;
+            // Avoid redirect loop: don't add returnUrl if already on login
+            if (currentPath !== '/login') {
+                const currentUrl = encodeURIComponent(currentPath + window.location.search);
+                window.location.href = `/login?returnUrl=${currentUrl}`;
+            }
             return;
         }
 
@@ -912,6 +1215,16 @@ body.update-in-progress .layout {
             window.userPermissions = userData.permissions || {};
             window.isAdmin = userData.is_admin === true;
             window.currentUserId = userData.id;
+            window.currentUser = userData;
+
+            // Update user menu button
+            const displayName = userData.full_name || userData.username || '...';
+            const nameEl = document.getElementById('userMenuName');
+            const fullNameEl = document.getElementById('userMenuFullName');
+            const roleEl = document.getElementById('userMenuRoleName');
+            if (nameEl) nameEl.textContent = userData.username || '...';
+            if (fullNameEl) fullNameEl.textContent = displayName;
+            if (roleEl) roleEl.textContent = (userData.role && userData.role.display_name) || (userData.is_admin ? 'Administrator' : 'User');
             
             // Apply permissions to UI elements
             applyPermissionsToUI();
@@ -920,44 +1233,79 @@ body.update-in-progress .layout {
             window.dispatchEvent(new CustomEvent('permissionsLoaded', { detail: { permissions: window.userPermissions, isAdmin: window.isAdmin } }));
             
         } catch (error) {
-            // On network error, allow staying (offline mode)
+            // On network error, allow staying (offline mode) but still reveal nav
+            const sidebarNav = document.querySelector('.sidebar-nav');
+            if (sidebarNav) sidebarNav.classList.add('nav-ready');
         }
     });
     
     // Apply permissions to sidebar menu and other UI elements
     function applyPermissionsToUI() {
-        const navLinks = document.querySelectorAll('.sidebar-nav a[href]');
-        
-        navLinks.forEach(link => {
-            const href = link.getAttribute('href');
-            let requiredPermission = null;
-            
-            // Map routes to required permissions
-            if (href === '/vms' || href.startsWith('/proxmox')) {
-                requiredPermission = 'proxmox.view';
-            } else if (href === '/templates' || href.startsWith('/templates')) {
-                requiredPermission = 'templates.view';
-            } else if (href === '/ipam' || href.startsWith('/ipam')) {
-                requiredPermission = 'ipam.view';
-            } else if (href === '/logs' || href.startsWith('/logs')) {
-                requiredPermission = 'logs.view';
-            } else if (href === '/settings' || href.startsWith('/settings')) {
-                requiredPermission = 'settings.view';
-            } else if (href === '/admin/users' || href.startsWith('/admin/users')) {
-                requiredPermission = 'users.view';
-            }
-            
-            // Hide menu item if no permission
-            if (requiredPermission && !window.hasPermission(requiredPermission)) {
-                const li = link.closest('li');
-                if (li) {
-                    li.style.display = 'none';
-                }
+        // --- Sidebar: hide items by data-nav-permission ---
+        const PAGE_PERMISSION_MAP = [
+            // [exact_prefix, permission] — only checks pages that actually need a permission
+            ['/dashboard',               'dashboard.view'],
+            ['/virtual-machines',        'vms.view'],
+            ['/vms',                     'proxmox.view'],
+            ['/proxmox/vms',             'proxmox.view'],
+            ['/proxmox/server',          'proxmox.view'],
+            ['/templates',               'templates.view'],
+            ['/backups',                 'backups.view'],
+            ['/proxmox/api/backups',     'backups.view'],
+            ['/ipam',                    'ipam.view'],
+            ['/containers',              'docker.view'],
+            ['/logs',                    'logs.view'],
+            ['/admin/users',             'users.view'],
+        ];
+
+        document.querySelectorAll('.sidebar-nav li[data-nav-permission]').forEach(li => {
+            const perm = li.getAttribute('data-nav-permission');
+            if (!window.hasPermission(perm)) {
+                li.style.display = 'none';
+            } else {
+                li.style.display = '';
             }
         });
-        
+
         // Apply permissions to elements with data-permission attribute
         window.applyPermissions();
+
+        // --- Redirect if current page is forbidden ---
+        const path = window.location.pathname;
+        for (const [prefix, perm] of PAGE_PERMISSION_MAP) {
+            // Match if path equals prefix or starts with prefix + '/'
+            const isMatch = path === prefix || path.startsWith(prefix + '/');
+            if (isMatch && !window.hasPermission(perm)) {
+                const firstAllowed = _findFirstAllowedPage();
+                // Avoid looping: only redirect if target differs from current page
+                if (firstAllowed && firstAllowed !== path && !path.startsWith(firstAllowed + '/')) {
+                    window.location.replace(firstAllowed);
+                }
+                return;
+            }
+        }
+
+        // Reveal the nav now that permissions are applied (prevents flash of admin items)
+        const sidebarNav = document.querySelector('.sidebar-nav');
+        if (sidebarNav) sidebarNav.classList.add('nav-ready');
+    }
+
+    function _findFirstAllowedPage() {
+        const candidates = [
+            ['vms.view',       '/virtual-machines'],
+            ['proxmox.view',   '/vms'],
+            ['backups.view',   '/backups'],
+            ['ipam.view',      '/ipam'],
+            ['logs.view',      '/logs'],
+            ['users.view',     '/admin/users'],
+            ['templates.view', '/templates'],
+            ['docker.view',    '/containers'],
+        ];
+        for (const [perm, page] of candidates) {
+            if (window.hasPermission(perm)) return page;
+        }
+        // /settings and /tasks are open to all authenticated users — safe fallback
+        return '/settings';
     }
 
     // Notification System
@@ -1044,7 +1392,7 @@ body.update-in-progress .layout {
         const dotEl  = document.getElementById('sidebarWorkspaceColorDot');
         if (!nameEl) return;
         if (!ws) {
-            nameEl.textContent = 'Все';
+            nameEl.textContent = t('all_workspaces');
             if (dotEl) { dotEl.style.background = '#0ea5e9'; dotEl.style.opacity = '0.4'; }
         } else {
             nameEl.textContent = ws.name;
@@ -1061,7 +1409,7 @@ body.update-in-progress .layout {
         if (isAdmin) {
             const allItem = document.createElement('div');
             allItem.className = 'workspace-dropdown-item' + (_activeWorkspaceId === null ? ' active' : '');
-            allItem.innerHTML = `<span class="workspace-dropdown-dot" style="background:#0ea5e9;opacity:0.4;"></span><span>Все</span>`;
+            allItem.innerHTML = `<span class="workspace-dropdown-dot" style="background:#0ea5e9;opacity:0.4;"></span><span>${t('all_workspaces')}</span>`;
             allItem.onclick = (e) => { e.stopPropagation(); _wsSelect(null, null, isAdmin); };
             container.appendChild(allItem);
         }
@@ -1069,7 +1417,7 @@ body.update-in-progress .layout {
         workspaces.forEach(ws => {
             const item = document.createElement('div');
             item.className = 'workspace-dropdown-item' + (_activeWorkspaceId === ws.id ? ' active' : '');
-            item.innerHTML = `<span class="workspace-dropdown-dot" style="background:${ws.color || '#0ea5e9'};"></span><span>${ws.name}</span><small>${ws.server_count} серв.</small>`;
+            item.innerHTML = `<span class="workspace-dropdown-dot" style="background:${ws.color || '#0ea5e9'};"></span><span>${ws.name}</span><small>${ws.server_count} ${t('servers_short')}</small>`;
             item.onclick = (e) => { e.stopPropagation(); _wsSelect(ws.id, ws, isAdmin); };
             container.appendChild(item);
         });
@@ -1682,12 +2030,12 @@ body.update-in-progress .layout {
         }
         empty.style.display = 'none';
         const icons = { running:'<i class="fa-solid fa-circle-notch" style="animation:task-spin 1.2s linear infinite;"></i>', pending:'<i class="fa-solid fa-clock"></i>', completed:'<i class="fa-solid fa-circle-check"></i>', failed:'<i class="fa-solid fa-circle-xmark"></i>', cancelled:'<i class="fa-solid fa-ban"></i>' };
-        const labels = { running:'Выполняется', pending:'В очереди', completed:'Завершено', failed:'Ошибка', cancelled:'Отменено' };
+        const labels = { running:t('status_running'), pending:t('status_pending'), completed:t('status_completed'), failed:t('status_failed'), cancelled:t('status_cancelled') };
         cards.innerHTML = list.map(t => {
             const st = normalizeTaskStatus(t.status);
             const pct = st === 'completed' ? 100 : st === 'failed' || st === 'cancelled' ? 100 :
                 (t.kind === 'bulk' && t.total_items > 0 ? Math.round(t.processed_items/t.total_items*100) : (st==='running'?60:0));
-            const desc = t.description || t.action || t.task_type || 'Задача';
+            const desc = t.description || t.action || t.task_type || window.t('task_default_name');
             const ts = t.created_at ? new Date(t.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}) : '';
             return `<div class="task-mini-card ${st}">
                 <div class="task-mini-top">
@@ -1921,7 +2269,7 @@ body.update-in-progress .layout {
                 }
                 renderTaskDrawer();
                 updateTaskBadge();
-                if (data.deleted > 0) showToast('success', 'Очищено', `Удалено ${data.deleted} задач`);
+                if (data.deleted > 0) showToast('success', t('cleared'), t('deleted_tasks').replace('{count}', data.deleted));
             }
         } catch(e) {
             console.error('clearCompletedTasks error', e);

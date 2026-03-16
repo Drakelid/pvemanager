@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from ..db import get_db
 from ..models import ProxmoxServer, AuditLog, User
 from ..template_helpers import add_i18n_context
-from ..auth import get_current_user, PermissionChecker
+from ..auth import PermissionChecker
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -63,7 +63,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         standalone_q = standalone_q.filter(ProxmoxServer.id.in_(server_ids))
     named_clusters = cluster_q.scalar() or 0
     standalone_count = standalone_q.count()
-    total_clusters = named_clusters + standalone_count
+    total_clusters = named_clusters
 
     # Alerts in last 24 hours
     since_24h = datetime.utcnow() - timedelta(hours=24)

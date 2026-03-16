@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, BigInteger, String, DateTime, Text, Index, JSON, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, BigInteger, String, DateTime, Text, Index, JSON, ForeignKey, Table
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -43,6 +43,15 @@ class Role(Base):
         return f"<Role(id={self.id}, name='{self.name}')>"
 
 
+# Association table: User <-> ProxmoxServer (assigned servers)
+user_servers = Table(
+    'user_servers',
+    Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('server_id', Integer, ForeignKey('proxmox_servers.id', ondelete='CASCADE'), primary_key=True)
+)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -76,6 +85,7 @@ class User(Base):
     
     # Relationships
     sessions = relationship("ActiveSession", back_populates="user", cascade="all, delete-orphan")
+    assigned_servers = relationship("ProxmoxServer", secondary=user_servers, back_populates="assigned_users", lazy="select")
     
     def has_permission(self, permission: str) -> bool:
         """
@@ -428,6 +438,9 @@ class ProxmoxServer(Base):
             self.last_error = error
         elif is_online:
             self.last_error = None
+
+    # Relationships
+    assigned_users = relationship("User", secondary=user_servers, back_populates="assigned_servers", lazy="select")
 
 
 class VMInstance(Base):

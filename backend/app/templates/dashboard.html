@@ -11,7 +11,8 @@
 </div>
 {% endblock %}
 
-{% block header_status %}
+{% block sidebar_status %}
+<div class="sidebar-status-section">
 <div class="status-chip {% if stats.total_alerts == 0 %}status-ok{% elif stats.critical_alerts > 0 %}status-error{% else %}status-warning{% endif %}" id="dashStatusChip"{% if stats.total_alerts > 0 %} onclick="openAlertsModal()" style="cursor:pointer;" title="{{ t('view_alerts') if t('view_alerts') else 'Посмотреть предупреждения' }}"{% endif %}>
     <span class="status-chip-dot"></span>
     <span id="dashStatusText">
@@ -24,7 +25,7 @@
         {%- endif -%}
     </span>
 </div>
-<div class="header-datetime" id="dashDatetime"></div>
+</div>
 {% endblock %}
 
 {% block content %}
@@ -200,24 +201,6 @@
 
 <script>
 // ======== Dashboard JS ========
-
-// Live clock
-(function startClock() {
-    const el = document.getElementById('dashDatetime');
-    if (!el) return;
-    function tick() {
-        const now = new Date();
-        el.textContent = now.toLocaleDateString(
-            '{{ "ru-RU" if lang == "ru" else "en-US" }}',
-            { month: 'short', day: 'numeric' }
-        ) + ', ' + now.toLocaleTimeString(
-            '{{ "ru-RU" if lang == "ru" else "en-US" }}',
-            { hour: '2-digit', minute: '2-digit' }
-        );
-    }
-    tick();
-    setInterval(tick, 30000);
-})();
 
 // Colour the % badge based on value
 function setPctBadgeColor(el, pct) {

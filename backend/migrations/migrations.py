@@ -121,7 +121,7 @@ DEFAULT_ROLES = [
         "description": "VPS-style user: can only access their own instances",
         "is_system": True,
         "permissions": {
-            "dashboard.view": True,
+            "dashboard.view": False,
             "proxmox.view": True,
             "proxmox.manage": False,
             "proxmox.servers.add": False,
@@ -808,29 +808,34 @@ def migrate_vm_instance_owner(conn):
     except Exception as e:
         logger.warning(f"Could not create owner_id index: {e}")
     
-    # Update user role with instance ownership permissions
+    # Add VPS-style permissions to user role (idempotent: only add missing keys)
     try:
         result = conn.execute(text("SELECT permissions FROM roles WHERE name = 'user'"))
         row = result.fetchone()
         if row:
             import json
             permissions = row[0] if isinstance(row[0], dict) else json.loads(row[0] or '{}')
-            
-            # Add VPS-style permissions for user role
-            permissions.update({
+
+            vps_permissions = {
                 "vms:view:own": True,      # View only own VMs
                 "vms:start:own": True,     # Start own VMs
                 "vms:stop:own": True,      # Stop own VMs
                 "vms:restart:own": True,   # Restart own VMs
                 "vms:console:own": True,   # Console to own VMs
                 "vms:snapshots:own": True, # Manage snapshots of own VMs
-            })
-            
-            conn.execute(
-                text("UPDATE roles SET permissions = :perms, updated_at = NOW() WHERE name = 'user'"),
-                {"perms": json.dumps(permissions)}
-            )
-            logger.info("✓ Updated user role with instance ownership permissions")
+            }
+
+            # Only add keys that are not already present — never overwrite existing values
+            missing = {k: v for k, v in vps_permissions.items() if k not in permissions}
+            if missing:
+                permissions.update(missing)
+                conn.execute(
+                    text("UPDATE roles SET permissions = :perms, updated_at = NOW() WHERE name = 'user'"),
+                    {"perms": json.dumps(permissions)}
+                )
+                logger.info(f"✓ Added missing VPS permissions to user role: {list(missing.keys())}")
+            else:
+                logger.info("✓ User role already has VPS instance ownership permissions, skipping")
     except Exception as e:
         logger.warning(f"Could not update user role permissions: {e}")
     
@@ -1062,19 +1067,29 @@ def migrate_cluster_support(conn):
     else:
         logger.info("✓ proxmox_servers.cluster_name already exists")
 
-    # Add cluster:manage permission to admin role if not already present
+    # Ensure admin role has cluster:manage (new format) and remove old proxmox.cluster.manage key
     try:
         result = conn.execute(text("SELECT permissions FROM roles WHERE name = 'admin'")).fetchone()
         if result:
             import json as _json
             perms = _json.loads(result.permissions) if isinstance(result.permissions, str) else result.permissions
-            if not perms.get('proxmox.cluster.manage'):
-                perms['proxmox.cluster.manage'] = True
+            changed = False
+            # Remove old dot-format key that triggers full permission reset in Migration 9
+            if 'proxmox.cluster.manage' in perms:
+                del perms['proxmox.cluster.manage']
+                changed = True
+            # Add new-format key if missing
+            if not perms.get('cluster:manage'):
+                perms['cluster:manage'] = True
+                changed = True
+            if changed:
                 conn.execute(
                     text("UPDATE roles SET permissions = :p WHERE name = 'admin'"),
                     {"p": _json.dumps(perms)}
                 )
-                logger.info("✓ Added proxmox.cluster.manage to admin role")
+                logger.info("✓ Migrated admin role: proxmox.cluster.manage → cluster:manage")
+            else:
+                logger.info("✓ Admin role cluster:manage already up to date")
     except Exception as e:
         logger.warning(f"Could not update admin role permissions: {e}")
 
@@ -1179,6 +1194,66 @@ def migrate_workspaces(conn):
     """))
 
     logger.info("✓ workspaces tables created, Default workspace populated")
+
+
+def migrate_user_servers(conn):
+    """Migration 20: Create user_servers association table for server-to-user assignments."""
+    logger.info("Migration 20: Creating user_servers table...")
+
+    if table_exists(conn, 'user_servers'):
+        logger.info("Table user_servers already exists, skipping")
+        return
+
+    conn.execute(text("""
+        CREATE TABLE user_servers (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            server_id INTEGER NOT NULL REFERENCES proxmox_servers(id) ON DELETE CASCADE,
+            PRIMARY KEY (user_id, server_id)
+        )
+    """))
+    conn.execute(text("CREATE INDEX idx_user_servers_user ON user_servers(user_id)"))
+    conn.execute(text("CREATE INDEX idx_user_servers_server ON user_servers(server_id)"))
+
+    logger.info("✓ user_servers table created")
+
+
+def migrate_user_role_remove_dashboard(conn):
+    """Migration 21: Ensure dashboard:view is False for user role (new format only)."""
+    logger.info("Migration 21: Updating user role permissions (dashboard:view = false)...")
+
+    if not table_exists(conn, 'roles'):
+        logger.info("Table roles does not exist, skipping")
+        return
+
+    result = conn.execute(text("SELECT id, permissions FROM roles WHERE name = 'user'"))
+    row = result.fetchone()
+    if not row:
+        logger.info("Role 'user' not found, skipping")
+        return
+
+    import json as _json
+    perms = row[1] if isinstance(row[1], dict) else _json.loads(row[1] or '{}')
+
+    changed = False
+
+    # Remove old dot-format key if present (it triggers Migration 9 to "migrate" the role every start)
+    if 'dashboard.view' in perms:
+        del perms['dashboard.view']
+        changed = True
+
+    # Ensure new-format key is False
+    if perms.get('dashboard:view') is not False:
+        perms['dashboard:view'] = False
+        changed = True
+
+    if changed:
+        conn.execute(
+            text("UPDATE roles SET permissions = :p WHERE name = 'user'"),
+            {"p": _json.dumps(perms)}
+        )
+        logger.info("✓ user role: dashboard:view set to False (old dot-format key removed)")
+    else:
+        logger.info("✓ user role: dashboard:view already False, skipping")
 
 
 def run_all_migrations(engine, db_session=None):
@@ -1345,6 +1420,22 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Workspaces migration: {e}")
+                conn.rollback()
+
+            # Migration 20: User-Server assignments
+            try:
+                migrate_user_servers(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"User-Server assignments migration: {e}")
+                conn.rollback()
+
+            # Migration 21: Update user role - disable dashboard.view
+            try:
+                migrate_user_role_remove_dashboard(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"User role dashboard migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

@@ -1731,6 +1731,12 @@ function showVMActions(event, serverId, vmid, type, node, vmName, status) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
             <span>{{ t('reinstall') }}</span>
         </div>
+        ${window.isAdmin ? `
+        <div class="vm-context-menu-item" onclick="showAssignOwnerModal(${serverId}, ${vmid}, '${vmName.replace(/'/g, "\\'")}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            <span>{{ t('assign_user') or 'Assign User' }}</span>
+        </div>
+        ` : ''}
         <div class="vm-context-menu-item danger" onclick="confirmDeleteVM(${serverId}, ${vmid}, '${type}', '${node}', '${vmName}')" data-permission="vms.delete">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
             <span>{{ t('delete') }}</span>
@@ -2068,6 +2074,73 @@ function reinstallVM(serverId, vmid, type, node, vmName) {
     window.currentVMContext = { serverId, vmid, type, node, vmName };
     showReinstallModal(serverId, vmid, type, node, vmName);
 }
+
+// ===================== Assign Owner =====================
+async function showAssignOwnerModal(serverId, vmid, vmName) {
+    closeVMContextMenu();
+    document.getElementById('assignOwnerServerId').value = serverId;
+    document.getElementById('assignOwnerVmid').value = vmid;
+    document.getElementById('assignOwnerVmTitle').textContent = vmName;
+    document.getElementById('assignOwnerCurrentInfo').textContent = '';
+    document.getElementById('assignOwnerUserSelect').innerHTML = '<option value="">{{ t("loading") or "Loading..." }}</option>';
+    document.getElementById('assignOwnerModal').style.display = 'flex';
+
+    try {
+        const resp = await fetch(`/api/${serverId}/vm/${vmid}/owner`, {
+            headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+        });
+        if (!resp.ok) throw new Error('Failed to load');
+        const data = await resp.json();
+
+        const select = document.getElementById('assignOwnerUserSelect');
+        select.innerHTML = '<option value="">— {{ t("no_owner") or "No owner" }} —</option>';
+        (data.users || []).forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.textContent = u.username + (u.full_name ? ` (${u.full_name})` : '');
+            if (u.id === data.owner_id) opt.selected = true;
+            select.appendChild(opt);
+        });
+
+        if (data.owner) {
+            document.getElementById('assignOwnerCurrentInfo').textContent =
+                `{{ t("current_owner") or "Current owner" }}: ${data.owner.username}${data.owner.full_name ? ' (' + data.owner.full_name + ')' : ''}`;
+        }
+    } catch (e) {
+        document.getElementById('assignOwnerUserSelect').innerHTML = '<option value="">Error loading users</option>';
+    }
+}
+
+async function saveAssignOwner() {
+    const serverId = document.getElementById('assignOwnerServerId').value;
+    const vmid = document.getElementById('assignOwnerVmid').value;
+    const rawVal = document.getElementById('assignOwnerUserSelect').value;
+    const userId = rawVal ? parseInt(rawVal) : null;
+
+    const btn = document.getElementById('assignOwnerSaveBtn');
+    btn.disabled = true;
+    try {
+        const resp = await fetch(`/api/${serverId}/vm/${vmid}/owner`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId })
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            showToast('error', '{{ t("error") or "Error" }}', err.detail || 'Failed to assign');
+            return;
+        }
+        closeAssignOwnerModal();
+        showToast('success', '{{ t("success") or "Success" }}', '{{ t("owner_updated") or "Owner updated" }}');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function closeAssignOwnerModal() {
+    document.getElementById('assignOwnerModal').style.display = 'none';
+}
+// ========================================================
 
 function confirmDeleteVM(serverId, vmid, type, node, vmName) {
     closeVMContextMenu();
@@ -3187,6 +3260,33 @@ window.addEventListener('beforeunload', () => {
     stopStatusMonitoring();
 });
 </script>
+
+<!-- Assign Owner Modal -->
+<div id="assignOwnerModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 2100; align-items: center; justify-content: center; padding: 1rem;">
+    <div class="card" style="max-width: 440px; width: 95%; max-height: 85vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+            <h3 style="margin: 0; font-size: 1.05rem;">
+                <svg style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.4rem;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                {{ t('assign_user') or 'Assign User' }}
+            </h3>
+            <button onclick="closeAssignOwnerModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <p id="assignOwnerVmTitle" style="color:var(--text-muted);font-size:0.875rem;margin:0 0 1.1rem;"></p>
+        <div style="margin-bottom:1rem;">
+            <label style="display:block;margin-bottom:0.4rem;font-size:0.875rem;color:var(--text-secondary);">{{ t('user') or 'User' }}</label>
+            <select id="assignOwnerUserSelect" class="form-control" style="width:100%;">
+                <option value="">— {{ t('no_owner') or 'No owner' }} —</option>
+            </select>
+        </div>
+        <div id="assignOwnerCurrentInfo" style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;"></div>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.25rem;">
+            <button class="btn btn-secondary" onclick="closeAssignOwnerModal()">{{ t('cancel') }}</button>
+            <button class="btn btn-primary" onclick="saveAssignOwner()" id="assignOwnerSaveBtn">{{ t('save') }}</button>
+        </div>
+        <input type="hidden" id="assignOwnerServerId">
+        <input type="hidden" id="assignOwnerVmid">
+    </div>
+</div>
 
 <!-- Create VM Modal -->
 <div id="createVMModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 2000; align-items: center; justify-content: center; padding: 1rem;">

@@ -742,7 +742,7 @@ async function executeCommand(command) {
     const outputContent = document.getElementById('command-output-content');
     
     outputDiv.style.display = 'block';
-    outputContent.innerHTML = `$ ${command}\n<i class="fa-solid fa-spinner fa-spin"></i> Выполняется...\n`;
+    outputContent.innerHTML = `$ ${command}\n<i class="fa-solid fa-spinner fa-spin"></i> ${t('executing_command')}\n`;
     
     try {
         const timeout = 30;
@@ -755,8 +755,8 @@ async function executeCommand(command) {
         
         if (!response.ok) {
             const error = await response.text();
-            outputContent.innerHTML = `$ ${command}\n<i class="fa-solid fa-circle-xmark"></i> Ошибка: ${error}`;
-            showNotification('Ошибка выполнения команды', 'error');
+            outputContent.innerHTML = `$ ${command}\n<i class="fa-solid fa-circle-xmark"></i> ${t('error')}: ${error}`;
+            showNotification(t('command_execution_error'), 'error');
             return;
         }
         
@@ -764,8 +764,8 @@ async function executeCommand(command) {
         displayCommandOutput(result, command);
         
     } catch (error) {
-        outputContent.innerHTML = `$ ${command}\n<i class="fa-solid fa-circle-xmark"></i> Ошибка: ${error.message}`;
-        showNotification('Ошибка выполнения команды', 'error');
+        outputContent.innerHTML = `$ ${command}\n<i class="fa-solid fa-circle-xmark"></i> ${t('error')}: ${error.message}`;
+        showNotification(t('command_execution_error'), 'error');
     }
 }
 
@@ -799,7 +799,7 @@ function displayCommandOutput(result, command = null) {
             output += `\n\nExit code: ${result.exit_code}`;
         }
         
-        showNotification('Ошибка выполнения', 'error');
+        showNotification(t('execution_error'), 'error');
     }
     
     outputContent.textContent = output;
@@ -952,7 +952,7 @@ function drawCharts(data, timeframe = 'hour') {
                 labels: labels,
                 datasets: [
                     {
-                        label: 'Использовано',
+                        label: t('used'),
                         data: data.map(d => {
                             const used = d.mem || d.memused || 0;
                             return (used / (1024**3)).toFixed(2);
@@ -965,7 +965,7 @@ function drawCharts(data, timeframe = 'hour') {
                         pointRadius: 0
                     },
                     {
-                        label: 'Выделено',
+                        label: t('allocated'),
                         data: data.map(d => {
                             const max = d.maxmem || d.memtotal || 1;
                             return (max / (1024**3)).toFixed(2);
@@ -1171,7 +1171,7 @@ async function deleteInstance() {
     // Second confirmation - enter ID
     const confirmId = await showPrompt(
         t('enter_id_to_confirm').replace('{id}', vmid),
-        t('confirm_deletion') || 'Подтверждение удаления',
+        t('confirm_deletion'),
         { 
             type: 'danger',
             icon: '<i class="fa-solid fa-triangle-exclamation"></i>',
@@ -1314,25 +1314,25 @@ async function openVNC() {
             
             vncConnection.addEventListener('disconnect', (e) => {
                 if (e.detail.clean) {
-                    vncContent.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">Соединение закрыто</div>';
+                    vncContent.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">${t('connection_closed')}</div>`;
                 } else {
                     vncContent.innerHTML = `
                         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); padding: 2rem;">
                             <div style="font-size: 2rem; margin-bottom: 1rem;"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                            <div style="margin-bottom: 1rem; font-size: 1.125rem;">Соединение прервано</div>
+                            <div style="margin-bottom: 1rem; font-size: 1.125rem;">${t('connection_interrupted')}</div>
                             <div style="background: var(--bg-tertiary); padding: 1.5rem; border-radius: 8px; max-width: 500px; text-align: left; margin-bottom: 1rem;">
                                 <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 0.5rem;">
-                                    <strong>Возможные причины:</strong>
+                                    <strong>${t('possible_reasons')}:</strong>
                                 </p>
                                 <ul style="color: var(--text-muted); font-size: 0.8rem; margin-left: 1rem;">
-                                    <li>Proxmox VNC требует авторизацию по паролю (не API token)</li>
-                                    <li>Добавьте пароль в настройках Proxmox сервера</li>
-                                    <li>VM/контейнер может быть выключен</li>
+                                    <li>${t('vnc_requires_password')}</li>
+                                    <li>${t('vnc_add_password')}</li>
+                                    <li>${t('vnc_vm_may_be_off')}</li>
                                 </ul>
                             </div>
                             <div style="display: flex; gap: 1rem;">
-                                <button onclick="openVNC()" class="btn btn-primary"><i class="fa-solid fa-rotate"></i> Переподключиться</button>
-                                <a href="https://${vncData.host}:8006" target="_blank" class="btn btn-secondary"><i class="fa-solid fa-globe"></i> Открыть Proxmox</a>
+                                <button onclick="openVNC()" class="btn btn-primary"><i class="fa-solid fa-rotate"></i> ${t('reconnect')}</button>
+                                <a href="https://${vncData.host}:8006" target="_blank" class="btn btn-secondary"><i class="fa-solid fa-globe"></i> ${t('open_proxmox')}</a>
                             </div>
                         </div>
                     `;
@@ -1343,8 +1343,8 @@ async function openVNC() {
                 vncContent.innerHTML = `
                     <div style="padding: 2rem; text-align: center;">
                         <div style="font-size: 2rem; margin-bottom: 1rem;"><i class="fa-solid fa-lock"></i></div>
-                        <div class="text-danger">Ошибка безопасности VNC</div>
-                        <p style="color: var(--text-muted); font-size: 0.875rem; margin-top: 0.5rem;">${e.detail.reason || 'Неизвестная ошибка'}</p>
+                        <div class="text-danger">${t('vnc_security_error')}</div>
+                        <p style="color: var(--text-muted); font-size: 0.875rem; margin-top: 0.5rem;">${e.detail.reason || t('unknown_error')}</p>
                     </div>
                 `;
             });
@@ -1739,7 +1739,7 @@ function closeEditModal() {
 async function showReinstallModal() {
     document.getElementById('reinstallModal').style.display = 'flex';
     const content = document.getElementById('reinstallContent');
-    content.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Загрузка шаблонов...</div>';
+    content.innerHTML = `<div style="text-align: center; padding: 2rem; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> ${t('loading')}</div>`;
     
     try {
         const [groupsRes, templatesRes] = await Promise.all([
@@ -1754,8 +1754,8 @@ async function showReinstallModal() {
             content.innerHTML = `
                 <div style="text-align: center; padding: 2rem;">
                     <div style="font-size: 2rem; margin-bottom: 1rem;"><i class="fa-solid fa-cube"></i></div>
-                    <p style="color: var(--text-secondary);">Нет доступных шаблонов для этого сервера</p>
-                    <a href="/templates" class="btn" style="margin-top: 1rem;">Добавить шаблоны</a>
+                    <p style="color: var(--text-secondary);">${t('no_templates_for_server')}</p>
+                    <a href="/templates" class="btn" style="margin-top: 1rem;">${t('add_templates')}</a>
                 </div>
             `;
             return;
@@ -1920,22 +1920,22 @@ async function doReinstallInstance(templateId, cloudInitUser, cloudInitPassword,
             const stopRes = await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}/stop?node=${instanceNode}`, { method: 'POST' });
             if (!stopRes.ok) {
                 const error = await stopRes.json();
-                throw new Error(`Ошибка остановки: ${error.detail || stopRes.statusText}`);
+                throw new Error(`${t('stop_error')}: ${error.detail || stopRes.statusText}`);
             }
             await new Promise(r => setTimeout(r, 5000));
         }
         
-        showNotification('<i class="fa-solid fa-spinner fa-spin"></i> Удаление старого инстанса...', 'warning');
+        showNotification(`<i class="fa-solid fa-spinner fa-spin"></i> ${t('deleting_old_instance')}`, 'warning');
         
         // Удалить (не force, чтобы сохранилось в базу)
         const deleteRes = await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}?node=${instanceNode}`, { method: 'DELETE' });
         if (!deleteRes.ok) {
             const error = await deleteRes.json();
-            throw new Error(`Ошибка удаления: ${error.detail || deleteRes.statusText}`);
+            throw new Error(`${t('delete_error')}: ${error.detail || deleteRes.statusText}`);
         }
         await new Promise(r => setTimeout(r, 5000));
         
-        showNotification('<i class="fa-solid fa-spinner fa-spin"></i> Развертывание из шаблона...', 'warning');
+        showNotification(`<i class="fa-solid fa-spinner fa-spin"></i> ${t('deploying_from_template')}`, 'warning');
         
         // Формируем тело запроса с сохраненной конфигурацией и cloud-init параметрами
         const deployData = {
@@ -1976,7 +1976,7 @@ async function doReinstallInstance(templateId, cloudInitUser, cloudInitPassword,
         
         if (response.ok) {
             const result = await response.json();
-            showNotification(`<i class="fa-solid fa-circle-check"></i> Переустановка завершена! VMID: ${result.vmid}`, 'success');
+            showNotification(`<i class="fa-solid fa-circle-check"></i> ${t('reinstall_completed_vmid').replace('{vmid}', result.vmid)}`, 'success');
             closeReinstallModal();
             // Перезагружаем страницу через 2 секунды (VMID остался тот же)
             setTimeout(() => {
@@ -1991,7 +1991,7 @@ async function doReinstallInstance(templateId, cloudInitUser, cloudInitPassword,
         }
     } catch (error) {
         console.error('Reinstall error:', error);
-        showNotification(`<i class="fa-solid fa-circle-xmark"></i> Ошибка: ${error.message}`, 'error');
+        showNotification(`<i class="fa-solid fa-circle-xmark"></i> ${t('error')}: ${error.message}`, 'error');
     }
 }
 

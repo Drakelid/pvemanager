@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.1.7
+> Complete guide for installation, configuration and usage of PVEmanager v1.1.8
 
 ---
 
@@ -25,10 +25,12 @@
 17. [pve CLI Tool](#-pve-cli-tool)
 18. [API Reference](#-api-reference)
 19. [Workspaces](#-workspaces)
-20. [Deployment Guide](#-installation-and-deployment)
-21. [Private Repo Updates](#-settings)
-22. [Troubleshooting](#-troubleshooting)
-23. [FAQ](#-faq)
+20. [User → Server Assignment](#-user--server-assignment)
+21. [VM / LXC Ownership](#-vm--lxc-ownership)
+22. [Deployment Guide](#-installation-and-deployment)
+23. [Private Repo Updates](#-settings)
+24. [Troubleshooting](#-troubleshooting)
+25. [FAQ](#-faq)
 
 ---
 
@@ -1454,7 +1456,53 @@ Pass the `X-Active-Workspace: {id}` header in API requests to filter responses b
 
 ---
 
-## �🔧 Troubleshooting
+## 👤 User → Server Assignment
+
+Server assignment allows admins to directly link specific Proxmox servers to individual users. In combination with Workspaces it gives fine-grained control: a user only sees servers that are **both** in their workspace **and** explicitly assigned to them.
+
+### How it works
+
+1. User belongs to one or more **Workspaces**
+2. Admin assigns specific **servers** to the user (from servers that share at least one workspace with the user)
+3. The user sees only the intersection: workspace-servers ∩ assigned-servers
+
+### Managing assignments (UI)
+
+1. Open **Users** page
+2. Click **Edit** for a user
+3. In the **Servers** tab — check/uncheck servers; incompatible servers (different workspace) are highlighted
+4. Save — assignments are applied immediately
+
+### REST API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/users/{id}/servers` | Assigned servers for a user |
+| `GET` | `/api/users/{id}/server-assignments` | All servers with `assigned` and `compatible` flags |
+| `PUT` | `/api/users/{id}/servers` | Set servers (replaces current list); body: `{"server_ids": [1,2]}` |
+
+Returns `409 workspace_conflict` if any server shares no workspace with the user.
+
+---
+
+## 🖥️ VM / LXC Ownership
+
+Any VM or LXC container can have an **owner** — a regular user responsible for that instance. The owner is displayed in the VM list.
+
+### Assigning an owner (Admin)
+
+Open the VM detail page → **Owner** button → select user → Save.
+
+### REST API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/{server_id}/vm/{vmid}/owner` | Current owner + list of users |
+| `PUT` | `/api/{server_id}/vm/{vmid}/owner` | Set or clear owner (`{"user_id": null}` to clear) |
+
+---
+
+## 🔧 Troubleshooting
 
 ### Startup Issues
 
@@ -1684,5 +1732,5 @@ A: Not yet, but planned for future versions.
 
 ---
 
-*Last updated: March 10, 2026*
-*Version: 1.1.3*
+*Last updated: March 16, 2026*
+*Version: 1.1.8*

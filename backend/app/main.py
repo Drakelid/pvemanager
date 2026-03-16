@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect, Query, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exception_handlers import http_exception_handler
@@ -13,6 +13,8 @@ from loguru import logger
 
 from .config import settings
 from .db import Base, engine, init_db, check_db_connection
+from .auth import PermissionChecker, get_current_user
+from .models import User
 from .api import dashboard as dashboard_router
 from .api import proxmox as proxmox_router
 from .api import auth as auth_router
@@ -259,6 +261,13 @@ def create_app() -> FastAPI:
     @app.exception_handler(HTTPException)
     async def custom_http_exception_handler(request: Request, exc: HTTPException):
         logger.warning(f"HTTP exception: {exc.status_code} - {exc.detail}")
+        # Redirect browser HTML page requests to /login on auth errors
+        if exc.status_code in (401, 403):
+            accept = request.headers.get("accept", "")
+            path = request.url.path
+            if "text/html" in accept and not path.startswith(("/api/", "/static/", "/settings/api/")):
+                from urllib.parse import quote
+                return RedirectResponse(url=f"/login?returnUrl={quote(path)}", status_code=302)
         return await http_exception_handler(request, exc)
 
     # Health check endpoint
