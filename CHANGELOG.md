@@ -4,6 +4,18 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.2.0] - 2026-03-16
+
+### 🐛 Bug Fix — Disk Resize Lock Conflict
+
+- **Root cause fixed** — `resize.put()` in the Proxmox API is asynchronous and returns a UPID task; the old code did not wait for this task to finish before starting the VM, causing Proxmox to report `can't lock file '/var/lock/qemu-server/lock-xxx.conf' — got timeout` and `command '/usr/bin/qemu-img resize' failed: got timeout`
+- **`configure_vm` (VM creation from template)** — now captures the resize UPID and calls `wait_for_task(120 s)` before returning; the VM can only be started after the disk has been fully resized
+- **`resize_vm_disk`** — same fix applied; the resize task completes before the function returns
+- **`resize_container_disk` (both LXC methods)** — same fix; the restart of the container is now issued only after the resize task is confirmed complete
+- **Removed unnecessary post-resize VM restart** — QEMU disk resize operates at the storage layer and does not require a VM reboot; the automatic `restart_vm()` call after manual disk resize has been removed to prevent a second lock conflict
+
+---
+
 ## [v1.1.8] - 2026-03-16
 
 ### 👤 User → Server Assignment

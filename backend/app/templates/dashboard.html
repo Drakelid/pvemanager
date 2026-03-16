@@ -11,23 +11,6 @@
 </div>
 {% endblock %}
 
-{% block sidebar_status %}
-<div class="sidebar-status-section">
-<div class="status-chip {% if stats.total_alerts == 0 %}status-ok{% elif stats.critical_alerts > 0 %}status-error{% else %}status-warning{% endif %}" id="dashStatusChip"{% if stats.total_alerts > 0 %} onclick="openAlertsModal()" style="cursor:pointer;" title="{{ t('view_alerts') if t('view_alerts') else 'Посмотреть предупреждения' }}"{% endif %}>
-    <span class="status-chip-dot"></span>
-    <span id="dashStatusText">
-        {%- if stats.total_alerts == 0 -%}
-            {{ t('all_systems_operational') }}
-        {%- elif stats.critical_alerts > 0 -%}
-            {{ stats.critical_alerts }} {{ t('critical') | lower }} {{ t('alerts_label') | lower }}
-        {%- else -%}
-            {{ stats.total_alerts }} {{ t('warning') | lower }}{{ 's' if stats.total_alerts != 1 else '' }}
-        {%- endif -%}
-    </span>
-</div>
-</div>
-{% endblock %}
-
 {% block content %}
 <!-- ======== 5 STAT CARDS ======== -->
 <div class="stats-grid-5">
@@ -337,15 +320,15 @@ async function _refreshNodeStats(onlineServers) {
             Promise.all(uniqueNodes.map(async ({ server, nodeName, maxVms }) => {
                 try {
                     const r = await fetchWithAuth(`/proxmox/api/${server.id}/node/status?node=${nodeName}`, { hideOnForbidden: true });
-                    if (!r || !r.ok) return { nodeName, cpuPct: 0, ramPct: 0, diskPct: 0, vmCount: maxVms };
+                    if (!r || !r.ok) return { nodeName, serverName: server.name, cpuPct: 0, ramPct: 0, diskPct: 0, vmCount: maxVms };
                     const st = await r.json();
                     return {
-                        nodeName, vmCount: maxVms,
+                        nodeName, serverName: server.name, vmCount: maxVms,
                         cpuPct:  Math.round((st.cpu || 0) * 100),
                         ramPct:  st.memory && st.memory.total > 0 ? Math.round((st.memory.used / st.memory.total) * 100) : 0,
                         diskPct: st.rootfs  && st.rootfs.total  > 0 ? Math.round((st.rootfs.used  / st.rootfs.total)  * 100) : 0,
                     };
-                } catch (e_) { return { nodeName, cpuPct: 0, ramPct: 0, diskPct: 0, vmCount: maxVms }; }
+                } catch (e_) { return { nodeName, serverName: server.name, cpuPct: 0, ramPct: 0, diskPct: 0, vmCount: maxVms }; }
             })),
             Promise.all(uniqueNodes.map(async ({ server, nodeName }) => {
                 try {
@@ -420,7 +403,7 @@ async function _refreshNodeStats(onlineServers) {
                         <div class="node-item-header">
                             <div class="node-item-name">
                                 <span class="node-dot-online"></span>
-                                ${escapeHtml(node.nodeName)}
+                                <span class="node-name-text">${escapeHtml(node.serverName || node.nodeName)}</span>
                             </div>
                             <span class="node-vm-count">${node.vmCount > 0 ? node.vmCount + ' ' + t('vms') : ''}</span>
                         </div>
@@ -530,7 +513,7 @@ function renderDashboardData(data) {
         const allNodes = [];
         for (const server of (data.servers || [])) {
             if (Array.isArray(server.nodes)) {
-                for (const node of server.nodes) allNodes.push(node);
+                for (const node of server.nodes) allNodes.push({ ...node, serverName: server.name });
             }
         }
         if (allNodes.length > 0) {
@@ -583,7 +566,7 @@ function renderDashboardData(data) {
                         <div class="node-item-header">
                             <div class="node-item-name">
                                 <span class="node-dot-online"></span>
-                                ${escapeHtml(node.name)}
+                                <span class="node-name-text">${escapeHtml(node.serverName || node.name)}</span>
                             </div>
                         </div>
                         <div class="node-bar-row">

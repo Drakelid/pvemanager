@@ -1014,15 +1014,10 @@ async def resize_vm_disk(
                 db.commit()
                 logger.info(f"Updated disk size in database: VM {vmid} -> {size_gb}GB")
             
-            # Перезапускаем VM для применения изменений
-            restart_success = client.restart_vm(node, vmid)
-            if restart_success:
-                logger.info(f"VM {vmid} restarted to apply disk resize")
-            
             logger.info(f"User {current_user.username} resized disk {disk} of VM {vmid} to {size}")
             return JSONResponse(content={
                 "status": "success", 
-                "message": f"Размер диска {disk} изменен на {size}. VM перезапускается для применения изменений."
+                "message": f"Размер диска {disk} изменен на {size}. Для применения изменений внутри ОС выполните resize файловой системы."
             })
         else:
             raise HTTPException(status_code=500, detail="Не удалось изменить размер диска")

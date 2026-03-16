@@ -1387,10 +1387,13 @@ class ProxmoxClient:
                     if disk_key:
                         # Only resize if requested size is larger than current
                         if disk_size > current_size_gb:
-                            self.proxmox.nodes(node).qemu(vmid).resize.put(
+                            resize_upid = self.proxmox.nodes(node).qemu(vmid).resize.put(
                                 disk=disk_key,
                                 size=f'{disk_size}G'
                             )
+                            # Wait for resize task to complete before proceeding
+                            if isinstance(resize_upid, str):
+                                self.wait_for_task(node, resize_upid, timeout=120)
                             logger.info(f"Диск {disk_key} VM {vmid} изменен с {current_size_gb}G до {disk_size}G")
                         else:
                             logger.info(f"Диск {disk_key} VM {vmid} уже имеет размер {current_size_gb}G >= запрошенного {disk_size}G")
@@ -1613,7 +1616,10 @@ class ProxmoxClient:
             return False
         
         try:
-            self.proxmox.nodes(node).qemu(vmid).resize.put(disk=disk, size=size)
+            resize_upid = self.proxmox.nodes(node).qemu(vmid).resize.put(disk=disk, size=size)
+            # Wait for resize task to complete to avoid lock conflicts
+            if isinstance(resize_upid, str):
+                self.wait_for_task(node, resize_upid, timeout=120)
             logger.info(f"Размер диска {disk} VM {vmid} изменен на {size}")
             return True
         except Exception as e:
@@ -1697,7 +1703,10 @@ class ProxmoxClient:
             return False
         
         try:
-            self.proxmox.nodes(node).lxc(vmid).resize.put(disk=disk, size=size)
+            resize_upid = self.proxmox.nodes(node).lxc(vmid).resize.put(disk=disk, size=size)
+            # Wait for resize task to complete to avoid lock conflicts
+            if isinstance(resize_upid, str):
+                self.wait_for_task(node, resize_upid, timeout=120)
             logger.info(f"Размер диска {disk} контейнера {vmid} изменен на {size}")
             return True
         except Exception as e:
@@ -2375,7 +2384,10 @@ class ProxmoxClient:
             return False
         
         try:
-            self.proxmox.nodes(node).lxc(vmid).resize.put(disk=disk, size=size)
+            resize_upid = self.proxmox.nodes(node).lxc(vmid).resize.put(disk=disk, size=size)
+            # Wait for resize task to complete to avoid lock conflicts
+            if isinstance(resize_upid, str):
+                self.wait_for_task(node, resize_upid, timeout=120)
             logger.info(f"Диск {disk} LXC {vmid} изменен на {size}")
             return True
         except Exception as e:

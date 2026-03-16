@@ -1292,6 +1292,9 @@ function createResourceCard(resource, serverId, type) {
 }
 
 // Модальное окно мониторинга
+// Track open monitor channel for cleanup
+window._monitorWsChannel = null;
+
 function showMonitorModal(serverId, node, vmid, type, name) {
     const modal = document.getElementById('monitorModal');
     document.getElementById('monitorTitle').innerHTML = `
@@ -1299,75 +1302,85 @@ function showMonitorModal(serverId, node, vmid, type, name) {
         <span id="updateIndicator" style="display: inline-block; margin-left: 0.5rem; width: 8px; height: 8px; background: var(--accent); border-radius: 50%; opacity: 0; transition: opacity 0.3s ease;"></span>
     `;
     document.getElementById('monitorContent').innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Загрузка данных...</div>';
-    
     modal.style.display = 'flex';
-    
-    // Загрузить данные мониторинга
+
+    // Clean up any previous WS subscription
+    if (window._monitorWsChannel && typeof unsubscribeWsChannel === 'function') {
+        unsubscribeWsChannel(window._monitorWsChannel);
+    }
+    window._monitorWsChannel = `instance_metrics:${serverId}_${vmid}_${type}_${node}`;
+
+    // Initial load via HTTP (RRD) + WS status (if cached) — fallback to HTTP
     loadMonitorData(serverId, node, vmid, type);
-    
-    // Обновлять каждые 5 секунд
-    if (window.monitorInterval) clearInterval(window.monitorInterval);
-    window.monitorInterval = setInterval(() => {
-        if (modal.style.display === 'flex') {
-            loadMonitorData(serverId, node, vmid, type);
-        }
-    }, 5000);
+
+    // Subscribe to live WS updates
+    if (typeof subscribeWsChannel === 'function') {
+        subscribeWsChannel(window._monitorWsChannel);
+    }
+    if (typeof registerWsHandler === 'function') {
+        registerWsHandler('metrics_update', function _monitorWsHandler(msg) {
+            if (msg.channel !== window._monitorWsChannel) return;
+            if (!msg.data) return;
+            const monitorContent = document.getElementById('monitorContent');
+            if (!monitorContent) return;
+
+            const updateIndicator = document.getElementById('updateIndicator');
+            if (updateIndicator) { updateIndicator.style.opacity = '1'; setTimeout(() => { updateIndicator.style.opacity = '0'; }, 300); }
+
+            if (monitorContent.dataset.initialized) {
+                updateMonitorData(msg.data, null);
+            } else {
+                // First time: need RRD too — fetch once then mark initialized
+                fetchWithAuth(`/proxmox/api/${serverId}/${type}/${vmid}/rrddata?node=${node}&timeframe=hour`)
+                    .then(r => r.ok ? r.json() : null)
+                    .catch(() => null)
+                    .then(rrdData => {
+                        renderMonitorData(msg.data, rrdData || [], type);
+                        monitorContent.dataset.initialized = 'true';
+                    });
+            }
+        });
+    }
 }
 
 function closeMonitorModal() {
     const modal = document.getElementById('monitorModal');
     const monitorContent = document.getElementById('monitorContent');
-    
     modal.style.display = 'none';
-    
-    // Очистить флаг инициализации для следующего открытия
-    if (monitorContent) {
-        delete monitorContent.dataset.initialized;
-    }
-    
-    if (window.monitorInterval) {
-        clearInterval(window.monitorInterval);
-        window.monitorInterval = null;
+    if (monitorContent) delete monitorContent.dataset.initialized;
+    // Unsubscribe WS
+    if (window._monitorWsChannel && typeof unsubscribeWsChannel === 'function') {
+        unsubscribeWsChannel(window._monitorWsChannel);
+        window._monitorWsChannel = null;
     }
 }
 
 async function loadMonitorData(serverId, node, vmid, type) {
     const monitorContent = document.getElementById('monitorContent');
     const isFirstLoad = !monitorContent.dataset.initialized;
-    
+
     try {
-        // Показать индикатор обновления
         const updateIndicator = document.getElementById('updateIndicator');
-        if (updateIndicator) {
-            updateIndicator.style.opacity = '1';
-        }
-        
+        if (updateIndicator) updateIndicator.style.opacity = '1';
+
         const [statusRes, rrdRes] = await Promise.all([
             fetchWithAuth(`/proxmox/api/${serverId}/${type}/${vmid}/status?node=${node}`),
             fetchWithAuth(`/proxmox/api/${serverId}/${type}/${vmid}/rrddata?node=${node}&timeframe=hour`)
         ]);
-        
-        if (!statusRes.ok || !rrdRes.ok) {
-            throw new Error(`HTTP error: ${statusRes.status} / ${rrdRes.status}`);
-        }
-        
+
+        if (!statusRes.ok || !rrdRes.ok) throw new Error(`HTTP error: ${statusRes.status} / ${rrdRes.status}`);
+
         const status = await statusRes.json();
         const rrdData = await rrdRes.json();
-        
-        // Первая загрузка - рендерим всё, последующие - только обновляем данные
+
         if (isFirstLoad) {
             renderMonitorData(status, rrdData, type);
             monitorContent.dataset.initialized = 'true';
         } else {
             updateMonitorData(status, rrdData);
         }
-        
-        // Скрыть индикатор
-        if (updateIndicator) {
-            setTimeout(() => {
-                updateIndicator.style.opacity = '0';
-            }, 300);
-        }
+
+        if (updateIndicator) setTimeout(() => { updateIndicator.style.opacity = '0'; }, 300);
     } catch (error) {
         console.error('Error loading monitor data:', error);
         document.getElementById('monitorContent').innerHTML = `

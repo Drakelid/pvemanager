@@ -1906,29 +1906,77 @@ function revertVMStatus(serverId, vmid) {
     delete statusEl.dataset.prevStatus;
 }
 
-// Poll VM status until it changes
+// Poll VM status until it changes — via WebSocket instance_metrics
 async function pollVMStatus(serverId, vmid, type, node, action, attempts = 0, phase = 'initial') {
     const maxAttempts = 30;
-    const pollInterval = 1500;
-    
-    if (attempts >= maxAttempts) {
-        loadAllVMs();
+
+    // Prefer WS subscription over HTTP polling
+    if (typeof subscribeWsChannel === 'function' && typeof registerWsHandler === 'function') {
+        const channel = `instance_metrics:${serverId}_${vmid}_${type}_${node}`;
+        let _resolved = false;
+        let _timeoutId = null;
+
+        const _cleanup = () => {
+            clearTimeout(_timeoutId);
+            if (typeof unsubscribeWsChannel === 'function') unsubscribeWsChannel(channel);
+        };
+
+        // Timeout: fall back to HTTP after 45 s
+        _timeoutId = setTimeout(() => {
+            if (_resolved) return;
+            _resolved = true;
+            _cleanup();
+            _pollVMStatusHTTP(serverId, vmid, type, node, action, 0, phase);
+        }, 45000);
+
+        subscribeWsChannel(channel);
+        registerWsHandler('metrics_update', function _wsHandler(msg) {
+            if (msg.channel !== channel || _resolved) return;
+            const newStatus = msg.data && msg.data.status;
+            if (!newStatus) return;
+
+            if (action === 'restart') {
+                if (phase === 'initial' && newStatus === 'stopped') {
+                    phase = 'restarting';
+                    updateVMStatusUI(serverId, vmid, 'pending', 'restart');
+                    return;
+                } else if (phase === 'restarting' && newStatus === 'running') {
+                    _resolved = true;
+                    _cleanup();
+                    updateVMStatusUI(serverId, vmid, newStatus);
+                    updateVMActionButton(serverId, vmid, type, node, newStatus);
+                }
+            } else {
+                const expected = action === 'start' ? 'running' : action === 'stop' ? 'stopped' : null;
+                if (expected && newStatus === expected) {
+                    _resolved = true;
+                    _cleanup();
+                    updateVMStatusUI(serverId, vmid, newStatus);
+                    updateVMActionButton(serverId, vmid, type, node, newStatus);
+                }
+            }
+        });
         return;
     }
-    
+
+    // Fallback: HTTP polling (no WS available)
+    _pollVMStatusHTTP(serverId, vmid, type, node, action, attempts, phase);
+}
+
+async function _pollVMStatusHTTP(serverId, vmid, type, node, action, attempts = 0, phase = 'initial') {
+    const maxAttempts = 30;
+    const pollInterval = 1500;
+    if (attempts >= maxAttempts) { loadAllVMs(); return; }
     try {
         const apiType = type === 'lxc' ? 'container' : 'vm';
         const response = await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vmid}/status?node=${node}`);
-        
         if (response && response.ok) {
             const data = await response.json();
             const newStatus = data.status || 'stopped';
-            
-            // For restart, we need to wait for stopped first, then running
             if (action === 'restart') {
                 if (phase === 'initial' && newStatus === 'stopped') {
                     updateVMStatusUI(serverId, vmid, 'pending', 'restart');
-                    setTimeout(() => pollVMStatus(serverId, vmid, type, node, action, 0, 'restarting'), pollInterval);
+                    setTimeout(() => _pollVMStatusHTTP(serverId, vmid, type, node, action, 0, 'restarting'), pollInterval);
                     return;
                 } else if (phase === 'restarting' && newStatus === 'running') {
                     updateVMStatusUI(serverId, vmid, newStatus);
@@ -1936,24 +1984,18 @@ async function pollVMStatus(serverId, vmid, type, node, action, attempts = 0, ph
                     return;
                 }
             } else {
-                const expectedStatus = action === 'start' ? 'running' : 
-                                       action === 'stop' ? 'stopped' : null;
-                
-                if (expectedStatus && newStatus === expectedStatus) {
+                const expected = action === 'start' ? 'running' : action === 'stop' ? 'stopped' : null;
+                if (expected && newStatus === expected) {
                     updateVMStatusUI(serverId, vmid, newStatus);
                     updateVMActionButton(serverId, vmid, type, node, newStatus);
                     return;
                 }
             }
-            
-            // Continue polling
-            setTimeout(() => pollVMStatus(serverId, vmid, type, node, action, attempts + 1, phase), pollInterval);
+            setTimeout(() => _pollVMStatusHTTP(serverId, vmid, type, node, action, attempts + 1, phase), pollInterval);
         } else {
-            setTimeout(() => pollVMStatus(serverId, vmid, type, node, action, attempts + 1, phase), pollInterval);
+            setTimeout(() => _pollVMStatusHTTP(serverId, vmid, type, node, action, attempts + 1, phase), pollInterval);
         }
-    } catch (error) {
-        setTimeout(() => pollVMStatus(serverId, vmid, type, node, action, attempts + 1, phase), pollInterval);
-    }
+    } catch { setTimeout(() => _pollVMStatusHTTP(serverId, vmid, type, node, action, attempts + 1, phase), pollInterval); }
 }
 
 // Update action button with new status for context menu
@@ -3200,64 +3242,34 @@ window.addEventListener('DOMContentLoaded', () => {
         }, 1000);
     }
     
-    // Start real-time status monitoring
-    startStatusMonitoring();
-});
-
-// Real-time status monitoring
-let statusMonitorInterval = null;
-
-function startStatusMonitoring() {
-    // Poll for status changes every 10 seconds
-    statusMonitorInterval = setInterval(async () => {
-        if (allVMs.length === 0) return;
-        
-        // Group VMs by server for efficient API calls
-        const serverGroups = {};
-        allVMs.forEach(vm => {
-            if (!serverGroups[vm.server_id]) {
-                serverGroups[vm.server_id] = [];
-            }
-            serverGroups[vm.server_id].push(vm);
-        });
-        
-        // Check status for each VM
-        for (const [serverId, vms] of Object.entries(serverGroups)) {
-            for (const vm of vms) {
-                try {
-                    const apiType = vm.type === 'lxc' ? 'container' : 'vm';
-                    const response = await fetchWithAuth(`/proxmox/api/${serverId}/${apiType}/${vm.vmid}/status?node=${vm.node}`);
-                    
-                    if (response && response.ok) {
-                        const data = await response.json();
-                        const newStatus = data.status || 'stopped';
-                        
-                        // Only update if status changed
-                        if (vm.status !== newStatus) {
-                            console.log(`[Monitor] Status changed for ${vm.name}: ${vm.status} -> ${newStatus}`);
-                            vm.status = newStatus;
-                            updateVMStatusUI(parseInt(serverId), vm.vmid, newStatus);
-                            updateVMActionButton(parseInt(serverId), vm.vmid, vm.type, vm.node, newStatus);
-                        }
+    // Subscribe to WS dashboard_metrics for live status updates (replaces HTTP polling)
+    if (typeof subscribeWsChannel === 'function') {
+        subscribeWsChannel('dashboard_metrics');
+    }
+    if (typeof registerWsHandler === 'function') {
+        registerWsHandler('metrics_update', (msg) => {
+            if (msg.channel !== 'dashboard_metrics' || !msg.data) return;
+            if (allVMs.length === 0) return;
+            // Update only VMs whose status changed (no DOM rebuild)
+            for (const server of (msg.data.servers || [])) {
+                const sid = server.id;
+                for (const item of [...(server.vms || []), ...(server.containers || [])]) {
+                    const vm = allVMs.find(v => v.server_id === sid && v.vmid === item.vmid);
+                    if (!vm) continue;
+                    const newStatus = item.status || 'stopped';
+                    if (vm.status !== newStatus) {
+                        vm.status = newStatus;
+                        updateVMStatusUI(sid, item.vmid, newStatus);
+                        updateVMActionButton(sid, item.vmid, vm.type, vm.node, newStatus);
                     }
-                } catch (error) {
-                    // Silently ignore errors during background monitoring
                 }
             }
-        }
-    }, 10000); // Every 10 seconds
-}
-
-function stopStatusMonitoring() {
-    if (statusMonitorInterval) {
-        clearInterval(statusMonitorInterval);
-        statusMonitorInterval = null;
+            updateStats();
+        });
     }
-}
-
-// Clean up on page unload
-window.addEventListener('beforeunload', () => {
-    stopStatusMonitoring();
+    window.addEventListener('beforeunload', () => {
+        if (typeof unsubscribeWsChannel === 'function') unsubscribeWsChannel('dashboard_metrics');
+    });
 });
 </script>
 

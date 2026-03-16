@@ -512,7 +512,8 @@ def delete_proxmox_server(
 ):
     """Удалить Proxmox сервер и связанные OS Templates"""
     from ...proxmox_client import clear_server_cache
-    from ...models import OSTemplate, OSTemplateGroup, VMInstance
+    from ...models import OSTemplate, OSTemplateGroup, VMInstance, Notification
+    from ...workers import monitoring_worker
     
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
@@ -558,11 +559,26 @@ def delete_proxmox_server(
     
     logger.info(f"User {current_user.username} deleted Proxmox server: {server_name} ({server_ip})")
     
+    # Удаляем уведомления о сервере (offline/online) чтобы они не показывались после удаления
+    notifications_deleted = db.query(Notification).filter(
+        Notification.source_id == str(server_id),
+        Notification.source.in_(["monitoring", "server_monitor"])
+    ).delete(synchronize_session=False)
+    if notifications_deleted > 0:
+        logger.info(f"Deleted {notifications_deleted} notifications for server {server_name}")
+    
     # Очищаем кеш подключений для этого сервера
     clear_server_cache(server_ip)
     
     db.delete(server)
     db.commit()
+    
+    # Очищаем in-memory состояние мониторинга для удалённого сервера
+    try:
+        monitoring_worker.cleanup_server_state(server_id)
+    except Exception as e:
+        logger.warning(f"Failed to cleanup monitoring state for server {server_id}: {e}")
+    
     return None
 
 

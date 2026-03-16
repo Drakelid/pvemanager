@@ -705,7 +705,12 @@ body.update-in-progress .layout {
             {% endif %}
         </div>
         <!-- System Status -->
-        {% block sidebar_status %}{% endblock %}
+        <div class="sidebar-status-section" id="sidebarStatusSection">
+            <div class="status-chip status-ok" id="sidebarStatusChip">
+                <span class="status-chip-dot"></span>
+                <span id="sidebarStatusText">...</span>
+            </div>
+        </div>
         <!-- Workspace Selector -->
         <div class="sidebar-workspace-section" id="sidebarWorkspaceSection">
             <div class="sidebar-workspace-label">Workspace</div>
@@ -1457,6 +1462,39 @@ body.update-in-progress .layout {
         }
     });
 
+    async function loadSidebarStatus() {
+        const chip = document.getElementById('sidebarStatusChip');
+        const text = document.getElementById('sidebarStatusText');
+        if (!chip || !text) return;
+        try {
+            const resp = await fetchWithAuth('/api/dashboard/alerts', { hideOnForbidden: true });
+            if (!resp || !resp.ok) return;
+            const data = await resp.json();
+            const total = data.total || 0;
+            const critical = (data.alerts || []).filter(a => a.level === 'critical').length;
+            chip.classList.remove('status-ok', 'status-warning', 'status-error');
+            if (critical > 0) {
+                chip.classList.add('status-error');
+                chip.style.cursor = 'pointer';
+                chip.onclick = () => { if (typeof openAlertsModal === 'function') openAlertsModal(); };
+                text.textContent = `${critical} ${t('critical') || 'critical'}`;
+            } else if (total > 0) {
+                chip.classList.add('status-warning');
+                chip.style.cursor = 'pointer';
+                chip.onclick = () => { if (typeof openAlertsModal === 'function') openAlertsModal(); };
+                text.textContent = `${total} ${t('warning') || 'warning'}`;
+            } else {
+                chip.classList.add('status-ok');
+                chip.style.cursor = '';
+                chip.onclick = null;
+                text.textContent = t('all_systems_operational') || 'All systems operational';
+            }
+        } catch (e) {
+            const text2 = document.getElementById('sidebarStatusText');
+            if (text2) text2.textContent = t('all_systems_operational') || 'All systems operational';
+        }
+    }
+
     async function loadSidebarWorkspace() {
         try {
             // Determine if current user is admin
@@ -1958,6 +1996,10 @@ body.update-in-progress .layout {
 
             // Load workspace selector for sidebar
             loadSidebarWorkspace();
+
+            // Load sidebar status chip
+            loadSidebarStatus();
+            setInterval(loadSidebarStatus, 60000);
         }
         
         // Add click handlers for sidebar menu items to update page title

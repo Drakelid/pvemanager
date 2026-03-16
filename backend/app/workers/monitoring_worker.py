@@ -972,6 +972,19 @@ class MonitoringWorker:
         finally:
             db.close()
 
+    def cleanup_server_state(self, server_id: int):
+        """Remove all in-memory state for a deleted server to prevent stale data"""
+        self.last_server_states.pop(server_id, None)
+        self.last_server_alerts.pop(server_id, None)
+        # Remove all VM state entries belonging to this server
+        stale_keys = [k for k in self.last_vm_states if k.startswith(f"{server_id}:")]
+        for key in stale_keys:
+            del self.last_vm_states[key]
+        stale_alert_keys = [k for k in self.last_resource_alerts if k.startswith(f"{server_id}:")]
+        for key in stale_alert_keys:
+            del self.last_resource_alerts[key]
+        logger.info(f"[MONITORING] Cleared in-memory state for deleted server {server_id}")
+
 
 # Global worker instance
 monitoring_worker = MonitoringWorker()

@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.1.8
+> Complete guide for installation, configuration and usage of PVEmanager v1.2.0
 
 ---
 
@@ -474,6 +474,8 @@ CPU: 1-32 cores
 RAM: 512MB - 128GB
 Disk: Increase size (decrease not possible)
 ```
+
+> **Note (v1.2.0):** Disk resize is fully asynchronous. The panel waits for the Proxmox resize task to complete before starting the VM, preventing `lock file timeout` errors that occurred when the VM was started immediately after a resize request.
 
 ### High Availability (HA)
 

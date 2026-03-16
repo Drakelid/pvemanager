@@ -3237,6 +3237,14 @@ body {
     font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-primary);
+    flex: 1;
+    min-width: 0;
+}
+
+.node-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .node-dot-online {
