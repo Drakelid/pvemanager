@@ -1502,11 +1502,10 @@ def get_vm_vnc(
         auth_ticket = auth_data.get("ticket")
         csrf_token = auth_data.get("CSRFPreventionToken")
         
-        # 2. Создаём VNC proxy с этим же ticket (важно - та же сессия!)
-        # generate-password=1 создаёт специальный пароль для VNC аутентификации
+        # 2. Создаём VNC proxy с этим же ticket
         vnc_response = requests.post(
             f"https://{server.ip_address}:8006/api2/json/nodes/{node}/qemu/{vmid}/vncproxy",
-            data={"websocket": 1, "generate-password": 1},
+            data={"websocket": 1},
             headers={
                 "CSRFPreventionToken": csrf_token
             },
@@ -1586,10 +1585,9 @@ def get_container_vnc(
         csrf_token = auth_data.get("CSRFPreventionToken")
         
         # 2. Создаём VNC proxy с этим же ticket
-        # generate-password=1 создаёт специальный пароль для VNC аутентификации
         vnc_response = requests.post(
             f"https://{server.ip_address}:8006/api2/json/nodes/{node}/lxc/{vmid}/vncproxy",
-            data={"websocket": 1, "generate-password": 1},
+            data={"websocket": 1},
             headers={
                 "CSRFPreventionToken": csrf_token
             },
