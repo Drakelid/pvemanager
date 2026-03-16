@@ -1460,12 +1460,17 @@ async function connectTerminal() {
             statusEl.style.color = 'var(--success)';
             terminalInstance.focus();
             
-            // Send initial resize
-            const dims = fitAddon.proposeDimensions();
-            if (dims) {
-                const resizeMsg = `1:${dims.cols}:${dims.rows}:`;
-                terminalWebSocket.send(resizeMsg);
-            }
+            // Send initial resize — fallback to 80x24 if proposeDimensions returns null
+            // (happens when xterm.css not loaded yet)
+            const sendResize = () => {
+                const dims = fitAddon.proposeDimensions();
+                const cols = dims ? dims.cols : 80;
+                const rows = dims ? dims.rows : 24;
+                terminalWebSocket.send(`1:${cols}:${rows}:`);
+            };
+            // Send immediately and re-send after layout settles
+            sendResize();
+            setTimeout(sendResize, 200);
         };
         
         terminalWebSocket.onmessage = (event) => {

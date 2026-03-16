@@ -2577,140 +2577,144 @@ async def terminal_websocket_fixed(
     """WebSocket терминал для LXC контейнеров через Proxmox termproxy API"""
     import websockets
     import httpx
-    
+    from urllib.parse import quote
+
     await websocket.accept()
     logger.info(f"Terminal WebSocket accepted for container {vmid} on node {node}")
-    
-    # Получаем сервер из БД
+
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
-        logger.error(f"Proxmox server {server_id} not found")
         await websocket.close(code=1008, reason="Proxmox server not found")
         return
-    
+
     proxmox_ws = None
-    
+    bytes_to_proxmox = 0
+    bytes_from_proxmox = 0
+
     try:
-        # Шаг 1: Получаем auth ticket через Proxmox API
-        async with httpx.AsyncClient(verify=server.verify_ssl, timeout=10) as client:
-            auth_url = f"https://{server.ip_address}:8006/api2/json/access/ticket"
-            
-            # Используем пароль если есть, иначе API token
-            if server.password:
-                auth_data = {
-                    "username": server.username,
-                    "password": server.password
-                }
-                response = await client.post(auth_url, data=auth_data)
-            else:
-                # Для API token используем другой метод авторизации
-                logger.error("Terminal requires password authentication, API tokens not supported")
-                await websocket.close(code=1011, reason="Terminal requires password auth")
+        # Шаг 1: Auth ticket
+        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            if not server.password:
+                await websocket.close(code=1011, reason="Terminal requires password authentication")
                 return
-            
-            if response.status_code != 200:
-                logger.error(f"Auth failed: {response.status_code}")
+
+            auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
+            auth_resp = await client.post(
+                f"https://{server.ip_address}:8006/api2/json/access/ticket",
+                data={"username": auth_username, "password": server.password}
+            )
+            if auth_resp.status_code != 200:
+                logger.error(f"Auth failed: {auth_resp.status_code} {auth_resp.text}")
                 await websocket.close(code=1011, reason="Authentication failed")
                 return
-            
-            auth_result = response.json()
-            ticket = auth_result["data"]["ticket"]
-            csrf_token = auth_result["data"]["CSRFPreventionToken"]
-            
-            logger.info(f"✅ Auth ticket obtained for {server.username}")
-            
-            # Шаг 2: Получаем termproxy ticket
-            termproxy_url = f"https://{server.ip_address}:8006/api2/json/nodes/{node}/lxc/{vmid}/termproxy"
-            headers = {
-                "CSRFPreventionToken": csrf_token,
-                "Cookie": f"PVEAuthCookie={ticket}"
-            }
-            payload = {
-                "CSRFPreventionToken": csrf_token
-            }
-            
-            response = await client.post(termproxy_url, headers=headers, data=payload)
-            
-            if response.status_code != 200:
-                logger.error(f"Termproxy failed: {response.status_code} - {response.text}")
+
+            auth_data = auth_resp.json()["data"]
+            ticket = auth_data["ticket"]
+            csrf_token = auth_data["CSRFPreventionToken"]
+            logger.info(f"✅ Auth ticket obtained for {auth_username}")
+
+            # Шаг 2: Termproxy
+            term_resp = await client.post(
+                f"https://{server.ip_address}:8006/api2/json/nodes/{node}/lxc/{vmid}/termproxy",
+                headers={"CSRFPreventionToken": csrf_token},
+                cookies={"PVEAuthCookie": ticket}
+            )
+            if term_resp.status_code != 200:
+                logger.error(f"Termproxy failed: {term_resp.status_code} - {term_resp.text}")
                 await websocket.close(code=1011, reason="Failed to create terminal session")
                 return
-            
-            termproxy_result = response.json()
-            vncticket = termproxy_result["data"]["ticket"]
-            port = termproxy_result["data"]["port"]
-            
-            logger.info(f"✅ Termproxy ticket obtained, port: {port}")
-        
-        # Шаг 3: Подключаемся к WebSocket
-        websocket_url = (
-            f"wss://{server.ip_address}:8006/api2/json/nodes/{node}/lxc/{vmid}/vncwebsocket?"
-            f"port={port}&vncticket={vncticket}"
+
+            term_data = term_resp.json()["data"]
+            vncticket = term_data["ticket"]
+            port = term_data["port"]
+            logger.info(f"✅ Termproxy response: port={port}, ticket_prefix={vncticket[:30]}...")
+
+        # Шаг 3: WebSocket к Proxmox — идентично VNC handler
+        proxmox_ws_url = (
+            f"wss://{server.ip_address}:8006/api2/json/nodes/{node}/lxc/{vmid}/vncwebsocket"
+            f"?port={port}&vncticket={quote(vncticket, safe='')}"
         )
-        
+
         ssl_context = ssl.create_default_context()
-        if not server.verify_ssl:
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-        
-        logger.info(f"Connecting to Proxmox terminal WebSocket...")
-        
-        async with websockets.connect(
-            websocket_url,
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        proxmox_ws = await websockets.connect(
+            proxmox_ws_url,
             ssl=ssl_context,
+            extra_headers=[("Cookie", f"PVEAuthCookie={ticket}")],
+            subprotocols=["binary"],
             max_size=None,
-            ping_interval=30,
-            ping_timeout=10
-        ) as proxmox_ws:
-            logger.info(f"✅ Connected to Proxmox terminal WebSocket")
-            
-            async def client_to_proxmox():
-                """Передача данных от xterm.js к Proxmox"""
-                try:
-                    while True:
-                        data = await websocket.receive()
-                        if 'text' in data:
-                            msg = data['text']
-                            # Proxmox ожидает чистые данные без протокола
-                            if msg.startswith('0:'):
-                                # stdin: "0:LENGTH:DATA"
-                                parts = msg.split(':', 2)
-                                if len(parts) == 3:
-                                    terminal_data = parts[2]
-                                    await proxmox_ws.send(terminal_data)
-                            elif msg.startswith('1:'):
-                                # resize - Proxmox не поддерживает через WebSocket
-                                pass
-                            elif msg == '2':
-                                # ping
-                                pass
-                        elif 'bytes' in data:
-                            await proxmox_ws.send(data['bytes'])
-                except WebSocketDisconnect:
-                    logger.info(f"Client disconnected from terminal {vmid}")
-                except Exception as e:
-                    logger.error(f"Error in client_to_proxmox: {e}")
-            
-            async def proxmox_to_client():
-                """Передача данных от Proxmox к xterm.js"""
-                try:
-                    async for message in proxmox_ws:
-                        if isinstance(message, bytes):
-                            await websocket.send_bytes(message)
-                        else:
-                            await websocket.send_text(message)
-                except websockets.exceptions.ConnectionClosed:
-                    logger.info(f"Proxmox terminal WebSocket closed for {vmid}")
-                except Exception as e:
-                    logger.error(f"Error in proxmox_to_client: {e}")
-            
-            # Запускаем обе задачи параллельно
-            await asyncio.gather(
-                client_to_proxmox(),
-                proxmox_to_client(),
-                return_exceptions=True
-            )
-        
+            ping_interval=None,
+            close_timeout=5
+        )
+        logger.info(f"✅ Connected to Proxmox terminal WebSocket (port={port})")
+
+        # CRITICAL: Proxmox termproxy requires auth handshake first.
+        # Send "USERNAME:VNCTICKET\n" as the very first message.
+        # Proxmox responds with "OK" (bytes 0x4F 0x4B), optionally followed by initial terminal data.
+        await proxmox_ws.send(f"{auth_username}:{vncticket}\n")
+        logger.info(f"✅ Sent termproxy auth: {auth_username}:***")
+
+        try:
+            ok_raw = await asyncio.wait_for(proxmox_ws.recv(), timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.error("Proxmox termproxy auth timeout — no OK received")
+            await websocket.close(code=1011, reason="Terminal auth timeout")
+            return
+
+        ok_bytes = ok_raw if isinstance(ok_raw, bytes) else ok_raw.encode("utf-8")
+        if not ok_bytes.startswith(b"OK"):
+            logger.error(f"Proxmox termproxy auth rejected: {ok_bytes[:50]!r}")
+            await websocket.close(code=1011, reason="Terminal authentication rejected")
+            return
+        logger.info("✅ Proxmox termproxy auth OK!")
+
+        # Send any terminal data that arrived together with "OK"
+        if len(ok_bytes) > 2:
+            await websocket.send_bytes(ok_bytes[2:])
+
+        async def client_to_proxmox():
+            nonlocal bytes_to_proxmox
+            try:
+                while True:
+                    message = await websocket.receive()
+                    if message["type"] == "websocket.disconnect":
+                        break
+                    if "bytes" in message:
+                        bytes_to_proxmox += len(message["bytes"])
+                        await proxmox_ws.send(message["bytes"])
+                    elif "text" in message:
+                        bytes_to_proxmox += len(message["text"])
+                        await proxmox_ws.send(message["text"].encode("utf-8"))
+            except WebSocketDisconnect:
+                pass
+            except Exception as e:
+                logger.debug(f"client_to_proxmox ended: {e}")
+
+        async def proxmox_to_client():
+            nonlocal bytes_from_proxmox
+            try:
+                async for message in proxmox_ws:
+                    if isinstance(message, bytes):
+                        bytes_from_proxmox += len(message)
+                        await websocket.send_bytes(message)
+                    else:
+                        bytes_from_proxmox += len(message)
+                        await websocket.send_bytes(message.encode("utf-8"))
+            except Exception as e:
+                logger.debug(f"proxmox_to_client ended: {e}")
+
+        done, pending = await asyncio.wait(
+            [
+                asyncio.create_task(client_to_proxmox()),
+                asyncio.create_task(proxmox_to_client()),
+            ],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in pending:
+            task.cancel()
+
     except Exception as e:
         logger.error(f"Terminal WebSocket error: {e}")
         import traceback
@@ -2720,7 +2724,19 @@ async def terminal_websocket_fixed(
         except Exception:
             pass
     finally:
+        logger.info(f"Terminal stats — to Proxmox: {bytes_to_proxmox}B, from Proxmox: {bytes_from_proxmox}B")
+        if proxmox_ws:
+            try:
+                await proxmox_ws.close()
+            except Exception:
+                pass
+        try:
+            await websocket.close()
+        except Exception:
+            pass
         logger.info(f"Terminal session closed for container {vmid}")
+
+
 
 
 # ==================== Bulk Operations API ====================

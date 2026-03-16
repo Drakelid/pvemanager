@@ -4,6 +4,26 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.1.6] - 2026-03-16
+
+### 🖥️ LXC Terminal — xterm.js Console Fixed
+
+- **Root cause identified and fixed** — Proxmox `termproxy` protocol requires a mandatory auth handshake: the client must send `"USERNAME:VNCTICKET\n"` as the very first WebSocket message; Proxmox responds with `"OK"` before starting the PTY. The backend handler was missing this step entirely, causing Proxmox to wait indefinitely and the browser to show "Disconnected".
+- **Auth handshake added** — after connecting to the Proxmox `vncwebsocket` endpoint the backend now sends the auth message, validates the `"OK"` response, and only then starts the bidirectional proxy.
+- **Initial terminal data forwarded** — any terminal data arriving in the same `"OK"` frame is immediately forwarded to the browser.
+- **Graceful error handling** — auth timeout (>10 s) and explicit rejection close the WebSocket with a descriptive reason code instead of silently hanging.
+
+### 🔧 Fixes
+
+- Fixed `'ProxmoxServer' object has no attribute 'username'` — replaced `server.username` with correct `server.api_user` (with token suffix stripping)
+- Fixed `CSRFPreventionToken` being sent in the request body — now sent only as an HTTP header
+- Fixed `additional_headers` → `extra_headers` (websockets v12 API rename)
+- Added URL-encoding for `vncticket` in the WebSocket URL (`urllib.parse.quote`)
+- Added `PVEAuthCookie` header in the WebSocket upgrade request
+- Added `subprotocols=["binary"]` required by Proxmox vncwebsocket
+
+---
+
 ## [v1.1.5] - 2026-03-15
 
 ### 🗂️ Task Drawer — UPID Tracking & Clear Completed
