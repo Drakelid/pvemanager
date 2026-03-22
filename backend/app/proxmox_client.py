@@ -3180,7 +3180,7 @@ class ProxmoxClient:
             if keep_last and int(keep_last) > 0:
                 params["prune-backups"] = f"keep-last={int(keep_last)}"
             if notes:
-                params["notes"] = notes
+                params["notes-template"] = notes
             upid = self.proxmox.nodes(node).vzdump.post(**params)
             return {"success": True, "upid": upid}
         except Exception as e:

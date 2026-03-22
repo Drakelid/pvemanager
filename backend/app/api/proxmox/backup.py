@@ -268,12 +268,14 @@ async def create_backup(
     compress = data.get("compress", "zstd")
     remove = int(data.get("remove", 1))
     notes = data.get("notes")
+    keep_last = data.get("keep_last")
 
     try:
         client = _get_proxmox_client(server)
         result = client.create_backup(
             node=node, vmid=int(vmid), storage=storage,
-            mode=mode, compress=compress, remove=remove, notes=notes,
+            mode=mode, compress=compress, remove=remove,
+            keep_last=keep_last, notes=notes,
         )
         if result.get("success"):
             LoggingService.log_proxmox_action(
