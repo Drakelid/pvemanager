@@ -4,6 +4,18 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.3.0] - 2026-03-27
+
+### 🖥️ Console — VNC & Terminal Fixes
+
+- **VNC «Connection closed» fixed** — `RFBClass` (noVNC) now receives the WebSocket URL string directly instead of a pre-opened `WebSocket` object; the `onFirstMessage` hack that broke the RFB handshake before the first frame is fully removed from both `virtual_machines.html` and `instance_detail.html`
+- **VNCAuth fixed for QEMU** — `vncproxy` is now called with `"generate-password": 1`; the returned 8-character DES key is passed to noVNC as the VNC password; falls back to `ticket` when `password` is absent (Proxmox 9.x NoAuth mode)
+- **LXC `vncproxy` 500 fixed** — LXC `vncproxy` API does not accept `generate-password`; the parameter is omitted for LXC, which uses `ticket` as the VNC password
+- **LXC context menu opens xterm.js terminal** — the right-click context menu in the VM list now shows **Terminal** for `lxc` type (calls `openTerminalConsole()`) and **VNC Console** for `qemu` type; previously all types used `openVNCConsole()`
+- **Terminal modal added to VM list page** — `#terminalModal` with full xterm.js (FitAddon, WebLinksAddon, Dracula theme) added to `virtual_machines.html`; reuses existing backend endpoints `GET /api/{server_id}/container/{vmid}/terminal` and `WebSocket /proxmox/ws/terminal/{server_id}/{node}/{vmid}`
+
+---
+
 ## [v1.2.0] - 2026-03-16
 
 ### 🐛 Bug Fix — Disk Resize Lock Conflict

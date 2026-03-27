@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.2.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.3.0
 
 ---
 
@@ -460,12 +460,15 @@ Select multiple VMs/containers and perform mass actions:
 
 See [Bulk Operations](#-bulk-operations) for more details.
 
-### VNC Console
+### Console (VNC / Terminal)
 
-1. Open VM details
-2. Click **Console** button
-3. Console opens in new tab
-4. Fullscreen mode supported
+- **QEMU VMs** — VNC console via noVNC (in-browser graphical display).
+  1. Open VM details → click **Console**, or right-click VM in the list → **VNC Console**
+  2. Full keyboard and mouse passthrough; fullscreen supported
+- **LXC Containers** — interactive shell via xterm.js terminal.
+  1. Open container details → click **Terminal**, or right-click container in the VM list → **Terminal**
+  2. Full PTY: tab completion, colours, Unicode, terminal resize on window resize
+  3. Uses the Proxmox `termproxy` WebSocket protocol (auth handshake + keepalive pings every 2 min)
 
 ### Configuration Changes
 
@@ -475,7 +478,7 @@ RAM: 512MB - 128GB
 Disk: Increase size (decrease not possible)
 ```
 
-> **Note (v1.2.0):** Disk resize is fully asynchronous. The panel waits for the Proxmox resize task to complete before starting the VM, preventing `lock file timeout` errors that occurred when the VM was started immediately after a resize request.
+> **Note (v1.2.0+):** Disk resize is fully asynchronous. The panel waits for the Proxmox resize task to complete before starting the VM, preventing `lock file timeout` errors that occurred when the VM was started immediately after a resize request.
 
 ### High Availability (HA)
 
@@ -1570,13 +1573,25 @@ docker compose exec app env | grep SMTP
 - SMTP server may be unreachable
 - Timeout is 10 seconds
 
-### VNC Issues
+### VNC / Terminal Issues
 
-#### "VNC connection failed"
+#### "VNC connection failed" (QEMU)
 
-- Check that VM is running
-- Check that VNC is enabled in Proxmox
-- Try restarting VM
+- Check that the VM is running
+- Ensure VNC is enabled in the Proxmox node settings
+- Try restarting the VM
+- Verify the Proxmox API user has `VM.Console` privilege
+
+#### "Connection closed" immediately on VNC open
+
+- This was a known bug fixed in v1.3.0 (noVNC received a pre-opened WebSocket instead of URL)
+- Upgrade to v1.3.0 or later
+
+#### Terminal not connecting (LXC)
+
+- Check that the container is **running** (not stopped or paused)
+- Verify the Proxmox API user has `VM.Console` privilege on the node
+- Check logs: `docker compose logs app --tail 50`
 
 ### Command Issues
 
