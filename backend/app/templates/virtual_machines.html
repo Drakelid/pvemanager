@@ -1718,10 +1718,17 @@ function showVMActions(event, serverId, vmid, type, node, vmName, status) {
             </div>
         `}
         <div class="vm-context-menu-divider"></div>
+        ${type === 'lxc' ? `
+        <div class="vm-context-menu-item" onclick="openTerminalConsole(${serverId}, ${vmid}, '${node}', '${vmName}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+            <span>{{ t('terminal_console') or 'Terminal' }}</span>
+        </div>
+        ` : `
         <div class="vm-context-menu-item" onclick="openVNCConsole(${serverId}, ${vmid}, '${type}', '${node}', '${vmName}')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
             <span>VNC {{ t('console') }}</span>
         </div>
+        `}
         <div class="vm-context-menu-item" onclick="openVMSettings(${serverId}, ${vmid}, '${type}', '${node}')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             <span>{{ t('settings') }}</span>
@@ -2092,6 +2099,175 @@ function closeVNCModal() {
         window.vncConnection.disconnect();
         window.vncConnection = null;
     }
+}
+
+// === TERMINAL (xterm.js) FUNCTIONS ===
+let terminalInstance = null;
+let terminalWebSocket = null;
+let fitAddon = null;
+
+async function openTerminalConsole(serverId, vmid, node, vmName) {
+    closeVMContextMenu();
+    const modal = document.getElementById('terminalModal');
+    document.getElementById('terminalTitle').innerHTML = `<i class="fa-solid fa-terminal"></i> Terminal: ${vmName || 'Container'} (${vmid})`;
+    document.getElementById('terminalStatus').textContent = t('connecting') + '...';
+    document.getElementById('terminalContent').innerHTML = '';
+
+    modal.style.display = 'flex';
+
+    setTimeout(() => {
+        connectTerminalConsole(serverId, vmid, node);
+    }, 100);
+}
+
+async function connectTerminalConsole(serverId, vmid, node) {
+    const terminalContent = document.getElementById('terminalContent');
+    const statusEl = document.getElementById('terminalStatus');
+
+    try {
+        terminalInstance = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
+            theme: {
+                background: '#1a1a1a',
+                foreground: '#e0e0e0',
+                cursor: '#00ff00',
+                cursorAccent: '#1a1a1a',
+                selection: 'rgba(255, 255, 255, 0.3)',
+                black: '#000000',
+                red: '#ff5555',
+                green: '#50fa7b',
+                yellow: '#f1fa8c',
+                blue: '#6272a4',
+                magenta: '#ff79c6',
+                cyan: '#8be9fd',
+                white: '#f8f8f2',
+                brightBlack: '#6272a4',
+                brightRed: '#ff6e6e',
+                brightGreen: '#69ff94',
+                brightYellow: '#ffffa5',
+                brightBlue: '#d6acff',
+                brightMagenta: '#ff92df',
+                brightCyan: '#a4ffff',
+                brightWhite: '#ffffff'
+            },
+            allowTransparency: false,
+            scrollback: 10000,
+            tabStopWidth: 4
+        });
+
+        fitAddon = new FitAddon.FitAddon();
+        terminalInstance.loadAddon(fitAddon);
+
+        const webLinksAddon = new WebLinksAddon.WebLinksAddon();
+        terminalInstance.loadAddon(webLinksAddon);
+
+        terminalInstance.open(terminalContent);
+        fitAddon.fit();
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsHost = window.location.host;
+        const wsUrl = `${protocol}//${wsHost}/proxmox/ws/terminal/${serverId}/${node}/${vmid}`;
+
+        terminalWebSocket = new WebSocket(wsUrl);
+        terminalWebSocket.binaryType = 'arraybuffer';
+
+        const textEncoder = new TextEncoder();
+
+        terminalWebSocket.onopen = () => {
+            statusEl.textContent = t('connected') || 'Connected';
+            statusEl.style.color = 'var(--success)';
+            terminalInstance.focus();
+
+            const sendResize = () => {
+                const dims = fitAddon.proposeDimensions();
+                const cols = dims ? dims.cols : 80;
+                const rows = dims ? dims.rows : 24;
+                terminalWebSocket.send(`1:${cols}:${rows}:`);
+            };
+            sendResize();
+            setTimeout(sendResize, 200);
+        };
+
+        terminalWebSocket.onmessage = (event) => {
+            if (event.data instanceof ArrayBuffer) {
+                terminalInstance.write(new Uint8Array(event.data));
+            } else {
+                terminalInstance.write(event.data);
+            }
+        };
+
+        terminalWebSocket.onclose = (event) => {
+            statusEl.textContent = t('disconnected') || 'Disconnected';
+            statusEl.style.color = 'var(--danger)';
+            if (!event.wasClean) {
+                terminalInstance.write('\r\n\x1b[31m*** Connection closed ***\x1b[0m\r\n');
+            }
+        };
+
+        terminalWebSocket.onerror = (error) => {
+            console.error('Terminal WebSocket error:', error);
+            statusEl.textContent = t('error') || 'Error';
+            statusEl.style.color = 'var(--danger)';
+        };
+
+        terminalInstance.onData(data => {
+            if (terminalWebSocket && terminalWebSocket.readyState === WebSocket.OPEN) {
+                const byteLength = textEncoder.encode(data).length;
+                terminalWebSocket.send(`0:${byteLength}:${data}`);
+            }
+        });
+
+        const handleResize = () => {
+            if (fitAddon && terminalInstance && terminalWebSocket && terminalWebSocket.readyState === WebSocket.OPEN) {
+                fitAddon.fit();
+                const dims = fitAddon.proposeDimensions();
+                if (dims) {
+                    terminalWebSocket.send(`1:${dims.cols}:${dims.rows}:`);
+                }
+            }
+        };
+        window.addEventListener('resize', handleResize);
+
+        window.terminalPingInterval = setInterval(() => {
+            if (terminalWebSocket && terminalWebSocket.readyState === WebSocket.OPEN) {
+                terminalWebSocket.send('2');
+            }
+        }, 120000);
+
+    } catch (error) {
+        console.error('Terminal error:', error);
+        statusEl.textContent = t('error') || 'Error';
+        statusEl.style.color = 'var(--danger)';
+        terminalContent.innerHTML = `
+            <div style="padding: 2rem; text-align: center;">
+                <div style="background: var(--bg-tertiary); padding: 2rem; border-radius: 8px;">
+                    <div style="font-size: 2rem; margin-bottom: 1rem;"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    <h3 style="color: var(--text-primary); margin-bottom: 1rem;">${t('terminal_connection_error') || 'Terminal Connection Error'}</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 1rem;">${error.message}</p>
+                    <button onclick="closeTerminalModal()" class="btn">${t('close') || 'Close'}</button>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function closeTerminalModal() {
+    if (window.terminalPingInterval) {
+        clearInterval(window.terminalPingInterval);
+        window.terminalPingInterval = null;
+    }
+    if (terminalWebSocket) {
+        terminalWebSocket.close();
+        terminalWebSocket = null;
+    }
+    if (terminalInstance) {
+        terminalInstance.dispose();
+        terminalInstance = null;
+    }
+    fitAddon = null;
+    document.getElementById('terminalModal').style.display = 'none';
 }
 
 function openVMSettings(serverId, vmid, type, node) {
@@ -3321,6 +3497,20 @@ window.addEventListener('DOMContentLoaded', () => {
             <button onclick="closeVNCModal()" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; padding: 0.5rem;">&times;</button>
         </div>
         <div id="vncContent" style="flex: 1; min-height: 600px; background: #000; border-radius: 4px; overflow: hidden;"></div>
+    </div>
+</div>
+
+<!-- Terminal Modal -->
+<div id="terminalModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); z-index: 2000; align-items: center; justify-content: center; padding: 1rem;">
+    <div class="card" style="max-width: 1200px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color);">
+            <h3 id="terminalTitle" style="margin: 0;"><i class="fa-solid fa-terminal"></i> {{ t('terminal_console') or 'Terminal' }}</h3>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <span id="terminalStatus" style="font-size: 0.75rem; color: var(--text-muted);"></span>
+                <button onclick="closeTerminalModal()" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; padding: 0.5rem;">&times;</button>
+            </div>
+        </div>
+        <div id="terminalContent" style="flex: 1; min-height: 500px; background: #000; border-radius: 4px; overflow: hidden;"></div>
     </div>
 </div>
 
