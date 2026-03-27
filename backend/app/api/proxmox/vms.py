@@ -1498,9 +1498,11 @@ def get_vm_vnc(
         csrf_token = auth_data.get("CSRFPreventionToken")
         
         # 2. Создаём VNC proxy с этим же ticket
+        # generate-password=1: Proxmox 8.x возвращает случайный VNC пароль для VNCAuth;
+        # в Proxmox 9.x (NoAuth) поле password пустое, но соединение проходит без пароля.
         vnc_response = requests.post(
             f"https://{server.ip_address}:8006/api2/json/nodes/{node}/qemu/{vmid}/vncproxy",
-            data={"websocket": 1},
+            data={"websocket": 1, "generate-password": 1},
             headers={
                 "CSRFPreventionToken": csrf_token
             },
@@ -1514,11 +1516,13 @@ def get_vm_vnc(
         
         vnc_data = vnc_response.json().get("data", {})
         
-        # Формируем ответ - password это сгенерированный VNC пароль
+        # password = сгенерированный VNC пароль (Proxmox 8.x) или пустой (Proxmox 9.x NoAuth)
+        # Если password не вернулся — используем ticket как пароль (совместимость)
+        vnc_password = vnc_data.get('password') or vnc_data.get('ticket', '')
         response_data = {
             'port': vnc_data.get('port'),
             'ticket': vnc_data.get('ticket'),
-            'password': vnc_data.get('password'),  # Сгенерированный VNC пароль
+            'password': vnc_password,
             'host': server.ip_address,
             'node': node,
             'vmid': vmid,
@@ -1526,7 +1530,7 @@ def get_vm_vnc(
             'auth_ticket': auth_ticket
         }
         
-        logger.info(f"User {current_user.username} opened VNC console for VM {vmid}")
+        logger.info(f"User {current_user.username} opened VNC console for VM {vmid} (password_len={len(vnc_password)}, has_generate_password={'password' in vnc_data})")
         return JSONResponse(content=response_data)
     except HTTPException:
         raise
@@ -1582,7 +1586,7 @@ def get_container_vnc(
         # 2. Создаём VNC proxy с этим же ticket
         vnc_response = requests.post(
             f"https://{server.ip_address}:8006/api2/json/nodes/{node}/lxc/{vmid}/vncproxy",
-            data={"websocket": 1},
+            data={"websocket": 1, "generate-password": 1},
             headers={
                 "CSRFPreventionToken": csrf_token
             },
@@ -1596,11 +1600,11 @@ def get_container_vnc(
         
         vnc_data = vnc_response.json().get("data", {})
         
-        # Формируем ответ - password это сгенерированный VNC пароль
+        vnc_password = vnc_data.get('password') or vnc_data.get('ticket', '')
         response_data = {
             'port': vnc_data.get('port'),
             'ticket': vnc_data.get('ticket'),
-            'password': vnc_data.get('password'),  # Сгенерированный VNC пароль
+            'password': vnc_password,
             'host': server.ip_address,
             'node': node,
             'vmid': vmid,
