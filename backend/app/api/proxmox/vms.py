@@ -1649,13 +1649,6 @@ async def vnc_websocket_proxy(
     if auth_ticket:
         logger.info(f"Using auth_ticket from frontend for VNC WebSocket")
     
-    # Отправляем пароль клиенту первым сообщением (для noVNC credentials).
-    # В Proxmox 9.x generate-password убран — VNC использует NoAuth (Type 1),
-    # поэтому отправляем пустую строку, чтобы onFirstMessage на фронтенде всегда срабатывал.
-    password_to_send = vnc_password if vnc_password else ""
-    logger.info(f"Sending VNC password to client as first message (len={len(password_to_send)})")
-    await websocket.send_text(password_to_send)
-    
     # Построить URL для Proxmox WebSocket
     # Преобразуем vmtype: vm -> qemu, container -> lxc
     proxmox_vmtype = "qemu" if vmtype == "vm" else "lxc"
@@ -1725,7 +1718,7 @@ async def vnc_websocket_proxy(
                     except WebSocketDisconnect:
                         break
             except Exception as e:
-                logger.debug(f"Client to Proxmox ended: {e}")
+                logger.info(f"Client to Proxmox ended: {e}")
         
         async def proxmox_to_client():
             """Пересылка данных от Proxmox к клиенту"""
@@ -1739,10 +1732,11 @@ async def vnc_websocket_proxy(
                         else:
                             bytes_from_proxmox += len(message)
                             await websocket.send_text(message)
-                    except Exception:
+                    except Exception as send_err:
+                        logger.info(f"Send to client failed: {send_err}")
                         break
             except Exception as e:
-                logger.debug(f"Proxmox to client ended: {e}")
+                logger.info(f"Proxmox to client ended: {e}")
         
         # Запускаем обе задачи
         done, pending = await asyncio.wait(
@@ -1760,7 +1754,7 @@ async def vnc_websocket_proxy(
     except Exception as e:
         logger.error(f"VNC WebSocket proxy error: {e}")
     finally:
-        logger.debug(f"VNC stats - To Proxmox: {bytes_to_proxmox} bytes, From Proxmox: {bytes_from_proxmox} bytes")
+        logger.info(f"VNC stats - To Proxmox: {bytes_to_proxmox} bytes, From Proxmox: {bytes_from_proxmox} bytes")
         if proxmox_ws:
             await proxmox_ws.close()
         try:

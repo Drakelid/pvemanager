@@ -2043,45 +2043,36 @@ async function openVNCConsole(serverId, vmid, type, node, vmName) {
         const vncData = await response.json();
         vncContent.innerHTML = '';
         
-        // Create WebSocket URL
+        // Create WebSocket URL (passed directly to noVNC — it manages the WebSocket)
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsHost = window.location.host;
         const resourceType = vncData.type === 'qemu' ? 'vm' : 'container';
         
-        const wsUrl = `${protocol}//${wsHost}/proxmox/ws/vnc/${serverId}/${vncData.node}/${resourceType}/${vmid}?port=${vncData.port}&vncticket=${encodeURIComponent(vncData.ticket)}&auth_ticket=${encodeURIComponent(vncData.auth_ticket)}&vnc_password=${encodeURIComponent(vncData.password || '')}`;
+        const wsUrl = `${protocol}//${wsHost}/proxmox/ws/vnc/${serverId}/${vncData.node}/${resourceType}/${vmid}?port=${vncData.port}&vncticket=${encodeURIComponent(vncData.ticket)}&auth_ticket=${encodeURIComponent(vncData.auth_ticket)}`;
         
-        const ws = new WebSocket(wsUrl);
+        const vncPassword = vncData.password || '';
         
-        ws.addEventListener('message', function onFirstMessage(event) {
-            const vncPassword = event.data;
-            ws.removeEventListener('message', onFirstMessage);
-            
-            window.vncConnection = new RFBClass(vncContent, ws, {
-                credentials: { password: vncPassword }
-            });
-            
-            window.vncConnection.scaleViewport = true;
-            window.vncConnection.resizeSession = true;
-            
-            window.vncConnection.addEventListener('connect', () => {
-                setTimeout(() => {
-                    if (window.vncConnection && window.vncConnection._display) {
-                        window.vncConnection._display.autoscale(vncContent.clientWidth, vncContent.clientHeight);
-                    }
-                }, 500);
-            });
-            
-            window.vncConnection.addEventListener('credentialsrequired', (e) => {
-                window.vncConnection.sendCredentials({ password: vncPassword });
-            });
-            
-            window.vncConnection.addEventListener('disconnect', (e) => {
-                vncContent.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">{{ t("connection_closed") }}</div>';
-            });
+        window.vncConnection = new RFBClass(vncContent, wsUrl, {
+            credentials: { password: vncPassword }
         });
         
-        ws.addEventListener('error', (err) => {
-            vncContent.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--danger);">{{ t("connection_error") }}</div>`;
+        window.vncConnection.scaleViewport = true;
+        window.vncConnection.resizeSession = true;
+        
+        window.vncConnection.addEventListener('connect', () => {
+            setTimeout(() => {
+                if (window.vncConnection && window.vncConnection._display) {
+                    window.vncConnection._display.autoscale(vncContent.clientWidth, vncContent.clientHeight);
+                }
+            }, 500);
+        });
+        
+        window.vncConnection.addEventListener('credentialsrequired', (e) => {
+            window.vncConnection.sendCredentials({ password: vncPassword });
+        });
+        
+        window.vncConnection.addEventListener('disconnect', (e) => {
+            vncContent.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">{{ t("connection_closed") }}</div>';
         });
         
     } catch (error) {

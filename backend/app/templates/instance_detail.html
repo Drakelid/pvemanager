@@ -1272,93 +1272,71 @@ async function openVNC() {
         // Очистить контейнер
         vncContent.innerHTML = '';
         
-        // Создать URL для websocket подключения через наш прокси
+        // Создать URL для websocket подключения через наш прокси (передаём напрямую в noVNC)
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsHost = window.location.host;
         // Backend expects vm/container, not qemu/lxc
         const resourceType = vncData.type === 'qemu' ? 'vm' : 'container';
         
-        // Подключаемся через наш WebSocket прокси (используем node из ответа API)
-        // Передаём vnc_password для получения его первым сообщением
-        const wsUrl = `${protocol}//${wsHost}/proxmox/ws/vnc/${serverId}/${vncData.node}/${resourceType}/${vmid}?port=${vncData.port}&vncticket=${encodeURIComponent(vncData.ticket)}&auth_ticket=${encodeURIComponent(vncData.auth_ticket)}&vnc_password=${encodeURIComponent(vncData.password || '')}`;
+        const wsUrl = `${protocol}//${wsHost}/proxmox/ws/vnc/${serverId}/${vncData.node}/${resourceType}/${vmid}?port=${vncData.port}&vncticket=${encodeURIComponent(vncData.ticket)}&auth_ticket=${encodeURIComponent(vncData.auth_ticket)}`;
         
-        // Создаём WebSocket вручную и ждём первое сообщение с паролем
-        const ws = new WebSocket(wsUrl);
+        const vncPassword = vncData.password || '';
         
-        ws.addEventListener('message', function onFirstMessage(event) {
-            // Первое сообщение - это VNC пароль от бэкенда
-            const vncPassword = event.data;
-            
-            // Убираем этот обработчик (нужен только для первого сообщения)
-            ws.removeEventListener('message', onFirstMessage);
-            
-            // Создаём RFB с существующим WebSocket и полученным паролем
-            vncConnection = new RFBClass(vncContent, ws, {
-                credentials: { password: vncPassword }
-            });
-            
-            vncConnection.scaleViewport = true;
-            vncConnection.resizeSession = true;
-            
-            vncConnection.addEventListener('connect', () => {
-                setTimeout(() => {
-                    if (vncConnection && vncConnection._display) {
-                        vncConnection._display.autoscale(vncContent.clientWidth, vncContent.clientHeight);
-                    }
-                }, 500);
-            });
-            
-            vncConnection.addEventListener('credentialsrequired', (e) => {
-                vncConnection.sendCredentials({ password: vncPassword });
-            });
-            
-            vncConnection.addEventListener('disconnect', (e) => {
-                if (e.detail.clean) {
-                    vncContent.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">${t('connection_closed')}</div>`;
-                } else {
-                    vncContent.innerHTML = `
-                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); padding: 2rem;">
-                            <div style="font-size: 2rem; margin-bottom: 1rem;"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                            <div style="margin-bottom: 1rem; font-size: 1.125rem;">${t('connection_interrupted')}</div>
-                            <div style="background: var(--bg-tertiary); padding: 1.5rem; border-radius: 8px; max-width: 500px; text-align: left; margin-bottom: 1rem;">
-                                <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 0.5rem;">
-                                    <strong>${t('possible_reasons')}:</strong>
-                                </p>
-                                <ul style="color: var(--text-muted); font-size: 0.8rem; margin-left: 1rem;">
-                                    <li>${t('vnc_requires_password')}</li>
-                                    <li>${t('vnc_add_password')}</li>
-                                    <li>${t('vnc_vm_may_be_off')}</li>
-                                </ul>
-                            </div>
-                            <div style="display: flex; gap: 1rem;">
-                                <button onclick="openVNC()" class="btn btn-primary"><i class="fa-solid fa-rotate"></i> ${t('reconnect')}</button>
-                                <a href="https://${vncData.host}:8006" target="_blank" class="btn btn-secondary"><i class="fa-solid fa-globe"></i> ${t('open_proxmox')}</a>
-                            </div>
-                        </div>
-                    `;
-                }
-            });
-            
-            vncConnection.addEventListener('securityfailure', (e) => {
-                vncContent.innerHTML = `
-                    <div style="padding: 2rem; text-align: center;">
-                        <div style="font-size: 2rem; margin-bottom: 1rem;"><i class="fa-solid fa-lock"></i></div>
-                        <div class="text-danger">${t('vnc_security_error')}</div>
-                        <p style="color: var(--text-muted); font-size: 0.875rem; margin-top: 0.5rem;">${e.detail.reason || t('unknown_error')}</p>
-                    </div>
-                `;
-            });
-        }, { once: true });
-        
-        ws.addEventListener('error', (error) => {
-            vncContent.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--text-secondary);"><i class="fa-solid fa-circle-xmark"></i> WebSocket connection error</div>`;
+        // noVNC управляет WebSocket самостоятельно через URL
+        vncConnection = new RFBClass(vncContent, wsUrl, {
+            credentials: { password: vncPassword }
         });
         
-        ws.addEventListener('close', (event) => {
-            if (!vncConnection) {
-                // Закрыто до создания RFB
-                vncContent.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--text-secondary);"><i class="fa-solid fa-circle-xmark"></i> Connection closed: ${event.reason || 'Unknown error'}</div>`;
+        vncConnection.scaleViewport = true;
+        vncConnection.resizeSession = true;
+        
+        vncConnection.addEventListener('connect', () => {
+            setTimeout(() => {
+                if (vncConnection && vncConnection._display) {
+                    vncConnection._display.autoscale(vncContent.clientWidth, vncContent.clientHeight);
+                }
+            }, 500);
+        });
+        
+        vncConnection.addEventListener('credentialsrequired', (e) => {
+            vncConnection.sendCredentials({ password: vncPassword });
+        });
+        
+        vncConnection.addEventListener('disconnect', (e) => {
+            if (e.detail.clean) {
+                vncContent.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">${t('connection_closed')}</div>`;
+            } else {
+                vncContent.innerHTML = `
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); padding: 2rem;">
+                        <div style="font-size: 2rem; margin-bottom: 1rem;"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div style="margin-bottom: 1rem; font-size: 1.125rem;">${t('connection_interrupted')}</div>
+                        <div style="background: var(--bg-tertiary); padding: 1.5rem; border-radius: 8px; max-width: 500px; text-align: left; margin-bottom: 1rem;">
+                            <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 0.5rem;">
+                                <strong>${t('possible_reasons')}:</strong>
+                            </p>
+                            <ul style="color: var(--text-muted); font-size: 0.8rem; margin-left: 1rem;">
+                                <li>${t('vnc_requires_password')}</li>
+                                <li>${t('vnc_add_password')}</li>
+                                <li>${t('vnc_vm_may_be_off')}</li>
+                            </ul>
+                        </div>
+                        <div style="display: flex; gap: 1rem;">
+                            <button onclick="openVNC()" class="btn btn-primary"><i class="fa-solid fa-rotate"></i> ${t('reconnect')}</button>
+                            <a href="https://${vncData.host}:8006" target="_blank" class="btn btn-secondary"><i class="fa-solid fa-globe"></i> ${t('open_proxmox')}</a>
+                        </div>
+                    </div>
+                `;
             }
+        });
+        
+        vncConnection.addEventListener('securityfailure', (e) => {
+            vncContent.innerHTML = `
+                <div style="padding: 2rem; text-align: center;">
+                    <div style="font-size: 2rem; margin-bottom: 1rem;"><i class="fa-solid fa-lock"></i></div>
+                    <div class="text-danger">${t('vnc_security_error')}</div>
+                    <p style="color: var(--text-muted); font-size: 0.875rem; margin-top: 0.5rem;">${e.detail.reason || t('unknown_error')}</p>
+                </div>
+            `;
         });
         
     } catch (error) {
