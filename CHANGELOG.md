@@ -4,6 +4,20 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.3.1] - 2026-04-05
+
+### 🔍 VM List — Node Filtering & Responsive Toolbar
+
+- **Server filter** — new dropdown to filter the VM list by Proxmox server/cluster; populated dynamically from loaded VMs
+- **Node filter** — new dropdown to filter by Proxmox node; automatically narrows to nodes belonging to the selected server
+- Both filters are saved in URL params (`?server=...&node=...`) and restored on page reload
+- **Toolbar redesigned into 2 rows** — row 1: all filters (type / status / server / node / search with icon + stats); row 2: select-all checkbox, pagination, action buttons
+- **Responsive breakpoints** — at ≤900px button labels hide; at ≤768px filters wrap 2-per-row; at ≤480px each filter is full-width; stats counter hidden on mobile
+- `populateServerFilter()` and `populateNodeFilter()` helper functions populate dropdowns from loaded VM data
+- Snapshots toolbar migrated from legacy `.vm-toolbar-left/.vm-toolbar-right` classes to inline flex, unaffected by toolbar refactor
+
+---
+
 ## [v1.3.0] - 2026-03-27
 
 ### 🖥️ Console — VNC & Terminal Fixes

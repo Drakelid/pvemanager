@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.3.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.3.1
 
 ---
 
