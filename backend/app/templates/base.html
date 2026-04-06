@@ -750,6 +750,10 @@ body.update-in-progress .layout {
                     <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
                     <span>{{ t('nav_ipam') }}</span>
                 </a></li>
+                <li data-nav-permission="proxmox.view"><a href="/proxmox/networks" class="{{ 'active' if request.path.startswith('/proxmox/networks') else '' }}" title="{{ t('nav_networks') }}">
+                    <svg class="material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                    <span>{{ t('nav_networks') }}</span>
+                </a></li>
                 <li data-nav-permission="docker.view"><a href="/containers" class="{{ 'active' if request.path.startswith('/containers') else '' }}" title="{{ t('nav_docker') }}">
                     <i class="fa-brands fa-docker" style="font-size: 1.25rem; width: 24px; text-align: center;"></i>
                     <span>{{ t('nav_docker') }}</span>

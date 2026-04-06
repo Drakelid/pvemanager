@@ -4,6 +4,30 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.4.0] - 2026-04-06
+
+### 🌐 Networks — SDN Management & Node Interfaces
+
+- **Networks page** — new unified page (`/proxmox/networks`) for managing SDN zones, VNets, subnets, and node-level network interfaces; added to sidebar navigation with dedicated icon
+- **Edit SDN Zone** — `PUT /api/servers/{server_id}/sdn/zones/{zone}` — update zone properties (mtu, dns, reversedns, ipam, etc.)
+- **Edit SDN VNet** — `PUT /api/servers/{server_id}/sdn/vnets/{vnet}` — update VNet alias, VLAN tag, vlanaware, etc.
+- **Delete SDN Subnet** — `DELETE /api/servers/{server_id}/sdn/vnets/{vnet}/subnets/{subnet_cidr}` — delete a subnet; optionally delete linked IPAM network (`?delete_ipam_network=true`)
+- **Auto-create IPAM network on subnet creation** — `POST .../subnets` now accepts `create_ipam_network: true`; creates a matching `IPAMNetwork` linked to the server and VNet, or returns the existing one
+- **Node network interfaces** — full CRUD for node-level interfaces (bridges, bonds, VLANs, ethernet): list, get, create, update, delete via `proxmox_client.py`
+- **Apply / Revert node network config** — `PUT` and `DELETE` on `/nodes/{node}/network` to activate or roll back pending changes
+- **Node list endpoint** — `GET /api/servers/{server_id}/nodes` — returns nodes for a Proxmox server (used by Networks page selectors)
+
+### 🧹 Code cleanup
+
+- **SDN module imports cleaned up** — removed unused imports (`ssl`, `asyncio`, `httpx`, `websockets`, `func`, `List`, etc.) from `sdn.py`
+- **Networks router** — new `networks.py` module under `api/proxmox/` with HTML page route and node API endpoints; registered in `proxmox/__init__.py`
+
+### 🌍 i18n
+
+- **49 new translation keys** (EN + RU) for Networks page: interface types, bridge/bond/VLAN fields, apply/revert config, IPAM integration labels, edit zone/vnet, subnet deletion, and more
+
+---
+
 ## [v1.3.1] - 2026-04-05
 
 ### 🔍 VM List — Node Filtering & Responsive Toolbar

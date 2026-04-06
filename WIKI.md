@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.3.1
+> Complete guide for installation, configuration and usage of PVEmanager v1.4.0
 
 ---
 
@@ -22,7 +22,8 @@
 14. [Security (RBAC v2)](#-security)
 15. [Localization](#-localization)
 16. [Settings](#-settings)
-17. [pve CLI Tool](#-pve-cli-tool)
+17. [Networks (SDN & Node Interfaces)](#node-network-interfaces)
+18. [pve CLI Tool](#-pve-cli-tool)
 18. [API Reference](#-api-reference)
 19. [Workspaces](#-workspaces)
 20. [User → Server Assignment](#-user--server-assignment)
@@ -253,6 +254,23 @@ This section summarizes key API endpoints. All require JWT authentication.
 - `GET /api/{server_id}/ha/{vm_type}/{vmid}` — get HA status for a VM
 - `POST /api/{server_id}/ha/{vm_type}/{vmid}/add` — add VM to HA
 - `DELETE /api/{server_id}/ha/{vm_type}/{vmid}/remove` — remove VM from HA
+
+### SDN (Software Defined Networking)
+
+- `GET /api/servers/{server_id}/sdn/status` — check SDN availability
+- `GET /api/servers/{server_id}/sdn/zones` — list zones
+- `POST /api/servers/{server_id}/sdn/zones` — create zone
+- `PUT /api/servers/{server_id}/sdn/zones/{zone}` — update zone
+- `GET /api/servers/{server_id}/sdn/vnets` — list VNets
+- `POST /api/servers/{server_id}/sdn/vnets` — create VNet
+- `PUT /api/servers/{server_id}/sdn/vnets/{vnet}` — update VNet
+- `POST /api/servers/{server_id}/sdn/vnets/{vnet}/subnets` — create subnet (supports `create_ipam_network`)
+- `DELETE /api/servers/{server_id}/sdn/vnets/{vnet}/subnets/{cidr}` — delete subnet
+- `POST /api/servers/{server_id}/sdn/apply` — apply pending SDN changes
+
+### Node Networks
+
+- `GET /api/servers/{server_id}/nodes` — list nodes for a server
 
 ### Misc
 
@@ -1087,6 +1105,13 @@ POST /api/servers/{server_id}/sdn/zones
   "type": "simple"
 }
 
+# Update zone
+PUT /api/servers/{server_id}/sdn/zones/{zone}
+{
+  "mtu": 1500,
+  "dns": "8.8.8.8"
+}
+
 # List VNets
 GET /api/servers/{server_id}/sdn/vnets
 
@@ -1098,16 +1123,89 @@ POST /api/servers/{server_id}/sdn/vnets
   "alias": "Production Network"
 }
 
-# Create subnet
+# Update VNet
+PUT /api/servers/{server_id}/sdn/vnets/{vnet}
+{
+  "alias": "Updated Alias",
+  "tag": 100
+}
+
+# Create subnet (with optional IPAM auto-create)
 POST /api/servers/{server_id}/sdn/vnets/{vnet}/subnets
 {
   "subnet": "10.0.0.0/24",
   "gateway": "10.0.0.1",
-  "snat": true
+  "snat": true,
+  "create_ipam_network": true
 }
+
+# Delete subnet (optionally delete linked IPAM network)
+DELETE /api/servers/{server_id}/sdn/vnets/{vnet}/subnets/{subnet_cidr}?delete_ipam_network=true
 
 # Apply changes (required after modifications)
 POST /api/servers/{server_id}/sdn/apply
+```
+
+### Node Network Interfaces
+
+Manage network interfaces (bridges, bonds, VLANs) directly on Proxmox nodes.
+
+#### Accessing the Networks Page
+
+1. Open **Networks** from the sidebar (requires `proxmox.view` permission)
+2. Select a **Server** from the dropdown
+3. The page shows two tabs: **SDN** and **Node Interfaces**
+
+#### Node Interface Management
+
+| Action | Description |
+|--------|-------------|
+| List interfaces | View all interfaces on a selected node |
+| Create interface | Create bridge, bond, VLAN, or alias |
+| Edit interface | Modify IP, netmask, gateway, ports, etc. |
+| Delete interface | Remove interface configuration |
+| Apply config | Activate pending changes |
+| Revert config | Roll back to running configuration |
+
+> ⚠️ Always **Apply** changes after creating or editing interfaces. Changes are staged until applied.
+
+#### Node Network API Endpoints
+
+```bash
+# List nodes for a server
+GET /api/servers/{server_id}/nodes
+
+# List interfaces on a node
+GET /proxmox/api/servers/{server_id}/nodes/{node}/networks
+
+# Get interface details
+GET /proxmox/api/servers/{server_id}/nodes/{node}/networks/{iface}
+
+# Create interface
+POST /proxmox/api/servers/{server_id}/nodes/{node}/networks
+{
+  "iface": "vmbr1",
+  "type": "bridge",
+  "address": "10.0.0.1",
+  "netmask": "255.255.255.0",
+  "bridge_ports": "ens4",
+  "autostart": true
+}
+
+# Update interface
+PUT /proxmox/api/servers/{server_id}/nodes/{node}/networks/{iface}
+{
+  "address": "10.0.0.2"
+}
+
+# Delete interface
+DELETE /proxmox/api/servers/{server_id}/nodes/{node}/networks/{iface}
+
+# Apply pending network config
+PUT /proxmox/api/servers/{server_id}/nodes/{node}/networks/apply
+
+# Revert pending changes
+DELETE /proxmox/api/servers/{server_id}/nodes/{node}/networks/revert
 ```
 
 #### Legacy Compatibility
@@ -1409,6 +1507,10 @@ curl -H "Authorization: Bearer eyJ..." \
 | POST | `/api/{server_id}/ha/{vm_type}/{vmid}/add` | Add VM to HA group |
 | DELETE | `/api/{server_id}/ha/{vm_type}/{vmid}/remove` | Remove VM from HA |
 | POST | `/api/sync-vms` | Force VM sync from Proxmox |
+| GET | `/api/servers/{id}/nodes` | List nodes for a server |
+| PUT | `/api/servers/{id}/sdn/zones/{zone}` | Update SDN zone |
+| PUT | `/api/servers/{id}/sdn/vnets/{vnet}` | Update SDN VNet |
+| DELETE | `/api/servers/{id}/sdn/vnets/{vnet}/subnets/{cidr}` | Delete SDN subnet |
 
 ### Swagger Documentation
 

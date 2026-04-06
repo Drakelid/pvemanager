@@ -1,0 +1,254 @@
+from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy.orm import Session
+from loguru import logger
+
+from ...db import get_db
+from ...models import ProxmoxServer, User, IPAMNetwork
+from ...auth import PermissionChecker
+from ...template_helpers import add_i18n_context
+from ._helpers import _get_proxmox_client, templates
+
+router = APIRouter()
+
+
+# ==================== HTML Page ====================
+
+@router.get("/networks", response_class=HTMLResponse, include_in_schema=False)
+def networks_page(request: Request, db: Session = Depends(get_db)):
+    """Страница управления сетями PVE (SDN + интерфейсы нод)"""
+    from ...i18n import t
+    lang = request.cookies.get("language", "en")
+    proxmox_servers = db.query(ProxmoxServer).all()
+    context = {
+        "request": request,
+        "proxmox_servers": proxmox_servers,
+        "page_title": t("nav_networks", lang),
+    }
+    context = add_i18n_context(request, context)
+    return templates.TemplateResponse("networks.html", context)
+
+
+# ==================== Node list ====================
+
+@router.get("/api/servers/{server_id}/nodes")
+def get_server_nodes(
+    server_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.view"))
+):
+    """List nodes for a Proxmox server"""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    try:
+        client = _get_proxmox_client(server)
+        nodes = client.get_nodes()
+        return JSONResponse(content={"nodes": nodes})
+    except Exception as e:
+        logger.error(f"Error getting nodes for server {server_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Node Network Interfaces ====================
+
+@router.get("/api/servers/{server_id}/nodes/{node}/networks")
+def list_node_networks(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.view"))
+):
+    """List all network interfaces on a node, with IPAM linkage info."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    try:
+        client = _get_proxmox_client(server)
+        ifaces = client.get_node_networks(node)
+
+        # Fetch all IPAM networks linked to this server once — O(1) round-trips
+        ipam_nets = (
+            db.query(IPAMNetwork)
+            .filter(IPAMNetwork.proxmox_server_id == server_id)
+            .all()
+        )
+        # Build lookup: bridge_name → ipam_network
+        bridge_to_ipam = {n.proxmox_bridge: n for n in ipam_nets if n.proxmox_bridge}
+
+        enriched = []
+        for iface in ifaces:
+            iface_name = iface.get("iface") or iface.get("name", "")
+            ipam_net = bridge_to_ipam.get(iface_name)
+            record = dict(iface)
+            if ipam_net:
+                record["ipam_network_id"] = ipam_net.id
+                record["ipam_cidr"] = ipam_net.network
+                record["ipam_name"] = ipam_net.name
+            enriched.append(record)
+
+        return JSONResponse(content={"node": node, "interfaces": enriched})
+    except Exception as e:
+        logger.error(f"Error listing node {node} networks for server {server_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/servers/{server_id}/nodes/{node}/networks")
+async def create_node_network(
+    server_id: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Create a new network interface on a node."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    iface_type = data.pop("type", None)
+    if not iface_type:
+        raise HTTPException(status_code=400, detail="Interface type is required")
+
+    iface_name = data.get("iface", "")
+    if not iface_name:
+        raise HTTPException(status_code=400, detail="Interface name (iface) is required")
+
+    try:
+        client = _get_proxmox_client(server)
+        result = client.create_node_network(node, iface_type, **data)
+        if result.get("success"):
+            logger.info(
+                f"User {current_user.username} created {iface_type} interface "
+                f"{iface_name} on {server.name}/{node}"
+            )
+            return JSONResponse(content=result)
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to create interface"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating node interface: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/servers/{server_id}/nodes/{node}/networks/{iface}")
+async def update_node_network(
+    server_id: int,
+    node: str,
+    iface: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Update a network interface on a node."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    try:
+        client = _get_proxmox_client(server)
+        result = client.update_node_network(node, iface, **data)
+        if result.get("success"):
+            logger.info(
+                f"User {current_user.username} updated interface {iface} "
+                f"on {server.name}/{node}"
+            )
+            return JSONResponse(content=result)
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to update interface"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating node interface {iface}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/servers/{server_id}/nodes/{node}/networks/{iface}")
+def delete_node_network(
+    server_id: int,
+    node: str,
+    iface: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Delete a network interface from a node."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    try:
+        client = _get_proxmox_client(server)
+        result = client.delete_node_network(node, iface)
+        if result.get("success"):
+            logger.info(
+                f"User {current_user.username} deleted interface {iface} "
+                f"from {server.name}/{node}"
+            )
+            return JSONResponse(content=result)
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to delete interface"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting node interface {iface}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/servers/{server_id}/nodes/{node}/networks/apply")
+def apply_node_network(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Apply pending network configuration changes on a node."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    try:
+        client = _get_proxmox_client(server)
+        result = client.apply_node_network_config(node)
+        if result.get("success"):
+            logger.info(
+                f"User {current_user.username} applied network config "
+                f"on {server.name}/{node}"
+            )
+            return JSONResponse(content=result)
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to apply network config"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error applying node network config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/servers/{server_id}/nodes/{node}/networks/revert")
+def revert_node_network(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Revert pending network configuration changes on a node."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    try:
+        client = _get_proxmox_client(server)
+        result = client.revert_node_network_config(node)
+        if result.get("success"):
+            logger.info(
+                f"User {current_user.username} reverted network config "
+                f"on {server.name}/{node}"
+            )
+            return JSONResponse(content=result)
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to revert network config"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reverting node network config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

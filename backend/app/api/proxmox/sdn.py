@@ -1,27 +1,14 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, Query, Form, status, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from loguru import logger
-from typing import List
-import ssl
-import asyncio
-import httpx
-import websockets
+from typing import Optional
 
 from ...db import get_db
-from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
-from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
-from ...proxmox_client import ProxmoxClient, get_proxmox_resources
-from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
+from ...models import ProxmoxServer, User, IPAMNetwork
+from ...auth import PermissionChecker
 from ...logging_service import LoggingService
-from ...template_helpers import add_i18n_context
-from ...ipam_service import IPAMService
-from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
-                        get_next_vmid, archive_and_delete_snapshots,
-                        save_vm_instance, get_vm_instance, soft_delete_vm_instance,
-                        templates)
+from ._helpers import _get_proxmox_client
 
 router = APIRouter()
 
@@ -271,24 +258,51 @@ async def create_sdn_subnet(
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Proxmox server not found")
-    
+
     data = await request.json()
     subnet = data.get('subnet')
     gateway = data.get('gateway')
     snat = data.get('snat', False)
     dnszoneprefix = data.get('dnszoneprefix')
-    
+    create_ipam_network = data.get('create_ipam_network', False)
+
     if not subnet:
         raise HTTPException(status_code=400, detail="Subnet CIDR is required")
-    
+
     try:
         client = _get_proxmox_client(server)
-        
         result = client.create_sdn_subnet(vnet, subnet, gateway=gateway, snat=snat, dnszoneprefix=dnszoneprefix)
-        
+
         if result.get('success'):
             logger.info(f"User {current_user.username} created subnet {subnet} in vnet {vnet}")
-            return JSONResponse(content=result)
+            response = dict(result)
+
+            # Optionally create a matching IPAMNetwork
+            if create_ipam_network:
+                existing = db.query(IPAMNetwork).filter(IPAMNetwork.network == subnet).first()
+                if existing:
+                    response['ipam_network_id'] = existing.id
+                    response['ipam_already_existed'] = True
+                else:
+                    ipam_net = IPAMNetwork(
+                        name=f"{vnet} — {subnet}",
+                        network=subnet,
+                        gateway=gateway or None,
+                        proxmox_server_id=server_id,
+                        proxmox_bridge=vnet,
+                        is_active=True,
+                    )
+                    db.add(ipam_net)
+                    db.commit()
+                    db.refresh(ipam_net)
+                    response['ipam_network_id'] = ipam_net.id
+                    response['ipam_created'] = True
+                    logger.info(
+                        f"User {current_user.username} auto-created IPAM network "
+                        f"{subnet} (id={ipam_net.id}) linked to vnet {vnet}"
+                    )
+
+            return JSONResponse(content=response)
         else:
             raise HTTPException(status_code=400, detail=result.get('error', 'Failed to create subnet'))
     except HTTPException:
@@ -323,4 +337,110 @@ def apply_sdn_changes(
         raise
     except Exception as e:
         logger.error(f"Error applying SDN changes: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/servers/{server_id}/sdn/zones/{zone}")
+async def update_sdn_zone(
+    server_id: int,
+    zone: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Update an existing SDN zone"""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    try:
+        client = _get_proxmox_client(server)
+        result = client.update_sdn_zone(zone, **data)
+        if result.get('success'):
+            logger.info(f"User {current_user.username} updated SDN zone: {zone}")
+            return JSONResponse(content=result)
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Failed to update zone'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating SDN zone {zone}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/servers/{server_id}/sdn/vnets/{vnet}")
+async def update_sdn_vnet(
+    server_id: int,
+    vnet: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Update an existing SDN VNet"""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    try:
+        client = _get_proxmox_client(server)
+        result = client.update_sdn_vnet(vnet, **data)
+        if result.get('success'):
+            logger.info(f"User {current_user.username} updated SDN vnet: {vnet}")
+            return JSONResponse(content=result)
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Failed to update vnet'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating SDN vnet {vnet}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/servers/{server_id}/sdn/vnets/{vnet}/subnets/{subnet_cidr:path}")
+def delete_sdn_subnet(
+    server_id: int,
+    vnet: str,
+    subnet_cidr: str,
+    delete_ipam_network: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Delete a subnet from a VNet. subnet_cidr uses '-' instead of '/' (e.g. 10.0.0.0-24)."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    # Accept both dash-encoded and slash CIDR
+    subnet_slash = subnet_cidr.replace("-", "/") if "-" in subnet_cidr else subnet_cidr
+
+    try:
+        client = _get_proxmox_client(server)
+        result = client.delete_sdn_subnet(vnet, subnet_slash)
+        if result.get('success'):
+            logger.info(f"User {current_user.username} deleted subnet {subnet_slash} from vnet {vnet}")
+            response = dict(result)
+
+            if delete_ipam_network:
+                ipam_net = db.query(IPAMNetwork).filter(
+                    IPAMNetwork.network == subnet_slash,
+                    IPAMNetwork.proxmox_server_id == server_id,
+                ).first()
+                if ipam_net:
+                    db.delete(ipam_net)
+                    db.commit()
+                    response['ipam_network_deleted'] = True
+                    logger.info(
+                        f"User {current_user.username} deleted IPAM network "
+                        f"{subnet_slash} (id={ipam_net.id})"
+                    )
+
+            return JSONResponse(content=response)
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Failed to delete subnet'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting SDN subnet {subnet_slash}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

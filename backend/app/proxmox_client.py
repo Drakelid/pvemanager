@@ -2840,7 +2840,208 @@ class ProxmoxClient:
         except Exception as e:
             logger.error(f"Error getting SDN pending changes: {e}")
             return []
-    
+
+    def update_sdn_zone(self, zone: str, **kwargs) -> Dict:
+        """
+        Update an existing SDN zone.
+
+        Args:
+            zone: Zone name to update
+            **kwargs: Fields to update (mtu, dns, reversedns, ipam, etc.)
+
+        Returns:
+            Result dict with success status
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            self.proxmox.cluster.sdn.zones(zone).put(**kwargs)
+            logger.info(f"Updated SDN zone: {zone}")
+            return {"success": True, "zone": zone}
+        except Exception as e:
+            logger.error(f"Error updating SDN zone {zone}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def update_sdn_vnet(self, vnet: str, **kwargs) -> Dict:
+        """
+        Update an existing SDN VNet.
+
+        Args:
+            vnet: VNet name to update
+            **kwargs: Fields to update (alias, tag, vlanaware, etc.)
+
+        Returns:
+            Result dict with success status
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            self.proxmox.cluster.sdn.vnets(vnet).put(**kwargs)
+            logger.info(f"Updated SDN vnet: {vnet}")
+            return {"success": True, "vnet": vnet}
+        except Exception as e:
+            logger.error(f"Error updating SDN vnet {vnet}: {e}")
+            return {"success": False, "error": str(e)}
+
+    # ==================== Node Network Interfaces ====================
+
+    def get_node_networks(self, node: str) -> List[Dict]:
+        """
+        Get all network interfaces configured on a node.
+
+        Args:
+            node: Node name
+
+        Returns:
+            List of network interface objects
+        """
+        if not self.proxmox:
+            return []
+
+        try:
+            ifaces = self.proxmox.nodes(node).network.get()
+            return ifaces if isinstance(ifaces, list) else []
+        except Exception as e:
+            logger.error(f"Error getting node {node} networks: {e}")
+            return []
+
+    def get_node_network(self, node: str, iface: str) -> Optional[Dict]:
+        """
+        Get details of a specific network interface on a node.
+
+        Args:
+            node: Node name
+            iface: Interface name (e.g., vmbr0, bond0)
+
+        Returns:
+            Interface configuration dict or None
+        """
+        if not self.proxmox:
+            return None
+
+        try:
+            return self.proxmox.nodes(node).network(iface).get()
+        except Exception as e:
+            logger.error(f"Error getting node {node} interface {iface}: {e}")
+            return None
+
+    def create_node_network(self, node: str, iface_type: str, **kwargs) -> Dict:
+        """
+        Create a new network interface on a node.
+
+        Args:
+            node: Node name
+            iface_type: Type of interface ('bridge', 'bond', 'vlan', 'eth')
+            **kwargs: Interface parameters (iface, address, netmask, gateway,
+                      bridge_ports, bond_slaves, bond_mode, vlan-id,
+                      vlan-raw-device, autostart, comments, etc.)
+
+        Returns:
+            Result dict with success status
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            params = {"type": iface_type}
+            params.update(kwargs)
+            self.proxmox.nodes(node).network.post(**params)
+            iface_name = kwargs.get("iface", "")
+            logger.info(f"Created {iface_type} interface {iface_name} on node {node}")
+            return {"success": True, "iface": iface_name}
+        except Exception as e:
+            logger.error(f"Error creating {iface_type} interface on node {node}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def update_node_network(self, node: str, iface: str, **kwargs) -> Dict:
+        """
+        Update a network interface on a node.
+
+        Args:
+            node: Node name
+            iface: Interface name to update
+            **kwargs: Fields to update
+
+        Returns:
+            Result dict with success status
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            self.proxmox.nodes(node).network(iface).put(**kwargs)
+            logger.info(f"Updated interface {iface} on node {node}")
+            return {"success": True, "iface": iface}
+        except Exception as e:
+            logger.error(f"Error updating interface {iface} on node {node}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def delete_node_network(self, node: str, iface: str) -> Dict:
+        """
+        Delete a network interface from a node.
+
+        Args:
+            node: Node name
+            iface: Interface name to delete
+
+        Returns:
+            Result dict with success status
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            self.proxmox.nodes(node).network(iface).delete()
+            logger.info(f"Deleted interface {iface} from node {node}")
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Error deleting interface {iface} from node {node}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def apply_node_network_config(self, node: str) -> Dict:
+        """
+        Apply pending network configuration changes on a node.
+
+        Args:
+            node: Node name
+
+        Returns:
+            Result dict with success status
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            result = self.proxmox.nodes(node).network.put()
+            logger.info(f"Applied network config on node {node}")
+            return {"success": True, "result": result}
+        except Exception as e:
+            logger.error(f"Error applying network config on node {node}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def revert_node_network_config(self, node: str) -> Dict:
+        """
+        Revert pending network configuration changes on a node (restore from running config).
+
+        Args:
+            node: Node name
+
+        Returns:
+            Result dict with success status
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            self.proxmox.nodes(node).network.delete()
+            logger.info(f"Reverted network config on node {node}")
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Error reverting network config on node {node}: {e}")
+            return {"success": False, "error": str(e)}
+
     # ==================== Snapshots ====================
     
     def get_vm_snapshots(self, node: str, vmid: int) -> List[Dict]:
