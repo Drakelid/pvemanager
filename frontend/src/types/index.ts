@@ -1,0 +1,363 @@
+// ==================== User Types ====================
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  full_name?: string;
+  is_active: boolean;
+  is_admin: boolean;
+  created_at: string;
+  last_login?: string;
+  role_id?: number;
+  role_name?: string;
+  is_locked?: boolean;
+  permissions?: string[];
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  session_id?: string;
+}
+
+// ==================== Proxmox Server Types ====================
+
+export interface ProxmoxServer {
+  id: number;
+  name: string;
+  hostname: string;
+  ip_address: string;
+  port: number;
+  api_user: string;
+  verify_ssl: boolean;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  last_check?: string;
+  is_online?: boolean;
+  last_error?: string;
+}
+
+export interface ProxmoxServerCreate {
+  name: string;
+  hostname: string;
+  ip_address: string;
+  port?: number;
+  api_user?: string;
+  api_token_name?: string;
+  api_token_value?: string;
+  use_password?: boolean;
+  password?: string;
+  verify_ssl?: boolean;
+  description?: string;
+}
+
+// ==================== VM / Container Types ====================
+
+export type VMType = 'qemu' | 'lxc';
+export type VMStatus = 'running' | 'stopped' | 'paused' | 'suspended' | 'unknown';
+
+export interface VMInstance {
+  vmid: number;
+  name?: string;
+  status: VMStatus;
+  type: VMType;
+  node: string;
+  server_id?: number;
+  server_name?: string;
+  cpu?: number;
+  mem?: number;
+  maxmem?: number;
+  disk?: number;
+  maxdisk?: number;
+  uptime?: number;
+  netin?: number;
+  netout?: number;
+  ip_address?: string;
+  tags?: string;
+  template?: boolean;
+}
+
+export interface VMConfig {
+  cores?: number;
+  memory?: number;
+  disk?: string;
+  name?: string;
+  ostype?: string;
+  net0?: string;
+  boot?: string;
+  agent?: number;
+  onboot?: number;
+  [key: string]: unknown;
+}
+
+export interface VMDeployRequest {
+  template_id: number;
+  name: string;
+  vmid?: number;
+  target_node?: string;
+  cores?: number;
+  memory?: number;
+  disk?: number;
+  target_storage?: string;
+  start_after_create?: boolean;
+  onboot?: boolean;
+  enable_ha?: boolean;
+  network_bridge?: string;
+  ip_address?: string;
+  gateway?: string;
+  ipam_network_id?: number;
+  ipam_pool_id?: number;
+  cloud_init_user?: string;
+  cloud_init_password?: string;
+  ssh_keys?: string;
+}
+
+// ==================== Node Types ====================
+
+export interface ProxmoxNode {
+  node: string;
+  status: 'online' | 'offline';
+  cpu?: number;
+  maxcpu?: number;
+  mem?: number;
+  maxmem?: number;
+  disk?: number;
+  maxdisk?: number;
+  uptime?: number;
+  server_id: number;
+  server_name?: string;
+  vm_count?: number;
+  ct_count?: number;
+}
+
+// ==================== IPAM Types ====================
+
+export interface IPAMNetwork {
+  id: number;
+  name: string;
+  description?: string;
+  network: string;
+  gateway?: string;
+  vlan_id?: number;
+  dns_primary?: string;
+  dns_secondary?: string;
+  dns_domain?: string;
+  proxmox_server_id?: number;
+  proxmox_node?: string;
+  proxmox_bridge?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  total_ips?: number;
+  used_ips?: number;
+  available_ips?: number;
+  utilization_percent?: number;
+  server_name?: string;
+}
+
+export interface IPAMPool {
+  id: number;
+  network_id: number;
+  name: string;
+  pool_type: 'static' | 'dhcp' | 'reserved';
+  range_start: string;
+  range_end: string;
+  auto_assign: boolean;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  total_ips?: number;
+  used_ips?: number;
+  available_ips?: number;
+}
+
+export interface IPAMAllocation {
+  id: number;
+  network_id: number;
+  pool_id?: number;
+  ip_address: string;
+  mac_address?: string;
+  resource_type?: string;
+  resource_id?: number;
+  resource_name?: string;
+  network_name?: string;
+  proxmox_server_id?: number;
+  proxmox_vmid?: number;
+  proxmox_node?: string;
+  status: 'allocated' | 'reserved' | 'available' | 'conflict';
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ==================== Template Types ====================
+
+export interface OSTemplateGroup {
+  id: number;
+  name: string;
+  icon?: string;
+  description?: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OSTemplate {
+  id: number;
+  group_id: number;
+  server_id: number;
+  name: string;
+  vmid: number;
+  node: string;
+  default_cores: number;
+  default_memory: number;
+  default_disk: number;
+  min_cores: number;
+  min_memory: number;
+  min_disk: number;
+  description?: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  group_name?: string;
+  group_icon?: string;
+  server_name?: string;
+}
+
+// ==================== Workspace Types ====================
+
+export interface Workspace {
+  id: number;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  servers?: WorkspaceServer[];
+  users?: WorkspaceUser[];
+}
+
+export interface WorkspaceServer {
+  server_id: number;
+  server_name: string;
+}
+
+export interface WorkspaceUser {
+  user_id: number;
+  username: string;
+}
+
+// ==================== Notification Types ====================
+
+export interface Notification {
+  id: number;
+  user_id: number;
+  title: string;
+  message: string;
+  type: 'info' | 'warning' | 'error' | 'success';
+  is_read: boolean;
+  category?: string;
+  resource_type?: string;
+  resource_id?: string;
+  created_at: string;
+}
+
+// ==================== Log Types ====================
+
+export interface AuditLog {
+  id: number;
+  timestamp: string;
+  level: string;
+  category: string;
+  message: string;
+  user_id?: number;
+  username?: string;
+  ip_address?: string;
+  details?: Record<string, unknown>;
+}
+
+// ==================== Task Types ====================
+
+export interface ProxmoxTask {
+  upid: string;
+  node: string;
+  type: string;
+  status?: string;
+  exitstatus?: string;
+  starttime: number;
+  endtime?: number;
+  user: string;
+  server_id?: number;
+  server_name?: string;
+}
+
+// ==================== Backup Types ====================
+
+export interface BackupJob {
+  id: number;
+  server_id: number;
+  vmid?: number;
+  schedule?: string;
+  storage: string;
+  mode?: string;
+  compress?: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+// ==================== Snapshot Types ====================
+
+export interface Snapshot {
+  name: string;
+  description?: string;
+  snaptime?: number;
+  parent?: string;
+  vmstate?: boolean;
+}
+
+// ==================== Dashboard Types ====================
+
+export interface DashboardStats {
+  nodes_total: number;
+  nodes_online: number;
+  vms_total: number;
+  vms_running: number;
+  containers_total: number;
+  containers_running: number;
+  alerts_count: number;
+}
+
+export interface ResourceMetrics {
+  cpu_percent: number;
+  memory_used: number;
+  memory_total: number;
+  memory_percent: number;
+  storage_used: number;
+  storage_total: number;
+  storage_percent: number;
+}
+
+// ==================== Common Types ====================
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface ApiError {
+  detail: string;
+  status_code?: number;
+}

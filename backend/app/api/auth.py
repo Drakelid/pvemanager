@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from loguru import logger
 
@@ -19,23 +18,9 @@ from ..auth import (
 )
 from ..config import settings, utcnow
 from ..logging_service import LoggingService
-from ..template_helpers import add_i18n_context
 from ..services.security_service import SecurityService
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
-
-
-@router.get("/login", response_class=HTMLResponse, include_in_schema=False)
-def login_page(request: Request):
-    """Login page"""
-    context = {
-        "request": request,
-        "panel_name": settings.PANEL_NAME,
-        "version": settings.VERSION,
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("login.html", context)
 
 
 @router.post("/api/auth/login", response_model=Token)

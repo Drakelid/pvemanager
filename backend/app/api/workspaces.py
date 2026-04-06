@@ -11,8 +11,6 @@ All authenticated: list (filtered to their workspaces), get detail.
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from loguru import logger
 
@@ -20,11 +18,9 @@ from ..db import get_db
 from ..models import Workspace, WorkspaceServer, WorkspaceUser, ProxmoxServer, User
 from ..schemas import WorkspaceCreate, WorkspaceUpdate, WorkspaceResponse, WorkspaceDetail
 from ..auth import get_current_user, PermissionChecker
-from ..template_helpers import add_i18n_context
 from ..logging_service import LoggingService
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
 # ---------------------------------------------------------------------------
@@ -148,24 +144,6 @@ def _build_detail(ws: Workspace) -> WorkspaceDetail:
         servers=servers,
         users=users,
     )
-
-
-# ===========================================================================
-# HTML Page
-# ===========================================================================
-
-@router.get("/workspaces", response_class=HTMLResponse, include_in_schema=False)
-def workspaces_page(
-    request: Request,
-):
-    """Admin workspace management page"""
-    context = {
-        "request": request,
-        "page_title": "Workspaces",
-    }
-    from ..template_helpers import add_i18n_context
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("workspaces.html", context)
 
 
 # ===========================================================================

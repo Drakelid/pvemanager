@@ -5,8 +5,6 @@ Users and Roles Management API
 from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, EmailStr
 from loguru import logger
@@ -23,27 +21,8 @@ from ..auth import (
 from ..config import utcnow
 from ..services.security_service import SecurityService
 from ..logging_service import LoggingService
-from ..template_helpers import add_i18n_context
-
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
-
-
-# ==================== HTML Pages ====================
-
-@router.get("/users", response_class=HTMLResponse, include_in_schema=False)
-async def users_page(request: Request, db: Session = Depends(get_db)):
-    """Users management page (admin only) - auth checked on frontend"""
-    from ..i18n import t
-    lang = request.cookies.get("language", "en")
-    
-    context = {
-        "request": request,
-        "page_title": t('nav_users', lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("users.html", context)
 
 
 # ==================== Schemas ====================
@@ -134,24 +113,6 @@ class SecuritySettingsUpdate(BaseModel):
     password_require_lowercase: Optional[bool] = None
     password_require_numbers: Optional[bool] = None
     password_require_special: Optional[bool] = None
-
-
-# ==================== HTML Pages ====================
-
-@router.get("/", response_class=HTMLResponse)
-async def users_page(
-    request: Request,
-):
-    """Render users management page"""
-    from ..i18n import t
-    lang = request.cookies.get("language", "en")
-    
-    context = {
-        "request": request,
-        "page_title": t('nav_users', lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("users.html", context)
 
 
 # ==================== Role API ====================

@@ -18,6 +18,8 @@ services:
     depends_on:
       app:
         condition: service_healthy
+      frontend:
+        condition: service_started
     networks:
       - serverpanel-network
     restart: unless-stopped
@@ -57,3 +59,9 @@ services:
       - ~/.ssh:/root/.ssh:ro
       - ./logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
+
+  # Override frontend service - remove port exposure (nginx will handle it)
+  frontend:
+    ports: []
+    expose:
+      - "80"

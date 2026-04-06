@@ -1,0 +1,183 @@
+import { useParams, useSearchParams, Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import {
+  ArrowLeft,
+  Play,
+  Square,
+  RotateCcw,
+  Terminal,
+  Monitor,
+  Container,
+  Loader2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { StatusDot } from '@/components/shared/status-dot';
+import { useVirtualMachines, usePowerAction } from '@/hooks/use-instances';
+import { vmTypeLabel } from '@/lib/format';
+import { toast } from 'sonner';
+
+import OverviewTab from './tabs/OverviewTab';
+import GraphsTab from './tabs/GraphsTab';
+import SnapshotsTab from './tabs/SnapshotsTab';
+import NetworkingTab from './tabs/NetworkingTab';
+import SettingsTab from './tabs/SettingsTab';
+import DestroyTab from './tabs/DestroyTab';
+
+export default function InstanceDetailPage() {
+  const { serverId, vmid } = useParams<{ serverId: string; vmid: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { t } = useTranslation();
+
+  const node = searchParams.get('node') || '';
+  const type = searchParams.get('type') || 'qemu';
+  const activeTab = searchParams.get('tab') || 'overview';
+
+  const sid = Number(serverId);
+  const vid = Number(vmid);
+
+  // Find VM from cached list for basic info
+  const { data: allVMs, isLoading } = useVirtualMachines();
+  const vm = allVMs?.find((v) => v.server_id === sid && v.vmid === vid);
+
+  const power = usePowerAction(sid, vid, type, node);
+  const isRunning = vm?.status === 'running';
+  const TypeIcon = type === 'qemu' ? Monitor : Container;
+
+  const handlePower = (action: string) => {
+    power.mutate(
+      { action },
+      {
+        onSuccess: () => toast.success(`${action} sent successfully`),
+        onError: (err) => toast.error(err.message),
+      }
+    );
+  };
+
+  const setTab = (tab: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', tab);
+    setSearchParams(params, { replace: true });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Back link + header */}
+      <div>
+        <Link to="/instances" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3">
+          <ArrowLeft className="h-4 w-4" />
+          {t('nav.instances', 'Instances')}
+        </Link>
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+              <TypeIcon className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-[22px] font-semibold">{vm?.name || `${vmTypeLabel(type)} ${vmid}`}</h1>
+                <Badge variant="outline" className="text-xs">#{vmid}</Badge>
+                <Badge variant="secondary" className="text-xs">{vmTypeLabel(type)}</Badge>
+              </div>
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <StatusDot status={vm?.status || 'unknown'} pulse />
+                  {vm?.status || 'unknown'}
+                </span>
+                <span>Node: {node}</span>
+                {vm?.ip_address && <span className="font-mono">{vm.ip_address}</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Power buttons */}
+          <div className="flex items-center gap-2">
+            <Button
+              render={<Link to={`/console/${serverId}/${vmid}?node=${node}&type=${type}`} target="_blank" />}
+              variant="outline"
+              size="sm"
+            >
+              <Terminal className="mr-1.5 h-4 w-4" />
+              {t('common.console', 'Console')}
+            </Button>
+
+            {!isRunning ? (
+              <Button
+                size="sm"
+                onClick={() => handlePower('start')}
+                disabled={power.isPending}
+              >
+                <Play className="mr-1.5 h-4 w-4" />
+                {t('common.start', 'Start')}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePower('restart')}
+                  disabled={power.isPending}
+                >
+                  <RotateCcw className="mr-1.5 h-4 w-4" />
+                  {t('common.restart', 'Restart')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handlePower('stop')}
+                  disabled={power.isPending}
+                >
+                  <Square className="mr-1.5 h-4 w-4" />
+                  {t('common.stop', 'Stop')}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="overview">{t('instances.overview', 'Overview')}</TabsTrigger>
+          <TabsTrigger value="graphs">{t('instances.graphs', 'Graphs')}</TabsTrigger>
+          <TabsTrigger value="snapshots">{t('common.snapshots', 'Snapshots')}</TabsTrigger>
+          <TabsTrigger value="networking">{t('instances.networking', 'Networking')}</TabsTrigger>
+          <TabsTrigger value="settings">{t('nav.settings', 'Settings')}</TabsTrigger>
+          <TabsTrigger value="destroy" className="text-destructive data-[state=active]:text-destructive">
+            {t('instances.destroy', 'Destroy')}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-4">
+          <OverviewTab serverId={sid} vmid={vid} type={type} node={node} />
+        </TabsContent>
+        <TabsContent value="graphs" className="mt-4">
+          <GraphsTab serverId={sid} vmid={vid} type={type} node={node} />
+        </TabsContent>
+        <TabsContent value="snapshots" className="mt-4">
+          <SnapshotsTab serverId={sid} vmid={vid} type={type} node={node} />
+        </TabsContent>
+        <TabsContent value="networking" className="mt-4">
+          <NetworkingTab serverId={sid} vmid={vid} type={type} node={node} />
+        </TabsContent>
+        <TabsContent value="settings" className="mt-4">
+          <SettingsTab serverId={sid} vmid={vid} type={type} node={node} />
+        </TabsContent>
+        <TabsContent value="destroy" className="mt-4">
+          <DestroyTab serverId={sid} vmid={vid} type={type} node={node} name={vm?.name} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

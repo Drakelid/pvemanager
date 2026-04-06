@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Request, HTTPException, Query, Form, status, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from loguru import logger
@@ -16,70 +15,12 @@ from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerRe
 from ...proxmox_client import ProxmoxClient, get_proxmox_resources
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
 from ...logging_service import LoggingService
-from ...template_helpers import add_i18n_context
 from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         get_next_vmid, archive_and_delete_snapshots,
-                        save_vm_instance, get_vm_instance, soft_delete_vm_instance,
-                        templates)
+                        save_vm_instance, get_vm_instance, soft_delete_vm_instance)
 
 router = APIRouter()
-
-
-# ==================== HTML Pages ====================
-
-@router.get("/vms", response_class=HTMLResponse, include_in_schema=False)
-def vms_page(request: Request, db: Session = Depends(get_db)):
-    """Страница управления Proxmox серверами, VM и LXC"""
-    from ...i18n import t
-    lang = request.cookies.get("language", "en")
-
-    # All servers are needed for cluster modals (admin operations).
-    # The main servers table is rendered dynamically via JS with workspace filtering.
-    proxmox_servers = db.query(ProxmoxServer).all()
-
-    context = {
-        "request": request,
-        "proxmox_servers": proxmox_servers,
-        "page_title": t('nav_proxmox', lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("proxmox_vms.html", context)
-
-
-@router.get("/server/{server_id}", response_class=HTMLResponse, include_in_schema=False)
-def server_detail_page(request: Request, server_id: int, db: Session = Depends(get_db)):
-    """Страница детального просмотра VM/LXC конкретного Proxmox сервера"""
-    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Proxmox server not found")
-    
-    context = {
-        "request": request,
-        "server": server,
-        "page_title": server.name,
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("proxmox_server_detail.html", context)
-
-
-@router.get("/server/{server_id}/instance/{vmid}", response_class=HTMLResponse, include_in_schema=False)
-def instance_detail_page(request: Request, server_id: int, vmid: int, type: str = "qemu", node: str = "", db: Session = Depends(get_db)):
-    """Страница детального просмотра конкретной VM или LXC"""
-    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Proxmox server not found")
-    
-    context = {
-        "request": request,
-        "server": server,
-        "vmid": vmid,
-        "type": type,
-        "node": node,
-        "page_title": f"VM {vmid}",
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("instance_detail.html", context)
 
 
 # ==================== Proxmox Server CRUD ====================

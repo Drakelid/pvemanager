@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Request, HTTPException, Query, Form, status, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from loguru import logger
@@ -16,12 +15,10 @@ from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerRe
 from ...proxmox_client import ProxmoxClient, get_proxmox_resources
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
 from ...logging_service import LoggingService
-from ...template_helpers import add_i18n_context
 from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         get_next_vmid, archive_and_delete_snapshots,
-                        save_vm_instance, get_vm_instance, soft_delete_vm_instance,
-                        templates)
+                        save_vm_instance, get_vm_instance, soft_delete_vm_instance)
 
 router = APIRouter()
 

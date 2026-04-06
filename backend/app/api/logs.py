@@ -6,8 +6,6 @@ View and manage audit logs
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -15,11 +13,9 @@ from ..db import get_db
 from ..auth import get_current_user, PermissionChecker
 from ..models import User, AuditLog
 from ..logging_service import LoggingService
-from ..template_helpers import add_i18n_context
 
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
 # ==================== Schemas ====================
@@ -76,22 +72,6 @@ class LogStatsResponse(BaseModel):
     errors_count: int
     failed_logins: int
     recent_errors: List[dict]
-
-
-# ==================== HTML Endpoints ====================
-
-@router.get("/", response_class=HTMLResponse)
-async def logs_page(request: Request):
-    """Render logs page"""
-    from ..i18n import t
-    lang = request.cookies.get("language", "ru")
-    context = {
-        "request": request,
-        "title": t("nav_logs", lang),
-        "page_title": f"📋 {t('system_logs', lang)}"
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("logs.html", context)
 
 
 # ==================== API Endpoints ====================

@@ -8,8 +8,6 @@ import ipaddress as ipaddress_module
 from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -23,84 +21,9 @@ from ..schemas import (
 )
 from ..ipam_service import IPAMService
 from ..auth import get_current_user, PermissionChecker
-from ..template_helpers import add_i18n_context
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
-
-
-# ==================== HTML Pages ====================
-
-@router.get("/", response_class=HTMLResponse, include_in_schema=False)
-def ipam_dashboard(request: Request):
-    """IPAM Dashboard page"""
-    from ..i18n import t
-    lang = request.cookies.get("language", "en")
-    
-    context = {
-        "request": request,
-        "page_title": t('nav_ipam', lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("ipam_dashboard.html", context)
-
-
-@router.get("/networks", response_class=HTMLResponse, include_in_schema=False)
-def ipam_networks_page(request: Request):
-    """IPAM Networks management page"""
-    from ..i18n import t
-    lang = request.cookies.get("language", "en")
-    
-    context = {
-        "request": request,
-        "page_title": t('nav_ipam', lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("ipam_networks.html", context)
-
-
-@router.get("/network/{network_id}", response_class=HTMLResponse, include_in_schema=False)
-def ipam_network_detail(request: Request, network_id: int):
-    """IPAM Network detail page with IP grid"""
-    from ..i18n import t
-    lang = request.cookies.get("language", "en")
-    
-    context = {
-        "request": request,
-        "network_id": network_id,
-        "page_title": t('nav_ipam', lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("ipam_network_detail.html", context)
-
-
-@router.get("/allocations", response_class=HTMLResponse, include_in_schema=False)
-def ipam_allocations_page(request: Request):
-    """IPAM Allocations page"""
-    from ..i18n import t
-    lang = request.cookies.get("language", "en")
-    
-    context = {
-        "request": request,
-        "page_title": t('nav_ipam', lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("ipam_allocations.html", context)
-
-
-@router.get("/history", response_class=HTMLResponse, include_in_schema=False)
-def ipam_history_page(request: Request):
-    """IPAM History page"""
-    from ..i18n import t
-    lang = request.cookies.get("language", "en")
-    
-    context = {
-        "request": request,
-        "page_title": t('nav_ipam', lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("ipam_history.html", context)
 
 
 # ==================== Network API ====================

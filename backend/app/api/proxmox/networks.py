@@ -1,32 +1,14 @@
 from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from loguru import logger
 
 from ...db import get_db
 from ...models import ProxmoxServer, User, IPAMNetwork
 from ...auth import PermissionChecker
-from ...template_helpers import add_i18n_context
-from ._helpers import _get_proxmox_client, templates
+from ._helpers import _get_proxmox_client
 
 router = APIRouter()
-
-
-# ==================== HTML Page ====================
-
-@router.get("/networks", response_class=HTMLResponse, include_in_schema=False)
-def networks_page(request: Request, db: Session = Depends(get_db)):
-    """Страница управления сетями PVE (SDN + интерфейсы нод)"""
-    from ...i18n import t
-    lang = request.cookies.get("language", "en")
-    proxmox_servers = db.query(ProxmoxServer).all()
-    context = {
-        "request": request,
-        "proxmox_servers": proxmox_servers,
-        "page_title": t("nav_networks", lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("networks.html", context)
 
 
 # ==================== Node list ====================

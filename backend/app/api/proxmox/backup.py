@@ -9,8 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from loguru import logger
 
@@ -18,57 +17,9 @@ from ...db import get_db
 from ...models import BackupJob, ProxmoxServer, User
 from ...auth import PermissionChecker
 from ...logging_service import LoggingService
-from ...template_helpers import add_i18n_context
-from ._helpers import _get_proxmox_client, templates
+from ._helpers import _get_proxmox_client
 
 router = APIRouter()
-
-
-# ==================== UI Page ====================
-
-@router.get("/api/backups/page", response_class=HTMLResponse, include_in_schema=False)
-async def backups_page(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    from ...i18n import t
-    from ...api.workspaces import get_workspace_server_ids
-    from ...auth import get_current_user_optional
-
-    lang = request.cookies.get("language", "ru")
-
-    # Workspace filtering (best-effort, page may be loaded unauthenticated)
-    server_ids = None
-    try:
-        token = request.cookies.get("access_token") or (
-            request.headers.get("Authorization", "").removeprefix("Bearer ").strip() or None
-        )
-        if token:
-            from ...auth import decode_access_token
-            from ...models import User as UserModel
-            payload = decode_access_token(token)
-            username = payload.get("sub")
-            if username:
-                user_obj = db.query(UserModel).filter(
-                    UserModel.username == username, UserModel.is_active == True
-                ).first()
-                if user_obj:
-                    server_ids = get_workspace_server_ids(request, db, user_obj)
-    except Exception:
-        pass
-
-    servers_q = db.query(ProxmoxServer).filter(ProxmoxServer.is_online.is_(True))
-    if server_ids is not None:
-        servers_q = servers_q.filter(ProxmoxServer.id.in_(server_ids))
-    servers = servers_q.all()
-
-    context = {
-        "request": request,
-        "page_title": t("nav_backups", lang),
-        "servers": [{"id": s.id, "name": s.name} for s in servers],
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("backups.html", context)
 
 
 # ==================== Storage Management ====================

@@ -1,0 +1,598 @@
+import { useState, useMemo } from 'react';
+import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import {
+  useReactTable,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  getPaginationRowModel,
+  flexRender,
+  type ColumnDef,
+  type SortingState,
+  type RowSelectionState,
+} from '@tanstack/react-table';
+import {
+  Plus,
+  Search,
+  Play,
+  Square,
+  Trash2,
+  MoreHorizontal,
+  Terminal,
+  RotateCcw,
+  Camera,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Monitor,
+  Container,
+  Loader2,
+} from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { StatusDot } from '@/components/shared/status-dot';
+import { useVirtualMachines, useBulkOperation, usePowerAction } from '@/hooks/use-instances';
+import { formatBytes, vmTypeLabel, formatUptime } from '@/lib/format';
+import type { VMInstance } from '@/types';
+import { toast } from 'sonner';
+
+// ==================== Inline Progress Bar ====================
+function InlineProgress({ value, max, className }: { value: number; max: number; className?: string }) {
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary';
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`h-1.5 w-16 overflow-hidden rounded-full bg-muted ${className}`}>
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs tabular-nums text-muted-foreground">{pct.toFixed(0)}%</span>
+    </div>
+  );
+}
+
+// ==================== Row Action Menu ====================
+function RowActionMenu({ vm }: { vm: VMInstance }) {
+  const { t } = useTranslation();
+  const power = usePowerAction(vm.server_id!, vm.vmid, vm.type, vm.node);
+  const isRunning = vm.status === 'running';
+
+  const handleAction = (action: string) => {
+    power.mutate(
+      { action },
+      {
+        onSuccess: () => toast.success(`${action} sent for ${vm.name || vm.vmid}`),
+        onError: (err) => toast.error(err.message),
+      }
+    );
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
+        <MoreHorizontal className="h-4 w-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem render={<Link to={`/console/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`} />}>
+            <Terminal className="mr-2 h-4 w-4" /> {t('common.console', 'Console')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {!isRunning ? (
+          <DropdownMenuItem onClick={() => handleAction('start')}>
+            <Play className="mr-2 h-4 w-4" /> {t('common.start', 'Start')}
+          </DropdownMenuItem>
+        ) : (
+          <>
+            <DropdownMenuItem onClick={() => handleAction('restart')}>
+              <RotateCcw className="mr-2 h-4 w-4" /> {t('common.restart', 'Restart')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleAction('stop')}>
+              <Square className="mr-2 h-4 w-4" /> {t('common.stop', 'Stop')}
+            </DropdownMenuItem>
+          </>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=snapshots`} />}>
+            <Camera className="mr-2 h-4 w-4" /> {t('common.snapshots', 'Snapshots')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// ==================== Instances Page ====================
+export default function InstancesPage() {
+  const { t } = useTranslation();
+  const { data: vms, isLoading } = useVirtualMachines();
+  const bulkOp = useBulkOperation();
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [nodeFilter, setNodeFilter] = useState<string>('all');
+  const [typeTab, setTypeTab] = useState<string>('all');
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  // Filter data
+  const filteredVMs = useMemo(() => {
+    if (!vms) return [];
+    return vms.filter((vm) => {
+      // Type tab filter
+      if (typeTab === 'vm' && vm.type !== 'qemu') return false;
+      if (typeTab === 'lxc' && vm.type !== 'lxc') return false;
+
+      // Status filter
+      if (statusFilter !== 'all' && vm.status !== statusFilter) return false;
+
+      // Node filter
+      if (nodeFilter !== 'all' && vm.node !== nodeFilter) return false;
+
+      // Search filter
+      if (search) {
+        const q = search.toLowerCase();
+        const name = (vm.name || '').toLowerCase();
+        const ip = (vm.ip_address || '').toLowerCase();
+        const vmid = String(vm.vmid);
+        if (!name.includes(q) && !ip.includes(q) && !vmid.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [vms, typeTab, statusFilter, nodeFilter, search]);
+
+  // Unique nodes for filter
+  const uniqueNodes = useMemo(() => {
+    if (!vms) return [];
+    return [...new Set(vms.map((v) => v.node))].sort();
+  }, [vms]);
+
+  // Counts for tabs
+  const counts = useMemo(() => {
+    if (!vms) return { all: 0, vm: 0, lxc: 0 };
+    return {
+      all: vms.length,
+      vm: vms.filter((v) => v.type === 'qemu').length,
+      lxc: vms.filter((v) => v.type === 'lxc').length,
+    };
+  }, [vms]);
+
+  // Selected VMs
+  const selectedVMs = useMemo(() => {
+    return Object.keys(rowSelection)
+      .filter((k) => rowSelection[k])
+      .map((idx) => filteredVMs[Number(idx)])
+      .filter(Boolean);
+  }, [rowSelection, filteredVMs]);
+
+  // Bulk action handler
+  const handleBulk = (action: string) => {
+    if (!selectedVMs.length) return;
+    bulkOp.mutate(
+      {
+        action,
+        items: selectedVMs.map((vm) => ({
+          server_id: vm.server_id!,
+          vmid: vm.vmid,
+          vm_type: vm.type,
+          name: vm.name || String(vm.vmid),
+          node: vm.node,
+        })),
+      },
+      {
+        onSuccess: () => {
+          toast.success(`Bulk ${action}: ${selectedVMs.length} items queued`);
+          setRowSelection({});
+        },
+        onError: (err) => toast.error(err.message),
+      }
+    );
+  };
+
+  // ==================== Table Columns ====================
+  const columns = useMemo<ColumnDef<VMInstance>[]>(
+    () => [
+      {
+        id: 'select',
+        header: ({ table }) => (
+          <input
+            type="checkbox"
+            className="rounded border-border"
+            checked={table.getIsAllPageRowsSelected()}
+            onChange={table.getToggleAllPageRowsSelectedHandler()}
+          />
+        ),
+        cell: ({ row }) => (
+          <input
+            type="checkbox"
+            className="rounded border-border"
+            checked={row.getIsSelected()}
+            onChange={row.getToggleSelectedHandler()}
+          />
+        ),
+        size: 32,
+        enableSorting: false,
+      },
+      {
+        accessorKey: 'name',
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
+            {t('common.name', 'Name')}
+            <ArrowUpDown className="ml-1 h-3 w-3" />
+          </Button>
+        ),
+        cell: ({ row }) => {
+          const vm = row.original;
+          return (
+            <Link
+              to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`}
+              className="group flex items-center gap-2"
+            >
+              <StatusDot status={vm.status} pulse />
+              <div>
+                <span className="font-medium text-foreground group-hover:text-primary transition-colors">
+                  {vm.name || `VM ${vm.vmid}`}
+                </span>
+                <span className="ml-2 text-xs text-muted-foreground">#{vm.vmid}</span>
+              </div>
+            </Link>
+          );
+        },
+      },
+      {
+        accessorKey: 'status',
+        header: t('common.status', 'Status'),
+        cell: ({ getValue }) => {
+          const status = getValue<string>();
+          return (
+            <Badge
+              variant="secondary"
+              className={
+                status === 'running'
+                  ? 'bg-green-500/10 text-green-500'
+                  : 'bg-muted text-muted-foreground'
+              }
+            >
+              {status}
+            </Badge>
+          );
+        },
+        size: 100,
+      },
+      {
+        accessorKey: 'node',
+        header: t('common.node', 'Node'),
+        cell: ({ getValue }) => (
+          <span className="text-muted-foreground">{getValue<string>()}</span>
+        ),
+        size: 100,
+      },
+      {
+        accessorKey: 'type',
+        header: t('common.type', 'Type'),
+        cell: ({ getValue }) => {
+          const type = getValue<string>();
+          const Icon = type === 'qemu' ? Monitor : Container;
+          return (
+            <Tooltip>
+              <TooltipTrigger render={<span />}>
+                <Badge variant="outline" className="gap-1 font-normal">
+                  <Icon className="h-3 w-3" />
+                  {vmTypeLabel(type)}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>{type === 'qemu' ? 'QEMU Virtual Machine' : 'LXC Container'}</TooltipContent>
+            </Tooltip>
+          );
+        },
+        size: 80,
+      },
+      {
+        id: 'ip',
+        accessorKey: 'ip_address',
+        header: 'IP',
+        cell: ({ getValue }) => {
+          const ip = getValue<string>();
+          return ip ? (
+            <span className="font-mono text-xs">{ip}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          );
+        },
+        size: 130,
+      },
+      {
+        id: 'cpu',
+        header: 'CPU',
+        cell: ({ row }) => {
+          const vm = row.original;
+          if (!vm.cpu && vm.cpu !== 0) return <span className="text-xs text-muted-foreground">—</span>;
+          return <InlineProgress value={vm.cpu * 100} max={100} />;
+        },
+        size: 120,
+      },
+      {
+        id: 'memory',
+        header: t('dashboard.memory', 'Memory'),
+        cell: ({ row }) => {
+          const vm = row.original;
+          if (!vm.mem || !vm.maxmem) return <span className="text-xs text-muted-foreground">—</span>;
+          return (
+            <Tooltip>
+              <TooltipTrigger>
+                <InlineProgress value={vm.mem} max={vm.maxmem} />
+              </TooltipTrigger>
+              <TooltipContent>
+                {formatBytes(vm.mem)} / {formatBytes(vm.maxmem)}
+              </TooltipContent>
+            </Tooltip>
+          );
+        },
+        size: 120,
+      },
+      {
+        id: 'disk',
+        header: 'Disk',
+        cell: ({ row }) => {
+          const vm = row.original;
+          if (!vm.disk && !vm.maxdisk) return <span className="text-xs text-muted-foreground">—</span>;
+          return (
+            <Tooltip>
+              <TooltipTrigger>
+                <InlineProgress value={vm.disk || 0} max={vm.maxdisk || 0} />
+              </TooltipTrigger>
+              <TooltipContent>
+                {formatBytes(vm.disk || 0)} / {formatBytes(vm.maxdisk || 0)}
+              </TooltipContent>
+            </Tooltip>
+          );
+        },
+        size: 120,
+      },
+      {
+        id: 'uptime',
+        header: 'Uptime',
+        cell: ({ row }) => {
+          const up = row.original.uptime;
+          return <span className="text-xs text-muted-foreground">{up ? formatUptime(up) : '—'}</span>;
+        },
+        size: 80,
+      },
+      {
+        id: 'tags',
+        accessorKey: 'tags',
+        header: 'Tags',
+        cell: ({ getValue }) => {
+          const tags = getValue<string>();
+          if (!tags) return null;
+          return (
+            <div className="flex gap-1 flex-wrap">
+              {tags.split(/[;,]/).filter(Boolean).map((tag) => (
+                <Badge key={tag} variant="secondary" className="text-[10px] leading-tight">
+                  {tag.trim()}
+                </Badge>
+              ))}
+            </div>
+          );
+        },
+        size: 120,
+      },
+      {
+        id: 'actions',
+        cell: ({ row }) => <RowActionMenu vm={row.original} />,
+        size: 48,
+        enableSorting: false,
+      },
+    ],
+    [t]
+  );
+
+  // ==================== TanStack Table ====================
+  const table = useReactTable({
+    data: filteredVMs,
+    columns,
+    state: { sorting, rowSelection },
+    onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: { pagination: { pageSize: 25 } },
+  });
+
+  // ==================== Render ====================
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-[22px] font-semibold">{t('nav.instances', 'Instances')}</h1>
+        <Button render={<Link to="/instances/create" />} size="sm">
+          <Plus className="mr-1.5 h-4 w-4" />
+          {t('instances.create', 'Create Instance')}
+        </Button>
+      </div>
+
+      {/* Type Tabs */}
+      <Tabs value={typeTab} onValueChange={setTypeTab}>
+        <TabsList>
+          <TabsTrigger value="all">
+            All <Badge variant="secondary" className="ml-1.5 text-[10px]">{counts.all}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="vm">
+            <Monitor className="mr-1 h-3.5 w-3.5" /> VM
+            <Badge variant="secondary" className="ml-1.5 text-[10px]">{counts.vm}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="lxc">
+            <Container className="mr-1 h-3.5 w-3.5" /> LXC
+            <Badge variant="secondary" className="ml-1.5 text-[10px]">{counts.lxc}</Badge>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Filters bar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder={t('instances.search_placeholder', 'Search by name, IP, or VMID...')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
+        <Select value={statusFilter} onValueChange={v => { if (v !== null) setStatusFilter(v); }}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue placeholder={t('common.status', 'Status')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('instances.all_statuses', 'All statuses')}</SelectItem>
+            <SelectItem value="running">{t('common.running', 'Running')}</SelectItem>
+            <SelectItem value="stopped">{t('common.stopped', 'Stopped')}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={nodeFilter} onValueChange={v => { if (v !== null) setNodeFilter(v); }}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue placeholder={t('common.node', 'Node')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('instances.all_nodes', 'All nodes')}</SelectItem>
+            {uniqueNodes.map((n) => (
+              <SelectItem key={n} value={n}>{n}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Bulk actions toolbar */}
+      {selectedVMs.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-2">
+          <span className="text-sm font-medium">{selectedVMs.length} selected</span>
+          <Button variant="outline" size="sm" onClick={() => handleBulk('start')} disabled={bulkOp.isPending}>
+            <Play className="mr-1 h-3 w-3" /> Start
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => handleBulk('stop')} disabled={bulkOp.isPending}>
+            <Square className="mr-1 h-3 w-3" /> Stop
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => handleBulk('delete')} disabled={bulkOp.isPending}>
+            <Trash2 className="mr-1 h-3 w-3" /> Delete
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setRowSelection({})}>
+            Clear
+          </Button>
+        </div>
+      )}
+
+      {/* Table */}
+      <Card>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredVMs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+              <Monitor className="mb-3 h-10 w-10 opacity-40" />
+              <p className="text-sm font-medium">{t('instances.no_instances', 'No instances found')}</p>
+              <p className="text-xs">{search ? t('instances.try_other_search', 'Try a different search query') : t('instances.create_first', 'Create your first instance')}</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => (
+                      <TableHead key={header.id} style={{ width: header.getSize() }}>
+                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableHeader>
+              <TableBody>
+                {table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Pagination */}
+      {filteredVMs.length > 0 && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            {t('instances.showing', 'Showing')} {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
+            {Math.min(
+              (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
+              filteredVMs.length
+            )}{' '}
+            {t('instances.of', 'of')} {filteredVMs.length}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="px-2 tabular-nums">
+              {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

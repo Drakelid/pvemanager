@@ -5,8 +5,7 @@ User account settings and panel configuration
 
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from fastapi.responses import HTMLResponse, Response
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
@@ -15,7 +14,6 @@ from ..db import get_db
 from ..models import User, PanelSettings
 from ..auth import get_current_user, get_current_user_optional, get_password_hash, verify_password, PermissionChecker
 from ..logging_service import LoggingService
-from ..template_helpers import add_i18n_context
 from ..i18n import I18nService, t
 from ..services.logo_service import LogoService
 from ..services.update_service import (
@@ -33,7 +31,6 @@ def get_local_time() -> str:
 
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
 # ==================== Helper Functions ====================
@@ -101,29 +98,6 @@ async def get_protected_logo():
             "X-Logo-Protected": "true"
         }
     )
-
-
-# ==================== HTML Pages ====================
-
-@router.get("/", response_class=HTMLResponse)
-async def settings_page(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
-):
-    """Render settings page"""
-    from ..template_helpers import get_language
-    lang = get_language(request)
-    context = {
-        "request": request,
-        "title": t("nav_settings", lang),
-        "page_title": f"⚙️ {t('nav_settings', lang)}",
-        "current_user": current_user
-    }
-    # Add i18n context
-    context = add_i18n_context(request, context)
-    
-    return templates.TemplateResponse("settings.html", context)
 
 
 # ==================== User Account Settings ====================

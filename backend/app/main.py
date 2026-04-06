@@ -5,10 +5,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect, Query, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.templating import Jinja2Templates
 from loguru import logger
 
 from .config import settings
@@ -28,7 +26,6 @@ from .api import workspaces as workspaces_router
 from .logging_middleware import RequestLoggingMiddleware
 from .language_middleware import LanguageMiddleware
 from .i18n import I18nService
-from .template_helpers import add_i18n_context
 
 
 # Configure logging
@@ -225,9 +222,6 @@ def create_app() -> FastAPI:
     # Add language detection middleware
     app.add_middleware(LanguageMiddleware)
 
-    # Templates
-    templates = Jinja2Templates(directory="app/templates")
-
     # Security headers middleware
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next):
@@ -261,13 +255,6 @@ def create_app() -> FastAPI:
     @app.exception_handler(HTTPException)
     async def custom_http_exception_handler(request: Request, exc: HTTPException):
         logger.warning(f"HTTP exception: {exc.status_code} - {exc.detail}")
-        # Redirect browser HTML page requests to /login on auth errors
-        if exc.status_code in (401, 403):
-            accept = request.headers.get("accept", "")
-            path = request.url.path
-            if "text/html" in accept and not path.startswith(("/api/", "/static/", "/settings/api/")):
-                from urllib.parse import quote
-                return RedirectResponse(url=f"/login?returnUrl={quote(path)}", status_code=302)
         return await http_exception_handler(request, exc)
 
     # Health check endpoint
@@ -281,65 +268,16 @@ def create_app() -> FastAPI:
             "database": "connected" if db_healthy else "disconnected"
         }
 
-    # Root redirect
+    # Root — API info
     @app.get("/", include_in_schema=False)
     async def root():
-        return RedirectResponse(url="/dashboard", status_code=302)
+        return {"name": settings.PANEL_NAME, "version": settings.VERSION, "docs": "/docs"}
 
-    # Backup Storage page
-    @app.get("/backups", include_in_schema=False)
-    async def backups_page(request: Request):
-        """Backup storage management page"""
-        return RedirectResponse(url="/proxmox/api/backups/page", status_code=302)
-
-    # Legacy redirect for old /servers URL
-    @app.get("/servers", include_in_schema=False)
-    async def servers_redirect():
-        return RedirectResponse(url="/proxmox/vms", status_code=301)
-    
-    # Direct access to /vms - now shows Proxmox servers
-    @app.get("/vms", include_in_schema=False)
-    async def vms_redirect():
-        return RedirectResponse(url="/proxmox/vms", status_code=301)
-    
-    # Virtual Machines list page
-    @app.get("/virtual-machines", include_in_schema=False)
-    async def virtual_machines_page(request: Request):
-        """Virtual Machines list page"""
-        from .i18n import t
-        lang = request.cookies.get("language", "ru")
-        
-        context = {
-            "request": request,
-            "page_title": t('nav_vms', lang),
-        }
-        context = add_i18n_context(request, context)
-        return templates.TemplateResponse("virtual_machines.html", context)
-    
-    # Virtual Machine detail page
-    @app.get("/virtual-machines/{server_id}/{vmid}", include_in_schema=False)
-    async def virtual_machine_detail_page(request: Request, server_id: int, vmid: int, type: str = "qemu", node: str = ""):
-        """Virtual Machine detail page"""
-        return RedirectResponse(url=f"/proxmox/server/{server_id}/instance/{vmid}?type={type}&node={node}", status_code=302)
-    
     # API for virtual machines list (proxy to proxmox router)
     @app.get("/api/virtual-machines")
     async def api_virtual_machines(request: Request):
         """Proxy to proxmox virtual-machines API"""
         return RedirectResponse(url="/proxmox/api/virtual-machines", status_code=307)
-
-    # Task Manager page
-    @app.get("/tasks", include_in_schema=False)
-    async def tasks_page(request: Request):
-        """Task Manager page"""
-        from .i18n import t
-        lang = request.cookies.get("language", "ru")
-        context = {
-            "request": request,
-            "page_title": t("nav_tasks", lang) if callable(t) else "Менеджер задач",
-        }
-        context = add_i18n_context(request, context)
-        return templates.TemplateResponse("tasks.html", context)
 
     # WebSocket endpoint for real-time task updates
     @app.websocket("/ws/tasks")
@@ -462,11 +400,6 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router.router, tags=["notifications"])
     app.include_router(users_router.router, prefix="/admin", tags=["users", "admin"])
     app.include_router(workspaces_router.router, tags=["workspaces"])
-
-    # Mount static files for noVNC
-    static_dir = Path(__file__).parent / "static"
-    if static_dir.exists():
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     return app
 

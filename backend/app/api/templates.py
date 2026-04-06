@@ -4,8 +4,7 @@ Allows creating VM templates, groups, and deploying VMs from templates
 """
 
 from fastapi import APIRouter, Depends, Request, HTTPException, status
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from loguru import logger
 from typing import List
@@ -22,33 +21,8 @@ from ..api.proxmox import get_next_vmid, save_vm_instance, get_vm_instance
 from ..auth import get_current_user, PermissionChecker
 from ..ipam_service import IPAMService
 from ..logging_service import LoggingService
-from ..template_helpers import add_i18n_context
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
-
-
-# ==================== HTML Pages ====================
-
-@router.get("/", response_class=HTMLResponse, include_in_schema=False)
-def templates_page(request: Request, db: Session = Depends(get_db)):
-    """Страница управления OS шаблонами"""
-    from ..i18n import t
-    lang = request.cookies.get("language", "en")
-    
-    proxmox_servers = db.query(ProxmoxServer).all()
-    template_groups = db.query(OSTemplateGroup).order_by(OSTemplateGroup.sort_order).all()
-    os_templates = db.query(OSTemplate).order_by(OSTemplate.sort_order).all()
-    
-    context = {
-        "request": request,
-        "proxmox_servers": proxmox_servers,
-        "template_groups": template_groups,
-        "os_templates": os_templates,
-        "page_title": t('nav_templates', lang),
-    }
-    context = add_i18n_context(request, context)
-    return templates.TemplateResponse("os_templates.html", context)
 
 
 # ==================== Template Groups CRUD ====================

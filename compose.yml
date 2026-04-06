@@ -89,6 +89,27 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: server-panel-frontend:latest
+    pull_policy: build
+    container_name: serverpanel-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - serverpanel-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+
 volumes:
   db_data:
   logs:
