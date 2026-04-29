@@ -293,6 +293,289 @@ def execute_vm_script(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== Specific VM/Container Actions (must be registered BEFORE generic {action} routes) ====================
+
+class CloneRequest(BaseModel):
+    new_name: str
+    full: bool = True
+    target_node: Optional[str] = None
+    target_storage: Optional[str] = None
+    description: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    username: str = "root"
+    password: str
+
+
+def _resolve_server(db: Session, server_id: int) -> ProxmoxServer:
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+    return server
+
+
+def _get_client_or_503(server: ProxmoxServer):
+    client = _get_proxmox_client(server)
+    if not client.is_connected():
+        raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+    return client
+
+
+# -------- Clone --------
+
+@router.post("/api/{server_id}/vm/{vmid}/clone")
+def clone_vm_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: CloneRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vms.create"))
+):
+    """Клонировать существующую VM (qemu)."""
+    require_vm_access(db, current_user, server_id, vmid)
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    new_vmid = client.get_next_vmid() or get_next_vmid(db, server_id)
+    if not new_vmid:
+        raise HTTPException(status_code=500, detail="Failed to allocate new VMID")
+    upid = client.clone_vm(
+        node=node, vmid=vmid, new_vmid=new_vmid, name=body.new_name,
+        full=body.full, target_node=body.target_node,
+        target_storage=body.target_storage, description=body.description,
+    )
+    if not upid:
+        raise HTTPException(status_code=500, detail="Clone failed")
+    try:
+        ProxmoxTaskService.register(
+            db=db, upid=upid, server_id=server_id,
+            user_id=current_user.id, action='clone',
+            node=node, vmid=vmid, vm_type='qemu',
+            description=f"Клонирование VM {vmid} -> {new_vmid} ({body.new_name})",
+        )
+    except Exception as _te:
+        logger.warning(f"Failed to register clone task: {_te}")
+    LoggingService.log_proxmox_action(
+        db=db, action='clone', resource_type='vm', resource_id=vmid,
+        username=current_user.username, server_id=server_id,
+        server_name=server.name, node_name=node,
+        details={'new_vmid': new_vmid, 'name': body.new_name}, success=True,
+    )
+    return {"status": "success", "new_vmid": new_vmid, "upid": upid}
+
+
+@router.post("/api/{server_id}/container/{vmid}/clone")
+def clone_container_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: CloneRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vms.create"))
+):
+    """Клонировать существующий LXC контейнер."""
+    require_vm_access(db, current_user, server_id, vmid)
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    new_vmid = client.get_next_vmid() or get_next_vmid(db, server_id)
+    if not new_vmid:
+        raise HTTPException(status_code=500, detail="Failed to allocate new VMID")
+    upid = client.clone_container(
+        node=node, vmid=vmid, new_vmid=new_vmid, hostname=body.new_name,
+        full=body.full, target_node=body.target_node,
+        target_storage=body.target_storage, description=body.description,
+    )
+    if not upid:
+        raise HTTPException(status_code=500, detail="Clone failed")
+    try:
+        ProxmoxTaskService.register(
+            db=db, upid=upid, server_id=server_id,
+            user_id=current_user.id, action='clone',
+            node=node, vmid=vmid, vm_type='lxc',
+            description=f"Клонирование LXC {vmid} -> {new_vmid} ({body.new_name})",
+        )
+    except Exception as _te:
+        logger.warning(f"Failed to register clone task: {_te}")
+    return {"status": "success", "new_vmid": new_vmid, "upid": upid}
+
+
+# -------- Reinstall (re-clone from saved template) --------
+
+@router.post("/api/{server_id}/vm/{vmid}/reinstall")
+def reinstall_vm_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vms.delete"))
+):
+    """Переустановить VM/LXC, пересоздав её из исходного шаблона."""
+    require_vm_access(db, current_user, server_id, vmid)
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+
+    cached = db.query(VMInstance).filter(
+        VMInstance.server_id == server_id,
+        VMInstance.vmid == vmid,
+        VMInstance.deleted_at.is_(None),
+    ).first()
+    if not cached or not cached.template_id:
+        raise HTTPException(status_code=400, detail="VM has no associated template; reinstall is not available")
+
+    from ...models import OSTemplate
+    tpl = db.query(OSTemplate).filter(OSTemplate.id == cached.template_id).first()
+    if not tpl or not tpl.template_vmid:
+        raise HTTPException(status_code=400, detail="Template not found or invalid")
+
+    name = cached.name
+    cores = cached.cores
+    memory = cached.memory
+    description = cached.description
+    is_lxc = (cached.vm_type == 'lxc')
+
+    # 1) stop
+    try:
+        if is_lxc:
+            client.stop_container(node, vmid, force=False)
+        else:
+            client.stop_vm(node, vmid, force=False)
+    except Exception:
+        pass
+    import time as _t
+    for _ in range(20):
+        try:
+            st = client.get_container_status(node, vmid) if is_lxc else client.get_vm_status(node, vmid)
+            if not st or st.get('status') != 'running':
+                break
+        except Exception:
+            break
+        _t.sleep(0.5)
+
+    # 2) delete
+    try:
+        if is_lxc:
+            client.delete_container(node, vmid, force=False)
+        else:
+            client.delete_vm(node, vmid, force=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete instance: {e}")
+    for _ in range(30):
+        st = client.get_container_status(node, vmid) if is_lxc else client.get_vm_status(node, vmid)
+        if not st:
+            break
+        _t.sleep(1)
+
+    # 3) clone from template under same vmid
+    try:
+        if is_lxc:
+            upid = client.clone_container(
+                node=tpl.node or node, vmid=tpl.template_vmid, new_vmid=vmid,
+                hostname=name, full=True, target_node=node,
+                description=description,
+            )
+        else:
+            upid = client.clone_vm(
+                node=tpl.node or node, vmid=tpl.template_vmid, new_vmid=vmid,
+                name=name, full=True, target_node=node,
+                description=description,
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Clone failed: {e}")
+    if not upid:
+        raise HTTPException(status_code=500, detail="Clone failed")
+
+    try:
+        client.wait_for_task(node, upid, timeout=600)
+    except Exception:
+        pass
+
+    # 4) Re-apply config
+    try:
+        if is_lxc:
+            cfg = {}
+            if cores: cfg['cores'] = cores
+            if memory: cfg['memory'] = int(memory)
+            if cfg:
+                client.update_container_config(node, vmid, cfg)
+        else:
+            cfg = {}
+            if cores: cfg['cores'] = cores
+            if memory: cfg['memory'] = int(memory)
+            if cfg:
+                client.update_vm_config(node, vmid, cfg)
+    except Exception as _ce:
+        logger.warning(f"Failed to re-apply config after reinstall: {_ce}")
+
+    LoggingService.log_proxmox_action(
+        db=db, action='reinstall',
+        resource_type='lxc' if is_lxc else 'vm', resource_id=vmid,
+        username=current_user.username, resource_name=name,
+        server_id=server_id, server_name=server.name, node_name=node,
+        details={'template_id': tpl.id, 'template_vmid': tpl.template_vmid},
+        success=True,
+    )
+    return {"status": "success", "vmid": vmid, "upid": upid}
+
+
+# -------- Change Password --------
+
+@router.post("/api/{server_id}/vm/{vmid}/change-password")
+def change_vm_password_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vms.console"))
+):
+    """Сменить пароль пользователя на VM через QEMU guest agent."""
+    require_vm_access(db, current_user, server_id, vmid)
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    if not body.password or len(body.password) < 4:
+        raise HTTPException(status_code=400, detail="Password too short")
+    res = client.change_vm_password(node, vmid, body.username, body.password)
+    if not res.get('success'):
+        raise HTTPException(status_code=500, detail=res.get('error') or 'Failed to change password')
+    LoggingService.log_proxmox_action(
+        db=db, action='change-password', resource_type='vm', resource_id=vmid,
+        username=current_user.username, server_id=server_id,
+        server_name=server.name, node_name=node,
+        details={'target_user': body.username}, success=True,
+    )
+    return {"status": "success"}
+
+
+@router.post("/api/{server_id}/container/{vmid}/change-password")
+def change_container_password_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vms.console"))
+):
+    """Сменить пароль пользователя в LXC через pct exec/chpasswd."""
+    require_vm_access(db, current_user, server_id, vmid)
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    if not body.password or len(body.password) < 4:
+        raise HTTPException(status_code=400, detail="Password too short")
+    res = client.change_container_password(node, vmid, body.username, body.password)
+    if not res.get('success'):
+        raise HTTPException(status_code=500, detail=res.get('error') or 'Failed to change password')
+    LoggingService.log_proxmox_action(
+        db=db, action='change-password', resource_type='lxc', resource_id=vmid,
+        username=current_user.username, server_id=server_id,
+        server_name=server.name, node_name=node,
+        details={'target_user': body.username}, success=True,
+    )
+    return {"status": "success"}
+
+
+# ==================== Generic VM/Container Action Handler ====================
+
 @router.post("/api/{server_id}/vm/{vmid}/{action}")
 def control_vm(
     server_id: int, 
@@ -303,15 +586,16 @@ def control_vm(
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    """Управление VM (start/stop/restart)"""
-    if action not in ['start', 'stop', 'restart']:
+    """Управление VM (start/stop/restart/shutdown)"""
+    if action not in ['start', 'stop', 'restart', 'shutdown']:
         raise HTTPException(status_code=400, detail="Invalid action")
     
     # Проверка прав в зависимости от действия
     permission_map = {
         'start': 'vms.start',
-        'stop': 'vms.stop', 
-        'restart': 'vms.restart'
+        'stop': 'vms.stop',
+        'shutdown': 'vms.stop',
+        'restart': 'vms.restart',
     }
     if not current_user.has_permission(permission_map[action]):
         raise HTTPException(
@@ -350,12 +634,29 @@ def control_vm(
             else:
                 upid = client.stop_vm(node, vmid, force=False)
                 success = bool(upid)
+        elif action == 'shutdown':
+            upid = client.shutdown_vm(node, vmid)
+            success = bool(upid)
         else:  # restart
             upid = client.restart_vm(node, vmid)
             success = bool(upid)
 
         action_name = 'kill' if action == 'stop' and force else action
         if success:
+            # Immediately update vm_instances cache so page refresh returns correct status
+            expected_status = 'running' if action in ('start', 'restart') else 'stopped'
+            try:
+                cached_vm = db.query(VMInstance).filter(
+                    VMInstance.server_id == server_id,
+                    VMInstance.vmid == vmid,
+                    VMInstance.deleted_at.is_(None)
+                ).first()
+                if cached_vm:
+                    cached_vm.status = expected_status
+                    db.commit()
+            except Exception as _ce:
+                logger.warning(f"Failed to update VM {vmid} status cache: {_ce}")
+                db.rollback()
             # Register ProxmoxTask for UPID-based tracking
             if upid:
                 _desc_map = {
@@ -545,6 +846,21 @@ async def delete_vm(
             except Exception as e:
                 logger.warning(f"Failed to release IPAM allocation for VM {vmid}: {e}")
             
+            # Register ProxmoxTask for delete tracking
+            try:
+                from datetime import datetime, timezone as _tz
+                _ptask = ProxmoxTaskService.register(
+                    db=db, upid=f"delete-vm-{vmid}-{server_id}", server_id=server_id,
+                    user_id=current_user.id, action='delete',
+                    node=node, vmid=vmid, vm_type='qemu',
+                    description=f"Удаление VM {vm_name or vmid}",
+                )
+                _ptask.status = 'completed'
+                _ptask.exit_status = 'OK'
+                _ptask.completed_at = datetime.now(_tz.utc)
+                db.commit()
+            except Exception as _te:
+                logger.warning(f"Failed to register ProxmoxTask for VM {vmid} delete: {_te}")
             # Log successful deletion
             LoggingService.log_proxmox_action(
                 db=db,
@@ -875,7 +1191,17 @@ async def delete_container(
                     logger.info(f"Auto-released IPAM allocation for IP {released_ip} after container {vmid} deletion")
             except Exception as e:
                 logger.warning(f"Failed to release IPAM allocation for container {vmid}: {e}")
-            
+
+            # Register ProxmoxTask for delete tracking
+            try:
+                ProxmoxTaskService.register(
+                    db=db, upid=f"delete-ct-{vmid}-{server_id}", server_id=server_id,
+                    user_id=current_user.id, action='delete',
+                    node=node, vmid=vmid, vm_type='lxc',
+                    description=f"Удаление LXC {container_name or vmid}",
+                )
+            except Exception as _te:
+                logger.warning(f"Failed to register ProxmoxTask for container {vmid} delete: {_te}")
             # Log deletion with snapshot info
             LoggingService.log_proxmox_action(
                 db=db,
@@ -1154,15 +1480,16 @@ def control_container(
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    """Управление LXC контейнером (start/stop/restart)"""
-    if action not in ['start', 'stop', 'restart']:
+    """Управление LXC контейнером (start/stop/restart/shutdown)"""
+    if action not in ['start', 'stop', 'restart', 'shutdown']:
         raise HTTPException(status_code=400, detail="Invalid action")
     
     # Проверка прав в зависимости от действия
     permission_map = {
         'start': 'vms.start',
-        'stop': 'vms.stop', 
-        'restart': 'vms.restart'
+        'stop': 'vms.stop',
+        'shutdown': 'vms.stop',
+        'restart': 'vms.restart',
     }
     require_permission(current_user, permission_map[action])
     
@@ -1189,12 +1516,29 @@ def control_container(
             else:
                 upid = client.stop_container(node, vmid, force=False)
                 success = bool(upid)
+        elif action == 'shutdown':
+            upid = client.shutdown_container(node, vmid)
+            success = bool(upid)
         else:  # restart
             upid = client.restart_container(node, vmid)
             success = bool(upid)
 
         action_name = 'kill' if action == 'stop' and force else action
         if success:
+            # Immediately update vm_instances cache so page refresh returns correct status
+            expected_status = 'running' if action in ('start', 'restart') else 'stopped'
+            try:
+                cached_ct = db.query(VMInstance).filter(
+                    VMInstance.server_id == server_id,
+                    VMInstance.vmid == vmid,
+                    VMInstance.deleted_at.is_(None)
+                ).first()
+                if cached_ct:
+                    cached_ct.status = expected_status
+                    db.commit()
+            except Exception as _ce:
+                logger.warning(f"Failed to update LXC {vmid} status cache: {_ce}")
+                db.rollback()
             # Register ProxmoxTask for UPID-based tracking
             if upid:
                 _desc_map = {
@@ -2859,3 +3203,144 @@ def set_vm_owner(
     logger.info(f"Admin {current_user.username} set owner of VM {vmid} (server {server_id}) to user_id={body.user_id}")
     return {"ok": True, "owner_id": body.user_id}
 
+
+
+# ==================== Additional Instance Operations (Notes, ISO, Execute) ====================
+
+class NotesRequest(BaseModel):
+    description: Optional[str] = ""
+
+
+class IsoAttachRequest(BaseModel):
+    volid: str
+    device: str = "ide2"
+
+
+class IsoDetachRequest(BaseModel):
+    device: str = "ide2"
+
+
+class ExecuteCommandRequest(BaseModel):
+    command: str
+    timeout: int = 30
+
+
+# -------- Notes / Description --------
+
+@router.put("/api/{server_id}/vm/{vmid}/notes")
+def update_vm_notes(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: NotesRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Обновить заметку (description) у VM."""
+    require_vm_access(db, current_user, server_id, vmid)
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    ok = client.set_vm_notes(node, vmid, body.description or '')
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to update notes")
+    try:
+        cached = db.query(VMInstance).filter(
+            VMInstance.server_id == server_id,
+            VMInstance.vmid == vmid,
+            VMInstance.deleted_at.is_(None),
+        ).first()
+        if cached:
+            cached.description = body.description or ''
+            db.commit()
+    except Exception:
+        db.rollback()
+    return {"status": "success"}
+
+
+@router.put("/api/{server_id}/container/{vmid}/notes")
+def update_container_notes(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: NotesRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Обновить заметку (description) у LXC."""
+    require_vm_access(db, current_user, server_id, vmid)
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    ok = client.set_container_notes(node, vmid, body.description or '')
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to update notes")
+    try:
+        cached = db.query(VMInstance).filter(
+            VMInstance.server_id == server_id,
+            VMInstance.vmid == vmid,
+            VMInstance.deleted_at.is_(None),
+        ).first()
+        if cached:
+            cached.description = body.description or ''
+            db.commit()
+    except Exception:
+        db.rollback()
+    return {"status": "success"}
+
+
+# -------- ISO mount/unmount (KVM only) --------
+
+@router.get("/api/{server_id}/node/{node}/isos")
+def list_node_isos(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vms.view"))
+):
+    """Список ISO-образов на ноде."""
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    return {"isos": client.get_node_isos(node)}
+
+
+@router.post("/api/{server_id}/vm/{vmid}/iso/attach")
+def attach_iso_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: IsoAttachRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Подключить ISO (CD-ROM) к VM."""
+    require_vm_access(db, current_user, server_id, vmid)
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    ok = client.attach_iso(node, vmid, body.volid, body.device or 'ide2')
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to attach ISO")
+    LoggingService.log_proxmox_action(
+        db=db, action='attach-iso', resource_type='vm', resource_id=vmid,
+        username=current_user.username, server_id=server_id,
+        server_name=server.name, node_name=node,
+        details={'volid': body.volid, 'device': body.device}, success=True,
+    )
+    return {"status": "success"}
+
+
+@router.post("/api/{server_id}/vm/{vmid}/iso/detach")
+def detach_iso_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: IsoDetachRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+):
+    """Отключить ISO (CD-ROM) у VM."""
+    require_vm_access(db, current_user, server_id, vmid)
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    ok = client.detach_iso(node, vmid, body.device or 'ide2')
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to detach ISO")
+    return {"status": "success"}
