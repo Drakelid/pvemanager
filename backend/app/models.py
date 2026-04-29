@@ -1069,6 +1069,9 @@ class DeployTask(Base):
     status = Column(String(20), nullable=False, default='pending', index=True)
     # pending / running / completed / failed
 
+    # Kind of async operation: 'deploy' / 'reinstall' / 'clone' / 'change_password'
+    kind = Column(String(30), nullable=False, default='deploy', index=True)
+
     # Human-readable current step
     step = Column(String(200), nullable=True)
     # Progress 0–100
@@ -1076,7 +1079,7 @@ class DeployTask(Base):
 
     # Input info
     name = Column(String(100), nullable=False)
-    template_id = Column(Integer, nullable=False)
+    template_id = Column(Integer, nullable=True)
     server_id = Column(Integer, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
@@ -1095,15 +1098,22 @@ class DeployTask(Base):
     )
 
     def to_dict(self) -> dict:
+        kind = self.kind or 'deploy'
+        descriptions = {
+            'deploy': f"Создание {self.name}",
+            'reinstall': f"Переустановка {self.name}",
+            'clone': f"Клонирование {self.name}",
+            'change_password': f"Смена пароля: {self.name}",
+        }
         return {
             'id': self.id,
-            'kind': 'deploy',
+            'kind': kind,
             'status': self.status,
             'step': self.step,
             'current_step': self.step,
             'progress': self.progress,
             'progress_percent': self.progress,
-            'description': f"Создание {self.name}",
+            'description': descriptions.get(kind, self.name),
             'name': self.name,
             'template_id': self.template_id,
             'server_id': self.server_id,
@@ -1116,4 +1126,4 @@ class DeployTask(Base):
         }
 
     def __repr__(self):
-        return f"<DeployTask(id={self.id}, name='{self.name}', status='{self.status}')>"
+        return f"<DeployTask(id={self.id}, kind='{self.kind}', name='{self.name}', status='{self.status}')>"

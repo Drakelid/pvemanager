@@ -261,10 +261,19 @@ export default function InstancesPage() {
     });
   }, [vms, typeTab, statusFilter, nodeFilter, search]);
 
-  // Ghost rows from active deploy tasks (prepended before real VMs)
+  // Ghost rows from active deploy/clone tasks (prepended before real VMs).
+  // - reinstall / change_password tasks are NOT shown as ghosts (they live as overlays on real rows)
+  // - clone/deploy tasks whose vmid is already present in real list are skipped (de-dupe)
   const ghostRows = useMemo<VMInstance[]>(() => {
+    const realKey = new Set((vms ?? []).map((v) => `${v.server_id}:${v.vmid}`));
     return deployTasks
       .filter((t) => t.status === 'pending' || t.status === 'running')
+      .filter((t) => {
+        const k = t.kind ?? 'deploy';
+        if (k !== 'deploy' && k !== 'clone') return false;
+        if (t.vmid && t.server_id && realKey.has(`${t.server_id}:${t.vmid}`)) return false;
+        return true;
+      })
       .map((t) => ({
         vmid: t.vmid ?? 0,
         name: t.name,
@@ -274,6 +283,19 @@ export default function InstancesPage() {
         server_id: undefined,
         _deployTaskId: t.id,
       }));
+  }, [deployTasks, vms]);
+
+  // Map (server_id:vmid) -> active reinstall/change_password task (for inline overlay)
+  const overlayByVm = useMemo(() => {
+    const m = new Map<string, typeof deployTasks[number]>();
+    for (const t of deployTasks) {
+      if (t.status !== 'pending' && t.status !== 'running') continue;
+      const k = t.kind ?? 'deploy';
+      if (k !== 'reinstall' && k !== 'change_password') continue;
+      if (!t.vmid || !t.server_id) continue;
+      m.set(`${t.server_id}:${t.vmid}`, t);
+    }
+    return m;
   }, [deployTasks]);
 
   const allRows = useMemo<VMInstance[]>(() => [...ghostRows, ...filteredVMs], [ghostRows, filteredVMs]);
@@ -416,6 +438,20 @@ export default function InstancesPage() {
             );
           }
           const status = vm.status;
+          const overlay = vm.server_id != null ? overlayByVm.get(`${vm.server_id}:${vm.vmid}`) : undefined;
+          if (overlay) {
+            const label = overlay.kind === 'reinstall'
+              ? t('instances.status_reinstalling', 'Reinstalling')
+              : t('instances.status_changing_password', 'Changing password');
+            return (
+              <div className="flex items-center gap-2">
+                <CircularProgress value={overlay.progress ?? 0} />
+                <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 text-[10px]">
+                  {label}{(overlay.progress ?? 0) > 0 ? ` ${overlay.progress}%` : ''}
+                </Badge>
+              </div>
+            );
+          }
           return (
             <Badge
               variant="secondary"

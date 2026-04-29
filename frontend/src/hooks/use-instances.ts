@@ -298,36 +298,31 @@ interface CloneRequest {
   description?: string;
 }
 
+export interface AsyncTaskResponse {
+  task_id: number;
+  status: string;
+  name: string;
+}
+
 export function useCloneInstance(serverId: number, vmid: number, type: string, node: string) {
-  const qc = useQueryClient();
   const prefix = type === 'lxc' ? 'container' : 'vm';
-  return useMutation<{ status: string; new_vmid: number; upid: string }, Error, CloneRequest>({
+  return useMutation<AsyncTaskResponse, Error, CloneRequest>({
     mutationFn: (body) =>
       apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/clone?node=${node}`, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: vmKeys.all });
-      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
-    },
   });
 }
 
 export function useReinstallInstance(serverId: number, vmid: number, node: string) {
-  const qc = useQueryClient();
-  return useMutation<{ status: string; vmid: number; upid: string }, Error, void>({
+  return useMutation<AsyncTaskResponse, Error, void>({
     mutationFn: () =>
       apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/reinstall?node=${node}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: vmKeys.all });
-      qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
-      qc.invalidateQueries({ queryKey: vmKeys.status(serverId, vmid) });
-    },
   });
 }
 
 // ==================== Change Password ====================
 export function useChangePassword(serverId: number, vmid: number, type: string, node: string) {
   const prefix = type === 'lxc' ? 'container' : 'vm';
-  return useMutation<{ status: string }, Error, { username: string; password: string }>({
+  return useMutation<AsyncTaskResponse, Error, { username: string; password: string }>({
     mutationFn: (body) =>
       apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/change-password?node=${node}`, body),
   });

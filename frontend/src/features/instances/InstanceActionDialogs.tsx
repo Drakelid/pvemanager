@@ -31,6 +31,7 @@ import {
   useVMConfig,
 } from '@/hooks/use-instances';
 import { toast } from 'sonner';
+import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
 
 export type InstanceAction =
   | 'clone'
@@ -75,6 +76,7 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
   const [newName, setNewName] = useState('');
   const [full, setFull] = useState(true);
   const clone = useCloneInstance(serverId, vmid, type, node);
+  const addDeployTask = useDeployTasksStore((s) => s.addTask);
 
   const submit = () => {
     if (!newName.trim()) return;
@@ -82,7 +84,19 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
       { new_name: newName.trim(), full },
       {
         onSuccess: (data) => {
-          toast.success(`Cloned to VM #${data.new_vmid}`);
+          addDeployTask({
+            id: data.task_id,
+            name: data.name,
+            status: 'pending',
+            step: 'В очереди...',
+            progress: 0,
+            vmid: null,
+            node,
+            error_message: null,
+            kind: 'clone',
+            server_id: serverId,
+          });
+          toast.success('Клонирование запущено в фоне');
           setNewName('');
           onClose();
         },
@@ -125,14 +139,27 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
 function ReinstallDialog({ open, onClose, serverId, vmid, node, name, type }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
   const [confirm, setConfirm] = useState('');
   const reinstall = useReinstallInstance(serverId, vmid, node);
+  const addDeployTask = useDeployTasksStore((s) => s.addTask);
   const expected = name || String(vmid);
 
   // Reinstall via this endpoint currently supports only saved-template instances.
   const submit = () => {
     if (confirm !== expected) return;
     reinstall.mutate(undefined, {
-      onSuccess: () => {
-        toast.success(`Reinstall queued for ${expected}`);
+      onSuccess: (data) => {
+        addDeployTask({
+          id: data.task_id,
+          name: data.name || expected,
+          status: 'pending',
+          step: 'В очереди...',
+          progress: 0,
+          vmid,
+          node,
+          error_message: null,
+          kind: 'reinstall',
+          server_id: serverId,
+        });
+        toast.success('Переустановка запущена в фоне');
         setConfirm('');
         onClose();
       },
@@ -172,12 +199,13 @@ function ReinstallDialog({ open, onClose, serverId, vmid, node, name, type }: Om
 
 // ==================== Change Password ====================
 
-function ChangePasswordDialog({ open, onClose, serverId, vmid, type, node }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
+function ChangePasswordDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const [username, setUsername] = useState('root');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
   const mut = useChangePassword(serverId, vmid, type, node);
+  const addDeployTask = useDeployTasksStore((s) => s.addTask);
 
   const submit = () => {
     if (!password || password.length < 4) {
@@ -187,8 +215,20 @@ function ChangePasswordDialog({ open, onClose, serverId, vmid, type, node }: Omi
     mut.mutate(
       { username, password },
       {
-        onSuccess: () => {
-          toast.success('Password changed');
+        onSuccess: (data) => {
+          addDeployTask({
+            id: data.task_id,
+            name: data.name || (name || `#${vmid}`),
+            status: 'pending',
+            step: 'В очереди...',
+            progress: 0,
+            vmid,
+            node,
+            error_message: null,
+            kind: 'change_password',
+            server_id: serverId,
+          });
+          toast.success('Смена пароля запущена в фоне');
           setPassword('');
           onClose();
         },

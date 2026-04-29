@@ -58,6 +58,7 @@ class DeployTaskStatusResponse(BaseModel):
     created_at: Optional[str]
     started_at: Optional[str]
     completed_at: Optional[str]
+    kind: Optional[str] = 'deploy'
 
 
 # ==================== Template Groups CRUD ====================

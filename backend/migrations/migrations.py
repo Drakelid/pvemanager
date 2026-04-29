@@ -1287,6 +1287,31 @@ def migrate_deploy_tasks(conn):
     logger.info("✓ deploy_tasks table created")
 
 
+def migrate_deploy_tasks_kind(conn):
+    """Migration 23: Add 'kind' column to deploy_tasks (deploy/reinstall/clone/change_password)"""
+    # Check if column exists
+    result = conn.execute(text("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'deploy_tasks' AND column_name = 'kind'
+    """))
+    if result.fetchone():
+        logger.info("✓ deploy_tasks.kind already exists")
+        return
+    conn.execute(text("""
+        ALTER TABLE deploy_tasks
+        ADD COLUMN kind VARCHAR(30) NOT NULL DEFAULT 'deploy'
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_deploy_tasks_kind
+        ON deploy_tasks (kind)
+    """))
+    # template_id may be NULL for non-deploy tasks (clone/reinstall don't always need it)
+    conn.execute(text("""
+        ALTER TABLE deploy_tasks ALTER COLUMN template_id DROP NOT NULL
+    """))
+    logger.info("✓ deploy_tasks.kind column added")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1475,6 +1500,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Deploy tasks migration: {e}")
+                conn.rollback()
+
+            # Migration 23: deploy_tasks.kind column
+            try:
+                migrate_deploy_tasks_kind(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Deploy tasks kind migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

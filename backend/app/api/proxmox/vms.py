@@ -324,7 +324,7 @@ def _get_client_or_503(server: ProxmoxServer):
 
 # -------- Clone --------
 
-@router.post("/api/{server_id}/vm/{vmid}/clone")
+@router.post("/api/{server_id}/vm/{vmid}/clone", status_code=202)
 def clone_vm_endpoint(
     server_id: int,
     vmid: int,
@@ -333,39 +333,29 @@ def clone_vm_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("vms.create"))
 ):
-    """Клонировать существующую VM (qemu)."""
+    """Клонировать существующую VM (qemu) — фоновая задача."""
+    from ...models import DeployTask
+    from ..templates import _deploy_executor, DeployTaskStartResponse
+    from .async_ops import _do_clone_sync
+
     require_vm_access(db, current_user, server_id, vmid)
-    server = _resolve_server(db, server_id)
-    client = _get_client_or_503(server)
-    new_vmid = client.get_next_vmid() or get_next_vmid(db, server_id)
-    if not new_vmid:
-        raise HTTPException(status_code=500, detail="Failed to allocate new VMID")
-    upid = client.clone_vm(
-        node=node, vmid=vmid, new_vmid=new_vmid, name=body.new_name,
-        full=body.full, target_node=body.target_node,
-        target_storage=body.target_storage, description=body.description,
+    _resolve_server(db, server_id)
+
+    task = DeployTask(
+        kind='clone', name=body.new_name, status='pending', step='В очереди...', progress=0,
+        template_id=None, server_id=server_id, user_id=current_user.id, node=node,
     )
-    if not upid:
-        raise HTTPException(status_code=500, detail="Clone failed")
-    try:
-        ProxmoxTaskService.register(
-            db=db, upid=upid, server_id=server_id,
-            user_id=current_user.id, action='clone',
-            node=node, vmid=vmid, vm_type='qemu',
-            description=f"Клонирование VM {vmid} -> {new_vmid} ({body.new_name})",
-        )
-    except Exception as _te:
-        logger.warning(f"Failed to register clone task: {_te}")
-    LoggingService.log_proxmox_action(
-        db=db, action='clone', resource_type='vm', resource_id=vmid,
-        username=current_user.username, server_id=server_id,
-        server_name=server.name, node_name=node,
-        details={'new_vmid': new_vmid, 'name': body.new_name}, success=True,
+    db.add(task); db.commit(); db.refresh(task)
+
+    _deploy_executor.submit(
+        _do_clone_sync, task.id, server_id, vmid, node, 'qemu',
+        body.new_name, body.full, body.target_node, body.target_storage, body.description,
+        current_user.id, current_user.username,
     )
-    return {"status": "success", "new_vmid": new_vmid, "upid": upid}
+    return DeployTaskStartResponse(task_id=task.id, status='pending', name=body.new_name)
 
 
-@router.post("/api/{server_id}/container/{vmid}/clone")
+@router.post("/api/{server_id}/container/{vmid}/clone", status_code=202)
 def clone_container_endpoint(
     server_id: int,
     vmid: int,
@@ -374,35 +364,31 @@ def clone_container_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("vms.create"))
 ):
-    """Клонировать существующий LXC контейнер."""
+    """Клонировать существующий LXC контейнер — фоновая задача."""
+    from ...models import DeployTask
+    from ..templates import _deploy_executor, DeployTaskStartResponse
+    from .async_ops import _do_clone_sync
+
     require_vm_access(db, current_user, server_id, vmid)
-    server = _resolve_server(db, server_id)
-    client = _get_client_or_503(server)
-    new_vmid = client.get_next_vmid() or get_next_vmid(db, server_id)
-    if not new_vmid:
-        raise HTTPException(status_code=500, detail="Failed to allocate new VMID")
-    upid = client.clone_container(
-        node=node, vmid=vmid, new_vmid=new_vmid, hostname=body.new_name,
-        full=body.full, target_node=body.target_node,
-        target_storage=body.target_storage, description=body.description,
+    _resolve_server(db, server_id)
+
+    task = DeployTask(
+        kind='clone', name=body.new_name, status='pending', step='В очереди...', progress=0,
+        template_id=None, server_id=server_id, user_id=current_user.id, node=node,
     )
-    if not upid:
-        raise HTTPException(status_code=500, detail="Clone failed")
-    try:
-        ProxmoxTaskService.register(
-            db=db, upid=upid, server_id=server_id,
-            user_id=current_user.id, action='clone',
-            node=node, vmid=vmid, vm_type='lxc',
-            description=f"Клонирование LXC {vmid} -> {new_vmid} ({body.new_name})",
-        )
-    except Exception as _te:
-        logger.warning(f"Failed to register clone task: {_te}")
-    return {"status": "success", "new_vmid": new_vmid, "upid": upid}
+    db.add(task); db.commit(); db.refresh(task)
+
+    _deploy_executor.submit(
+        _do_clone_sync, task.id, server_id, vmid, node, 'lxc',
+        body.new_name, body.full, body.target_node, body.target_storage, body.description,
+        current_user.id, current_user.username,
+    )
+    return DeployTaskStartResponse(task_id=task.id, status='pending', name=body.new_name)
 
 
 # -------- Reinstall (re-clone from saved template) --------
 
-@router.post("/api/{server_id}/vm/{vmid}/reinstall")
+@router.post("/api/{server_id}/vm/{vmid}/reinstall", status_code=202)
 def reinstall_vm_endpoint(
     server_id: int,
     vmid: int,
@@ -410,10 +396,13 @@ def reinstall_vm_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("vms.delete"))
 ):
-    """Переустановить VM/LXC, пересоздав её из исходного шаблона."""
+    """Переустановить VM/LXC из исходного шаблона — фоновая задача."""
+    from ...models import DeployTask, OSTemplate
+    from ..templates import _deploy_executor, DeployTaskStartResponse
+    from .async_ops import _do_reinstall_sync
+
     require_vm_access(db, current_user, server_id, vmid)
-    server = _resolve_server(db, server_id)
-    client = _get_client_or_503(server)
+    _resolve_server(db, server_id)
 
     cached = db.query(VMInstance).filter(
         VMInstance.server_id == server_id,
@@ -423,117 +412,27 @@ def reinstall_vm_endpoint(
     if not cached or not cached.template_id:
         raise HTTPException(status_code=400, detail="VM has no associated template; reinstall is not available")
 
-    from ...models import OSTemplate
     tpl = db.query(OSTemplate).filter(OSTemplate.id == cached.template_id).first()
     if not tpl or not tpl.vmid:
         raise HTTPException(status_code=400, detail="Template not found or invalid")
 
-    # Resolve template VMID and source node (with cross-node replication support)
-    local_template_vmid = tpl.get_vmid_for_node(node)
-    if local_template_vmid:
-        template_source_node = node
-        template_vmid = local_template_vmid
-    else:
-        template_source_node = tpl.get_source_node() or tpl.node or node
-        template_vmid = tpl.vmid
-    if not template_vmid:
-        raise HTTPException(status_code=400, detail="Template VMID is not available for this node")
-
-    name = cached.name
-    cores = cached.cores
-    memory = cached.memory
-    description = cached.description
-    is_lxc = (cached.vm_type == 'lxc')
-    # VMInstance.memory is stored in bytes; Proxmox expects MB
-    memory_mb = int(memory) // (1024 * 1024) if memory else None
-
-    # 1) stop
-    try:
-        if is_lxc:
-            client.stop_container(node, vmid, force=False)
-        else:
-            client.stop_vm(node, vmid, force=False)
-    except Exception:
-        pass
-    import time as _t
-    for _ in range(20):
-        try:
-            st = client.get_container_status(node, vmid) if is_lxc else client.get_vm_status(node, vmid)
-            if not st or st.get('status') != 'running':
-                break
-        except Exception:
-            break
-        _t.sleep(0.5)
-
-    # 2) delete
-    try:
-        if is_lxc:
-            client.delete_container(node, vmid, force=False)
-        else:
-            client.delete_vm(node, vmid, force=False)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete instance: {e}")
-    for _ in range(30):
-        st = client.get_container_status(node, vmid) if is_lxc else client.get_vm_status(node, vmid)
-        if not st:
-            break
-        _t.sleep(1)
-
-    # 3) clone from template under same vmid
-    try:
-        if is_lxc:
-            upid = client.clone_container(
-                node=template_source_node, vmid=template_vmid, new_vmid=vmid,
-                hostname=name, full=True, target_node=node,
-                description=description,
-            )
-        else:
-            upid = client.clone_vm(
-                node=template_source_node, vmid=template_vmid, new_vmid=vmid,
-                name=name, full=True, target_node=node,
-                description=description,
-            )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Clone failed: {e}")
-    if not upid:
-        raise HTTPException(status_code=500, detail="Clone failed")
-
-    try:
-        client.wait_for_task(node, upid, timeout=600)
-    except Exception:
-        pass
-
-    # 4) Re-apply config
-    try:
-        if is_lxc:
-            cfg = {}
-            if cores: cfg['cores'] = cores
-            if memory_mb: cfg['memory'] = memory_mb
-            if cfg:
-                client.update_container_config(node, vmid, cfg)
-        else:
-            cfg = {}
-            if cores: cfg['cores'] = cores
-            if memory_mb: cfg['memory'] = memory_mb
-            if cfg:
-                client.update_vm_config(node, vmid, cfg)
-    except Exception as _ce:
-        logger.warning(f"Failed to re-apply config after reinstall: {_ce}")
-
-    LoggingService.log_proxmox_action(
-        db=db, action='reinstall',
-        resource_type='lxc' if is_lxc else 'vm', resource_id=vmid,
-        username=current_user.username, resource_name=name,
-        server_id=server_id, server_name=server.name, node_name=node,
-        details={'template_id': tpl.id, 'template_vmid': template_vmid},
-        success=True,
+    task = DeployTask(
+        kind='reinstall', name=cached.name, status='pending', step='В очереди...', progress=0,
+        template_id=tpl.id, server_id=server_id, user_id=current_user.id,
+        vmid=vmid, node=node,
     )
-    return {"status": "success", "vmid": vmid, "upid": upid}
+    db.add(task); db.commit(); db.refresh(task)
+
+    _deploy_executor.submit(
+        _do_reinstall_sync, task.id, server_id, vmid, node,
+        current_user.id, current_user.username,
+    )
+    return DeployTaskStartResponse(task_id=task.id, status='pending', name=cached.name)
 
 
 # -------- Change Password --------
 
-@router.post("/api/{server_id}/vm/{vmid}/change-password")
+@router.post("/api/{server_id}/vm/{vmid}/change-password", status_code=202)
 def change_vm_password_endpoint(
     server_id: int,
     vmid: int,
@@ -542,25 +441,38 @@ def change_vm_password_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("vms.console"))
 ):
-    """Сменить пароль пользователя на VM через QEMU guest agent."""
+    """Сменить пароль на VM через QEMU guest agent — фоновая задача."""
+    from ...models import DeployTask
+    from ..templates import _deploy_executor, DeployTaskStartResponse
+    from .async_ops import _do_change_password_sync
+
     require_vm_access(db, current_user, server_id, vmid)
-    server = _resolve_server(db, server_id)
-    client = _get_client_or_503(server)
+    _resolve_server(db, server_id)
     if not body.password or len(body.password) < 4:
         raise HTTPException(status_code=400, detail="Password too short")
-    res = client.change_vm_password(node, vmid, body.username, body.password)
-    if not res.get('success'):
-        raise HTTPException(status_code=500, detail=res.get('error') or 'Failed to change password')
-    LoggingService.log_proxmox_action(
-        db=db, action='change-password', resource_type='vm', resource_id=vmid,
-        username=current_user.username, server_id=server_id,
-        server_name=server.name, node_name=node,
-        details={'target_user': body.username}, success=True,
+
+    cached = db.query(VMInstance).filter(
+        VMInstance.server_id == server_id,
+        VMInstance.vmid == vmid,
+        VMInstance.deleted_at.is_(None),
+    ).first()
+    name = cached.name if cached else f"VM {vmid}"
+
+    task = DeployTask(
+        kind='change_password', name=name, status='pending', step='В очереди...', progress=0,
+        template_id=None, server_id=server_id, user_id=current_user.id,
+        vmid=vmid, node=node,
     )
-    return {"status": "success"}
+    db.add(task); db.commit(); db.refresh(task)
+
+    _deploy_executor.submit(
+        _do_change_password_sync, task.id, server_id, vmid, node, 'qemu',
+        body.username, body.password, current_user.id, current_user.username,
+    )
+    return DeployTaskStartResponse(task_id=task.id, status='pending', name=name)
 
 
-@router.post("/api/{server_id}/container/{vmid}/change-password")
+@router.post("/api/{server_id}/container/{vmid}/change-password", status_code=202)
 def change_container_password_endpoint(
     server_id: int,
     vmid: int,
@@ -569,22 +481,35 @@ def change_container_password_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("vms.console"))
 ):
-    """Сменить пароль пользователя в LXC через pct exec/chpasswd."""
+    """Сменить пароль в LXC через pct exec/chpasswd — фоновая задача."""
+    from ...models import DeployTask
+    from ..templates import _deploy_executor, DeployTaskStartResponse
+    from .async_ops import _do_change_password_sync
+
     require_vm_access(db, current_user, server_id, vmid)
-    server = _resolve_server(db, server_id)
-    client = _get_client_or_503(server)
+    _resolve_server(db, server_id)
     if not body.password or len(body.password) < 4:
         raise HTTPException(status_code=400, detail="Password too short")
-    res = client.change_container_password(node, vmid, body.username, body.password)
-    if not res.get('success'):
-        raise HTTPException(status_code=500, detail=res.get('error') or 'Failed to change password')
-    LoggingService.log_proxmox_action(
-        db=db, action='change-password', resource_type='lxc', resource_id=vmid,
-        username=current_user.username, server_id=server_id,
-        server_name=server.name, node_name=node,
-        details={'target_user': body.username}, success=True,
+
+    cached = db.query(VMInstance).filter(
+        VMInstance.server_id == server_id,
+        VMInstance.vmid == vmid,
+        VMInstance.deleted_at.is_(None),
+    ).first()
+    name = cached.name if cached else f"CT {vmid}"
+
+    task = DeployTask(
+        kind='change_password', name=name, status='pending', step='В очереди...', progress=0,
+        template_id=None, server_id=server_id, user_id=current_user.id,
+        vmid=vmid, node=node,
     )
-    return {"status": "success"}
+    db.add(task); db.commit(); db.refresh(task)
+
+    _deploy_executor.submit(
+        _do_change_password_sync, task.id, server_id, vmid, node, 'lxc',
+        body.username, body.password, current_user.id, current_user.username,
+    )
+    return DeployTaskStartResponse(task_id=task.id, status='pending', name=name)
 
 
 # ==================== Generic VM/Container Action Handler ====================
