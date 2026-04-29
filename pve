@@ -57,6 +57,39 @@ pve_dc() {
     return $rc
 }
 
+# ── Вспомогательная функция: ожидание готовности контейнеров ──────────────────
+wait_for_containers() {
+    local timeout=120
+    local elapsed=0
+    local check_interval=5
+
+    info "Ожидание готовности контейнеров..."
+    while [ $elapsed -lt $timeout ]; do
+        # Проверяем, что все контейнеры запущены и healthy
+        local app_status=$(docker ps --filter "name=serverpanel-app" --format "{{.State}}")
+        local db_status=$(docker ps --filter "name=serverpanel-db" --format "{{.State}}")
+        local frontend_status=$(docker ps --filter "name=serverpanel-frontend" --format "{{.State}}")
+
+        if [ "$app_status" = "running" ] && [ "$db_status" = "running" ] && [ "$frontend_status" = "running" ]; then
+            # Проверяем healthcheck статусы
+            local app_health=$(docker inspect serverpanel-app --format='{{.State.Health.Status}}' 2>/dev/null)
+            local db_health=$(docker inspect serverpanel-db --format='{{.State.Health.Status}}' 2>/dev/null)
+
+            if [ "$app_health" = "healthy" ] && [ "$db_health" = "healthy" ]; then
+                ok "Все контейнеры готовы"
+                return 0
+            fi
+        fi
+
+        echo -n "."
+        sleep $check_interval
+        elapsed=$((elapsed + check_interval))
+    done
+
+    warn "Контейнеры не стали полностью готовы за $timeout секунд"
+    return 1
+}
+
 # ── Предусловия ───────────────────────────────────────────────────────────────
 check_docker() {
     docker info &>/dev/null || \
@@ -72,13 +105,20 @@ check_pve_dir() {
 cmd_start() {
     check_docker; check_pve_dir
     step "Запуск панели"
-    if pve_dc up -d; then
-        ok "Панель запущена"
-        echo ""
-        pve_dc ps
-    else
-        die "Не удалось запустить панель"
+    if ! pve_dc up -d; then
+        die "Не удалось запустить панели контейнеры"
     fi
+
+    wait_for_containers
+    if [ $? -ne 0 ]; then
+        warn "Контейнеры могут быть еще не полностью готовы. Проверьте логи:"
+        info "  pve logs app"
+        info "  pve logs db"
+    fi
+
+    ok "Панель запущена"
+    echo ""
+    pve_dc ps
 }
 
 # ── pve stop ──────────────────────────────────────────────────────────────────
@@ -96,16 +136,25 @@ cmd_restart() {
     pve_dc down
 
     step "Пересборка образа app (без кеша)"
-    pve_dc build --no-cache app
+    if ! pve_dc build --no-cache app; then
+        die "Не удалось пересобрать образ app"
+    fi
 
     step "Запуск контейнеров"
-    if pve_dc up -d; then
-        ok "Панель перезапущена"
-        echo ""
-        pve_dc ps
-    else
+    if ! pve_dc up -d; then
         die "Не удалось запустить панель после пересборки"
     fi
+
+    wait_for_containers
+    if [ $? -ne 0 ]; then
+        warn "Контейнеры могут быть еще не полностью готовы. Проверьте логи:"
+        info "  pve logs app"
+        info "  pve logs db"
+    fi
+
+    ok "Панель перезапущена"
+    echo ""
+    pve_dc ps
 }
 
 # ── pve update ────────────────────────────────────────────────────────────────
