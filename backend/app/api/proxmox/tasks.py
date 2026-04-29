@@ -10,7 +10,7 @@ import httpx
 import websockets
 
 from ...db import get_db
-from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive, ProxmoxTask
+from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive, ProxmoxTask, DeployTask
 from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
 from ...proxmox_client import ProxmoxClient, get_proxmox_resources
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
@@ -211,17 +211,20 @@ def get_all_tasks(
     """
     bulk_q = db.query(TaskQueue).filter(TaskQueue.user_id == current_user.id)
     proxmox_q = db.query(ProxmoxTask).filter(ProxmoxTask.user_id == current_user.id)
+    deploy_q = db.query(DeployTask).filter(DeployTask.user_id == current_user.id)
 
     if status_filter:
         # Normalise statuses: proxmox uses running/completed/failed; bulk uses the same + pending/cancelled
         bulk_q = bulk_q.filter(TaskQueue.status == status_filter)
         proxmox_q = proxmox_q.filter(ProxmoxTask.status == status_filter)
+        deploy_q = deploy_q.filter(DeployTask.status == status_filter)
 
     bulk_tasks = bulk_q.order_by(TaskQueue.created_at.desc()).limit(limit).all()
     proxmox_tasks = proxmox_q.order_by(ProxmoxTask.created_at.desc()).limit(limit).all()
+    deploy_tasks = deploy_q.order_by(DeployTask.created_at.desc()).limit(limit).all()
 
     all_tasks = sorted(
-        [t.to_dict() for t in bulk_tasks] + [t.to_dict() for t in proxmox_tasks],
+        [t.to_dict() for t in bulk_tasks] + [t.to_dict() for t in proxmox_tasks] + [t.to_dict() for t in deploy_tasks],
         key=lambda t: t.get("created_at") or "",
         reverse=True,
     )[:limit]
@@ -245,7 +248,12 @@ def get_active_count(
         ProxmoxTask.status == "running",
     ).scalar() or 0
 
-    return {"count": bulk_count + proxmox_count}
+    deploy_count = db.query(func.count(DeployTask.id)).filter(
+        DeployTask.user_id == current_user.id,
+        DeployTask.status.in_(["pending", "running"]),
+    ).scalar() or 0
+
+    return {"count": bulk_count + proxmox_count + deploy_count}
 
 
 # ─── Proxmox UPID task log from DB ──────────────────────────────────────────
@@ -292,6 +300,10 @@ def clear_completed_tasks(
         ProxmoxTask.user_id == current_user.id,
         ProxmoxTask.status.in_(done_statuses),
     ).delete(synchronize_session=False)
+    deploy_deleted = db.query(DeployTask).filter(
+        DeployTask.user_id == current_user.id,
+        DeployTask.status.in_(done_statuses),
+    ).delete(synchronize_session=False)
     db.commit()
-    return {"deleted": bulk_deleted + proxmox_deleted}
+    return {"deleted": bulk_deleted + proxmox_deleted + deploy_deleted}
 

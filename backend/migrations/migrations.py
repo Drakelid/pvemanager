@@ -1256,6 +1256,37 @@ def migrate_user_role_remove_dashboard(conn):
         logger.info("✓ user role: dashboard:view already False, skipping")
 
 
+def migrate_deploy_tasks(conn):
+    """Migration 22: Create deploy_tasks table for async VM deployment tracking"""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS deploy_tasks (
+            id SERIAL PRIMARY KEY,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            step VARCHAR(200),
+            progress INTEGER NOT NULL DEFAULT 0,
+            name VARCHAR(100) NOT NULL,
+            template_id INTEGER NOT NULL,
+            server_id INTEGER,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            vmid INTEGER,
+            node VARCHAR(100),
+            error_message TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            started_at TIMESTAMPTZ,
+            completed_at TIMESTAMPTZ
+        )
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_deploy_task_user_status
+        ON deploy_tasks (user_id, status)
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_deploy_tasks_created
+        ON deploy_tasks (created_at)
+    """))
+    logger.info("✓ deploy_tasks table created")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1436,6 +1467,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"User role dashboard migration: {e}")
+                conn.rollback()
+
+            # Migration 22: Deploy Tasks table
+            try:
+                migrate_deploy_tasks(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Deploy tasks migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

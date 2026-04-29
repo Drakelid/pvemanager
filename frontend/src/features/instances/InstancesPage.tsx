@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -28,7 +28,14 @@ import {
   Monitor,
   Container,
   Loader2,
+  Power,
+  Copy,
+  Sparkles,
+  KeyRound,
+  FileText,
+  Disc,
 } from 'lucide-react';
+import InstanceActionDialogs, { type InstanceAction } from './InstanceActionDialogs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,8 +65,10 @@ import {
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusDot } from '@/components/shared/status-dot';
-import { useVirtualMachines, useBulkOperation, usePowerAction } from '@/hooks/use-instances';
+import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync } from '@/hooks/use-instances';
 import { formatBytes, vmTypeLabel, formatUptime } from '@/lib/format';
+import { apiClient } from '@/lib/api-client';
+import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
 import type { VMInstance } from '@/types';
 import { toast } from 'sonner';
 
@@ -77,11 +86,33 @@ function InlineProgress({ value, max, className }: { value: number; max: number;
   );
 }
 
+// ==================== Circular Progress ====================
+function CircularProgress({ value }: { value: number }) {
+  const r = 10;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (value / 100) * circ;
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" className="shrink-0">
+      <circle cx="14" cy="14" r={r} fill="none" stroke="currentColor" strokeWidth="3" className="text-muted" />
+      <circle
+        cx="14" cy="14" r={r} fill="none"
+        stroke="currentColor" strokeWidth="3"
+        strokeDasharray={circ} strokeDashoffset={offset}
+        strokeLinecap="round"
+        className="text-blue-500 transition-all duration-500"
+        transform="rotate(-90 14 14)"
+      />
+    </svg>
+  );
+}
+
 // ==================== Row Action Menu ====================
 function RowActionMenu({ vm }: { vm: VMInstance }) {
   const { t } = useTranslation();
   const power = usePowerAction(vm.server_id!, vm.vmid, vm.type, vm.node);
   const isRunning = vm.status === 'running';
+  const isQemu = vm.type === 'qemu';
+  const [dialog, setDialog] = useState<InstanceAction>(null);
 
   const handleAction = (action: string) => {
     power.mutate(
@@ -94,11 +125,12 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
   };
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
         <MoreHorizontal className="h-4 w-4" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem render={<Link to={`/console/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`} target="_blank" rel="noopener noreferrer" />}>
             <Terminal className="mr-2 h-4 w-4" /> {t('common.console', 'Console')}
         </DropdownMenuItem>
@@ -112,17 +144,54 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
             <DropdownMenuItem onClick={() => handleAction('restart')}>
               <RotateCcw className="mr-2 h-4 w-4" /> {t('common.restart', 'Restart')}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleAction('shutdown')}>
+              <Power className="mr-2 h-4 w-4" /> {t('common.shutdown', 'Shutdown')}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => handleAction('stop')}>
               <Square className="mr-2 h-4 w-4" /> {t('common.stop', 'Stop')}
             </DropdownMenuItem>
           </>
         )}
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setDialog('clone')}>
+          <Copy className="mr-2 h-4 w-4" /> {t('common.clone', 'Клонировать')}
+        </DropdownMenuItem>
+        {isQemu && (
+          <DropdownMenuItem onClick={() => setDialog('iso')}>
+            <Disc className="mr-2 h-4 w-4" /> {t('common.iso', 'ISO образ')}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onClick={() => setDialog('change-password')}>
+          <KeyRound className="mr-2 h-4 w-4" /> {t('common.changePassword', 'Изменить пароль')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setDialog('notes')}>
+          <FileText className="mr-2 h-4 w-4" /> {t('common.notes', 'Примечание')}
+        </DropdownMenuItem>
+        {isQemu && (
+          <DropdownMenuItem onClick={() => setDialog('execute')}>
+            <Terminal className="mr-2 h-4 w-4" /> {t('common.runCommand', 'Запуск команд')}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=snapshots`} />}>
             <Camera className="mr-2 h-4 w-4" /> {t('common.snapshots', 'Snapshots')}
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setDialog('reinstall')}>
+          <Sparkles className="mr-2 h-4 w-4" /> {t('common.reinstall', 'Переустановить')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    <InstanceActionDialogs
+      open={dialog}
+      onOpenChange={setDialog}
+      serverId={vm.server_id!}
+      vmid={vm.vmid}
+      type={vm.type}
+      node={vm.node}
+      name={vm.name}
+      description={vm.description}
+    />
+    </>
   );
 }
 
@@ -130,7 +199,41 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
 export default function InstancesPage() {
   const { t } = useTranslation();
   const { data: vms, isLoading } = useVirtualMachines();
+  useVMStatusSync();
   const bulkOp = useBulkOperation();
+
+  // ── Deploy task polling ──────────────────────────────────────────
+  const { tasks: deployTasks, updateTask, removeTask } = useDeployTasksStore();
+  const activeTasks = deployTasks.filter((t) => t.status === 'pending' || t.status === 'running');
+
+  useEffect(() => {
+    if (activeTasks.length === 0) return;
+    const poll = async () => {
+      for (const task of activeTasks) {
+        try {
+          const data = await apiClient.get<{
+            id: number; status: string; step: string | null; progress: number;
+            vmid: number | null; node: string | null; error_message: string | null;
+          }>(`/templates/api/deploy/${task.id}`);
+          updateTask(task.id, {
+            status: data.status as 'pending' | 'running' | 'completed' | 'failed',
+            step: data.step,
+            progress: data.progress,
+            vmid: data.vmid ?? undefined,
+            node: data.node ?? undefined,
+            error_message: data.error_message ?? undefined,
+          });
+          if (data.status === 'completed') {
+            setTimeout(() => removeTask(task.id), 5000);
+          }
+        } catch { /* ignore */ }
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 2000);
+    return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTasks.length, activeTasks.map((t) => t.id).join(',')]);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -139,21 +242,14 @@ export default function InstancesPage() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  // Filter data
+  // Filter real VMs
   const filteredVMs = useMemo(() => {
     if (!vms) return [];
     return vms.filter((vm) => {
-      // Type tab filter
       if (typeTab === 'vm' && vm.type !== 'qemu') return false;
       if (typeTab === 'lxc' && vm.type !== 'lxc') return false;
-
-      // Status filter
       if (statusFilter !== 'all' && vm.status !== statusFilter) return false;
-
-      // Node filter
       if (nodeFilter !== 'all' && vm.node !== nodeFilter) return false;
-
-      // Search filter
       if (search) {
         const q = search.toLowerCase();
         const name = (vm.name || '').toLowerCase();
@@ -161,10 +257,26 @@ export default function InstancesPage() {
         const vmid = String(vm.vmid);
         if (!name.includes(q) && !ip.includes(q) && !vmid.includes(q)) return false;
       }
-
       return true;
     });
   }, [vms, typeTab, statusFilter, nodeFilter, search]);
+
+  // Ghost rows from active deploy tasks (prepended before real VMs)
+  const ghostRows = useMemo<VMInstance[]>(() => {
+    return deployTasks
+      .filter((t) => t.status === 'pending' || t.status === 'running')
+      .map((t) => ({
+        vmid: t.vmid ?? 0,
+        name: t.name,
+        status: 'creating' as const,
+        type: 'qemu' as const,
+        node: t.node ?? '...',
+        server_id: undefined,
+        _deployTaskId: t.id,
+      }));
+  }, [deployTasks]);
+
+  const allRows = useMemo<VMInstance[]>(() => [...ghostRows, ...filteredVMs], [ghostRows, filteredVMs]);
 
   // Unique nodes for filter
   const uniqueNodes = useMemo(() => {
@@ -172,7 +284,7 @@ export default function InstancesPage() {
     return [...new Set(vms.map((v) => v.node))].sort();
   }, [vms]);
 
-  // Counts for tabs
+  // Counts (ghosts not counted in tabs)
   const counts = useMemo(() => {
     if (!vms) return { all: 0, vm: 0, lxc: 0 };
     return {
@@ -182,15 +294,14 @@ export default function InstancesPage() {
     };
   }, [vms]);
 
-  // Selected VMs
+  // Selected real VMs (skip ghost rows by checking _deployTaskId)
   const selectedVMs = useMemo(() => {
     return Object.keys(rowSelection)
       .filter((k) => rowSelection[k])
-      .map((idx) => filteredVMs[Number(idx)])
-      .filter(Boolean);
-  }, [rowSelection, filteredVMs]);
+      .map((idx) => allRows[Number(idx)])
+      .filter((vm) => vm && !vm._deployTaskId);
+  }, [rowSelection, allRows]);
 
-  // Bulk action handler
   const handleBulk = (action: string) => {
     if (!selectedVMs.length) return;
     bulkOp.mutate(
@@ -205,10 +316,7 @@ export default function InstancesPage() {
         })),
       },
       {
-        onSuccess: () => {
-          toast.success(`Bulk ${action}: ${selectedVMs.length} items queued`);
-          setRowSelection({});
-        },
+        onSuccess: () => { toast.success(`Bulk ${action}: ${selectedVMs.length} items queued`); setRowSelection({}); },
         onError: (err) => toast.error(err.message),
       }
     );
@@ -227,14 +335,18 @@ export default function InstancesPage() {
             onChange={table.getToggleAllPageRowsSelectedHandler()}
           />
         ),
-        cell: ({ row }) => (
-          <input
-            type="checkbox"
-            className="rounded border-border"
-            checked={row.getIsSelected()}
-            onChange={row.getToggleSelectedHandler()}
-          />
-        ),
+        cell: ({ row }) => {
+          const isGhost = !!row.original._deployTaskId;
+          if (isGhost) return null;
+          return (
+            <input
+              type="checkbox"
+              className="rounded border-border"
+              checked={row.getIsSelected()}
+              onChange={row.getToggleSelectedHandler()}
+            />
+          );
+        },
         size: 32,
         enableSorting: false,
       },
@@ -253,6 +365,21 @@ export default function InstancesPage() {
         ),
         cell: ({ row }) => {
           const vm = row.original;
+          const isGhost = !!vm._deployTaskId;
+          if (isGhost) {
+            const task = deployTasks.find((t) => t.id === vm._deployTaskId);
+            return (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500 shrink-0" />
+                <div>
+                  <span className="font-medium text-muted-foreground">{vm.name || 'New VM'}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {task?.node ? `· ${task.node}` : ''}
+                  </span>
+                </div>
+              </div>
+            );
+          }
           return (
             <Link
               to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`}
@@ -272,22 +399,33 @@ export default function InstancesPage() {
       {
         accessorKey: 'status',
         header: t('common.status', 'Status'),
-        cell: ({ getValue }) => {
-          const status = getValue<string>();
+        cell: ({ row }) => {
+          const vm = row.original;
+          const isGhost = !!vm._deployTaskId;
+          if (isGhost) {
+            const task = deployTasks.find((t) => t.id === vm._deployTaskId);
+            const progress = task?.progress ?? 0;
+            return (
+              <div className="flex items-center gap-2">
+                <CircularProgress value={progress} />
+                <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 text-[10px]">
+                  {t('instances.status_creating', 'Creating')}
+                  {progress > 0 ? ` ${progress}%` : ''}
+                </Badge>
+              </div>
+            );
+          }
+          const status = vm.status;
           return (
             <Badge
               variant="secondary"
-              className={
-                status === 'running'
-                  ? 'bg-green-500/10 text-green-500'
-                  : 'bg-muted text-muted-foreground'
-              }
+              className={status === 'running' ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}
             >
               {status}
             </Badge>
           );
         },
-        size: 100,
+        size: 140,
       },
       {
         accessorKey: 'node',
@@ -336,6 +474,7 @@ export default function InstancesPage() {
         header: 'CPU',
         cell: ({ row }) => {
           const vm = row.original;
+          if (vm._deployTaskId) return <span className="text-xs text-muted-foreground">—</span>;
           if (!vm.cpu && vm.cpu !== 0) return <span className="text-xs text-muted-foreground">—</span>;
           return <InlineProgress value={vm.cpu * 100} max={100} />;
         },
@@ -346,15 +485,13 @@ export default function InstancesPage() {
         header: t('dashboard.memory', 'Memory'),
         cell: ({ row }) => {
           const vm = row.original;
-          if (!vm.mem || !vm.maxmem) return <span className="text-xs text-muted-foreground">—</span>;
+          if (vm._deployTaskId || !vm.mem || !vm.maxmem) return <span className="text-xs text-muted-foreground">—</span>;
           return (
             <Tooltip>
               <TooltipTrigger>
                 <InlineProgress value={vm.mem} max={vm.maxmem} />
               </TooltipTrigger>
-              <TooltipContent>
-                {formatBytes(vm.mem)} / {formatBytes(vm.maxmem)}
-              </TooltipContent>
+              <TooltipContent>{formatBytes(vm.mem)} / {formatBytes(vm.maxmem)}</TooltipContent>
             </Tooltip>
           );
         },
@@ -365,15 +502,13 @@ export default function InstancesPage() {
         header: 'Disk',
         cell: ({ row }) => {
           const vm = row.original;
-          if (!vm.disk && !vm.maxdisk) return <span className="text-xs text-muted-foreground">—</span>;
+          if (vm._deployTaskId || (!vm.disk && !vm.maxdisk)) return <span className="text-xs text-muted-foreground">—</span>;
           return (
             <Tooltip>
               <TooltipTrigger>
                 <InlineProgress value={vm.disk || 0} max={vm.maxdisk || 0} />
               </TooltipTrigger>
-              <TooltipContent>
-                {formatBytes(vm.disk || 0)} / {formatBytes(vm.maxdisk || 0)}
-              </TooltipContent>
+              <TooltipContent>{formatBytes(vm.disk || 0)} / {formatBytes(vm.maxdisk || 0)}</TooltipContent>
             </Tooltip>
           );
         },
@@ -383,6 +518,7 @@ export default function InstancesPage() {
         id: 'uptime',
         header: 'Uptime',
         cell: ({ row }) => {
+          if (row.original._deployTaskId) return <span className="text-xs text-muted-foreground">—</span>;
           const up = row.original.uptime;
           return <span className="text-xs text-muted-foreground">{up ? formatUptime(up) : '—'}</span>;
         },
@@ -392,15 +528,14 @@ export default function InstancesPage() {
         id: 'tags',
         accessorKey: 'tags',
         header: 'Tags',
-        cell: ({ getValue }) => {
+        cell: ({ getValue, row }) => {
+          if (row.original._deployTaskId) return null;
           const tags = getValue<string>();
           if (!tags) return null;
           return (
             <div className="flex gap-1 flex-wrap">
               {tags.split(/[;,]/).filter(Boolean).map((tag) => (
-                <Badge key={tag} variant="secondary" className="text-[10px] leading-tight">
-                  {tag.trim()}
-                </Badge>
+                <Badge key={tag} variant="secondary" className="text-[10px] leading-tight">{tag.trim()}</Badge>
               ))}
             </div>
           );
@@ -409,17 +544,21 @@ export default function InstancesPage() {
       },
       {
         id: 'actions',
-        cell: ({ row }) => <RowActionMenu vm={row.original} />,
+        cell: ({ row }) => {
+          if (row.original._deployTaskId) return null;
+          return <RowActionMenu vm={row.original} />;
+        },
         size: 48,
         enableSorting: false,
       },
     ],
-    [t]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, deployTasks]
   );
 
   // ==================== TanStack Table ====================
   const table = useReactTable({
-    data: filteredVMs,
+    data: allRows,
     columns,
     state: { sorting, rowSelection },
     onSortingChange: setSorting,
@@ -522,7 +661,7 @@ export default function InstancesPage() {
             <div className="flex items-center justify-center py-20">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : filteredVMs.length === 0 ? (
+          ) : allRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
               <Monitor className="mb-3 h-10 w-10 opacity-40" />
               <p className="text-sm font-medium">{t('instances.no_instances', 'No instances found')}</p>
@@ -542,15 +681,22 @@ export default function InstancesPage() {
                 ))}
               </TableHeader>
               <TableBody>
-                {table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
+                {table.getRowModel().rows.map((row) => {
+                  const isGhost = !!row.original._deployTaskId;
+                  return (
+                    <TableRow
+                      key={row.id}
+                      data-state={row.getIsSelected() && 'selected'}
+                      className={isGhost ? 'opacity-70 bg-blue-500/5 border-l-2 border-l-blue-500' : undefined}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -558,15 +704,15 @@ export default function InstancesPage() {
       </Card>
 
       {/* Pagination */}
-      {filteredVMs.length > 0 && (
+      {allRows.length > 0 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
             {t('instances.showing', 'Showing')} {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
             {Math.min(
               (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-              filteredVMs.length
+              allRows.length
             )}{' '}
-            {t('instances.of', 'of')} {filteredVMs.length}
+            {t('instances.of', 'of')} {allRows.length}
           </span>
           <div className="flex items-center gap-1">
             <Button
@@ -593,6 +739,7 @@ export default function InstancesPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

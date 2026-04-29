@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Settings, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function SettingsTab({ serverId, vmid, type, node }: Props) {
+  const { t } = useTranslation();
   const { data: config } = useVMConfig(serverId, vmid, type, node);
   const updateConfig = useUpdateConfig(serverId, vmid, type);
   const resizeDisk = useResizeDisk(serverId, vmid, type);
@@ -124,7 +126,7 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
                 id="disk-device"
                 value={diskDevice}
                 onChange={(e) => setDiskDevice(e.target.value)}
-                placeholder="scsi0"
+                placeholder={t('common.placeholder_disk')}
               />
             </div>
             <div>
@@ -135,7 +137,7 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
                 min={1}
                 value={diskSize}
                 onChange={(e) => setDiskSize(e.target.value)}
-                placeholder="e.g. 100"
+                placeholder={t('common.placeholder_disk_size')}
               />
             </div>
           </div>

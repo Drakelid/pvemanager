@@ -126,12 +126,29 @@ class ConnectionManager:
 ws_manager = ConnectionManager()
 
 
+# Stores the main asyncio event loop set at application startup.
+# Background threads (APScheduler) use this to schedule coroutines safely.
+_main_loop: asyncio.AbstractEventLoop | None = None
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Call this once at application startup to register the running event loop."""
+    global _main_loop
+    _main_loop = loop
+
+
 def run_async_safe(coro) -> None:
     """
     Schedule an async coroutine from a synchronous background thread.
     Used by APScheduler jobs to push WS updates without blocking.
     """
+    global _main_loop
     try:
+        # Prefer the stored main loop (set at startup) for cross-thread scheduling
+        if _main_loop is not None and _main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(coro, _main_loop)
+            return
+        # Fallback: try to get/run the current thread's loop
         loop = asyncio.get_event_loop()
         if loop.is_running():
             asyncio.run_coroutine_threadsafe(coro, loop)

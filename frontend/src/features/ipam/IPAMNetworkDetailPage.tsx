@@ -57,9 +57,9 @@ export default function IPAMNetworkDetailPage() {
       <Card>
         <CardHeader><CardTitle className="text-sm">{t('ipam.network_info')}</CardTitle></CardHeader>
         <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
-          <InfoRow label="Gateway" value={network.gateway || '—'} />
-          <InfoRow label="VLAN" value={network.vlan_id ? String(network.vlan_id) : '—'} />
-          <InfoRow label="DNS" value={network.dns_primary || '—'} />
+          <InfoRow label={t('common.gateway')} value={network.gateway || '—'} />
+          <InfoRow label={t('common.vlan')} value={network.vlan_id ? String(network.vlan_id) : '—'} />
+          <InfoRow label={t('common.dns')} value={network.dns_primary || '—'} />
           <InfoRow label={t('ipam.server')} value={network.server_name || '—'} />
           <InfoRow label={t('ipam.bridge')} value={network.proxmox_bridge || '—'} />
           {network.description && <InfoRow label={t('ipam.description')} value={network.description} />}

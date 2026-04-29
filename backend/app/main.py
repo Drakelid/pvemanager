@@ -148,6 +148,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error running admin initialization: {e}")
     
+    # Register the main event loop for cross-thread WebSocket broadcasts
+    try:
+        import asyncio
+        from .websocket_manager import set_main_loop
+        set_main_loop(asyncio.get_event_loop())
+    except Exception as e:
+        logger.warning(f"Failed to register main event loop: {e}")
+
     # Start background monitoring worker
     try:
         from .workers.monitoring_worker import start_monitoring_worker

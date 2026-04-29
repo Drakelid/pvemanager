@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -9,12 +10,27 @@ import {
   Monitor,
   Container,
   Loader2,
+  Power,
+  MoreHorizontal,
+  Copy,
+  Sparkles,
+  KeyRound,
+  FileText,
+  Disc,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { StatusDot } from '@/components/shared/status-dot';
 import { useVirtualMachines, usePowerAction } from '@/hooks/use-instances';
+import InstanceActionDialogs, { type InstanceAction } from './InstanceActionDialogs';
 import { vmTypeLabel } from '@/lib/format';
 import { toast } from 'sonner';
 
@@ -43,7 +59,9 @@ export default function InstanceDetailPage() {
 
   const power = usePowerAction(sid, vid, type, node);
   const isRunning = vm?.status === 'running';
+  const isQemu = type === 'qemu';
   const TypeIcon = type === 'qemu' ? Monitor : Container;
+  const [dialog, setDialog] = useState<InstanceAction>(null);
 
   const handlePower = (action: string) => {
     power.mutate(
@@ -132,6 +150,15 @@ export default function InstanceDetailPage() {
                   {t('common.restart', 'Restart')}
                 </Button>
                 <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePower('shutdown')}
+                  disabled={power.isPending}
+                >
+                  <Power className="mr-1.5 h-4 w-4" />
+                  {t('common.shutdown', 'Shutdown')}
+                </Button>
+                <Button
                   variant="destructive"
                   size="sm"
                   onClick={() => handlePower('stop')}
@@ -142,6 +169,36 @@ export default function InstanceDetailPage() {
                 </Button>
               </>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+                <MoreHorizontal className="h-4 w-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setDialog('clone')}>
+                  <Copy className="mr-2 h-4 w-4" /> {t('common.clone', 'Клонировать')}
+                </DropdownMenuItem>
+                {isQemu && (
+                  <DropdownMenuItem onClick={() => setDialog('iso')}>
+                    <Disc className="mr-2 h-4 w-4" /> {t('common.iso', 'ISO образ')}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => setDialog('change-password')}>
+                  <KeyRound className="mr-2 h-4 w-4" /> {t('common.changePassword', 'Изменить пароль')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setDialog('notes')}>
+                  <FileText className="mr-2 h-4 w-4" /> {t('common.notes', 'Примечание')}
+                </DropdownMenuItem>
+                {isQemu && (
+                  <DropdownMenuItem onClick={() => setDialog('execute')}>
+                    <Terminal className="mr-2 h-4 w-4" /> {t('common.runCommand', 'Запуск команд')}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setDialog('reinstall')}>
+                  <Sparkles className="mr-2 h-4 w-4" /> {t('common.reinstall', 'Переустановить')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
@@ -178,6 +235,17 @@ export default function InstanceDetailPage() {
           <DestroyTab serverId={sid} vmid={vid} type={type} node={node} name={vm?.name} />
         </TabsContent>
       </Tabs>
+
+      <InstanceActionDialogs
+        open={dialog}
+        onOpenChange={setDialog}
+        serverId={sid}
+        vmid={vid}
+        type={type}
+        node={node}
+        name={vm?.name}
+        description={vm?.description}
+      />
     </div>
   );
 }

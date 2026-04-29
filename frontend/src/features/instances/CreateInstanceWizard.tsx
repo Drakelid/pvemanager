@@ -13,6 +13,7 @@ import { useServers } from '@/hooks/use-nodes';
 import { useTemplates, useTemplateGroups } from '@/hooks/use-templates';
 import { useIPAMNetworks } from '@/hooks/use-ipam';
 import { apiClient } from '@/lib/api-client';
+import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
 import type { VMDeployRequest, OSTemplate, ProxmoxServer } from '@/types';
 import { toast } from 'sonner';
 
@@ -25,6 +26,8 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   const handleClose = onClose ?? (() => navigate(-1));
   const [step, setStep] = useState<Step>('server');
   const stepIdx = STEPS.indexOf(step);
+
+  const addDeployTask = useDeployTasksStore((s) => s.addTask);
 
   // State
   const [selectedServer, setSelectedServer] = useState<ProxmoxServer | null>(null);
@@ -67,10 +70,20 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   const { data: networks = [] } = useIPAMNetworks();
 
   const deploy = useMutation({
-    mutationFn: (data: VMDeployRequest) => apiClient.post<{ success: boolean; vmid: number; name: string }>('/proxmox/api/deploy', data),
-    onSuccess: () => {
-      toast.success(t('wizard.deploy_success', { name: config.name }));
-      handleClose();
+    mutationFn: (data: VMDeployRequest) =>
+      apiClient.post<{ task_id: number; status: string; name: string }>('/templates/api/deploy', data),
+    onSuccess: (res) => {
+      addDeployTask({
+        id: res.task_id,
+        name: res.name,
+        status: 'pending',
+        step: t('wizard.deploy_starting'),
+        progress: 0,
+        vmid: null,
+        node: null,
+        error_message: null,
+      });
+      toast.success(t('wizard.deploy_queued', { name: res.name }));
       navigate('/instances');
     },
     onError: (err: Error) => toast.error(err.message),
@@ -129,18 +142,18 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       {/* Step indicator */}
       <div className="flex items-center gap-2">
         {STEPS.map((s, i) => (
-          <div key={s} className="flex items-center gap-2">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
-              i < stepIdx ? 'bg-green-500/20 text-green-400' :
-              i === stepIdx ? 'bg-blue-500/20 text-blue-400 ring-2 ring-blue-500/50' :
-              'bg-muted text-muted-foreground'
-            }`}>
-              {i < stepIdx ? <CheckCircle className="h-4 w-4" /> : i + 1}
+            <div key={s} className="flex items-center gap-2">
+              <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
+                i < stepIdx ? 'bg-green-500/20 text-green-400' :
+                i === stepIdx ? 'bg-blue-500/20 text-blue-400 ring-2 ring-blue-500/50' :
+                'bg-muted text-muted-foreground'
+              }`}>
+                {i < stepIdx ? <CheckCircle className="h-4 w-4" /> : i + 1}
+              </div>
+              {i < STEPS.length - 1 && <div className={`h-0.5 w-8 ${i < stepIdx ? 'bg-green-500/50' : 'bg-border'}`} />}
             </div>
-            {i < STEPS.length - 1 && <div className={`h-0.5 w-8 ${i < stepIdx ? 'bg-green-500/50' : 'bg-border'}`} />}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
       {/* Step 1: Server */}
       {step === 'server' && (
@@ -222,7 +235,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               <CardContent className="space-y-3">
                 <div>
                   <Label>{t('common.name')}</Label>
-                  <Input value={config.name} onChange={e => setConfig(p => ({ ...p, name: e.target.value }))} placeholder="my-vm-01" />
+                  <Input value={config.name} onChange={e => setConfig(p => ({ ...p, name: e.target.value }))} placeholder={t('common.placeholder_vm_name')} />
                 </div>
                 <div>
                   <Label>{t('wizard.target_node')}</Label>
@@ -316,7 +329,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               <CardContent className="space-y-3">
                 <div>
                   <Label>{t('wizard.ci_user')}</Label>
-                  <Input value={config.cloud_init_user} onChange={e => setConfig(p => ({ ...p, cloud_init_user: e.target.value }))} placeholder="ubuntu" />
+                  <Input value={config.cloud_init_user} onChange={e => setConfig(p => ({ ...p, cloud_init_user: e.target.value }))} placeholder={t('common.placeholder_ubuntu')} />
                 </div>
                 <div>
                   <Label>{t('wizard.ci_password')}</Label>
@@ -328,7 +341,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                     className="w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono min-h-[60px]"
                     value={config.ssh_keys}
                     onChange={e => setConfig(p => ({ ...p, ssh_keys: e.target.value }))}
-                    placeholder="ssh-rsa AAAA..."
+                    placeholder={t('common.placeholder_ssh_key')}
                   />
                 </div>
               </CardContent>
@@ -346,12 +359,12 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               <Row label={t('wizard.server_label')} value={selectedServer?.name || ''} />
               <Row label={t('wizard.template_label')} value={selectedTemplate?.name || ''} />
               <Row label={t('common.name')} value={config.name} />
-              <Row label="vCPU" value={String(config.cores)} />
+              <Row label={t('common.vcpu')} value={String(config.cores)} />
               <Row label={t('wizard.memory_mb')} value={`${config.memory} MB`} />
               <Row label={t('wizard.disk_gb')} value={`${config.disk} GB`} />
               <Row label={t('wizard.bridge')} value={config.bridge} />
-              {config.ipam_network_id && <Row label="IPAM" value={networks.find(n => n.id === config.ipam_network_id)?.name || 'Auto'} />}
-              {config.ip_address && <Row label="IP" value={config.ip_address} />}
+              {config.ipam_network_id && <Row label={t('common.ipam')} value={networks.find(n => n.id === config.ipam_network_id)?.name || 'Auto'} />}
+              {config.ip_address && <Row label={t('common.primary_ip')} value={config.ip_address} />}
               {config.cloud_init_user && <Row label={t('wizard.ci_user')} value={config.cloud_init_user} />}
             </CardContent>
           </Card>

@@ -342,6 +342,184 @@ class ProxmoxClient:
         except Exception as e:
             logger.error(f"Ошибка перезапуска LXC {vmid} на {node}: {e}")
             return None
+
+    def shutdown_vm(self, node: str, vmid: int, timeout: int = 60) -> Optional[str]:
+        """Корректно выключить VM (ACPI). Возвращает UPID задачи."""
+        if not self.proxmox:
+            return None
+        try:
+            upid = self.proxmox.nodes(node).qemu(vmid).status.shutdown.post(timeout=timeout)
+            return upid if isinstance(upid, str) else None
+        except Exception as e:
+            logger.error(f"Ошибка корректного выключения VM {vmid} на {node}: {e}")
+            return None
+
+    def shutdown_container(self, node: str, vmid: int, timeout: int = 60) -> Optional[str]:
+        """Корректно выключить LXC. Возвращает UPID задачи."""
+        if not self.proxmox:
+            return None
+        try:
+            upid = self.proxmox.nodes(node).lxc(vmid).status.shutdown.post(timeout=timeout)
+            return upid if isinstance(upid, str) else None
+        except Exception as e:
+            logger.error(f"Ошибка корректного выключения LXC {vmid} на {node}: {e}")
+            return None
+
+    def clone_vm(self, node: str, vmid: int, new_vmid: int, name: str,
+                 full: bool = True, target_node: Optional[str] = None,
+                 target_storage: Optional[str] = None,
+                 description: Optional[str] = None) -> Optional[str]:
+        """Клонировать VM (qemu). Работает и для шаблонов, и для обычных VM."""
+        if not self.proxmox:
+            return None
+        try:
+            params = {'newid': new_vmid, 'name': name, 'full': 1 if full else 0}
+            if target_storage:
+                params['storage'] = target_storage
+            if target_node and target_node != node:
+                params['target'] = target_node
+            if description:
+                params['description'] = description
+            upid = self.proxmox.nodes(node).qemu(vmid).clone.post(**params)
+            return upid if isinstance(upid, str) else None
+        except Exception as e:
+            logger.error(f"Ошибка клонирования VM {vmid} -> {new_vmid}: {e}")
+            return None
+
+    def clone_container(self, node: str, vmid: int, new_vmid: int, hostname: str,
+                        full: bool = True, target_node: Optional[str] = None,
+                        target_storage: Optional[str] = None,
+                        description: Optional[str] = None) -> Optional[str]:
+        """Клонировать LXC контейнер."""
+        if not self.proxmox:
+            return None
+        try:
+            params = {'newid': new_vmid, 'hostname': hostname, 'full': 1 if full else 0}
+            if target_storage:
+                params['storage'] = target_storage
+            if target_node and target_node != node:
+                params['target'] = target_node
+            if description:
+                params['description'] = description
+            upid = self.proxmox.nodes(node).lxc(vmid).clone.post(**params)
+            return upid if isinstance(upid, str) else None
+        except Exception as e:
+            logger.error(f"Ошибка клонирования LXC {vmid} -> {new_vmid}: {e}")
+            return None
+
+    def change_vm_password(self, node: str, vmid: int, username: str, password: str) -> Dict:
+        """
+        Сменить пароль пользователя на VM через QEMU guest agent.
+        Требует установленный qemu-guest-agent в VM.
+        """
+        if not self.proxmox:
+            return {'success': False, 'error': 'Proxmox connection not initialized'}
+        try:
+            # Proxmox API: POST /nodes/{node}/qemu/{vmid}/agent/set-user-password
+            self.proxmox.nodes(node).qemu(vmid).agent('set-user-password').post(
+                username=username,
+                password=password,
+            )
+            return {'success': True}
+        except Exception as e:
+            logger.error(f"Не удалось сменить пароль на VM {vmid}: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def change_container_password(self, node: str, vmid: int, username: str, password: str) -> Dict:
+        """
+        Сменить пароль пользователя в LXC через `pct exec` (chpasswd).
+        Контейнер должен быть запущен.
+        """
+        if not self.proxmox:
+            return {'success': False, 'error': 'Proxmox connection not initialized'}
+        try:
+            # Используем `chpasswd` в формате "user:password"
+            # Запускаем bash -c "echo 'user:pass' | chpasswd"
+            cmd_str = f"echo '{username}:{password}' | chpasswd"
+            result = self.proxmox.nodes(node).lxc(vmid).status.current.get()
+            if result.get('status') != 'running':
+                return {'success': False, 'error': 'Container is not running'}
+            res = self.proxmox.nodes(node).lxc(vmid).exec.post(
+                command=['bash', '-c', cmd_str]
+            )
+            return {'success': True, 'result': res}
+        except Exception as e:
+            logger.error(f"Не удалось сменить пароль в LXC {vmid}: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def set_vm_notes(self, node: str, vmid: int, description: str) -> bool:
+        """Установить description (заметки) у VM."""
+        if not self.proxmox:
+            return False
+        try:
+            self.proxmox.nodes(node).qemu(vmid).config.put(description=description or '')
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка обновления заметок VM {vmid}: {e}")
+            return False
+
+    def set_container_notes(self, node: str, vmid: int, description: str) -> bool:
+        """Установить description (заметки) у LXC."""
+        if not self.proxmox:
+            return False
+        try:
+            self.proxmox.nodes(node).lxc(vmid).config.put(description=description or '')
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка обновления заметок LXC {vmid}: {e}")
+            return False
+
+    def attach_iso(self, node: str, vmid: int, iso_volid: str, device: str = 'ide2') -> bool:
+        """Подключить ISO образ к VM (только KVM)."""
+        if not self.proxmox:
+            return False
+        try:
+            value = f"{iso_volid},media=cdrom"
+            self.proxmox.nodes(node).qemu(vmid).config.put(**{device: value})
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка подключения ISO {iso_volid} к VM {vmid}: {e}")
+            return False
+
+    def detach_iso(self, node: str, vmid: int, device: str = 'ide2') -> bool:
+        """Отключить ISO образ (CD-ROM) у VM."""
+        if not self.proxmox:
+            return False
+        try:
+            self.proxmox.nodes(node).qemu(vmid).config.put(**{device: 'none,media=cdrom'})
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка отключения ISO у VM {vmid}: {e}")
+            return False
+
+    def get_node_isos(self, node: str) -> List[Dict]:
+        """Получить список ISO-образов со всех ISO-хранилищ ноды."""
+        if not self.proxmox:
+            return []
+        result: List[Dict] = []
+        try:
+            storages = self.proxmox.nodes(node).storage.get()
+            for s in storages:
+                content = s.get('content', '')
+                if 'iso' not in content:
+                    continue
+                storage_id = s.get('storage')
+                try:
+                    items = self.proxmox.nodes(node).storage(storage_id).content.get(content='iso')
+                    for it in items:
+                        result.append({
+                            'volid': it.get('volid'),
+                            'storage': storage_id,
+                            'size': it.get('size'),
+                            'format': it.get('format'),
+                            'name': (it.get('volid') or '').split('/')[-1],
+                        })
+                except Exception as e:
+                    logger.debug(f"Не удалось получить ISO из {storage_id}: {e}")
+        except Exception as e:
+            logger.error(f"Ошибка получения списка ISO для ноды {node}: {e}")
+        return result
+
     
     def force_stop_vm(self, node: str, vmid: int) -> bool:
         """Принудительно остановить ВМ (через SSH - аналог kill -9)"""

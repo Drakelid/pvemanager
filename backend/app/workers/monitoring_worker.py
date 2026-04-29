@@ -688,6 +688,8 @@ class MonitoringWorker:
             
             # Track all seen (server_id, vmid) pairs for cleanup
             all_seen = set()
+            # Track status changes for WebSocket broadcast
+            status_changes = []  # list of (server_id, vmid, node, old_status, new_status)
             
             # Upsert all VMs to database
             for server_id, vm_data, vm_type in all_vms_data:
@@ -713,6 +715,8 @@ class MonitoringWorker:
                         if os_type:
                             os_type = os_type.capitalize()
                     
+                    new_status = vm_data.get('status', 'unknown')
+                    
                     # Find existing by (server_id, vmid)
                     existing = db.query(VMInstance).filter(
                         VMInstance.server_id == server_id,
@@ -720,10 +724,13 @@ class MonitoringWorker:
                     ).first()
                     
                     if existing:
+                        # Detect status change for WS broadcast
+                        if existing.status != new_status:
+                            status_changes.append((server_id, vmid, node_name, existing.status, new_status))
                         # Update existing entry
                         existing.name = vm_name
                         existing.node = node_name
-                        existing.status = vm_data.get('status', 'unknown')
+                        existing.status = new_status
                         existing.cores = vm_data.get('cpus', vm_data.get('maxcpu'))
                         existing.memory = vm_data.get('maxmem')
                         existing.disk_size = vm_data.get('maxdisk')
@@ -741,7 +748,7 @@ class MonitoringWorker:
                             node=node_name,
                             vm_type=vm_type,
                             name=vm_name,
-                            status=vm_data.get('status', 'unknown'),
+                            status=new_status,
                             cores=vm_data.get('cpus', vm_data.get('maxcpu')),
                             memory=vm_data.get('maxmem'),
                             disk_size=vm_data.get('maxdisk'),
@@ -802,6 +809,22 @@ class MonitoringWorker:
             
             db.commit()
             logger.debug(f"[VM SYNC] Cache sync completed. Processed {len(all_vms_data)} VMs/containers, marked {deleted_count} as deleted, released {released_ips} IPs")
+            
+            # Broadcast status changes to all connected WebSocket clients
+            if status_changes:
+                try:
+                    from app.websocket_manager import ws_manager, run_async_safe
+                    for srv_id, vmid, node_name, old_status, new_status in status_changes:
+                        logger.info(f"[VM SYNC] Status change: server={srv_id} vmid={vmid} {old_status} -> {new_status}")
+                        run_async_safe(ws_manager.broadcast({
+                            "type": "vm_status_update",
+                            "server_id": srv_id,
+                            "vmid": vmid,
+                            "node": node_name,
+                            "status": new_status,
+                        }))
+                except Exception as _we:
+                    logger.warning(f"[VM SYNC] Failed to broadcast status changes: {_we}")
             
         except Exception as e:
             logger.error(f"[VM SYNC] Critical error: {e}", exc_info=True)
@@ -1034,10 +1057,10 @@ def start_monitoring_worker():
         replace_existing=True
     )
     
-    # VM cache sync - every 30 seconds
+    # VM cache sync - every 10 seconds
     scheduler.add_job(
         monitoring_worker.sync_vm_cache,
-        trigger=IntervalTrigger(seconds=30),
+        trigger=IntervalTrigger(seconds=10),
         id='vm_cache_sync',
         name='Sync VM cache from Proxmox',
         replace_existing=True

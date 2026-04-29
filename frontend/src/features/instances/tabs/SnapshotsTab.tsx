@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, RotateCcw, Loader2, Camera } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ interface Props {
 }
 
 export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
+  const { t } = useTranslation();
   const { data, isLoading } = useSnapshots(serverId, vmid, type, node);
   const createSnap = useCreateSnapshot(serverId, vmid, type);
   const deleteSnap = useDeleteSnapshot(serverId, vmid, type, node);
@@ -110,17 +112,17 @@ export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
           ) : snapshots.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Camera className="mb-2 h-8 w-8 opacity-40" />
-              <p className="text-sm">No snapshots</p>
+              <p className="text-sm">{t('instances.no_snapshots')}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>{t('common.name')}</TableHead>
+                  <TableHead>{t('common.description')}</TableHead>
+                  <TableHead>{t('common.date')}</TableHead>
                   <TableHead>RAM</TableHead>
-                  <TableHead className="w-[100px]">Actions</TableHead>
+                  <TableHead className="w-[100px]">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -149,7 +151,7 @@ export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
                           size="icon"
                           className="h-7 w-7"
                           onClick={() => setRollbackTarget(snap.name)}
-                          title="Rollback"
+                          title={t('instances.rollback')}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
@@ -158,7 +160,7 @@ export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
                           size="icon"
                           className="h-7 w-7 text-destructive hover:text-destructive"
                           onClick={() => setDeleteTarget(snap.name)}
-                          title="Delete"
+                          title={t('instances.delete_snapshot')}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -185,16 +187,16 @@ export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
                 id="snap-name"
                 value={snapName}
                 onChange={(e) => setSnapName(e.target.value)}
-                placeholder="e.g. before-update"
+                placeholder={t('common.placeholder_snapshot_name')}
               />
             </div>
             <div>
-              <Label htmlFor="snap-desc">Description (optional)</Label>
+              <Label htmlFor="snap-desc">{t('common.description')} (optional)</Label>
               <Input
                 id="snap-desc"
                 value={snapDesc}
                 onChange={(e) => setSnapDesc(e.target.value)}
-                placeholder="Description"
+                placeholder={t('common.description')}
               />
             </div>
             {type === 'qemu' && (

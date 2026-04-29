@@ -3,14 +3,19 @@ API endpoints for OS Templates management
 Allows creating VM templates, groups, and deploying VMs from templates
 """
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from loguru import logger
-from typing import List
+from typing import List, Optional
 
 from ..db import get_db, SessionLocal
-from ..models import ProxmoxServer, OSTemplateGroup, OSTemplate, VMInstance, User
+from ..models import ProxmoxServer, OSTemplateGroup, OSTemplate, VMInstance, User, DeployTask
 from ..schemas import (
     OSTemplateGroupCreate, OSTemplateGroupUpdate, OSTemplateGroupResponse,
     OSTemplateCreate, OSTemplateUpdate, OSTemplateResponse, OSTemplateWithGroup,
@@ -21,8 +26,38 @@ from ..api.proxmox import get_next_vmid, save_vm_instance, get_vm_instance
 from ..auth import get_current_user, PermissionChecker
 from ..ipam_service import IPAMService
 from ..logging_service import LoggingService
+from ..websocket_manager import broadcast_task_update
 
 router = APIRouter()
+
+# Thread pool for blocking deploy operations
+_deploy_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="deploy")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# ── Deploy Task response schema ──────────────────────────────────────────────
+
+class DeployTaskStartResponse(BaseModel):
+    task_id: int
+    status: str
+    name: str
+
+
+class DeployTaskStatusResponse(BaseModel):
+    id: int
+    status: str
+    step: Optional[str]
+    progress: int
+    name: str
+    vmid: Optional[int]
+    node: Optional[str]
+    error_message: Optional[str]
+    created_at: Optional[str]
+    started_at: Optional[str]
+    completed_at: Optional[str]
 
 
 # ==================== Template Groups CRUD ====================
@@ -639,134 +674,135 @@ def auto_import_templates(
 
 # ==================== VM Deployment ====================
 
-@router.post("/api/deploy", response_model=VMDeployResponse)
-async def deploy_vm_from_template(
-    deploy_data: VMDeployRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.create"))
-):
-    """
-    Развернуть новую VM из шаблона.
-    Клонирует шаблон и настраивает параметры VM.
-    Поддерживает развертывание на любую ноду кластера (cross-node deployment).
-    """
-    # Get template
-    template = db.query(OSTemplate).filter(OSTemplate.id == deploy_data.template_id).first()
-    if not template:
-        raise HTTPException(status_code=404, detail="Шаблон не найден")
-    
-    if not template.is_active:
-        raise HTTPException(status_code=400, detail="Шаблон неактивен")
-    
-    # Get server
-    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == template.server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Proxmox сервер не найден")
-    
-    # Validate resources
-    cores = deploy_data.cores or template.default_cores
-    memory = deploy_data.memory or template.default_memory
-    disk = deploy_data.disk or template.default_disk
-    
-    if cores < template.min_cores:
-        raise HTTPException(status_code=400, detail=f"Минимум {template.min_cores} ядер CPU")
-    if memory < template.min_memory:
-        raise HTTPException(status_code=400, detail=f"Минимум {template.min_memory} MB памяти")
-    if disk < template.min_disk:
-        raise HTTPException(status_code=400, detail=f"Минимум {template.min_disk} GB диска")
-    
+def _update_deploy_task(task_id: int, status: str, step: str, progress: int,
+                        vmid: int = None, node: str = None, error: str = None):
+    """Update deploy task state in DB and broadcast via WebSocket."""
+    db = SessionLocal()
     try:
-        # Connect to Proxmox
+        task = db.query(DeployTask).filter(DeployTask.id == task_id).first()
+        if not task:
+            return
+        task.status = status
+        task.step = step
+        task.progress = progress
+        if vmid is not None:
+            task.vmid = vmid
+        if node is not None:
+            task.node = node
+        if error is not None:
+            task.error_message = error
+        if status == 'running' and not task.started_at:
+            task.started_at = _utcnow()
+        if status in ('completed', 'failed'):
+            task.completed_at = _utcnow()
+        db.commit()
+        try:
+            broadcast_task_update(task.user_id, "deploy_task_update", task.to_dict())
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
+                    user_id: int, username: str, user_ssh_key: str):
+    """Blocking deploy logic — runs in a thread pool."""
+    db = SessionLocal()
+    server = None
+    template = None
+    deploy_node = None
+    new_vmid = None
+    try:
+        _update_deploy_task(task_id, 'running', 'Подготовка...', 5)
+
+        template = db.query(OSTemplate).filter(OSTemplate.id == deploy_data.template_id).first()
+        if not template:
+            _update_deploy_task(task_id, 'failed', 'Шаблон не найден', 0, error='Шаблон не найден')
+            return
+
+        server = db.query(ProxmoxServer).filter(ProxmoxServer.id == template.server_id).first()
+        if not server:
+            _update_deploy_task(task_id, 'failed', 'Сервер не найден', 0, error='Сервер Proxmox не найден')
+            return
+
+        cores = deploy_data.cores or template.default_cores
+        memory = deploy_data.memory or template.default_memory
+        disk = deploy_data.disk or template.default_disk
+
+        # Connect
+        _update_deploy_task(task_id, 'running', 'Подключение к Proxmox...', 10)
         if server.use_password:
             client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
+                host=server.ip_address, user=server.api_user,
+                password=server.password, verify_ssl=server.verify_ssl
             )
         else:
             client = ProxmoxClient(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
+                host=server.ip_address, user=server.api_user,
+                token_name=server.api_token_name, token_value=server.api_token_value,
                 verify_ssl=server.verify_ssl
             )
-        
         if not client.is_connected():
-            raise HTTPException(status_code=503, detail="Не удалось подключиться к Proxmox серверу")
-        
-        # Determine source node (where template exists) and target node (where to deploy)
+            _update_deploy_task(task_id, 'failed', 'Ошибка подключения к Proxmox', 10,
+                                error='Не удалось подключиться к Proxmox серверу')
+            return
+
+        # Locate template
+        _update_deploy_task(task_id, 'running', 'Поиск шаблона...', 20)
         source_node = template.get_source_node()
         target_node = deploy_data.target_node or source_node
-        
-        # Check if template exists on source node
         template_vmid = template.vmid
+
         template_status = client.get_vm_status(source_node, template_vmid)
-        
         if not template_status:
-            # Try to find the template on other nodes
             found = client.find_template_on_nodes(template_vmid)
             if found:
                 source_node = found['node']
-                logger.info(f"Template {template_vmid} found on alternative node: {source_node}")
             else:
-                raise HTTPException(
-                    status_code=404, 
-                    detail=f"Шаблон VMID {template_vmid} не найден. Проверьте настройки шаблона."
-                )
-        
-        # For shared storage: template is accessible from all nodes
-        # For local storage: template needs to be on the target node or replicated
-        # 
-        # In a cluster with shared storage, we can clone from source_node 
-        # but specify target_node for the new VM
-        clone_from_node = source_node
-        clone_template_vmid = template_vmid
-        
-        # Log cross-node deployment
-        if target_node and target_node != source_node:
-            logger.info(f"Cross-node deployment: template on {source_node}, target node {target_node}")
-        
-        # Get next VMID from database (range 10000-19999) or use provided VMID
+                _update_deploy_task(task_id, 'failed', 'Шаблон не найден на Proxmox', 20,
+                                    error=f'VMID {template_vmid} не найден на сервере')
+                return
+
+        # Allocate VMID
+        _update_deploy_task(task_id, 'running', 'Генерация VMID...', 25)
         if deploy_data.vmid:
-            # Используем указанный VMID (для переустановки)
             new_vmid = deploy_data.vmid
-            logger.info(f"Using provided VMID: {new_vmid} for reinstall")
         else:
-            # Генерируем новый случайный VMID для новой VM
             new_vmid = get_next_vmid(db, server.id)
-            logger.info(f"Generated new VMID: {new_vmid} for server {server.id}")
-        
-        # Clone VM from template
-        # For shared storage: clone from source node, target specifies where VM will run
+
+        # Clone
+        _update_deploy_task(task_id, 'running', f'Клонирование шаблона → VMID {new_vmid}...', 30)
         clone_upid = client.clone_vm_from_template(
-            node=clone_from_node,
-            template_vmid=clone_template_vmid,
+            node=source_node,
+            template_vmid=template_vmid,
             new_vmid=new_vmid,
             name=deploy_data.name,
             full_clone=True,
-            description=f"Deployed from template {template.name} by {current_user.username}",
+            description=f"Deployed from template {template.name} by {username}",
             target_storage=deploy_data.target_storage,
-            target_node=target_node if target_node != clone_from_node else None
+            target_node=target_node if target_node != source_node else None
         )
-        
         if not clone_upid:
-            raise HTTPException(status_code=500, detail="Ошибка клонирования VM")
-        
-        # Wait for clone to complete
-        clone_success = client.wait_for_task(clone_from_node, clone_upid, timeout=300)
+            _update_deploy_task(task_id, 'failed', 'Ошибка клонирования', 30,
+                                error='Proxmox не вернул UPID задачи клонирования')
+            return
+
+        # Wait for clone — progress from 30 to 65
+        _update_deploy_task(task_id, 'running', 'Клонирование диска...', 45, vmid=new_vmid)
+        clone_success = client.wait_for_task(source_node, clone_upid, timeout=300)
         if not clone_success:
-            raise HTTPException(status_code=500, detail="Таймаут клонирования VM")
-        
-        # Use target_node for all subsequent operations
+            _update_deploy_task(task_id, 'failed', 'Таймаут клонирования', 45,
+                                error='Клонирование заняло слишком долго (>5 мин)')
+            return
+
         deploy_node = target_node
-        
-        # IPAM Integration - Auto-allocate IP if network specified but no IP provided
+        _update_deploy_task(task_id, 'running', 'Клонирование завершено', 65, vmid=new_vmid, node=deploy_node)
+
+        # IPAM
         allocated_ip = deploy_data.ip_address
         ipam_allocation = None
-        
         if deploy_data.ipam_network_id and not deploy_data.ip_address:
+            _update_deploy_task(task_id, 'running', 'Выделение IP-адреса (IPAM)...', 68, vmid=new_vmid, node=deploy_node)
             ipam = IPAMService(db)
             ipam_allocation, error = ipam.auto_allocate_ip(
                 network_id=deploy_data.ipam_network_id,
@@ -776,25 +812,19 @@ async def deploy_vm_from_template(
                 proxmox_server_id=server.id,
                 proxmox_vmid=new_vmid,
                 proxmox_node=deploy_node,
-                allocated_by=current_user.username,
+                allocated_by=username,
                 notes=f"Auto-allocated for VM deployment from template {template.name}"
             )
-            if error:
-                logger.error(f"IPAM auto-allocation failed: {error}")
-                # Continue without IPAM - let user know
-            else:
+            if not error:
                 allocated_ip = ipam_allocation.ip_address
-                logger.info(f"IPAM allocated IP {allocated_ip} for VM {deploy_data.name}")
-                # Get gateway from network if not provided
                 if not deploy_data.gateway:
                     from ..models import IPAMNetwork
-                    network = db.query(IPAMNetwork).filter(IPAMNetwork.id == deploy_data.ipam_network_id).first()
-                    if network and network.gateway:
-                        deploy_data.gateway = network.gateway
+                    net = db.query(IPAMNetwork).filter(IPAMNetwork.id == deploy_data.ipam_network_id).first()
+                    if net and net.gateway:
+                        deploy_data.gateway = net.gateway
         elif deploy_data.ip_address and deploy_data.ipam_network_id:
-            # Register manually specified IP in IPAM
             ipam = IPAMService(db)
-            ipam_allocation, error = ipam.allocate_ip(
+            ipam_allocation, _ = ipam.allocate_ip(
                 ip_address=deploy_data.ip_address,
                 network_id=deploy_data.ipam_network_id,
                 pool_id=deploy_data.ipam_pool_id,
@@ -803,64 +833,47 @@ async def deploy_vm_from_template(
                 proxmox_server_id=server.id,
                 proxmox_vmid=new_vmid,
                 proxmox_node=deploy_node,
-                allocated_by=current_user.username,
+                allocated_by=username,
                 notes=f"Manually assigned for VM deployment from template {template.name}"
             )
-            if error:
-                logger.warning(f"IPAM registration failed for manually specified IP: {error}")
-        
-        # Get network mask (CIDR) and gateway from IPAM network if IP is specified
-        network_mask = "24"  # Default mask
+
+        # Determine network mask & gateway
+        network_mask = "24"
         gateway = deploy_data.gateway
-        
-        # Try to get proper network mask and gateway from IPAM
         if allocated_ip and (deploy_data.ipam_network_id or ipam_allocation):
             try:
                 from ..models import IPAMNetwork
                 network_id = deploy_data.ipam_network_id
                 if ipam_allocation and hasattr(ipam_allocation, 'network_id'):
                     network_id = ipam_allocation.network_id
-                
                 if network_id:
-                    network = db.query(IPAMNetwork).filter(IPAMNetwork.id == network_id).first()
-                    if network:
-                        # Extract mask from CIDR (e.g., "10.10.10.0/24" -> "24")
-                        if network.network and '/' in network.network:
-                            network_mask = network.network.split('/')[1]
-                            logger.info(f"Using network mask /{network_mask} from IPAM network {network.name}")
-                        # Get gateway if not already specified
-                        if not gateway and network.gateway:
-                            gateway = network.gateway
-                            logger.info(f"Using gateway {gateway} from IPAM network {network.name}")
+                    net = db.query(IPAMNetwork).filter(IPAMNetwork.id == network_id).first()
+                    if net:
+                        if net.network and '/' in net.network:
+                            network_mask = net.network.split('/')[1]
+                        if not gateway and net.gateway:
+                            gateway = net.gateway
             except Exception as e:
                 logger.warning(f"Could not get network info from IPAM: {e}")
-        
-        # Configure VM
+
         ip_config = None
         if allocated_ip:
-            logger.info(f"Configuring VM {new_vmid} with IP {allocated_ip}/{network_mask}, gateway: {gateway}")
-            if gateway:
-                ip_config = f"ip={allocated_ip}/{network_mask},gw={gateway}"
-            else:
-                ip_config = f"ip={allocated_ip}/{network_mask}"
+            ip_config = f"ip={allocated_ip}/{network_mask},gw={gateway}" if gateway else f"ip={allocated_ip}/{network_mask}"
         else:
             ip_config = "ip=dhcp"
-            logger.info(f"Configuring VM {new_vmid} with DHCP")
-        
-        # Combine user's SSH key with deploy request SSH keys
+
+        # Configure VM
+        _update_deploy_task(task_id, 'running', 'Настройка VM (CPU, RAM, Cloud-Init)...', 72, vmid=new_vmid, node=deploy_node)
         ssh_keys = deploy_data.ssh_keys or ""
-        if current_user.ssh_public_key:
-            if ssh_keys:
-                ssh_keys = f"{ssh_keys}\n{current_user.ssh_public_key}"
-            else:
-                ssh_keys = current_user.ssh_public_key
-        
+        if user_ssh_key:
+            ssh_keys = f"{ssh_keys}\n{user_ssh_key}".strip()
+
         config_success = client.configure_vm(
             node=deploy_node,
             vmid=new_vmid,
             cores=cores,
             memory=memory,
-            disk_size=disk,  # configure_vm will compare with current disk size
+            disk_size=disk,
             network_bridge=deploy_data.network_bridge,
             cloud_init_user=deploy_data.cloud_init_user,
             cloud_init_password=deploy_data.cloud_init_password,
@@ -868,31 +881,25 @@ async def deploy_vm_from_template(
             ip_config=ip_config,
             onboot=deploy_data.onboot
         )
-        
         if not config_success:
             logger.warning(f"VM {new_vmid} created but configuration may be incomplete")
-        
-        # Start VM if requested
+
+        # Start
         if deploy_data.start_after_create:
+            _update_deploy_task(task_id, 'running', 'Запуск VM...', 88, vmid=new_vmid, node=deploy_node)
             client.start_vm(deploy_node, new_vmid)
-        
-        # Enable High Availability if requested (cluster only)
-        ha_enabled = False
+
+        # HA
         if deploy_data.enable_ha:
             try:
                 if client.is_cluster():
-                    ha_result = client.add_to_ha(vmid=new_vmid, vm_type='vm', max_restart=3, max_relocate=3)
-                    if ha_result.get('success'):
-                        ha_enabled = True
-                        logger.info(f"HA enabled for VM {new_vmid}")
-                    else:
-                        logger.warning(f"Failed to enable HA for VM {new_vmid}: {ha_result.get('error')}")
-                else:
-                    logger.warning(f"HA requested but server {server.name} is not in a cluster")
+                    client.add_to_ha(vmid=new_vmid, vm_type='vm', max_restart=3, max_relocate=3)
             except Exception as ha_error:
-                logger.error(f"Error enabling HA for VM {new_vmid}: {ha_error}")
-        
-        # Save VM configuration to database with owner
+                logger.error(f"HA error for VM {new_vmid}: {ha_error}")
+
+        # Save to DB
+        _update_deploy_task(task_id, 'running', 'Сохранение в базе данных...', 95, vmid=new_vmid, node=deploy_node)
+        user = db.query(User).filter(User.id == user_id).first()
         save_vm_instance(
             db=db,
             server_id=server.id,
@@ -904,76 +911,137 @@ async def deploy_vm_from_template(
             memory=memory,
             disk_size=disk,
             ip_address=allocated_ip,
-            ip_prefix=24,
-            gateway=deploy_data.gateway,
+            ip_prefix=int(network_mask),
+            gateway=gateway,
             cloud_init_user=deploy_data.cloud_init_user,
             cloud_init_password=deploy_data.cloud_init_password,
             ssh_keys=deploy_data.ssh_keys,
             template_id=template.id,
             template_name=template.name,
             description=f"Deployed from template {template.name}",
-            owner_id=current_user.id  # VPS-style user isolation
+            owner_id=user_id
         )
-        
-        logger.info(f"User {current_user.username} deployed VM {new_vmid} ({deploy_data.name}) from template {template.name}")
-        
-        # Log VM deployment to audit
+
         LoggingService.log_proxmox_action(
             db=db,
             action="create",
             resource_type="vm",
             resource_id=new_vmid,
-            username=current_user.username,
+            username=username,
             resource_name=deploy_data.name,
             server_id=server.id,
             server_name=server.name,
             node_name=deploy_node,
-            details={
-                "template_id": template.id,
-                "template_name": template.name,
-                "source_node": source_node if source_node != deploy_node else None,
-                "cores": cores,
-                "memory": memory,
-                "disk": disk,
-                "ip_address": allocated_ip,
-                "ha_enabled": ha_enabled
-            },
+            details={"template_id": template.id, "template_name": template.name, "cores": cores,
+                     "memory": memory, "disk": disk, "ip_address": allocated_ip},
             success=True
         )
-        
-        return VMDeployResponse(
-            success=True,
-            vmid=new_vmid,
-            name=deploy_data.name,
-            node=deploy_node,
-            server_id=server.id,
-            task_upid=clone_upid,
-            message=f"VM {deploy_data.name} успешно создана (VMID: {new_vmid})"
-        )
-        
-    except HTTPException:
-        raise
+
+        _update_deploy_task(task_id, 'completed', 'VM успешно создана!', 100, vmid=new_vmid, node=deploy_node)
+        logger.info(f"[DEPLOY] Task #{task_id}: VM {deploy_data.name} (VMID {new_vmid}) deployed by {username}")
+
     except Exception as e:
-        # Log failed deployment
-        LoggingService.log_proxmox_action(
-            db=db,
-            action="create",
-            resource_type="vm",
-            resource_id=deploy_data.vmid,
-            username=current_user.username,
-            resource_name=deploy_data.name,
-            server_id=server.id if server else None,
-            server_name=server.name if server else None,
-            node_name=deploy_node if 'deploy_node' in locals() else None,
-            details={
-                "template_id": template.id if template else None,
-                "template_name": template.name if template else None
-            },
-            success=False,
-            error_message=str(e)
-        )
-        logger.error(f"Error deploying VM from template {template.id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Ошибка развертывания VM: {str(e)}")
+        err = str(e)
+        logger.error(f"[DEPLOY] Task #{task_id} failed: {err}")
+        # Log failed
+        try:
+            if server and template:
+                LoggingService.log_proxmox_action(
+                    db=db,
+                    action="create",
+                    resource_type="vm",
+                    resource_id=deploy_data.vmid,
+                    username=username,
+                    resource_name=deploy_data.name,
+                    server_id=server.id if server else None,
+                    server_name=server.name if server else None,
+                    node_name=deploy_node,
+                    details={"template_id": template.id if template else None},
+                    success=False,
+                    error_message=err
+                )
+        except Exception:
+            pass
+        _update_deploy_task(task_id, 'failed', f'Ошибка: {err[:150]}', 0, error=err)
+    finally:
+        db.close()
+
+
+@router.post("/api/deploy", response_model=DeployTaskStartResponse, status_code=202)
+async def deploy_vm_from_template(
+    deploy_data: VMDeployRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vms.create"))
+):
+    """
+    Асинхронный деплой VM из шаблона.
+    Немедленно возвращает task_id, выполнение идёт в фоне.
+    Статус можно отслеживать через GET /api/deploy/{task_id}.
+    """
+    # Fast validation before queuing
+    template = db.query(OSTemplate).filter(OSTemplate.id == deploy_data.template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+    if not template.is_active:
+        raise HTTPException(status_code=400, detail="Шаблон неактивен")
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == template.server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox сервер не найден")
+
+    cores = deploy_data.cores or template.default_cores
+    memory = deploy_data.memory or template.default_memory
+    disk = deploy_data.disk or template.default_disk
+    if cores < template.min_cores:
+        raise HTTPException(status_code=400, detail=f"Минимум {template.min_cores} ядер CPU")
+    if memory < template.min_memory:
+        raise HTTPException(status_code=400, detail=f"Минимум {template.min_memory} MB памяти")
+    if disk < template.min_disk:
+        raise HTTPException(status_code=400, detail=f"Минимум {template.min_disk} GB диска")
+
+    # Create deploy task record
+    task = DeployTask(
+        status='pending',
+        step='В очереди...',
+        progress=0,
+        name=deploy_data.name,
+        template_id=template.id,
+        server_id=server.id,
+        user_id=current_user.id,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    task_id = task.id
+
+    # Schedule blocking deploy in thread pool
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        _deploy_executor,
+        _do_deploy_sync,
+        task_id,
+        deploy_data,
+        current_user.id,
+        current_user.username,
+        current_user.ssh_public_key or ''
+    )
+
+    logger.info(f"[DEPLOY] Task #{task_id} queued: {deploy_data.name} by {current_user.username}")
+    return DeployTaskStartResponse(task_id=task_id, status='pending', name=deploy_data.name)
+
+
+@router.get("/api/deploy/{task_id}", response_model=DeployTaskStatusResponse)
+async def get_deploy_task_status(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Получить статус задачи деплоя."""
+    task = db.query(DeployTask).filter(DeployTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    if task.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Нет доступа")
+    return DeployTaskStatusResponse(**task.to_dict())
 
 
 # ==================== Quick Deploy (for UI) ====================

@@ -7,12 +7,17 @@ export const taskKeys = {
   bulk: (limit?: number) => ['bulk-tasks', limit] as const,
 };
 
-interface TaskItem {
+export interface TaskItem {
   id?: number;
   upid?: string;
   type: string;
+  kind?: 'bulk' | 'proxmox' | 'deploy';
   status: string;
   action?: string;
+  description?: string;
+  progress_percent?: number;
+  current_step?: string;
+  name?: string;
   items_count?: number;
   completed_count?: number;
   failed_count?: number;
@@ -22,7 +27,10 @@ interface TaskItem {
   node?: string;
   server_id?: number;
   server_name?: string;
+  vmid?: number;
+  vm_type?: string;
   exitstatus?: string;
+  exit_status?: string;
   starttime?: number;
   endtime?: number;
   user?: string;

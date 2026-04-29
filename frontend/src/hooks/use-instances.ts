@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { getTasksWebSocket } from '@/lib/websocket';
 import type { VMInstance, Snapshot, VMConfig } from '@/types';
 
 // ==================== Query Keys ====================
@@ -22,6 +24,26 @@ export function useVirtualMachines() {
     queryFn: () => apiClient.get<VMInstance[]>('/proxmox/api/virtual-machines'),
     refetchInterval: 30000,
   });
+}
+
+/** Subscribes to WebSocket vm_status_update events and patches the VM list cache in real time. */
+export function useVMStatusSync() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const ws = getTasksWebSocket();
+    ws.connect();
+    const unsub = ws.onType('vm_status_update', (data: unknown) => {
+      const msg = data as { vmid: number; server_id: number; status: string };
+      qc.setQueryData<VMInstance[]>(vmKeys.all, (old) =>
+        old?.map((vm) =>
+          vm.server_id === msg.server_id && vm.vmid === msg.vmid
+            ? { ...vm, status: msg.status as VMInstance['status'] }
+            : vm
+        )
+      );
+    });
+    return () => unsub();
+  }, [qc]);
 }
 
 export function useAllResources() {
@@ -153,16 +175,55 @@ interface PowerActionResult {
 export function usePowerAction(serverId: number, vmid: number, type: string, node: string) {
   const qc = useQueryClient();
   const prefix = type === 'lxc' ? 'container' : 'vm';
-  return useMutation<PowerActionResult, Error, { action: string; force?: boolean }>({
+  return useMutation<PowerActionResult, Error, { action: string; force?: boolean }, { previousVMs: VMInstance[] | undefined }>({
     mutationFn: ({ action, force }) => {
       const params = new URLSearchParams({ node });
       if (force) params.set('force', '1');
       return apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/${action}?${params}`);
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: vmKeys.status(serverId, vmid) });
-      qc.invalidateQueries({ queryKey: vmKeys.all });
-      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    onMutate: async ({ action }) => {
+      await qc.cancelQueries({ queryKey: vmKeys.all });
+      const previousVMs = qc.getQueryData<VMInstance[]>(vmKeys.all);
+      const expectedStatus = action === 'start' || action === 'restart' ? 'running' : 'stopped';
+      qc.setQueryData<VMInstance[]>(vmKeys.all, (old) =>
+        old?.map((vm) =>
+          vm.server_id === serverId && vm.vmid === vmid
+            ? { ...vm, status: expectedStatus as VMInstance['status'] }
+            : vm
+        )
+      );
+      return { previousVMs };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousVMs) {
+        qc.setQueryData(vmKeys.all, context.previousVMs);
+      }
+    },
+    onSuccess: (_data, { action }) => {
+      const expectedStatus = action === 'start' || action === 'restart' ? 'running' : 'stopped';
+      let attempts = 0;
+      const maxAttempts = 12; // 12 * 3s = 36s max
+      const poll = () => {
+        attempts++;
+        apiClient
+          .get<VMStatusResponse>(`/proxmox/api/${serverId}/${prefix}/${vmid}/status?node=${node}`)
+          .then((liveStatus) => {
+            qc.setQueryData<VMInstance[]>(vmKeys.all, (old) =>
+              old?.map((vm) =>
+                vm.server_id === serverId && vm.vmid === vmid
+                  ? { ...vm, status: liveStatus.status as VMInstance['status'] }
+                  : vm
+              )
+            );
+            if (liveStatus.status !== expectedStatus && attempts < maxAttempts) {
+              setTimeout(poll, 3000);
+            }
+          })
+          .catch(() => {
+            if (attempts < maxAttempts) setTimeout(poll, 3000);
+          });
+      };
+      setTimeout(poll, 3000);
     },
   });
 }
@@ -222,6 +283,121 @@ export function useUpdateConfig(serverId: number, vmid: number, type: string) {
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       apiClient.put(`/proxmox/api/${serverId}/${prefix}/${vmid}/config`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
+    },
+  });
+}
+
+// ==================== Clone / Reinstall ====================
+interface CloneRequest {
+  new_name: string;
+  full?: boolean;
+  target_node?: string;
+  target_storage?: string;
+  description?: string;
+}
+
+export function useCloneInstance(serverId: number, vmid: number, type: string, node: string) {
+  const qc = useQueryClient();
+  const prefix = type === 'lxc' ? 'container' : 'vm';
+  return useMutation<{ status: string; new_vmid: number; upid: string }, Error, CloneRequest>({
+    mutationFn: (body) =>
+      apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/clone?node=${node}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    },
+  });
+}
+
+export function useReinstallInstance(serverId: number, vmid: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; vmid: number; upid: string }, Error, void>({
+    mutationFn: () =>
+      apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/reinstall?node=${node}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+      qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
+      qc.invalidateQueries({ queryKey: vmKeys.status(serverId, vmid) });
+    },
+  });
+}
+
+// ==================== Change Password ====================
+export function useChangePassword(serverId: number, vmid: number, type: string, node: string) {
+  const prefix = type === 'lxc' ? 'container' : 'vm';
+  return useMutation<{ status: string }, Error, { username: string; password: string }>({
+    mutationFn: (body) =>
+      apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/change-password?node=${node}`, body),
+  });
+}
+
+// ==================== Notes ====================
+export function useUpdateNotes(serverId: number, vmid: number, type: string, node: string) {
+  const qc = useQueryClient();
+  const prefix = type === 'lxc' ? 'container' : 'vm';
+  return useMutation<{ status: string }, Error, { description: string }>({
+    mutationFn: (body) =>
+      apiClient.put(`/proxmox/api/${serverId}/${prefix}/${vmid}/notes?node=${node}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+    },
+  });
+}
+
+// ==================== Execute Command (qemu-agent) ====================
+interface ExecResult {
+  success?: boolean;
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number;
+  error?: string;
+}
+
+export function useExecuteCommand(serverId: number, vmid: number) {
+  return useMutation<ExecResult, Error, { node: string; command: string; timeout?: number }>({
+    mutationFn: ({ node, command, timeout = 30 }) => {
+      const params = new URLSearchParams({ node, command, timeout: String(timeout) });
+      return apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/execute?${params}`);
+    },
+  });
+}
+
+// ==================== ISO mount/unmount (KVM only) ====================
+export interface IsoItem {
+  volid: string;
+  storage: string;
+  size?: number;
+  format?: string;
+  name?: string;
+}
+
+export function useNodeIsos(serverId: number, node: string, enabled = true) {
+  return useQuery<{ isos: IsoItem[] }>({
+    queryKey: ['isos', serverId, node],
+    queryFn: () => apiClient.get(`/proxmox/api/${serverId}/node/${node}/isos`),
+    enabled: enabled && !!node,
+  });
+}
+
+export function useAttachIso(serverId: number, vmid: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation<{ status: string }, Error, { volid: string; device?: string }>({
+    mutationFn: (body) =>
+      apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/iso/attach?node=${node}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
+    },
+  });
+}
+
+export function useDetachIso(serverId: number, vmid: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation<{ status: string }, Error, { device?: string }>({
+    mutationFn: (body) =>
+      apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/iso/detach?node=${node}`, body || {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
     },

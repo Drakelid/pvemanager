@@ -110,7 +110,7 @@ function ServerFormDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Label>{t('common.name')}</Label>
-              <Input value={form.name} onChange={e => set('name', e.target.value)} className="mt-1" placeholder="My Proxmox Server" />
+              <Input value={form.name} onChange={e => set('name', e.target.value)} className="mt-1" placeholder={t('common.my_proxmox_server')} />
             </div>
             <div>
               <Label>{t('nodes.hostname')}</Label>
@@ -122,7 +122,7 @@ function ServerFormDialog({
             </div>
             <div>
               <Label>{t('nodes.api_user')}</Label>
-              <Input value={form.api_user} onChange={e => set('api_user', e.target.value)} className="mt-1" placeholder="root@pam" />
+              <Input value={form.api_user} onChange={e => set('api_user', e.target.value)} className="mt-1" placeholder={t('common.placeholder_root_pam')} />
             </div>
           </div>
 

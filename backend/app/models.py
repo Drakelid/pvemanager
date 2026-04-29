@@ -1057,3 +1057,63 @@ class WorkspaceUser(Base):
         Index('idx_ws_users_user', 'user_id'),
         Index('idx_ws_users_unique', 'workspace_id', 'user_id', unique=True),
     )
+
+
+# ==================== Deploy Task ====================
+
+class DeployTask(Base):
+    """Tracks async VM deployment tasks from templates"""
+    __tablename__ = "deploy_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    status = Column(String(20), nullable=False, default='pending', index=True)
+    # pending / running / completed / failed
+
+    # Human-readable current step
+    step = Column(String(200), nullable=True)
+    # Progress 0–100
+    progress = Column(Integer, nullable=False, default=0)
+
+    # Input info
+    name = Column(String(100), nullable=False)
+    template_id = Column(Integer, nullable=False)
+    server_id = Column(Integer, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Output info (filled on completion)
+    vmid = Column(Integer, nullable=True)
+    node = Column(String(100), nullable=True)
+
+    error_message = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index('idx_deploy_task_user_status', 'user_id', 'status'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'kind': 'deploy',
+            'status': self.status,
+            'step': self.step,
+            'current_step': self.step,
+            'progress': self.progress,
+            'progress_percent': self.progress,
+            'description': f"Создание {self.name}",
+            'name': self.name,
+            'template_id': self.template_id,
+            'server_id': self.server_id,
+            'vmid': self.vmid,
+            'node': self.node,
+            'error_message': self.error_message,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+    def __repr__(self):
+        return f"<DeployTask(id={self.id}, name='{self.name}', status='{self.status}')>"

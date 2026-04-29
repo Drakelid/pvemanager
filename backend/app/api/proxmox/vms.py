@@ -425,14 +425,27 @@ def reinstall_vm_endpoint(
 
     from ...models import OSTemplate
     tpl = db.query(OSTemplate).filter(OSTemplate.id == cached.template_id).first()
-    if not tpl or not tpl.template_vmid:
+    if not tpl or not tpl.vmid:
         raise HTTPException(status_code=400, detail="Template not found or invalid")
+
+    # Resolve template VMID and source node (with cross-node replication support)
+    local_template_vmid = tpl.get_vmid_for_node(node)
+    if local_template_vmid:
+        template_source_node = node
+        template_vmid = local_template_vmid
+    else:
+        template_source_node = tpl.get_source_node() or tpl.node or node
+        template_vmid = tpl.vmid
+    if not template_vmid:
+        raise HTTPException(status_code=400, detail="Template VMID is not available for this node")
 
     name = cached.name
     cores = cached.cores
     memory = cached.memory
     description = cached.description
     is_lxc = (cached.vm_type == 'lxc')
+    # VMInstance.memory is stored in bytes; Proxmox expects MB
+    memory_mb = int(memory) // (1024 * 1024) if memory else None
 
     # 1) stop
     try:
@@ -470,13 +483,13 @@ def reinstall_vm_endpoint(
     try:
         if is_lxc:
             upid = client.clone_container(
-                node=tpl.node or node, vmid=tpl.template_vmid, new_vmid=vmid,
+                node=template_source_node, vmid=template_vmid, new_vmid=vmid,
                 hostname=name, full=True, target_node=node,
                 description=description,
             )
         else:
             upid = client.clone_vm(
-                node=tpl.node or node, vmid=tpl.template_vmid, new_vmid=vmid,
+                node=template_source_node, vmid=template_vmid, new_vmid=vmid,
                 name=name, full=True, target_node=node,
                 description=description,
             )
@@ -495,13 +508,13 @@ def reinstall_vm_endpoint(
         if is_lxc:
             cfg = {}
             if cores: cfg['cores'] = cores
-            if memory: cfg['memory'] = int(memory)
+            if memory_mb: cfg['memory'] = memory_mb
             if cfg:
                 client.update_container_config(node, vmid, cfg)
         else:
             cfg = {}
             if cores: cfg['cores'] = cores
-            if memory: cfg['memory'] = int(memory)
+            if memory_mb: cfg['memory'] = memory_mb
             if cfg:
                 client.update_vm_config(node, vmid, cfg)
     except Exception as _ce:
@@ -512,7 +525,7 @@ def reinstall_vm_endpoint(
         resource_type='lxc' if is_lxc else 'vm', resource_id=vmid,
         username=current_user.username, resource_name=name,
         server_id=server_id, server_name=server.name, node_name=node,
-        details={'template_id': tpl.id, 'template_vmid': tpl.template_vmid},
+        details={'template_id': tpl.id, 'template_vmid': template_vmid},
         success=True,
     )
     return {"status": "success", "vmid": vmid, "upid": upid}

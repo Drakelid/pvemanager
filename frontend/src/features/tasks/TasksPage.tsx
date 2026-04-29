@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Trash2, X, ClipboardList, RefreshCw } from 'lucide-react';
+import { Trash2, X, ClipboardList, RefreshCw, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAllTasks, useCancelTask, useClearCompletedTasks } from '@/hooks/use-tasks';
 
 export default function TasksPage() {
   const { t } = useTranslation();
   const [statusFilter, setStatusFilter] = useState('all');
-  const { data: tasksData, refetch } = useAllTasks();
+  const { data: tasksData, refetch, isLoading } = useAllTasks();
   const tasks = tasksData?.tasks ?? [];
   const cancelTask = useCancelTask();
   const clearCompleted = useClearCompletedTasks();
@@ -31,6 +32,9 @@ export default function TasksPage() {
     }
   };
 
+  const isActive = (status: string) =>
+    status === 'running' || status === 'queued' || status === 'in_progress' || status === 'pending';
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -39,8 +43,8 @@ export default function TasksPage() {
           <h1 className="text-2xl font-bold">{t('nav.tasks')}</h1>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-1" />{t('common.refresh')}
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />{t('common.refresh')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => clearCompleted.mutate()}>
             <Trash2 className="h-4 w-4 mr-1" />{t('tasks.clear_completed')}
@@ -68,48 +72,88 @@ export default function TasksPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t('common.status')}</TableHead>
-                <TableHead>{t('common.type')}</TableHead>
+                <TableHead className="w-[110px]">{t('common.status')}</TableHead>
+                <TableHead className="w-[110px]">{t('common.type')}</TableHead>
                 <TableHead>{t('tasks.description')}</TableHead>
-                <TableHead>{t('tasks.server')}</TableHead>
-                <TableHead>{t('tasks.node')}</TableHead>
-                <TableHead>{t('common.user')}</TableHead>
-                <TableHead>{t('tasks.started')}</TableHead>
-                <TableHead>{t('tasks.progress')}</TableHead>
-                <TableHead />
+                <TableHead className="w-[200px]">{t('tasks.step_message')}</TableHead>
+                <TableHead className="w-[100px]">{t('tasks.server')}</TableHead>
+                <TableHead className="w-[90px]">{t('tasks.node')}</TableHead>
+                <TableHead className="w-[80px]">{t('common.user')}</TableHead>
+                <TableHead className="w-[140px]">{t('tasks.started')}</TableHead>
+                <TableHead className="w-[120px]">{t('tasks.progress')}</TableHead>
+                <TableHead className="w-[40px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((task, i) => (
-                <TableRow key={task.id ?? task.upid ?? i}>
-                  <TableCell><Badge variant={statusColor(task.status) as any}>{task.status}</Badge></TableCell>
-                  <TableCell className="text-xs font-mono">{task.type || String(task.task_type ?? '') || '—'}</TableCell>
-                  <TableCell className="text-xs max-w-[250px] truncate">{String(task.description ?? '') || task.upid || '—'}</TableCell>
-                  <TableCell className="text-xs">{task.server_name || '—'}</TableCell>
-                  <TableCell className="text-xs">{task.node || '—'}</TableCell>
-                  <TableCell className="text-xs">{task.user || '—'}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">{task.starttime ? new Date(task.starttime * 1000).toLocaleString() : task.created_at ? new Date(task.created_at).toLocaleString() : '—'}</TableCell>
-                  <TableCell className="text-xs">
-                    {task.progress != null ? (
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${task.progress}%` }} />
-                        </div>
-                        <span>{Number(task.progress ?? 0)}%</span>
+              {filtered.map((task, i) => {
+                const active = isActive(task.status);
+                const stepMsg = String(task.step ?? task.current_step ?? task.message ?? '');
+                const errMsg = String(task.error_message ?? task.exitstatus ?? '');
+                const displayMsg = task.status === 'failed' ? (errMsg || stepMsg) : (active ? stepMsg : '');
+
+                return (
+                  <TableRow key={task.id ?? task.upid ?? i} className={active ? 'bg-blue-500/5' : ''}>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {active && <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />}
+                        <Badge variant={statusColor(task.status) as any}>{task.status}</Badge>
                       </div>
-                    ) : '—'}
-                  </TableCell>
-                  <TableCell>
-                    {(task.status === 'running' || task.status === 'queued' || task.status === 'in_progress') && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => cancelTask.mutate(Number(task.id ?? 0))}>
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">{task.type || String(task.task_type ?? '') || '—'}</TableCell>
+                    <TableCell className="text-xs max-w-[200px]">
+                      <span className="line-clamp-2">{String(task.description ?? '') || task.upid || '—'}</span>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {displayMsg ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <span className={`line-clamp-2 ${task.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                              {displayMsg}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-sm break-all">{displayMsg}</TooltipContent>
+                        </Tooltip>
+                      ) : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs">{task.server_name || '—'}</TableCell>
+                    <TableCell className="text-xs">{task.node || '—'}</TableCell>
+                    <TableCell className="text-xs">{task.user || '—'}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">{task.starttime ? new Date(task.starttime * 1000).toLocaleString() : task.created_at ? new Date(String(task.created_at)).toLocaleString() : '—'}</TableCell>
+                    <TableCell className="text-xs">
+                      {task.progress != null ? (
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${task.status === 'failed' ? 'bg-destructive' : 'bg-blue-500'}`}
+                              style={{ width: `${task.progress}%` }}
+                            />
+                          </div>
+                          <span>{Number(task.progress ?? 0)}%</span>
+                        </div>
+                      ) : '—'}
+                    </TableCell>
+                    <TableCell>
+                      {active && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => cancelTask.mutate(Number(task.id ?? 0))}
+                          disabled={cancelTask.isPending}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                    {t('common.no_data')}
                   </TableCell>
                 </TableRow>
-              ))}
-              {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">{t('common.no_data')}</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

@@ -18,6 +18,7 @@ export class WebSocketManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private subscribers = new Map<string, Set<MessageHandler>>();
+  private typeListeners = new Map<string, Set<MessageHandler>>();
   private _isConnected = false;
 
   constructor(options: WSOptions) {
@@ -55,6 +56,12 @@ export class WebSocketManager {
       try {
         const data = JSON.parse(event.data);
         this.options.onMessage?.(data);
+
+        // Route to type listeners (for direct user messages without channel)
+        if (data.type) {
+          const typeHandlers = this.typeListeners.get(data.type);
+          typeHandlers?.forEach((handler) => handler(data));
+        }
 
         // Route to channel subscribers
         if (data.channel) {
@@ -109,6 +116,17 @@ export class WebSocketManager {
     // Return unsubscribe function
     return () => {
       this.subscribers.get(channel)?.delete(handler);
+    };
+  }
+
+  /** Listen to messages by their `type` field (for direct user messages without a channel). */
+  onType(type: string, handler: MessageHandler) {
+    if (!this.typeListeners.has(type)) {
+      this.typeListeners.set(type, new Set());
+    }
+    this.typeListeners.get(type)!.add(handler);
+    return () => {
+      this.typeListeners.get(type)?.delete(handler);
     };
   }
 

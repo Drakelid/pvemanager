@@ -13,6 +13,7 @@ from ..db import get_db
 from ..auth import get_current_user, PermissionChecker
 from ..models import User, AuditLog
 from ..logging_service import LoggingService
+from ..i18n import I18nService
 
 
 router = APIRouter()
@@ -178,15 +179,15 @@ async def cleanup_logs(
 
 
 @router.get("/api/levels")
-async def get_log_levels():
+async def get_log_levels(lang: str = Query("ru")):
     """Get available log levels"""
     return {
         "levels": [
-            {"value": "debug", "label": "Debug", "color": "#6c757d"},
-            {"value": "info", "label": "Info", "color": "#0dcaf0"},
-            {"value": "warning", "label": "Warning", "color": "#ffc107"},
-            {"value": "error", "label": "Error", "color": "#dc3545"},
-            {"value": "critical", "label": "Critical", "color": "#dc3545"}
+            {"value": "debug", "label": I18nService.get("log_level_debug", lang), "color": "#6c757d"},
+            {"value": "info", "label": I18nService.get("log_level_info", lang), "color": "#0dcaf0"},
+            {"value": "warning", "label": I18nService.get("log_level_warning", lang), "color": "#ffc107"},
+            {"value": "error", "label": I18nService.get("log_level_error", lang), "color": "#dc3545"},
+            {"value": "critical", "label": I18nService.get("log_level_error", lang), "color": "#dc3545"}
         ]
     }
 

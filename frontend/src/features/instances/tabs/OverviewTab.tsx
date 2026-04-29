@@ -2,6 +2,7 @@ import { Cpu, MemoryStick, HardDrive, Clock, Wifi, Globe, Server } from 'lucide-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useVMStatus, useVMConfig, useVMInterfaces } from '@/hooks/use-instances';
 import { formatBytes, formatUptime, formatPercent } from '@/lib/format';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   serverId: number;
@@ -64,6 +65,7 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
 }
 
 export default function OverviewTab({ serverId, vmid, type, node }: Props) {
+  const { t } = useTranslation();
   const { data: status } = useVMStatus(serverId, vmid, type, node);
   const { data: config } = useVMConfig(serverId, vmid, type, node);
   const { data: ifaces } = useVMInterfaces(serverId, vmid, type, node);
@@ -81,28 +83,28 @@ export default function OverviewTab({ serverId, vmid, type, node }: Props) {
       {/* Metric cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
-          label="CPU"
+          label={t('common.cpu')}
           value={formatPercent(cpuPercent)}
-          subtitle={config?.cores ? `${config.cores} cores` : undefined}
+          subtitle={config?.cores ? `${config.cores} ${t('common.cores')}` : undefined}
           percent={cpuPercent}
           icon={Cpu}
         />
         <MetricCard
-          label="Memory"
+          label={t('common.memory')}
           value={status ? formatBytes(status.mem) : '—'}
-          subtitle={status ? `of ${formatBytes(status.maxmem)}` : undefined}
+          subtitle={status ? `${t('common.of')} ${formatBytes(status.maxmem)}` : undefined}
           percent={memPercent}
           icon={MemoryStick}
         />
         <MetricCard
-          label="Disk"
+          label={t('common.disk')}
           value={status ? formatBytes(status.disk) : '—'}
-          subtitle={status ? `of ${formatBytes(status.maxdisk)}` : undefined}
+          subtitle={status ? `${t('common.of')} ${formatBytes(status.maxdisk)}` : undefined}
           percent={diskPercent}
           icon={HardDrive}
         />
         <MetricCard
-          label="Uptime"
+          label={t('common.uptime')}
           value={status?.uptime ? formatUptime(status.uptime) : '—'}
           icon={Clock}
         />
@@ -114,19 +116,19 @@ export default function OverviewTab({ serverId, vmid, type, node }: Props) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Server className="h-4 w-4" />
-              Instance Info
+              {t('common.instance_info')}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <InfoRow label="VMID" value={vmid} />
-            <InfoRow label="Node" value={node} />
-            <InfoRow label="Type" value={type === 'qemu' ? 'QEMU Virtual Machine' : 'LXC Container'} />
-            <InfoRow label="vCPU" value={config?.cores} />
-            <InfoRow label="Memory" value={config?.memory ? `${config.memory} MB` : undefined} />
-            <InfoRow label="OS Type" value={config?.ostype as string} />
-            <InfoRow label="Boot Order" value={config?.boot as string} />
-            <InfoRow label="QEMU Agent" value={config?.agent ? 'Enabled' : 'Disabled'} />
-            <InfoRow label="Start on Boot" value={config?.onboot ? 'Yes' : 'No'} />
+            <InfoRow label={t('common.vmid')} value={vmid} />
+            <InfoRow label={t('common.node')} value={node} />
+            <InfoRow label={t('common.type')} value={type === 'qemu' ? t('common.qemu_virtual_machine') : t('common.lxc_container')} />
+            <InfoRow label={t('common.vcpu')} value={config?.cores} />
+            <InfoRow label={t('common.memory')} value={config?.memory ? `${config.memory} MB` : undefined} />
+            <InfoRow label={t('common.os_type')} value={config?.ostype as string} />
+            <InfoRow label={t('common.boot_order')} value={config?.boot as string} />
+            <InfoRow label={t('common.qemu_agent')} value={config?.agent ? t('common.enabled') : t('common.disabled')} />
+            <InfoRow label={t('common.start_on_boot')} value={config?.onboot ? t('common.yes') : t('common.no')} />
           </CardContent>
         </Card>
 
@@ -135,22 +137,22 @@ export default function OverviewTab({ serverId, vmid, type, node }: Props) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Globe className="h-4 w-4" />
-              Network
+              {t('common.network')}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {primaryIP && <InfoRow label="Primary IP" value={primaryIP.address} />}
+            {primaryIP && <InfoRow label={t('common.primary_ip')} value={primaryIP.address} />}
             {status?.netin !== undefined && (
-              <InfoRow label="Network In" value={formatBytes(status.netin)} />
+              <InfoRow label={t('common.network_in')} value={formatBytes(status.netin)} />
             )}
             {status?.netout !== undefined && (
-              <InfoRow label="Network Out" value={formatBytes(status.netout)} />
+              <InfoRow label={t('common.network_out')} value={formatBytes(status.netout)} />
             )}
             {config?.net0 && <InfoRow label="net0" value={String(config.net0)} />}
 
             {ifaces?.interfaces && ifaces.interfaces.length > 0 && (
               <div className="mt-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Interfaces</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('common.interfaces')}</p>
                 {ifaces.interfaces.map((iface) => (
                   <div key={iface.name} className="rounded-md border p-2 text-xs">
                     <div className="flex items-center gap-2 font-medium">

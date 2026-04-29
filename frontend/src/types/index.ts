@@ -61,7 +61,7 @@ export interface ProxmoxServerCreate {
 // ==================== VM / Container Types ====================
 
 export type VMType = 'qemu' | 'lxc';
-export type VMStatus = 'running' | 'stopped' | 'paused' | 'suspended' | 'unknown';
+export type VMStatus = 'running' | 'stopped' | 'paused' | 'suspended' | 'unknown' | 'creating';
 
 export interface VMInstance {
   vmid: number;
@@ -82,6 +82,9 @@ export interface VMInstance {
   ip_address?: string;
   tags?: string;
   template?: boolean;
+  description?: string;
+  /** Ghost row marker — present only for in-progress deploy tasks */
+  _deployTaskId?: number;
 }
 
 export interface VMConfig {

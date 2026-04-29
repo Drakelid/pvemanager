@@ -274,7 +274,7 @@ export default function DashboardPage() {
       {/* Resource Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
         <ResourceCard
-          label="CPU"
+          label={t('common.cpu')}
           percent={cpuPercent}
           used={cpuUsedLabel}
           total={cpuTotalLabel}

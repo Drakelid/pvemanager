@@ -49,12 +49,27 @@ export default function ConsolePage() {
         `/proxmox/api/${sid}/vm/${vid}/vnc?node=${node}`
       );
 
-      // Dynamic import noVNC
+      // Dynamic import noVNC. The package ships CJS, so depending on bundler
+      // interop the result can be: { default: RFB }, { default: { default: RFB, __esModule: true } },
+      // or the raw CJS namespace. Normalise to the actual constructor.
       // @ts-expect-error noVNC doesn't have TS declarations
       const rfbModule = await import('@novnc/novnc/lib/rfb');
-      // Handle both ESM default export and CJS module.exports
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const RFB = (rfbModule.default ?? rfbModule) as any;
+      const mod: any = rfbModule;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const RFB: any =
+        typeof mod === 'function'
+          ? mod
+          : typeof mod.default === 'function'
+            ? mod.default
+            : typeof mod.default?.default === 'function'
+              ? mod.default.default
+              : typeof mod.RFB === 'function'
+                ? mod.RFB
+                : null;
+      if (typeof RFB !== 'function') {
+        throw new Error('noVNC RFB constructor not found in module exports');
+      }
 
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const params = new URLSearchParams({
