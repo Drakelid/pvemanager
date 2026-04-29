@@ -277,7 +277,9 @@ class LoggingService:
             "snapshot": "snapshot created",
             "resize": "disk resized",
             "console": "console accessed",
-            "config_update": "config updated"
+            "config_update": "config updated",
+            "reinstall": "reinstalled",
+            "change-password": "password changed"
         }
         
         action_text = action_messages.get(action, action)
