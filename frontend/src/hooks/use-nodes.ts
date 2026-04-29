@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import type { ProxmoxServer, ProxmoxNode } from '@/types';
+import type { ProxmoxServer, ProxmoxNode, ProxmoxServerCreate } from '@/types';
 
 export const nodeKeys = {
   servers: ['servers'] as const,
@@ -68,5 +68,37 @@ export function useStorages(serverId: number, node: string) {
     queryKey: nodeKeys.storages(serverId, node),
     queryFn: () => apiClient.get<unknown[]>(`/proxmox/api/${serverId}/storages?node=${node}`),
     enabled: serverId > 0 && !!node,
+  });
+}
+
+export function useCreateServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ProxmoxServerCreate) =>
+      apiClient.post<ProxmoxServer>('/proxmox/api/servers', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.servers }),
+  });
+}
+
+export function useUpdateServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: number } & Partial<ProxmoxServerCreate>) =>
+      apiClient.put<ProxmoxServer>(`/proxmox/api/servers/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.servers }),
+  });
+}
+
+export function useDeleteServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => apiClient.delete(`/proxmox/api/servers/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.servers }),
+  });
+}
+
+export function useTestServer() {
+  return useMutation({
+    mutationFn: (id: number) => apiClient.post<{ success: boolean; message?: string }>(`/proxmox/api/servers/${id}/test`, {}),
   });
 }

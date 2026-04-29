@@ -117,7 +117,20 @@
     "disk": "Disk",
     "uptime": "Uptime",
     "cluster_nodes": "Cluster Nodes",
-    "vm_list": "Virtual Machines on Server"
+    "vm_list": "Virtual Machines on Server",
+    "no_servers": "No servers configured",
+    "add_server": "Add Server",
+    "edit_server": "Edit Server",
+    "test_connection": "Test Connection",
+    "hostname": "Hostname / IP",
+    "port": "Port",
+    "api_user": "API User",
+    "api_token_name": "API Token Name",
+    "api_token_value": "API Token Value",
+    "use_password": "Use password auth",
+    "verify_ssl": "Verify SSL",
+    "connection_ok": "Connection successful",
+    "connection_failed": "Connection failed"
   },
   "templates": {
     "title": "OS Templates",
@@ -128,23 +141,40 @@
     "importing": "Importing...",
     "no_templates": "No templates found",
     "os": "Operating System",
-    "version": "Version"
+    "version": "Version",
+    "imported": "Imported",
+    "select_server": "Select server",
+    "import_btn": "Import Templates"
   },
   "backups": {
     "title": "Backups",
     "files": "Backup Files",
     "jobs": "Scheduled Jobs",
+    "scheduled_jobs": "Scheduled Jobs",
     "storage": "Storage",
     "server": "Server",
     "size": "Size",
     "date": "Date",
+    "format": "Format",
     "restore": "Restore",
     "download": "Download",
     "schedule": "Schedule",
     "enabled": "Enabled",
     "disabled": "Disabled",
     "run_now": "Run Now",
-    "no_backups": "No backups found"
+    "no_backups": "No backups found",
+    "no_jobs": "No scheduled jobs",
+    "volume": "Volume",
+    "notes": "Notes",
+    "vmids": "VMIDs",
+    "storage_col": "Storage",
+    "select_server": "Select server",
+    "select_storage": "Select storage",
+    "node": "Node",
+    "select_server_first": "Select a server to view backups",
+    "disable": "Disable",
+    "enable": "Enable",
+    "job_started": "Backup job started"
   },
   "ipam": {
     "dashboard": "IPAM Dashboard",
@@ -232,7 +262,11 @@
     "users": "Users",
     "created": "Created",
     "all": "All workspaces",
-    "select": "Select workspace"
+    "select": "Select workspace",
+    "assign_servers": "Assign Servers",
+    "assign_users": "Assign Users",
+    "no_servers": "No servers available",
+    "no_users": "No users available"
   },
   "tasks": {
     "clear_completed": "Clear Completed",

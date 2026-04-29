@@ -99,7 +99,7 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
         <MoreHorizontal className="h-4 w-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem render={<Link to={`/console/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`} />}>
+        <DropdownMenuItem render={<Link to={`/console/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`} target="_blank" rel="noopener noreferrer" />}>
             <Terminal className="mr-2 h-4 w-4" /> {t('common.console', 'Console')}
         </DropdownMenuItem>
         <DropdownMenuSeparator />

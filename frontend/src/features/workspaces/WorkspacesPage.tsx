@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Search, Trash2, Users, Server, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose, DialogFooter } from '@/components/ui/dialog';
-import { useWorkspaces, useCreateWorkspace, useUpdateWorkspace, useDeleteWorkspace } from '@/hooks/use-workspaces';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useWorkspaces, useCreateWorkspace, useUpdateWorkspace, useDeleteWorkspace, useWorkspace, useUpdateWorkspaceServers, useUpdateWorkspaceUsers } from '@/hooks/use-workspaces';
+import { useServers } from '@/hooks/use-nodes';
+import { useUsers } from '@/hooks/use-users';
 
 export default function WorkspacesPage() {
   const { t } = useTranslation();
@@ -98,25 +101,147 @@ export default function WorkspacesPage() {
         )}
       </div>
 
-      {/* Edit Workspace Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{t('workspaces.edit')}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>{t('common.name')}</Label><Input value={editName} onChange={e => setEditName(e.target.value)} className="mt-1" /></div>
-            <div><Label>{t('ipam.description')}</Label><Input value={editDescription} onChange={e => setEditDescription(e.target.value)} className="mt-1" /></div>
-          </div>
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>{t('common.cancel')}</DialogClose>
-            <Button onClick={() => {
-              if (editId) {
-                updateWorkspace.mutate({ id: editId, name: editName, description: editDescription });
-              }
-              setEditOpen(false);
-            }}>{t('common.save')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {editId && (
+        <EditWorkspaceDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          workspaceId={editId}
+          initialName={editName}
+          initialDescription={editDescription}
+          onSave={(name, description) => {
+            updateWorkspace.mutate({ id: editId, name, description });
+            setEditOpen(false);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function EditWorkspaceDialog({
+  open, onOpenChange, workspaceId, initialName, initialDescription, onSave,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  workspaceId: number;
+  initialName: string;
+  initialDescription: string;
+  onSave: (name: string, description: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(initialName);
+  const [description, setDescription] = useState(initialDescription);
+
+  const { data: workspace } = useWorkspace(workspaceId);
+  const { data: allServers = [] } = useServers();
+  const { data: allUsers = [] } = useUsers();
+  const updateServers = useUpdateWorkspaceServers();
+  const updateUsers = useUpdateWorkspaceUsers();
+
+  // Track selected server/user IDs
+  const [selectedServerIds, setSelectedServerIds] = useState<number[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+
+  // Populate selections from loaded workspace
+  useEffect(() => {
+    if (workspace) {
+      setSelectedServerIds(workspace.servers?.map((s: any) => s.id) ?? []);
+      setSelectedUserIds(workspace.users?.map((u: any) => u.id) ?? []);
+    }
+  }, [workspace?.id]);
+
+  const handleOpen = (v: boolean) => {
+    if (v) {
+      setName(initialName);
+      setDescription(initialDescription);
+    }
+    onOpenChange(v);
+  };
+
+  const toggleServer = (id: number) =>
+    setSelectedServerIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const toggleUser = (id: number) =>
+    setSelectedUserIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const handleSave = () => {
+    onSave(name, description);
+    updateServers.mutate({ id: workspaceId, ids: selectedServerIds });
+    updateUsers.mutate({ id: workspaceId, ids: selectedUserIds });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpen}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{t('workspaces.edit')}</DialogTitle></DialogHeader>
+        <Tabs defaultValue="info">
+          <TabsList className="w-full">
+            <TabsTrigger value="info" className="flex-1">{t('common.name')}</TabsTrigger>
+            <TabsTrigger value="servers" className="flex-1">{t('workspaces.assign_servers')}</TabsTrigger>
+            <TabsTrigger value="users" className="flex-1">{t('workspaces.assign_users')}</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="info" className="space-y-3 mt-3">
+            <div><Label>{t('common.name')}</Label><Input value={name} onChange={e => setName(e.target.value)} className="mt-1" /></div>
+            <div><Label>{t('ipam.description')}</Label><Input value={description} onChange={e => setDescription(e.target.value)} className="mt-1" /></div>
+          </TabsContent>
+
+          <TabsContent value="servers" className="mt-3">
+            {allServers.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">{t('workspaces.no_servers')}</p>
+            ) : (
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {allServers.map(srv => (
+                  <label key={srv.id} className="flex items-center gap-3 rounded-md border p-2.5 cursor-pointer hover:bg-accent">
+                    <input
+                      type="checkbox"
+                      checked={selectedServerIds.includes(srv.id)}
+                      onChange={() => toggleServer(srv.id)}
+                      className="h-4 w-4"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{srv.name}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{srv.ip_address}</p>
+                    </div>
+                    <Badge variant={srv.is_online ? 'default' : 'destructive'} className="ml-auto shrink-0 text-xs">
+                      {srv.is_online ? t('common.online') : t('common.offline')}
+                    </Badge>
+                  </label>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="users" className="mt-3">
+            {allUsers.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">{t('workspaces.no_users')}</p>
+            ) : (
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {allUsers.map((u: any) => (
+                  <label key={u.id} className="flex items-center gap-3 rounded-md border p-2.5 cursor-pointer hover:bg-accent">
+                    <input
+                      type="checkbox"
+                      checked={selectedUserIds.includes(u.id)}
+                      onChange={() => toggleUser(u.id)}
+                      className="h-4 w-4"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{u.username}</p>
+                      <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                    </div>
+                    {u.is_admin && <Badge variant="outline" className="ml-auto shrink-0 text-xs">Admin</Badge>}
+                  </label>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />}>{t('common.cancel')}</DialogClose>
+          <Button onClick={handleSave}>{t('common.save')}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

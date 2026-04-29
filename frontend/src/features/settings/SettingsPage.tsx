@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -50,11 +50,12 @@ function ProfileTab() {
   const [confirmPwd, setConfirmPwd] = useState('');
 
   // Init from profile
-  const inited = displayName || email;
-  if (profile && !inited) {
-    setDisplayName(profile.full_name || '');
-    setEmail(profile.email || '');
-  }
+  useEffect(() => {
+    if (profile) {
+      setDisplayName(profile.full_name || '');
+      setEmail(profile.email || '');
+    }
+  }, [profile]);
 
   return (
     <div className="space-y-4">
@@ -91,10 +92,12 @@ function PanelTab() {
   const [panelName, setPanelName] = useState('');
   const [lang, setLang] = useState('');
 
-  if (settings && !panelName) {
-    setPanelName(settings.panel_name || '');
-    setLang(settings.language || 'ru');
-  }
+  useEffect(() => {
+    if (settings) {
+      setPanelName(settings.panel_name || '');
+      setLang(settings.language || 'ru');
+    }
+  }, [settings]);
 
   return (
     <Card>
@@ -122,11 +125,13 @@ function SecurityTab() {
   const [lockoutDuration, setLockoutDuration] = useState('');
   const [sessionTimeout, setSessionTimeout] = useState('');
 
-  if (security && !maxAttempts) {
-    setMaxAttempts(String(security.max_login_attempts ?? 5));
-    setLockoutDuration(String(security.lockout_duration ?? 300));
-    setSessionTimeout(String(security.session_timeout ?? 3600));
-  }
+  useEffect(() => {
+    if (security) {
+      setMaxAttempts(String(security.max_login_attempts ?? 5));
+      setLockoutDuration(String(security.lockout_duration ?? 300));
+      setSessionTimeout(String(security.session_timeout ?? 3600));
+    }
+  }, [security]);
 
   return (
     <Card>
@@ -158,16 +163,21 @@ function NotificationsTab() {
   const [tgToken, setTgToken] = useState('');
   const [tgChatId, setTgChatId] = useState('');
 
-  if (channels?.smtp && !smtpHost) {
-    setSmtpHost(String(channels.smtp.host ?? ''));
-    setSmtpPort(String(channels.smtp.port ?? 587));
-    setSmtpUser(String(channels.smtp.username ?? ''));
-    setSmtpFrom(String(channels.smtp.from_email ?? ''));
-  }
-  if (channels?.telegram && !tgToken) {
-    setTgToken(String(channels.telegram.telegram_bot_token ?? channels.telegram.bot_token ?? ''));
-    setTgChatId(String(channels.telegram.chat_id ?? ''));
-  }
+  useEffect(() => {
+    if (channels?.smtp) {
+      setSmtpHost(String(channels.smtp.host ?? ''));
+      setSmtpPort(String(channels.smtp.port ?? 587));
+      setSmtpUser(String(channels.smtp.username ?? ''));
+      setSmtpFrom(String(channels.smtp.from_email ?? ''));
+    }
+  }, [channels?.smtp]);
+
+  useEffect(() => {
+    if (channels?.telegram) {
+      setTgToken(String(channels.telegram.telegram_bot_token ?? channels.telegram.bot_token ?? ''));
+      setTgChatId(String(channels.telegram.chat_id ?? ''));
+    }
+  }, [channels?.telegram]);
 
   return (
     <div className="space-y-4">

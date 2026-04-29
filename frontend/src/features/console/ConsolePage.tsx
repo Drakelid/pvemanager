@@ -51,7 +51,10 @@ export default function ConsolePage() {
 
       // Dynamic import noVNC
       // @ts-expect-error noVNC doesn't have TS declarations
-      const { default: RFB } = await import('@novnc/novnc/lib/rfb');
+      const rfbModule = await import('@novnc/novnc/lib/rfb');
+      // Handle both ESM default export and CJS module.exports
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const RFB = (rfbModule.default ?? rfbModule) as any;
 
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const params = new URLSearchParams({
