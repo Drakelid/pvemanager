@@ -162,6 +162,67 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
         except Exception as _ce:
             logger.warning(f"[REINSTALL #{task_id}] re-apply config failed: {_ce}")
 
+        # 5) Restore disk size
+        disk_size_bytes = cached.disk_size
+        if disk_size_bytes and disk_size_bytes > 0:
+            _update_deploy_task(task_id, 'running', 'Восстановление размера диска...', 92, vmid=vmid, node=node)
+            try:
+                disk_size_gb = disk_size_bytes // (1024 ** 3)
+                if is_lxc:
+                    lxc_cfg = client.get_container_config(node, vmid)
+                    current_size_gb = 0
+                    if lxc_cfg and 'rootfs' in lxc_cfg:
+                        rootfs_val = lxc_cfg['rootfs']
+                        if 'size=' in rootfs_val:
+                            size_part = rootfs_val.split('size=')[1].split(',')[0]
+                            if size_part.endswith('G'):
+                                current_size_gb = int(size_part[:-1])
+                            elif size_part.endswith('M'):
+                                current_size_gb = int(size_part[:-1]) // 1024
+                    if disk_size_gb > current_size_gb:
+                        client.resize_container_disk(node, vmid, 'rootfs', f'{disk_size_gb}G')
+                        logger.info(f"[REINSTALL #{task_id}] LXC {vmid} rootfs resized from {current_size_gb}G to {disk_size_gb}G")
+                    else:
+                        logger.info(f"[REINSTALL #{task_id}] LXC {vmid} rootfs already {current_size_gb}G >= {disk_size_gb}G, skip resize")
+                else:
+                    vm_cfg = client.get_vm_config(node, vmid)
+                    disk_key = None
+                    current_size_gb = 0
+                    if vm_cfg:
+                        for key in ['scsi0', 'virtio0', 'sata0', 'scsi1', 'virtio1']:
+                            if key in vm_cfg:
+                                disk_val = vm_cfg[key]
+                                if 'cdrom' in disk_val.lower() or 'cloudinit' in disk_val.lower() or 'media=cdrom' in disk_val.lower():
+                                    continue
+                                disk_key = key
+                                if 'size=' in disk_val:
+                                    size_part = disk_val.split('size=')[1].split(',')[0]
+                                    if size_part.endswith('G'):
+                                        current_size_gb = int(size_part[:-1])
+                                    elif size_part.endswith('M'):
+                                        current_size_gb = int(size_part[:-1]) // 1024
+                                break
+                    if disk_key and disk_size_gb > current_size_gb:
+                        client.resize_vm_disk(node, vmid, disk_key, f'{disk_size_gb}G')
+                        logger.info(f"[REINSTALL #{task_id}] VM {vmid} {disk_key} resized from {current_size_gb}G to {disk_size_gb}G")
+                    elif disk_key:
+                        logger.info(f"[REINSTALL #{task_id}] VM {vmid} {disk_key} already {current_size_gb}G >= {disk_size_gb}G, skip resize")
+                    else:
+                        logger.warning(f"[REINSTALL #{task_id}] VM {vmid} no main disk found for resize")
+            except Exception as _re:
+                logger.warning(f"[REINSTALL #{task_id}] disk resize failed: {_re}")
+
+        # 6) Start VM/LXC
+        _update_deploy_task(task_id, 'running', 'Запуск инстанса...', 96, vmid=vmid, node=node)
+        try:
+            if is_lxc:
+                client.start_container(node, vmid)
+            else:
+                client.start_vm(node, vmid)
+            logger.info(f"[REINSTALL #{task_id}] vmid={vmid} started after reinstall")
+        except Exception as _se:
+            logger.warning(f"[REINSTALL #{task_id}] start after reinstall failed: {_se}")
+
         LoggingService.log_proxmox_action(
             db=db, action='reinstall',
             resource_type='lxc' if is_lxc else 'vm', resource_id=vmid,

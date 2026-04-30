@@ -35,7 +35,7 @@ import {
   FileText,
   Disc,
 } from 'lucide-react';
-import InstanceActionDialogs, { type InstanceAction } from './InstanceActionDialogs';
+import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -113,13 +113,25 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
   const isRunning = vm.status === 'running';
   const isQemu = vm.type === 'qemu';
   const [dialog, setDialog] = useState<InstanceAction>(null);
+  const [pendingPower, setPendingPower] = useState<PowerAction | null>(null);
 
   const handleAction = (action: string) => {
+    setPendingPower(action as PowerAction);
+  };
+
+  const confirmPower = () => {
+    if (!pendingPower) return;
     power.mutate(
-      { action },
+      { action: pendingPower },
       {
-        onSuccess: () => toast.success(`${action} sent for ${vm.name || vm.vmid}`),
-        onError: (err) => toast.error(err.message),
+        onSuccess: () => {
+          toast.success(`${pendingPower} sent for ${vm.name || vm.vmid}`);
+          setPendingPower(null);
+        },
+        onError: (err) => {
+          toast.error(err.message);
+          setPendingPower(null);
+        },
       }
     );
   };
@@ -191,6 +203,14 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
       name={vm.name}
       description={vm.description}
     />
+    <PowerConfirmDialog
+      open={pendingPower !== null}
+      onClose={() => setPendingPower(null)}
+      onConfirm={confirmPower}
+      action={pendingPower}
+      vmName={vm.name}
+      isPending={power.isPending}
+    />
     </>
   );
 }
@@ -237,7 +257,9 @@ export default function InstancesPage() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [nodeFilter, setNodeFilter] = useState<string>('all');
+  const [nodeFilter, setNodeFilter] = useState<string>(() => {
+    return localStorage.getItem('instances-node-filter') ?? 'all';
+  });
   const [typeTab, setTypeTab] = useState<string>('all');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -658,7 +680,7 @@ export default function InstancesPage() {
           </SelectContent>
         </Select>
 
-        <Select value={nodeFilter} onValueChange={v => { if (v !== null) setNodeFilter(v); }}>
+        <Select value={nodeFilter} onValueChange={v => { if (v !== null) { setNodeFilter(v); localStorage.setItem('instances-node-filter', v); } }}>
           <SelectTrigger className="w-[130px]">
             <SelectValue placeholder={t('common.node', 'Node')} />
           </SelectTrigger>

@@ -87,8 +87,8 @@ function SidebarContent() {
   return (
     <div className="flex h-full flex-col">
       {/* Logo */}
-      <div className="flex h-14 items-center gap-2 px-4">
-        <img src="/logo.png" alt="PVEmanager" className="h-12 w-auto" />
+      <div className="flex h-20 items-center gap-2 px-4">
+        <img src="/logo.png" alt="PVEmanager" className="h-16 w-auto" />
       </div>
 
       <Separator />

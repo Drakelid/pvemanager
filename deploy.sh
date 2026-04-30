@@ -253,7 +253,7 @@ create_env_file() {
         cat > init.sql << 'EOF'
 -- PVEmanager Database Initialization
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-GRANT ALL PRIVILEGES ON DATABASE serverpanel TO serverpanel;
+GRANT ALL PRIVILEGES ON DATABASE pvemanager TO pvemanager;
 EOF
         print_success "init.sql file created"
     fi
@@ -264,7 +264,7 @@ EOF
         print_info "Creating default .env.example..."
         cat > .env.example << 'EOF'
 # Database Configuration
-POSTGRES_PASSWORD=serverpanel_secure_password
+POSTGRES_PASSWORD=pvemanager_secure_password
 
 # Timezone
 TZ=Asia/Tashkent
@@ -285,10 +285,10 @@ LOG_LEVEL=INFO
 # Database
 DB_HOST=db
 DB_PORT=5432
-DB_USER=serverpanel
-DB_PASSWORD=serverpanel_secure_password
-DB_NAME=serverpanel
-DATABASE_URL=postgresql://serverpanel:serverpanel_secure_password@db:5432/serverpanel
+DB_USER=pvemanager
+DB_PASSWORD=pvemanager_secure_password
+DB_NAME=pvemanager
+DATABASE_URL=postgresql://pvemanager:pvemanager_secure_password@db:5432/pvemanager
 
 # JWT
 SECRET_KEY=your-very-secure-secret-key-change-this-in-production-minimum-32-chars
@@ -312,7 +312,7 @@ EOF
         cp .env.example .env
         
         # Replace default password with random one
-        sed -i "s/serverpanel_secure_password/${RANDOM_DB_PASSWORD}/g" .env
+        sed -i "s/pvemanager_secure_password/${RANDOM_DB_PASSWORD}/g" .env
         
         print_success ".env file created"
     else
@@ -327,7 +327,7 @@ EOF
         cp backend/.env.example backend/.env
         
         # Replace passwords and keys
-        sed -i "s/serverpanel_secure_password/${RANDOM_DB_PASSWORD}/g" backend/.env
+        sed -i "s/pvemanager_secure_password/${RANDOM_DB_PASSWORD}/g" backend/.env
         sed -i "s/your-very-secure-secret-key-change-this-in-production-minimum-32-chars/${RANDOM_SECRET_KEY}/g" backend/.env
         
         print_success "backend/.env file created"
@@ -351,16 +351,16 @@ setup_nginx_config() {
     
     if [ "$use_ssl" = true ]; then
         # Copy SSL template
-        cp nginx/conf.d/serverpanel.conf.template nginx/conf.d/serverpanel.conf
+        cp nginx/conf.d/pvemanager.conf.template nginx/conf.d/pvemanager.conf
         print_info "Using SSL configuration"
     else
         # Copy non-SSL template
-        cp nginx/conf.d/serverpanel-nossl.conf.template nginx/conf.d/serverpanel.conf
+        cp nginx/conf.d/pvemanager-nossl.conf.template nginx/conf.d/pvemanager.conf
         print_info "Using non-SSL configuration"
     fi
     
     # Replace domain name
-    sed -i "s/DOMAIN_NAME/${domain}/g" nginx/conf.d/serverpanel.conf
+    sed -i "s/DOMAIN_NAME/${domain}/g" nginx/conf.d/pvemanager.conf
     
     print_success "NGINX configuration created for domain: ${domain}"
 }
@@ -431,9 +431,10 @@ deploy_with_nginx() {
     docker compose -f compose.yml -f compose.prod.yml down --remove-orphans 2>/dev/null || true
     docker network prune -f 2>/dev/null || true
     
-    # Build images locally first
-    print_info "Building Docker images..."
-    docker compose -f compose.yml build
+    # Build images locally first (parallel + pull base images)
+    print_info "Building Docker images (parallel)..."
+    DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 \
+        docker compose -f compose.yml build --parallel --pull
     
     if [ "$use_ssl" = true ]; then
         # Setup HTTP config first for certificate challenge
@@ -494,11 +495,11 @@ deploy_with_nginx() {
         print_info "Starting services without SSL..."
         
         # Start in correct order
-        docker compose -f compose.yml -f compose.prod.yml up -d --build db
+        docker compose -f compose.yml -f compose.prod.yml up -d db
         print_info "Waiting for database..."
         sleep 10
-        
-        docker compose -f compose.yml -f compose.prod.yml up -d --build app
+
+        docker compose -f compose.yml -f compose.prod.yml up -d app
         print_info "Waiting for application..."
         sleep 10
         
@@ -523,9 +524,11 @@ deploy_standalone() {
     docker compose -f compose.yml down --remove-orphans 2>/dev/null || true
     docker network prune -f 2>/dev/null || true
     
-    # Build and start containers
+    # Build and start containers (parallel build, BuildKit)
     print_info "Building and starting containers..."
-    docker compose -f compose.yml up -d --build
+    DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 \
+        docker compose -f compose.yml build --parallel --pull
+    docker compose -f compose.yml up -d
     
     print_success "Standalone deployment completed"
 }
@@ -657,7 +660,7 @@ quick_deploy_standalone() {
     if [ ! -f .env ]; then
         if [ -f .env.example ]; then
             cp .env.example .env
-            sed -i "s/serverpanel_secure_password/${RANDOM_DB_PASSWORD}/g" .env 2>/dev/null || true
+            sed -i "s/pvemanager_secure_password/${RANDOM_DB_PASSWORD}/g" .env 2>/dev/null || true
         else
             create_default_env "${RANDOM_DB_PASSWORD}"
         fi
@@ -666,7 +669,7 @@ quick_deploy_standalone() {
     if [ ! -f backend/.env ]; then
         if [ -f backend/.env.example ]; then
             cp backend/.env.example backend/.env
-            sed -i "s/serverpanel_secure_password/${RANDOM_DB_PASSWORD}/g" backend/.env 2>/dev/null || true
+            sed -i "s/pvemanager_secure_password/${RANDOM_DB_PASSWORD}/g" backend/.env 2>/dev/null || true
             sed -i "s/your-very-secure-secret-key-change-this-in-production-minimum-32-chars/${RANDOM_SECRET_KEY}/g" backend/.env 2>/dev/null || true
         else
             create_default_backend_env "${RANDOM_DB_PASSWORD}" "${RANDOM_SECRET_KEY}"
@@ -703,7 +706,7 @@ quick_deploy_nginx() {
     if [ ! -f .env ]; then
         if [ -f .env.example ]; then
             cp .env.example .env
-            sed -i "s/serverpanel_secure_password/${RANDOM_DB_PASSWORD}/g" .env 2>/dev/null || true
+            sed -i "s/pvemanager_secure_password/${RANDOM_DB_PASSWORD}/g" .env 2>/dev/null || true
         else
             create_default_env "${RANDOM_DB_PASSWORD}"
         fi
@@ -712,7 +715,7 @@ quick_deploy_nginx() {
     if [ ! -f backend/.env ]; then
         if [ -f backend/.env.example ]; then
             cp backend/.env.example backend/.env
-            sed -i "s/serverpanel_secure_password/${RANDOM_DB_PASSWORD}/g" backend/.env 2>/dev/null || true
+            sed -i "s/pvemanager_secure_password/${RANDOM_DB_PASSWORD}/g" backend/.env 2>/dev/null || true
             sed -i "s/your-very-secure-secret-key-change-this-in-production-minimum-32-chars/${RANDOM_SECRET_KEY}/g" backend/.env 2>/dev/null || true
         else
             create_default_backend_env "${RANDOM_DB_PASSWORD}" "${RANDOM_SECRET_KEY}"
@@ -730,7 +733,7 @@ quick_deploy_nginx() {
 }
 
 create_default_env() {
-    local db_password="${1:-serverpanel_secure_password}"
+    local db_password="${1:-pvemanager_secure_password}"
     cat > .env << EOF
 POSTGRES_PASSWORD=${db_password}
 TZ=Asia/Tashkent
@@ -739,7 +742,7 @@ EOF
 }
 
 create_default_backend_env() {
-    local db_password="${1:-serverpanel_secure_password}"
+    local db_password="${1:-pvemanager_secure_password}"
     local secret_key="${2:-your-very-secure-secret-key-change-this-in-production-minimum-32-chars}"
     cat > backend/.env << EOF
 PANEL_NAME=PVEmanager
@@ -747,10 +750,10 @@ DEBUG=false
 LOG_LEVEL=INFO
 DB_HOST=db
 DB_PORT=5432
-DB_USER=serverpanel
+DB_USER=pvemanager
 DB_PASSWORD=${db_password}
-DB_NAME=serverpanel
-DATABASE_URL=postgresql://serverpanel:${db_password}@db:5432/serverpanel
+DB_NAME=pvemanager
+DATABASE_URL=postgresql://pvemanager:${db_password}@db:5432/pvemanager
 SECRET_KEY=${secret_key}
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440

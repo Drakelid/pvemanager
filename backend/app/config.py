@@ -28,9 +28,9 @@ class Settings(BaseSettings):
     # Database settings
     DB_HOST: str = Field(default="localhost", env="DB_HOST")
     DB_PORT: int = Field(default=5432, env="DB_PORT")
-    DB_USER: str = Field(default="serverpanel", env="DB_USER")
-    DB_PASSWORD: str = Field(default="serverpanel", env="DB_PASSWORD")
-    DB_NAME: str = Field(default="serverpanel", env="DB_NAME")
+    DB_USER: str = Field(default="pvemanager", env="DB_USER")
+    DB_PASSWORD: str = Field(default="pvemanager", env="DB_PASSWORD")
+    DB_NAME: str = Field(default="pvemanager", env="DB_NAME")
     DATABASE_URL: Optional[str] = Field(default=None, env="DATABASE_URL")
 
     # Security settings

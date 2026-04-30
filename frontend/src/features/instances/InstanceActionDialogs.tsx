@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Disc, Eye, EyeOff, Sparkles, Copy, KeyRound, FileText, Terminal as TerminalIcon } from 'lucide-react';
+import { Loader2, Disc, Eye, EyeOff, Sparkles, Copy, KeyRound, FileText, Terminal as TerminalIcon, Play, Square, RotateCcw, Power, AlertTriangle } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,8 @@ import {
 } from '@/hooks/use-instances';
 import { toast } from 'sonner';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
+
+export type PowerAction = 'start' | 'stop' | 'restart' | 'shutdown';
 
 export type InstanceAction =
   | 'clone'
@@ -530,6 +532,108 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
           >
             {attach.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Подключить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ==================== Power Confirm ====================
+
+type ActionConfig = {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  btnLabel: string;
+  btnVariant: 'default' | 'outline' | 'destructive';
+  btnClass: string;
+};
+
+const POWER_ACTION_CONFIG: Record<PowerAction, ActionConfig> = {
+  start: {
+    icon: <Play className="h-4 w-4 text-green-500" />,
+    title: 'Запустить',
+    description: 'Запустить инстанс',
+    btnLabel: 'Запустить',
+    btnVariant: 'default',
+    btnClass: 'bg-green-600 hover:bg-green-700 text-white border-0',
+  },
+  restart: {
+    icon: <RotateCcw className="h-4 w-4 text-amber-500" />,
+    title: 'Перезапустить',
+    description: 'Перезапустить инстанс',
+    btnLabel: 'Перезапустить',
+    btnVariant: 'outline',
+    btnClass: 'border-amber-500 text-amber-500 hover:bg-amber-500/10',
+  },
+  shutdown: {
+    icon: <Power className="h-4 w-4 text-orange-500" />,
+    title: 'Выключить',
+    description: 'Мягко выключить инстанс (ACPI shutdown)',
+    btnLabel: 'Выключить',
+    btnVariant: 'outline',
+    btnClass: 'border-orange-500 text-orange-500 hover:bg-orange-500/10',
+  },
+  stop: {
+    icon: <Square className="h-4 w-4" />,
+    title: 'Остановить',
+    description: 'Принудительно остановить инстанс. Несохранённые данные могут быть утеряны',
+    btnLabel: 'Остановить',
+    btnVariant: 'destructive',
+    btnClass: '',
+  },
+};
+
+export function PowerConfirmDialog({
+  open,
+  onClose,
+  onConfirm,
+  action,
+  vmName,
+  isPending,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  action: PowerAction | null;
+  vmName?: string;
+  isPending?: boolean;
+}) {
+  if (!action) return null;
+  const cfg = POWER_ACTION_CONFIG[action];
+  const displayName = vmName ? `«${vmName}»` : 'выбранный инстанс';
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {cfg.icon}
+            {cfg.title}
+          </DialogTitle>
+          <DialogDescription>
+            {cfg.description} {displayName}?
+            {action === 'stop' && (
+              <span className="mt-2 flex items-center gap-1.5 text-destructive">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                Это аналог «выдернуть кабель из розетки».
+              </span>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isPending}>
+            Отмена
+          </Button>
+          <Button
+            variant={cfg.btnVariant}
+            className={cfg.btnClass || undefined}
+            onClick={onConfirm}
+            disabled={isPending}
+          >
+            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {cfg.btnLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

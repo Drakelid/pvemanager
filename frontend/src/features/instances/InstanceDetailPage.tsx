@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { StatusDot } from '@/components/shared/status-dot';
 import { useVirtualMachines, usePowerAction } from '@/hooks/use-instances';
-import InstanceActionDialogs, { type InstanceAction } from './InstanceActionDialogs';
+import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
 import { vmTypeLabel } from '@/lib/format';
 import { toast } from 'sonner';
 
@@ -62,13 +62,25 @@ export default function InstanceDetailPage() {
   const isQemu = type === 'qemu';
   const TypeIcon = type === 'qemu' ? Monitor : Container;
   const [dialog, setDialog] = useState<InstanceAction>(null);
+  const [pendingPower, setPendingPower] = useState<PowerAction | null>(null);
 
   const handlePower = (action: string) => {
+    setPendingPower(action as PowerAction);
+  };
+
+  const confirmPower = () => {
+    if (!pendingPower) return;
     power.mutate(
-      { action },
+      { action: pendingPower },
       {
-        onSuccess: () => toast.success(`${action} sent successfully`),
-        onError: (err) => toast.error(err.message),
+        onSuccess: () => {
+          toast.success(`${pendingPower} sent successfully`);
+          setPendingPower(null);
+        },
+        onError: (err) => {
+          toast.error(err.message);
+          setPendingPower(null);
+        },
       }
     );
   };
@@ -245,6 +257,14 @@ export default function InstanceDetailPage() {
         node={node}
         name={vm?.name}
         description={vm?.description}
+      />
+      <PowerConfirmDialog
+        open={pendingPower !== null}
+        onClose={() => setPendingPower(null)}
+        onConfirm={confirmPower}
+        action={pendingPower}
+        vmName={vm?.name}
+        isPending={power.isPending}
       />
     </div>
   );

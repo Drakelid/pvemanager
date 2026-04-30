@@ -1,13 +1,13 @@
 services:
   db:
     image: postgres:16-alpine
-    container_name: serverpanel-db
+    container_name: pvemanager-db
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: serverpanel
-      POSTGRES_USER: serverpanel
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-serverpanel_secure_password}
+      POSTGRES_DB: pvemanager
+      POSTGRES_USER: pvemanager
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pvemanager_secure_password}
       TZ: ${TZ:-Asia/Tashkent}
       # Оптимизация для быстрого старта
       POSTGRES_INITDB_ARGS: "--no-sync"
@@ -16,32 +16,32 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U serverpanel -d serverpanel"]
+      test: ["CMD-SHELL", "pg_isready -U pvemanager -d pvemanager"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 5s
     networks:
-      - serverpanel-network
-    # Оптимизация производительности БД
-    command: |
-      postgres 
-      -c shared_buffers=256MB 
-      -c max_connections=200 
-      -c work_mem=4MB 
-      -c maintenance_work_mem=64MB 
-      -c effective_cache_size=512MB 
-      -c checkpoint_completion_target=0.9 
-      -c wal_buffers=16MB 
+      - pvemanager-network
+    # Оптимизация производительности БД (>- склеит в одну строку через пробел)
+    command: >-
+      postgres
+      -c shared_buffers=256MB
+      -c max_connections=200
+      -c work_mem=4MB
+      -c maintenance_work_mem=64MB
+      -c effective_cache_size=512MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
       -c random_page_cost=1.1
 
   app:
     build: 
       context: ./backend
       dockerfile: Dockerfile
-    image: server-panel-app:latest
+    image: pvemanager-app:latest
     pull_policy: build
-    container_name: serverpanel-app
+    container_name: pvemanager-app
     ports:
       - "8000:8000"
     env_file:
@@ -60,7 +60,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql://serverpanel:${POSTGRES_PASSWORD:-serverpanel_secure_password}@db:5432/serverpanel
+      - DATABASE_URL=postgresql://pvemanager:${POSTGRES_PASSWORD:-pvemanager_secure_password}@db:5432/pvemanager
       - PYTHONPATH=/app
       - TZ=${TZ:-Asia/Tashkent}
       - PROJECT_ROOT=/project
@@ -72,12 +72,12 @@ services:
       - UVICORN_WORKERS=1
       - UVICORN_TIMEOUT_KEEP_ALIVE=30
     networks:
-      - serverpanel-network
+      - pvemanager-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/health"]
+      interval: 5s
       timeout: 3s
-      retries: 2
+      retries: 5
       start_period: 5s
     # Ограничение ресурсов для стабильности
     deploy:
@@ -93,9 +93,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: server-panel-frontend:latest
+    image: pvemanager-frontend:latest
     pull_policy: build
-    container_name: serverpanel-frontend
+    container_name: pvemanager-frontend
     ports:
       - "3000:80"
     depends_on:
@@ -103,7 +103,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks:
-      - serverpanel-network
+      - pvemanager-network
     deploy:
       resources:
         limits:
@@ -115,5 +115,5 @@ volumes:
   logs:
 
 networks:
-  serverpanel-network:
+  pvemanager-network:
     driver: bridge

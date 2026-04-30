@@ -41,8 +41,8 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     # Logging
-    access_log /var/log/nginx/serverpanel_access.log;
-    error_log /var/log/nginx/serverpanel_error.log;
+    access_log /var/log/nginx/pvemanager_access.log;
+    error_log /var/log/nginx/pvemanager_error.log;
 
     # Rate limiting
     limit_req zone=general burst=20 nodelay;
@@ -50,14 +50,14 @@ server {
 
     # Health check endpoint
     location /health {
-        proxy_pass http://serverpanel-app:8000;
+        proxy_pass http://pvemanager-app:8000;
         access_log off;
     }
 
     # API proxy
     location /api/ {
         limit_req zone=api burst=50 nodelay;
-        proxy_pass http://serverpanel-app:8000;
+        proxy_pass http://pvemanager-app:8000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -67,7 +67,7 @@ server {
 
     # Proxmox API proxy
     location /proxmox/ {
-        proxy_pass http://serverpanel-app:8000;
+        proxy_pass http://pvemanager-app:8000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -78,7 +78,7 @@ server {
 
     # WebSocket support — tasks и terminal
     location ~ ^/(ws|proxmox/ws)/ {
-        proxy_pass http://serverpanel-app:8000;
+        proxy_pass http://pvemanager-app:8000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -92,7 +92,7 @@ server {
 
     # Backend static files (legacy, logo, etc.)
     location /static/ {
-        proxy_pass http://serverpanel-app:8000;
+        proxy_pass http://pvemanager-app:8000;
         proxy_cache_valid 200 1d;
         expires 1d;
         add_header Cache-Control "public, immutable";
@@ -100,7 +100,7 @@ server {
 
     # SPA frontend — all other routes
     location / {
-        proxy_pass http://serverpanel-frontend:80;
+        proxy_pass http://pvemanager-frontend:80;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

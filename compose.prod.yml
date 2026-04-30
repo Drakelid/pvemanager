@@ -5,7 +5,7 @@
 services:
   nginx:
     image: nginx:alpine
-    container_name: serverpanel-nginx
+    container_name: pvemanager-nginx
     ports:
       - "80:80"
       - "443:443"
@@ -21,7 +21,7 @@ services:
       frontend:
         condition: service_started
     networks:
-      - serverpanel-network
+      - pvemanager-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "nginx", "-t"]
@@ -36,7 +36,7 @@ services:
 
   certbot:
     image: certbot/certbot:latest
-    container_name: serverpanel-certbot
+    container_name: pvemanager-certbot
     volumes:
       - ./nginx/certbot/conf:/etc/letsencrypt
       - ./nginx/certbot/www:/var/www/certbot
@@ -45,7 +45,7 @@ services:
     depends_on:
       - nginx
     networks:
-      - serverpanel-network
+      - pvemanager-network
     restart: "no"
     profiles:
       - ssl
