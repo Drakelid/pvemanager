@@ -118,13 +118,16 @@ GITHUB_TOKEN=                     # опционально, для провер�
 | Слой | Технология |
 |---|---|
 | Backend | Python 3.12, FastAPI, SQLAlchemy |
-| Frontend | Jinja2 шаблоны, Vanilla JS, Bootstrap 5 |
+| Frontend | React 19, TypeScript, Vite 8 |
+| UI-компоненты | shadcn/ui, Tailwind CSS v4, lucide-react |
+| Состояние и данные | TanStack Query v5, Zustand, React Router v7 |
 | База данных | PostgreSQL 16 |
 | Контейнеризация | Docker, Alpine Linux |
 | API Proxmox | proxmoxer |
 | VNC | noVNC |
-| Графики | Chart.js |
+| Графики | Recharts |
 | Терминал | xterm.js |
+| i18n | i18next, react-i18next |
 
 ---
 

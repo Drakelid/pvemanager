@@ -122,13 +122,16 @@ Configured via the web interface — **Settings → Notifications**:
 | Layer | Technology |
 |---|---|
 | Backend | Python 3.12, FastAPI, SQLAlchemy |
-| Frontend | Jinja2 templates, Vanilla JS, Bootstrap 5 |
+| Frontend | React 19, TypeScript, Vite 8 |
+| UI Components | shadcn/ui, Tailwind CSS v4, lucide-react |
+| State & Data | TanStack Query v5, Zustand, React Router v7 |
 | Database | PostgreSQL 16 |
 | Containerization | Docker, Alpine Linux |
 | Proxmox API | proxmoxer |
 | VNC | noVNC |
-| Charts | Chart.js |
+| Charts | Recharts |
 | Terminal | xterm.js |
+| i18n | i18next, react-i18next |
 
 ---
 
