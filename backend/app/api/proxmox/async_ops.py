@@ -50,30 +50,47 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
             VMInstance.vmid == vmid,
             VMInstance.deleted_at.is_(None),
         ).first()
-        if not cached or not cached.template_id:
-            _update_deploy_task(task_id, 'failed', 'Шаблон не привязан', 0,
-                                error='У VM не сохранён шаблон, переустановка недоступна')
+        if not cached:
+            _update_deploy_task(task_id, 'failed', 'VM не найдена', 0,
+                                error='Запись об инстансе не найдена')
             return
 
-        tpl = db.query(OSTemplate).filter(OSTemplate.id == cached.template_id).first()
-        if not tpl or not tpl.vmid:
-            _update_deploy_task(task_id, 'failed', 'Шаблон не найден', 0, error='Шаблон не найден или некорректен')
-            return
-
-        # Resolve template VMID & source node (cross-node aware)
-        local_template_vmid = tpl.get_vmid_for_node(node)
-        if local_template_vmid:
-            template_source_node = node
-            template_vmid = local_template_vmid
+        is_lxc = (cached.vm_type == 'lxc')
+        # Two reinstall modes:
+        #   1) clone-from-template (cached.template_id → OSTemplate.vmid). Used by VM
+        #      templates and LXC clones from a template VMID.
+        #   2) ostemplate-file (LXC only, cached.template_name like "local:vztmpl/...tar.zst")
+        tpl = None
+        ostemplate_file = None
+        if cached.template_id:
+            tpl = db.query(OSTemplate).filter(OSTemplate.id == cached.template_id).first()
+            if not tpl or not tpl.vmid:
+                _update_deploy_task(task_id, 'failed', 'Шаблон не найден', 0,
+                                    error='Шаблон не найден или некорректен')
+                return
+        elif is_lxc and cached.template_name and ':' in cached.template_name:
+            ostemplate_file = cached.template_name
         else:
-            template_source_node = tpl.get_source_node() or tpl.node or node
-            template_vmid = tpl.vmid
+            _update_deploy_task(task_id, 'failed', 'Шаблон не привязан', 0,
+                                error='У инстанса не сохранён шаблон, переустановка недоступна')
+            return
+
+        # Resolve template VMID & source node (cross-node aware) — only for clone mode
+        template_source_node = node
+        template_vmid = None
+        if tpl is not None:
+            local_template_vmid = tpl.get_vmid_for_node(node)
+            if local_template_vmid:
+                template_source_node = node
+                template_vmid = local_template_vmid
+            else:
+                template_source_node = tpl.get_source_node() or tpl.node or node
+                template_vmid = tpl.vmid
 
         name = cached.name
         cores = cached.cores
         memory = cached.memory
         description = cached.description
-        is_lxc = (cached.vm_type == 'lxc')
         memory_mb = int(memory) // (1024 * 1024) if memory else None
 
         _update_deploy_task(task_id, 'running', 'Подключение к Proxmox...', 10, vmid=vmid, node=node)
@@ -82,6 +99,17 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
             _update_deploy_task(task_id, 'failed', 'Ошибка подключения к Proxmox', 10,
                                 error='Не удалось подключиться к Proxmox серверу')
             return
+
+        # Snapshot current container/VM config — needed for LXC ostemplate-recreate
+        # (network, swap, storage, features, etc. aren't all stored in VMInstance)
+        prev_cfg = {}
+        try:
+            if is_lxc:
+                prev_cfg = client.get_container_config(node, vmid) or {}
+            else:
+                prev_cfg = client.get_vm_config(node, vmid) or {}
+        except Exception as _ce:
+            logger.warning(f"[REINSTALL #{task_id}] could not fetch current config: {_ce}")
 
         # 1) Stop
         _update_deploy_task(task_id, 'running', 'Остановка инстанса...', 20, vmid=vmid, node=node)
@@ -117,34 +145,133 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
                 break
             time.sleep(1)
 
-        # 3) Clone from template
-        _update_deploy_task(task_id, 'running', f'Клонирование из шаблона {tpl.name}...', 50, vmid=vmid, node=node)
-        try:
-            if is_lxc:
-                upid = client.clone_container(
-                    node=template_source_node, vmid=template_vmid, new_vmid=vmid,
-                    hostname=name, full=True, target_node=node,
-                    description=description,
-                )
-            else:
-                upid = client.clone_vm(
-                    node=template_source_node, vmid=template_vmid, new_vmid=vmid,
-                    name=name, full=True, target_node=node,
-                    description=description,
-                )
-        except Exception as e:
-            _update_deploy_task(task_id, 'failed', 'Ошибка клонирования', 50, error=f'Clone failed: {e}')
-            return
-        if not upid:
-            _update_deploy_task(task_id, 'failed', 'Ошибка клонирования', 50,
-                                error='Proxmox не вернул UPID задачи клонирования')
-            return
+        # 3) Re-create from template
+        if ostemplate_file:
+            # ---- LXC: re-create from CT template file with same VMID ----
+            _update_deploy_task(task_id, 'running',
+                                f'Создание контейнера из шаблона {ostemplate_file.split("/")[-1]}...',
+                                50, vmid=vmid, node=node)
 
-        _update_deploy_task(task_id, 'running', 'Ожидание завершения клонирования...', 75, vmid=vmid, node=node)
-        try:
-            client.wait_for_task(template_source_node, upid, timeout=600)
-        except Exception:
-            pass
+            # Extract storage/rootfs size from previous rootfs entry (e.g. "local-lvm:vm-118-disk-0,size=8G")
+            storage = 'local-lvm'
+            rootfs_size = 8
+            try:
+                rootfs_val = prev_cfg.get('rootfs', '')
+                if rootfs_val:
+                    storage = rootfs_val.split(':', 1)[0]
+                    if 'size=' in rootfs_val:
+                        sz = rootfs_val.split('size=')[1].split(',')[0].strip()
+                        if sz.endswith('G'):
+                            rootfs_size = int(float(sz[:-1]))
+                        elif sz.endswith('M'):
+                            rootfs_size = max(1, int(sz[:-1]) // 1024)
+                        elif sz.endswith('T'):
+                            rootfs_size = int(float(sz[:-1])) * 1024
+            except Exception:
+                pass
+
+            # net0: prefer existing config (preserves bridge/ip/gateway/vlan/firewall)
+            net0 = prev_cfg.get('net0')
+            if not net0:
+                ip_part = 'ip=dhcp'
+                if cached.ip_address:
+                    prefix = cached.ip_prefix or 24
+                    ip_part = f'ip={cached.ip_address}/{prefix}'
+                    if cached.gateway:
+                        ip_part += f',gw={cached.gateway}'
+                net0 = f'name=eth0,bridge=vmbr0,{ip_part},firewall=1'
+
+            # Other params with sane fallbacks
+            swap_mb = 512
+            try:
+                if 'swap' in prev_cfg:
+                    swap_mb = int(prev_cfg['swap'])
+            except Exception:
+                pass
+
+            unprivileged = True
+            try:
+                if 'unprivileged' in prev_cfg:
+                    unprivileged = bool(int(prev_cfg['unprivileged']))
+            except Exception:
+                pass
+
+            onboot = False
+            try:
+                if 'onboot' in prev_cfg:
+                    onboot = bool(int(prev_cfg['onboot']))
+            except Exception:
+                pass
+
+            features = prev_cfg.get('features')  # None → create_lxc_container will default to nesting=1
+            nameserver = prev_cfg.get('nameserver') or cached.nameserver
+            searchdomain = prev_cfg.get('searchdomain')
+
+            try:
+                upid = client.create_lxc_container(
+                    node=node,
+                    vmid=vmid,
+                    ostemplate=ostemplate_file,
+                    hostname=name,
+                    cores=cores or 1,
+                    memory=memory_mb or 512,
+                    swap=swap_mb,
+                    storage=storage,
+                    rootfs_size=rootfs_size,
+                    net0=net0,
+                    nameserver=nameserver,
+                    searchdomain=searchdomain,
+                    ssh_public_keys=cached.ssh_keys,
+                    unprivileged=unprivileged,
+                    start_after_create=False,
+                    onboot=onboot,
+                    description=description or f'Reinstalled from {ostemplate_file}',
+                    features=features,
+                )
+            except Exception as e:
+                _update_deploy_task(task_id, 'failed', 'Ошибка создания контейнера', 50,
+                                    error=f'Create failed: {e}')
+                return
+            if not upid:
+                _update_deploy_task(task_id, 'failed', 'Ошибка создания контейнера', 50,
+                                    error='Proxmox не вернул UPID задачи создания контейнера')
+                return
+
+            _update_deploy_task(task_id, 'running', 'Ожидание завершения создания...', 75,
+                                vmid=vmid, node=node)
+            try:
+                client.wait_for_task(node, upid, timeout=600)
+            except Exception:
+                pass
+        else:
+            # ---- Clone-from-template (VM or LXC with template_id) ----
+            _update_deploy_task(task_id, 'running', f'Клонирование из шаблона {tpl.name}...', 50, vmid=vmid, node=node)
+            try:
+                if is_lxc:
+                    upid = client.clone_container(
+                        node=template_source_node, vmid=template_vmid, new_vmid=vmid,
+                        hostname=name, full=True, target_node=node,
+                        description=description,
+                    )
+                else:
+                    upid = client.clone_vm(
+                        node=template_source_node, vmid=template_vmid, new_vmid=vmid,
+                        name=name, full=True, target_node=node,
+                        description=description,
+                    )
+            except Exception as e:
+                _update_deploy_task(task_id, 'failed', 'Ошибка клонирования', 50, error=f'Clone failed: {e}')
+                return
+            if not upid:
+                _update_deploy_task(task_id, 'failed', 'Ошибка клонирования', 50,
+                                    error='Proxmox не вернул UPID задачи клонирования')
+                return
+
+            _update_deploy_task(task_id, 'running', 'Ожидание завершения клонирования...', 75, vmid=vmid, node=node)
+            try:
+                client.wait_for_task(template_source_node, upid, timeout=600)
+            except Exception:
+                pass
 
         # 4) Re-apply config
         _update_deploy_task(task_id, 'running', 'Применение конфигурации...', 90, vmid=vmid, node=node)
@@ -228,7 +355,11 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
             resource_type='lxc' if is_lxc else 'vm', resource_id=vmid,
             username=username, resource_name=name,
             server_id=server_id, server_name=server.name, node_name=node,
-            details={'template_id': tpl.id, 'template_vmid': template_vmid}, success=True,
+            details={
+                'template_id': tpl.id if tpl else None,
+                'template_vmid': template_vmid,
+                'ostemplate': ostemplate_file,
+            }, success=True,
         )
 
         _update_deploy_task(task_id, 'completed', 'Переустановка завершена', 100, vmid=vmid, node=node)

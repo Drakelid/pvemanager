@@ -409,16 +409,24 @@ def reinstall_vm_endpoint(
         VMInstance.vmid == vmid,
         VMInstance.deleted_at.is_(None),
     ).first()
-    if not cached or not cached.template_id:
-        raise HTTPException(status_code=400, detail="VM has no associated template; reinstall is not available")
+    if not cached:
+        raise HTTPException(status_code=404, detail="VM not found")
 
-    tpl = db.query(OSTemplate).filter(OSTemplate.id == cached.template_id).first()
-    if not tpl or not tpl.vmid:
-        raise HTTPException(status_code=400, detail="Template not found or invalid")
+    is_lxc = (cached.vm_type == 'lxc')
+    tpl = None
+    if cached.template_id:
+        tpl = db.query(OSTemplate).filter(OSTemplate.id == cached.template_id).first()
+        if not tpl or not tpl.vmid:
+            raise HTTPException(status_code=400, detail="Template not found or invalid")
+    elif is_lxc and cached.template_name and ':' in cached.template_name:
+        # LXC created from CT template file (e.g. local:vztmpl/debian-13-...tar.zst)
+        tpl = None
+    else:
+        raise HTTPException(status_code=400, detail="VM has no associated template; reinstall is not available")
 
     task = DeployTask(
         kind='reinstall', name=cached.name, status='pending', step='В очереди...', progress=0,
-        template_id=tpl.id, server_id=server_id, user_id=current_user.id,
+        template_id=tpl.id if tpl else None, server_id=server_id, user_id=current_user.id,
         vmid=vmid, node=node,
     )
     db.add(task); db.commit(); db.refresh(task)
