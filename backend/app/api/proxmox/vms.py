@@ -700,10 +700,22 @@ async def delete_vm(
         if not client.is_connected():
             raise HTTPException(status_code=503, detail=t("failed_to_connect", lang))
         
-        # Проверяем статус VM
+        # Auto-stop running VM before destroy (user already typed the name to confirm)
         status = client.get_vm_status(node, vmid)
         if status and isinstance(status, dict) and status.get('status') == 'running':
-            raise HTTPException(status_code=400, detail=t("cannot_delete_running_vm", lang))
+            logger.info(f"VM {vmid} is running, stopping before delete...")
+            try:
+                client.stop_vm(node, vmid, force=True)
+            except Exception as _se:
+                logger.warning(f"stop_vm({vmid}) failed: {_se}")
+            import time as _t
+            for _ in range(30):
+                _t.sleep(0.5)
+                st = client.get_vm_status(node, vmid)
+                if not st or not isinstance(st, dict) or st.get('status') != 'running':
+                    break
+            else:
+                raise HTTPException(status_code=400, detail=t("cannot_delete_running_vm", lang))
         
         # Сохраняем конфигурацию VM в базу перед удалением (если не force)
         if not force:
@@ -1096,10 +1108,23 @@ async def delete_container(
         if not client.is_connected():
             raise HTTPException(status_code=503, detail=t("failed_to_connect", lang))
         
-        # Проверяем статус контейнера
+        # Auto-stop running container before destroy (user already typed the name to confirm)
         status = client.get_container_status(node, vmid)
         if status and isinstance(status, dict) and status.get('status') == 'running':
-            raise HTTPException(status_code=400, detail=t("cannot_delete_running_container", lang))
+            logger.info(f"Container {vmid} is running, stopping before delete...")
+            try:
+                client.stop_container(node, vmid, force=True)
+            except Exception as _se:
+                logger.warning(f"stop_container({vmid}) failed: {_se}")
+            # Wait up to 15s for it to actually stop
+            import time as _t
+            for _ in range(30):
+                _t.sleep(0.5)
+                st = client.get_container_status(node, vmid)
+                if not st or not isinstance(st, dict) or st.get('status') != 'running':
+                    break
+            else:
+                raise HTTPException(status_code=400, detail=t("cannot_delete_running_container", lang))
         
         # Archive and delete snapshots before deleting container
         container_name = status.get('name') if isinstance(status, dict) else f'CT-{vmid}'
