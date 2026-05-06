@@ -520,6 +520,68 @@ class ProxmoxClient:
             logger.error(f"Ошибка получения списка ISO для ноды {node}: {e}")
         return result
 
+    def get_lxc_storage_templates(self, node: Optional[str] = None) -> List[Dict]:
+        """
+        Получить список LXC CT-шаблонов из хранилищ Proxmox.
+        Ищет файлы типа vzdump/vztmpl на всех нодах (или на указанной).
+        Возвращает список объектов с полями: volid, storage, node, name, size.
+        """
+        if not self.proxmox:
+            return []
+        result: List[Dict] = []
+        try:
+            if node:
+                nodes_list = [{'node': node}]
+            else:
+                nodes_list = self.get_nodes()
+
+            seen_volids: set = set()
+            for n in nodes_list:
+                node_name = n.get('node')
+                try:
+                    storages = self.proxmox.nodes(node_name).storage.get()
+                    for s in storages:
+                        content = s.get('content', '')
+                        if 'vztmpl' not in content:
+                            continue
+                        storage_id = s.get('storage')
+                        try:
+                            items = self.proxmox.nodes(node_name).storage(storage_id).content.get(content='vztmpl')
+                            for it in items:
+                                volid = it.get('volid', '')
+                                if volid in seen_volids:
+                                    continue
+                                seen_volids.add(volid)
+                                filename = volid.split('/')[-1] if '/' in volid else volid
+                                result.append({
+                                    'volid': volid,
+                                    'storage': storage_id,
+                                    'node': node_name,
+                                    'name': filename,
+                                    'size': it.get('size', 0),
+                                })
+                        except Exception as e:
+                            logger.debug(f"Не удалось получить CT-шаблоны из {storage_id} на {node_name}: {e}")
+                except Exception as e:
+                    logger.error(f"Ошибка получения хранилищ ноды {node_name}: {e}")
+        except Exception as e:
+            logger.error(f"Ошибка получения CT-шаблонов {self.host}: {e}")
+        return result
+
+    def get_node_storages(self, node: str, content_type: Optional[str] = None) -> List[Dict]:
+        """Получить список хранилищ ноды. Опционально фильтровать по типу содержимого."""
+        if not self.proxmox:
+            return []
+        try:
+            params = {}
+            if content_type:
+                params['content'] = content_type
+            storages = self.proxmox.nodes(node).storage.get(**params)
+            return storages or []
+        except Exception as e:
+            logger.error(f"Ошибка получения хранилищ ноды {node}: {e}")
+            return []
+
     
     def force_stop_vm(self, node: str, vmid: int) -> bool:
         """Принудительно остановить ВМ (через SSH - аналог kill -9)"""
@@ -1626,7 +1688,11 @@ class ProxmoxClient:
             if status:
                 if status.get('status') == 'stopped':
                     # Проверяем exitstatus
-                    return status.get('exitstatus') == 'OK'
+                    exit_status = status.get('exitstatus')
+                    if exit_status != 'OK':
+                        logger.error(f"Proxmox task {upid} failed with exitstatus={exit_status!r}")
+                    # 'OK' — success; 'WARNINGS: N' — success with warnings (container still created)
+                    return exit_status == 'OK' or (isinstance(exit_status, str) and exit_status.startswith('WARNINGS:'))
             time_module.sleep(2)
         
         logger.warning(f"Таймаут ожидания задачи {upid}")
@@ -2300,7 +2366,9 @@ class ProxmoxClient:
         start_after_create: bool = False,
         onboot: bool = False,
         description: str = None,
-        features: str = None
+        features: str = None,
+        nameserver: str = None,
+        searchdomain: str = None,
     ) -> Optional[str]:
         """
         Создать новый LXC контейнер
@@ -2363,7 +2431,13 @@ class ProxmoxClient:
             
             if features:
                 params['features'] = features
-            
+
+            if nameserver:
+                params['nameserver'] = nameserver
+
+            if searchdomain:
+                params['searchdomain'] = searchdomain
+
             result = self.proxmox.nodes(node).lxc.post(**params)
             logger.info(f"Запущено создание LXC контейнера {vmid} ({hostname}) на {node}")
             return result

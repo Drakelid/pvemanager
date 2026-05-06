@@ -122,6 +122,41 @@ export interface VMDeployRequest {
   ssh_keys?: string;
 }
 
+// ==================== LXC CT Template Types ====================
+
+export interface LXCTemplate {
+  volid: string;
+  storage: string;
+  node: string;
+  name: string;
+  size: number;
+}
+
+export interface LXCDeployRequest {
+  server_id: number;
+  ostemplate: string;
+  node?: string;
+  name: string;
+  vmid?: number;
+  cores: number;
+  memory: number;
+  swap: number;
+  disk: number;
+  storage: string;
+  bridge: string;
+  ip_address?: string;
+  gateway?: string;
+  ipam_network_id?: number;
+  ipam_pool_id?: number;
+  password?: string;
+  ssh_keys?: string;
+  nameserver?: string;
+  searchdomain?: string;
+  unprivileged: boolean;
+  start_after_create: boolean;
+  onboot: boolean;
+}
+
 // ==================== Node Types ====================
 
 export interface ProxmoxNode {

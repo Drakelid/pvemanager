@@ -7,6 +7,7 @@ from .tasks import router as tasks_router
 from .backup import router as backup_router
 from .cluster import router as cluster_router
 from .networks import router as networks_router
+from .lxc import router as lxc_router
 from ._helpers import get_next_vmid, save_vm_instance, get_vm_instance
 
 router = APIRouter()
@@ -18,3 +19,4 @@ router.include_router(tasks_router)
 router.include_router(backup_router)
 router.include_router(cluster_router)
 router.include_router(networks_router)
+router.include_router(lxc_router)

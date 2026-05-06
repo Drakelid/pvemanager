@@ -189,7 +189,21 @@
     "retry": "Повторить",
     "os_group": "Группа ОС",
     "ipam_network": "Сеть IPAM",
-    "auto_allocate_ip": "Авто-выделение IP"
+    "auto_allocate_ip": "Авто-выделение IP",
+    "instance_type": "Тип инстанса",
+    "select_type": "Выберите тип",
+    "type_vm": "Виртуальная машина",
+    "type_vm_desc": "QEMU/KVM VM из шаблона",
+    "type_lxc": "LXC Контейнер",
+    "type_lxc_desc": "Linux-контейнер из CT-шаблона",
+    "lxc_template": "CT Шаблон",
+    "select_lxc_template": "Выберите CT шаблон",
+    "no_lxc_templates": "CT шаблоны не найдены. Загрузите шаблоны в Proxmox Storage.",
+    "lxc_password": "Пароль root",
+    "lxc_password_placeholder": "Пароль root контейнера",
+    "swap_mb": "Своп (МБ)",
+    "unprivileged": "Непривилегированный контейнер",
+    "lxc_template_label": "CT Шаблон"
   },
   "nodes": {
     "title": "Серверы",

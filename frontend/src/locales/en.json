@@ -189,7 +189,21 @@
     "retry": "Retry",
     "os_group": "OS Group",
     "ipam_network": "IPAM Network",
-    "auto_allocate_ip": "Auto-allocate IP"
+    "auto_allocate_ip": "Auto-allocate IP",
+    "instance_type": "Instance Type",
+    "select_type": "Select type",
+    "type_vm": "Virtual Machine",
+    "type_vm_desc": "QEMU/KVM VM from template",
+    "type_lxc": "LXC Container",
+    "type_lxc_desc": "Linux container from CT template",
+    "lxc_template": "CT Template",
+    "select_lxc_template": "Select CT template",
+    "no_lxc_templates": "No CT templates found. Upload templates to Proxmox Storage first.",
+    "lxc_password": "Root Password",
+    "lxc_password_placeholder": "Container root password",
+    "swap_mb": "Swap (MB)",
+    "unprivileged": "Unprivileged container",
+    "lxc_template_label": "CT Template"
   },
   "nodes": {
     "title": "Servers",
