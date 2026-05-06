@@ -2417,8 +2417,8 @@ class ProxmoxClient:
                 params['password'] = password
             
             if ssh_public_keys:
-                import urllib.parse
-                params['ssh-public-keys'] = urllib.parse.quote(ssh_public_keys, safe='')
+                # proxmoxer URL-encodes params automatically; pass key as-is
+                params['ssh-public-keys'] = ssh_public_keys.strip()
             
             if net0:
                 params['net0'] = net0
