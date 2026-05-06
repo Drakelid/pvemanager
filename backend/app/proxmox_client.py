@@ -2429,8 +2429,12 @@ class ProxmoxClient:
             if description:
                 params['description'] = description
             
+            # Enable nesting by default — required for systemd 255+ (Ubuntu 24.04, Debian 13)
+            # to avoid "WARN: Systemd 255 detected. You may need to enable nesting." warning
             if features:
                 params['features'] = features
+            else:
+                params['features'] = 'nesting=1'
 
             if nameserver:
                 params['nameserver'] = nameserver
