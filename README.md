@@ -4,7 +4,7 @@
 
 **Modern web panel for managing Proxmox servers, virtual machines and LXC containers**
 
-[![Version](https://img.shields.io/badge/version-1.4.0-blue?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue?style=flat-square)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](compose.yml)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](backend/)
@@ -27,6 +27,8 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **Bulk operations** — mass start / stop / restart / delete with queue and progress tracking
 - **Snapshot management** — create, rollback, delete snapshots with an async queue system
 - **OS templates** — deploy VMs from templates; cross-node replication handled automatically
+- **CT template deployment** — create LXC containers directly from Proxmox CT template files (`.tar.zst`, `.tar.gz`) with full IPAM and SSH key integration
+- **Unified Create Instance Wizard** — multi-step wizard supporting both QEMU VM templates and LXC CT templates in a single flow
 - **SDN support** — manage Software-Defined Networking zones, VNets, and subnets; edit zones and VNets; auto-create IPAM networks for subnets
 - **Node networking** — manage node-level network interfaces (bridges, bonds, VLANs); apply/revert pending config
 - **Networks page** — unified UI for SDN and node interface management
@@ -35,6 +37,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **VNC console** — in-browser console via noVNC, no client software required
 - **xterm.js terminal** — full interactive shell directly in the browser for LXC containers
 - **Remote commands** — execute bash commands via QEMU Guest Agent
+- **SSH Keys Management** — personal SSH key library per user; keys selectable when deploying VMs/LXC; admin can manage keys for any user
 - **RBAC v2** — granular role-based access control with per-resource permissions
 - **Server assignment** — directly assign specific Proxmox servers to users with workspace-conflict validation
 - **VM/LXC ownership** — assign an owner user to any VM or LXC container

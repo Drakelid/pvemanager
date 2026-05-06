@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.4.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.5.0
 
 ---
 
@@ -13,25 +13,26 @@
 5. [VM and Container Management](#-vm-and-container-management)
 6. [Bulk Operations](#-bulk-operations)
 7. [OS Templates](#-os-templates)
-8. [Proxmox Clusters](#-proxmox-clusters)
-9. [Snapshots](#-snapshots)
-10. [Backups](#-backups)
-11. [IPAM](#-ipam)
-12. [Remote Command Execution](#-remote-command-execution)
-13. [Monitoring](#-monitoring)
-14. [Security (RBAC v2)](#-security)
-15. [Localization](#-localization)
-16. [Settings](#-settings)
-17. [Networks (SDN & Node Interfaces)](#node-network-interfaces)
-18. [pve CLI Tool](#-pve-cli-tool)
-18. [API Reference](#-api-reference)
-19. [Workspaces](#-workspaces)
-20. [User → Server Assignment](#-user--server-assignment)
-21. [VM / LXC Ownership](#-vm--lxc-ownership)
-22. [Deployment Guide](#-installation-and-deployment)
-23. [Private Repo Updates](#-settings)
-24. [Troubleshooting](#-troubleshooting)
-25. [FAQ](#-faq)
+8. [LXC CT Template Deployment](#-lxc-ct-template-deployment)
+9. [Proxmox Clusters](#-proxmox-clusters)
+10. [Snapshots](#-snapshots)
+11. [Backups](#-backups)
+12. [IPAM](#-ipam)
+13. [Remote Command Execution](#-remote-command-execution)
+14. [Monitoring](#-monitoring)
+15. [Security (RBAC v2)](#-security)
+16. [Localization](#-localization)
+17. [Settings](#-settings)
+18. [SSH Keys Management](#-ssh-keys-management)
+19. [Networks (SDN & Node Interfaces)](#node-network-interfaces)
+20. [pve CLI Tool](#-pve-cli-tool)
+21. [API Reference](#-api-reference)
+22. [Workspaces](#-workspaces)
+23. [User → Server Assignment](#-user--server-assignment)
+24. [VM / LXC Ownership](#-vm--lxc-ownership)
+25. [Deployment Guide](#-installation-and-deployment)
+26. [Troubleshooting](#-troubleshooting)
+27. [FAQ](#-faq)
 
 ---
 
@@ -629,7 +630,61 @@ Next deploy to pve2: Uses replicated template (fast)
 
 ---
 
-## 🔗 Proxmox Clusters
+## � LXC CT Template Deployment
+
+### Overview
+
+Starting from v1.5.0, LXC containers can be created directly from Proxmox CT template files (`.tar.zst`, `.tar.gz`) without needing a pre-configured OS Template entry. This is the standard way to deploy Debian, Ubuntu, Alpine, and other distros from the Proxmox download list.
+
+### Browsing Available CT Templates
+
+CT templates are fetched directly from the Proxmox server storage:
+
+1. Go to **Instances** → **Create Instance**
+2. Select the target Proxmox server
+3. Choose type **LXC Container**
+4. The wizard fetches available `.tar.zst` / `.tar.gz` files from all storages on the selected server
+
+### Deploying an LXC Container
+
+1. **Server** step — select Proxmox server
+2. **Type** step — select **LXC Container**
+3. **Template** step — select a CT template from the list
+4. **Config** step — fill in:
+   - Container name (hostname)
+   - CPU cores, RAM (MB), Swap (MB), Disk (GB)
+   - Storage, network bridge
+   - IP address / gateway (manual or from IPAM)
+   - Root password and/or SSH keys
+   - Owner (admin only)
+   - Start after create / On-boot options
+5. **Confirm** step — review and click **Deploy**
+
+Deployment runs asynchronously; progress is tracked in the Task Drawer.
+
+### SSH Keys in LXC Deployment
+
+- Select one or more keys from the personal SSH key library (see [SSH Keys Management](#-ssh-keys-management))
+- Admins deploying on behalf of another user can pick from that user's key library
+- Keys are injected into the container's `authorized_keys` during provisioning
+
+### Reinstalling an LXC Container (CT template)
+
+Containers created from CT templates support reinstall:
+
+1. Open the container's action menu → **Reinstall**
+2. Optionally select a different CT template
+3. The following are preserved automatically:
+   - Root password
+   - SSH keys
+   - IP address and gateway
+4. The old container is destroyed and a new one is created with the same VMID
+
+> **Note:** `nesting=1` is enabled by default on all new LXC containers for systemd 255+ (cgroup v2) compatibility.
+
+---
+
+## �🔗 Proxmox Clusters
 
 ### Overview
 
@@ -1279,6 +1334,51 @@ Access via **Settings → Security**:
 
 ---
 
+## 🔑 SSH Keys Management
+
+### Overview
+
+Every user has a personal SSH key library. Keys stored in the library can be selected when deploying VMs or LXC containers, eliminating the need to paste the public key manually each time.
+
+### Managing SSH Keys
+
+1. Go to **Settings** → **SSH Keys**
+2. Click **Add Key**
+3. Fill in:
+   - **Name** — a human-readable label (e.g., `Work laptop`)
+   - **Public Key** — paste the full public key (`ssh-rsa ...`, `ssh-ed25519 ...`, etc.)
+   - **Private Key** *(optional)* — stored encrypted in the database
+   - **Comment** *(optional)* — free-form note
+4. Click **Save**
+
+The SHA-256 fingerprint is computed and displayed automatically.
+
+### Using Keys When Deploying
+
+- In the **Create Instance Wizard**, the **Config** step shows a key selector
+- Regular users see their own keys
+- Admins selecting an owner see the owner's keys in addition to their own
+
+### Admin Key Management
+
+Admins (users with `users.manage` permission) can view and manage SSH keys for any user:
+
+```
+GET  /api/ssh-keys/user/{user_id}   — list keys for a specific user
+```
+
+### API Reference
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/ssh-keys` | List own SSH keys |
+| `POST` | `/api/ssh-keys` | Add a new key |
+| `PUT` | `/api/ssh-keys/{id}` | Update a key |
+| `DELETE` | `/api/ssh-keys/{id}` | Delete a key |
+| `GET` | `/api/ssh-keys/user/{user_id}` | List keys for any user (admin) |
+
+---
+
 ## 🌍 Localization
 
 ### Supported Languages
@@ -1424,6 +1524,8 @@ pve restart        # Restart all containers
 pve update         # Trigger panel update (via watchdog)
 pve exec <cmd>     # Execute command inside app container
 pve status         # Show docker compose status
+pve dev            # Start frontend in dev mode (Vite HMR)
+pve dev stop       # Stop dev mode, switch back to production frontend
 ```
 
 ### How It Works
@@ -1851,5 +1953,5 @@ A: Not yet, but planned for future versions.
 
 ---
 
-*Last updated: March 16, 2026*
-*Version: 1.1.8*
+*Last updated: May 7, 2026*
+*Version: 1.5.0*

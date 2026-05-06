@@ -4,6 +4,50 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.5.0] - 2026-05-07
+
+### 🐧 LXC — CT Template Deployment
+
+- **Create LXC from CT templates** — full deployment workflow for creating LXC containers directly from Proxmox CT template files (`.tar.zst`, `.tar.gz`); node/storage selection, IPAM integration, SSH keys support
+- **Unified Create Instance Wizard** — redesigned wizard (`CreateInstanceWizard`) supports both VM templates (QEMU) and CT templates (LXC) in a single multi-step flow with type selector, template browser, config step, and confirmation
+- **Reinstall LXC from CT template** — reinstall support for containers created from CT templates; hostname, password, SSH keys, and IP address are preserved across reinstall
+- **Preserve credentials/IP across LXC reinstall** — root password, SSH keys, IP configuration, and gateway are carried over automatically when reinstalling an LXC container
+- **nesting=1 by default** — all newly created LXC containers get `nesting=1` enabled to ensure compatibility with systemd 255+ (cgroup v2)
+- **Fix: double URL-encoding of SSH public keys** — SSH keys passed to Proxmox API during LXC creation no longer get double-encoded
+
+### 🔑 SSH Keys Management
+
+- **SSH Keys API** — full CRUD for user SSH key library: `GET /api/ssh-keys`, `POST /api/ssh-keys`, `PUT /api/ssh-keys/{id}`, `DELETE /api/ssh-keys/{id}`
+- **Admin key management** — `GET /api/ssh-keys/user/{user_id}` — admins can view and manage SSH keys of any user
+- **Key fingerprint** — SHA-256 fingerprint is computed and stored automatically on key creation/update
+- **Private key storage** — optional encrypted private key storage alongside the public key
+- **SSH Keys Manager UI** — new tab in Settings page for adding, editing, and deleting SSH keys; shows key name, fingerprint, comment, and creation date
+- **Key selector in wizard** — when deploying a VM or LXC, SSH keys can be selected from the personal library; admins deploying on behalf of another user can pick from that user's keys
+- **Per-user isolation** — regular users manage only their own keys; users with `users.manage` permission can manage keys for any account
+
+### 🗑️ VM/LXC Operations
+
+- **Auto-stop before destroy** — if a VM or LXC container is running when a delete request is issued, it is automatically stopped first; prevents Proxmox `can't lock file` errors on destruction
+
+### 🖥️ Frontend Improvements
+
+- **InstancesPage** — refreshed layout, improved status badges and action menus
+- **NodesPage** — updated node cards with cleaner metrics display
+- **TemplatesPage** — improved template list with better filtering and group management
+- **BackupsPage** — fixed several edge-cases in backup listing, restore dialog, and job scheduling UI
+- **UsersPage** — improved user table with better role display and server assignment indicators
+- **SettingsPage** — added SSH Keys Manager section; general UX polish
+- **`api-client.ts`** — added SSH keys API methods and LXC template endpoints
+- **`websocket.ts`** — connection stability improvements
+- **`types/index.ts`** — added `SSHKey`, `LXCTemplate`, `LXCDeployRequest` types
+
+### 🛠️ Developer Experience
+
+- **Dev mode** — new `compose.dev.yml` override for Vite HMR (hot module replacement); use `pve dev` or `docker compose -f compose.yml -f compose.dev.yml up -d frontend`; source files are mounted as volumes so changes apply instantly without rebuilding
+- **`.dev-mode` marker** — signals to the `pve` CLI that the frontend is running in dev mode
+
+---
+
 ## [v1.4.0] - 2026-04-06
 
 ### 🌐 Networks — SDN Management & Node Interfaces
