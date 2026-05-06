@@ -65,7 +65,8 @@ import {
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusDot } from '@/components/shared/status-dot';
-import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync } from '@/hooks/use-instances';
+import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync, useInstancesMetricsSync } from '@/hooks/use-instances';
+import { useServers } from '@/hooks/use-nodes';
 import { formatBytes, vmTypeLabel, formatUptime } from '@/lib/format';
 import { apiClient } from '@/lib/api-client';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
@@ -220,6 +221,7 @@ export default function InstancesPage() {
   const { t } = useTranslation();
   const { data: vms, isLoading } = useVirtualMachines();
   useVMStatusSync();
+  const metricsMap = useInstancesMetricsSync();
   const bulkOp = useBulkOperation();
 
   // ── Deploy task polling ──────────────────────────────────────────
@@ -255,8 +257,11 @@ export default function InstancesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTasks.length, activeTasks.map((t) => t.id).join(',')]);
 
+  const { data: servers = [] } = useServers();
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [serverFilter, setServerFilter] = useState<string>('all');
   const [nodeFilter, setNodeFilter] = useState<string>(() => {
     return localStorage.getItem('instances-node-filter') ?? 'all';
   });
@@ -271,6 +276,7 @@ export default function InstancesPage() {
       if (typeTab === 'vm' && vm.type !== 'qemu') return false;
       if (typeTab === 'lxc' && vm.type !== 'lxc') return false;
       if (statusFilter !== 'all' && vm.status !== statusFilter) return false;
+      if (serverFilter !== 'all' && vm.server_id !== Number(serverFilter)) return false;
       if (nodeFilter !== 'all' && vm.node !== nodeFilter) return false;
       if (search) {
         const q = search.toLowerCase();
@@ -281,7 +287,7 @@ export default function InstancesPage() {
       }
       return true;
     });
-  }, [vms, typeTab, statusFilter, nodeFilter, search]);
+  }, [vms, typeTab, statusFilter, serverFilter, nodeFilter, search]);
 
   // Ghost rows from active deploy/clone tasks (prepended before real VMs).
   // - reinstall / change_password tasks are NOT shown as ghosts (they live as overlays on real rows)
@@ -322,11 +328,35 @@ export default function InstancesPage() {
 
   const allRows = useMemo<VMInstance[]>(() => [...ghostRows, ...filteredVMs], [ghostRows, filteredVMs]);
 
-  // Unique nodes for filter
+  // Merge live WS metrics into rows for real-time rendering
+  const liveRows = useMemo<VMInstance[]>(() => {
+    if (!metricsMap.size) return allRows;
+    return allRows.map((vm) => {
+      const live = metricsMap.get(`${vm.server_id}:${vm.vmid}`);
+      if (!live) return vm;
+      return {
+        ...vm,
+        status: (live.status as VMInstance['status']) ?? vm.status,
+        cpu: live.cpu ?? vm.cpu,
+        mem: live.mem ?? vm.mem,
+        maxmem: live.maxmem ?? vm.maxmem,
+        disk: live.disk ?? vm.disk,
+        maxdisk: live.maxdisk ?? vm.maxdisk,
+        uptime: live.uptime ?? vm.uptime,
+        netin: live.netin ?? vm.netin,
+        netout: live.netout ?? vm.netout,
+      };
+    });
+  }, [allRows, metricsMap]);
+
+  // Unique nodes for filter — scoped to selected server
   const uniqueNodes = useMemo(() => {
     if (!vms) return [];
-    return [...new Set(vms.map((v) => v.node))].sort();
-  }, [vms]);
+    const source = serverFilter !== 'all'
+      ? vms.filter((v) => v.server_id === Number(serverFilter))
+      : vms;
+    return [...new Set(source.map((v) => v.node))].sort();
+  }, [vms, serverFilter]);
 
   // Counts (ghosts not counted in tabs)
   const counts = useMemo(() => {
@@ -616,7 +646,7 @@ export default function InstancesPage() {
 
   // ==================== TanStack Table ====================
   const table = useReactTable({
-    data: allRows,
+    data: liveRows,
     columns,
     state: { sorting, rowSelection },
     onSortingChange: setSorting,
@@ -679,6 +709,20 @@ export default function InstancesPage() {
             <SelectItem value="stopped">{t('common.stopped', 'Stopped')}</SelectItem>
           </SelectContent>
         </Select>
+
+        {servers.length > 1 && (
+          <Select value={serverFilter} onValueChange={v => { if (v !== null) { setServerFilter(v); setNodeFilter('all'); } }}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder={t('backups.select_server', 'Server')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('instances.all_nodes', 'All servers')}</SelectItem>
+              {servers.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Select value={nodeFilter} onValueChange={v => { if (v !== null) { setNodeFilter(v); localStorage.setItem('instances-node-filter', v); } }}>
           <SelectTrigger className="w-[130px]">

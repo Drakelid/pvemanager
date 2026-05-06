@@ -166,6 +166,7 @@ def list_os_templates(
     current_user: User = Depends(PermissionChecker("templates.view")),
     group_id: int = None,
     server_id: int = None,
+    vm_type: Optional[str] = None,
     active_only: bool = True
 ):
     """Получить список всех OS шаблонов с информацией о группе"""
@@ -175,6 +176,8 @@ def list_os_templates(
         query = query.filter(OSTemplate.group_id == group_id)
     if server_id:
         query = query.filter(OSTemplate.server_id == server_id)
+    if vm_type in ('qemu', 'lxc'):
+        query = query.filter(OSTemplate.vm_type == vm_type)
     if active_only:
         query = query.filter(OSTemplate.is_active == True)
     
@@ -358,20 +361,26 @@ def discover_proxmox_templates(
         proxmox_templates = client.get_templates(node=node_filter)
         
         # Get already added templates для ЭТОГО сервера
-        existing_vmids = set(
-            t.vmid for t in db.query(OSTemplate).filter(OSTemplate.server_id == server_id).all()
-        )
-        
+        existing = db.query(OSTemplate).filter(OSTemplate.server_id == server_id).all()
+        existing_vmids = set(t.vmid for t in existing if t.vmid is not None)
+        existing_volids = set(t.volid for t in existing if t.volid)
+
         result = []
         for tpl in proxmox_templates:
+            volid = tpl.get('volid')
+            vmid = tpl.get('vmid')
+            already = (volid is not None and volid in existing_volids) or (vmid is not None and vmid in existing_vmids)
             result.append({
-                'vmid': tpl.get('vmid'),
-                'name': tpl.get('name', f"Template-{tpl.get('vmid')}"),
+                'vmid': vmid,
+                'volid': volid,
+                'name': tpl.get('name', f"Template-{vmid or volid}"),
                 'node': tpl.get('node'),
                 'status': tpl.get('status'),
+                'vm_type': tpl.get('type', 'qemu'),
+                'is_file_template': tpl.get('is_file_template', False),
                 'maxmem': tpl.get('maxmem', 0),
                 'maxdisk': tpl.get('maxdisk', 0),
-                'already_added': tpl.get('vmid') in existing_vmids
+                'already_added': already,
             })
         
         return JSONResponse(content={
@@ -461,26 +470,31 @@ def _do_auto_import(server_id: int, username: str):
 
         proxmox_templates = client.get_templates(node=node_filter)
 
-        existing_vmids = set(
-            t.vmid for t in db.query(OSTemplate).filter(OSTemplate.server_id == server_id).all()
-        )
+        existing = db.query(OSTemplate).filter(OSTemplate.server_id == server_id).all()
+        existing_vmids = set(t.vmid for t in existing if t.vmid is not None)
+        existing_volids = set(t.volid for t in existing if t.volid)
 
         groups_cache = {g.name: g for g in db.query(OSTemplateGroup).all()}
 
         templates_by_group = {}
         for tpl in proxmox_templates:
+            volid = tpl.get('volid')
             vmid = tpl.get('vmid')
-            if vmid in existing_vmids:
+            if volid and volid in existing_volids:
                 continue
-            template_name = tpl.get('name', f"Template-{vmid}")
+            if vmid is not None and vmid in existing_vmids:
+                continue
+            template_name = tpl.get('name', f"Template-{vmid or volid}")
             group_info = detect_os_group(template_name)
             group_name = group_info['name']
             if group_name not in templates_by_group:
                 templates_by_group[group_name] = {'info': group_info, 'templates': []}
             templates_by_group[group_name]['templates'].append({
                 'vmid': vmid,
+                'volid': volid,
                 'name': template_name,
                 'node': tpl.get('node'),
+                'vm_type': tpl.get('type', 'qemu'),
                 'maxmem': tpl.get('maxmem', 0),
                 'maxdisk': tpl.get('maxdisk', 0),
             })
@@ -516,7 +530,9 @@ def _do_auto_import(server_id: int, username: str):
                     group_id=group.id,
                     server_id=server_id,
                     name=tpl['name'],
-                    vmid=tpl['vmid'],
+                    vmid=tpl.get('vmid'),
+                    volid=tpl.get('volid'),
+                    vm_type=tpl.get('vm_type', 'qemu'),
                     node=tpl.get('node'),
                     source_node=tpl.get('node'),
                     default_cores=2,
@@ -529,7 +545,7 @@ def _do_auto_import(server_id: int, username: str):
                     sort_order=global_sort_order
                 )
                 db.add(template)
-                imported.append({'vmid': tpl['vmid'], 'name': tpl['name'], 'group': group_name})
+                imported.append({'vmid': tpl.get('vmid'), 'volid': tpl.get('volid'), 'name': tpl['name'], 'group': group_name})
                 global_sort_order += 1
 
         db.commit()
@@ -581,25 +597,30 @@ def auto_import_templates(
 
     proxmox_templates = client.get_templates(node=node_filter)
 
-    existing_vmids = set(
-        t.vmid for t in db.query(OSTemplate).filter(OSTemplate.server_id == server_id).all()
-    )
+    existing = db.query(OSTemplate).filter(OSTemplate.server_id == server_id).all()
+    existing_vmids = set(t.vmid for t in existing if t.vmid is not None)
+    existing_volids = set(t.volid for t in existing if t.volid)
     groups_cache = {g.name: g for g in db.query(OSTemplateGroup).all()}
 
     templates_by_group = {}
     for tpl in proxmox_templates:
+        volid = tpl.get('volid')
         vmid = tpl.get('vmid')
-        if vmid in existing_vmids:
+        if volid and volid in existing_volids:
             continue
-        template_name = tpl.get('name', f"Template-{vmid}")
+        if vmid is not None and vmid in existing_vmids:
+            continue
+        template_name = tpl.get('name', f"Template-{vmid or volid}")
         group_info = detect_os_group(template_name)
         group_name = group_info['name']
         if group_name not in templates_by_group:
             templates_by_group[group_name] = {'info': group_info, 'templates': []}
         templates_by_group[group_name]['templates'].append({
             'vmid': vmid,
+            'volid': volid,
             'name': template_name,
             'node': tpl.get('node'),
+            'vm_type': tpl.get('type', 'qemu'),
             'maxmem': tpl.get('maxmem', 0),
             'maxdisk': tpl.get('maxdisk', 0),
         })
@@ -635,7 +656,9 @@ def auto_import_templates(
                     group_id=group.id,
                     server_id=server_id,
                     name=tpl['name'],
-                    vmid=tpl['vmid'],
+                    vmid=tpl.get('vmid'),
+                    volid=tpl.get('volid'),
+                    vm_type=tpl.get('vm_type', 'qemu'),
                     node=tpl.get('node'),
                     source_node=tpl.get('node'),
                     default_cores=2,
@@ -649,7 +672,8 @@ def auto_import_templates(
                 )
                 db.add(template)
                 imported.append({
-                    'vmid': tpl['vmid'],
+                    'vmid': tpl.get('vmid'),
+                    'volid': tpl.get('volid'),
                     'name': tpl['name'],
                     'group': group_name,
                     'sort_order': global_sort_order
@@ -706,7 +730,8 @@ def _update_deploy_task(task_id: int, status: str, step: str, progress: int,
 
 
 def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
-                    user_id: int, username: str, user_ssh_key: str):
+                    user_id: int, username: str, user_ssh_key: str,
+                    owner_id: int = None):
     """Blocking deploy logic — runs in a thread pool."""
     db = SessionLocal()
     server = None
@@ -920,7 +945,7 @@ def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
             template_id=template.id,
             template_name=template.name,
             description=f"Deployed from template {template.name}",
-            owner_id=user_id
+            owner_id=owner_id or user_id
         )
 
         LoggingService.log_proxmox_action(
@@ -999,6 +1024,25 @@ async def deploy_vm_from_template(
     if disk < template.min_disk:
         raise HTTPException(status_code=400, detail=f"Минимум {template.min_disk} GB диска")
 
+    # Resolve owner / SSH keys (admin may target another user)
+    is_admin = current_user.has_permission("users.manage") or current_user.is_admin
+    instance_owner_id = current_user.id
+    if deploy_data.owner_id and deploy_data.owner_id != current_user.id:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Only admins can assign instance to another user")
+        owner = db.query(User).filter(User.id == deploy_data.owner_id).first()
+        if not owner:
+            raise HTTPException(status_code=404, detail="Owner user not found")
+        instance_owner_id = owner.id
+
+    if deploy_data.ssh_key_ids:
+        from .ssh_keys import resolve_ssh_keys_for_deploy
+        resolved = resolve_ssh_keys_for_deploy(
+            db, current_user, deploy_data.ssh_key_ids, instance_owner_id
+        )
+        existing = (deploy_data.ssh_keys or "").strip()
+        deploy_data.ssh_keys = (existing + "\n" + resolved).strip() if existing else resolved
+
     # Create deploy task record
     task = DeployTask(
         status='pending',
@@ -1023,7 +1067,8 @@ async def deploy_vm_from_template(
         deploy_data,
         current_user.id,
         current_user.username,
-        current_user.ssh_public_key or ''
+        current_user.ssh_public_key or '',
+        instance_owner_id,
     )
 
     logger.info(f"[DEPLOY] Task #{task_id} queued: {deploy_data.name} by {current_user.username}")

@@ -16,6 +16,7 @@ export default function TemplatesPage() {
   const [search, setSearch] = useState('');
   const [groupFilter, setGroupFilter] = useState<string>('');
   const [serverFilter, setServerFilter] = useState<string>('');
+  const [typeFilter, setTypeFilter] = useState<string>('');
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importServerId, setImportServerId] = useState<string>('');
 
@@ -23,6 +24,7 @@ export default function TemplatesPage() {
   const { data: templates = [], isLoading } = useTemplates(
     groupFilter ? Number(groupFilter) : undefined,
     serverFilter ? Number(serverFilter) : undefined,
+    typeFilter || undefined,
   );
   const { data: servers = [] } = useServers();
   const autoImport = useAutoImportTemplates();
@@ -72,6 +74,14 @@ export default function TemplatesPage() {
             {servers.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={typeFilter} onValueChange={v => { if (v !== null) setTypeFilter(v); }}>
+          <SelectTrigger className="w-[160px]"><SelectValue placeholder={t('templates.all_types')} /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">{t('templates.all_types')}</SelectItem>
+            <SelectItem value="qemu">{t('templates.type_kvm')}</SelectItem>
+            <SelectItem value="lxc">{t('templates.type_lxc')}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Templates grid */}
@@ -109,13 +119,16 @@ export default function TemplatesPage() {
                   </Button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant={tpl.vm_type === 'lxc' ? 'secondary' : 'default'} className="text-xs">
+                    {tpl.vm_type === 'lxc' ? t('templates.type_lxc') : t('templates.type_kvm')}
+                  </Badge>
                   <Badge variant="outline" className="text-xs">{tpl.default_cores} vCPU</Badge>
                   <Badge variant="outline" className="text-xs">{tpl.default_memory} MB</Badge>
                   <Badge variant="outline" className="text-xs">{tpl.default_disk} GB</Badge>
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{tpl.server_name}</span>
-                  <span>VMID: {tpl.vmid}</span>
+                  <span>{tpl.vmid != null ? `VMID: ${tpl.vmid}` : t('templates.file_template')}</span>
                 </div>
               </CardContent>
             </Card>

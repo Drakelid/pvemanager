@@ -254,8 +254,10 @@ class OSTemplateBase(BaseModel):
     group_id: int = Field(..., description="Template group ID")
     server_id: int = Field(..., description="Proxmox server ID")
     name: str = Field(..., min_length=1, max_length=100, description="Display name")
-    vmid: int = Field(..., ge=100, description="Proxmox template VMID")
-    node: str = Field(..., min_length=1, max_length=100, description="Proxmox node name")
+    vmid: Optional[int] = Field(None, ge=100, description="Proxmox template VMID (None for vztmpl file templates)")
+    vm_type: str = Field(default="qemu", description="Template type: qemu (KVM) or lxc")
+    volid: Optional[str] = Field(None, max_length=500, description="vztmpl volume id (for LXC file templates)")
+    node: Optional[str] = Field(None, max_length=100, description="Proxmox node name")
     default_cores: int = Field(default=1, ge=1, le=128, description="Default CPU cores")
     default_memory: int = Field(default=1024, ge=128, description="Default memory in MB")
     default_disk: int = Field(default=10, ge=1, description="Default disk size in GB")
@@ -278,6 +280,8 @@ class OSTemplateUpdate(BaseModel):
     server_id: Optional[int] = None
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     vmid: Optional[int] = Field(None, ge=100)
+    vm_type: Optional[str] = None
+    volid: Optional[str] = Field(None, max_length=500)
     node: Optional[str] = Field(None, min_length=1, max_length=100)
     default_cores: Optional[int] = Field(None, ge=1, le=128)
     default_memory: Optional[int] = Field(None, ge=128)
@@ -333,6 +337,8 @@ class VMDeployRequest(BaseModel):
     cloud_init_user: Optional[str] = Field(None, max_length=50, description="Cloud-init username")
     cloud_init_password: Optional[str] = Field(None, max_length=100, description="Cloud-init password")
     ssh_keys: Optional[str] = Field(None, description="SSH public keys")
+    ssh_key_ids: Optional[List[int]] = Field(default=None, description="IDs of saved SSH keys to inject")
+    owner_id: Optional[int] = Field(default=None, description="Admin-only: assign instance to this user (also enables using their saved SSH keys)")
 
 
 class VMDeployResponse(BaseModel):

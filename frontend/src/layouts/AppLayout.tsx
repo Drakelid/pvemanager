@@ -19,6 +19,7 @@ import {
   Languages,
   ChevronDown,
   Building2,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -208,7 +209,7 @@ function WorkspaceSwitcher() {
             <FolderKanban className="mr-2 h-3.5 w-3.5" />
             <span className="truncate">{w.name}</span>
             {w.id === activeWorkspaceId && (
-              <span className="ml-auto text-primary">✓</span>
+              <Check className="ml-auto h-3.5 w-3.5 text-primary" />
             )}
           </DropdownMenuItem>
         ))}

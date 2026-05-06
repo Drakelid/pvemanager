@@ -1,13 +1,19 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22-alpine AS build
+FROM node:22-alpine AS deps
 WORKDIR /app
-
 COPY package.json package-lock.json ./
-
 # BuildKit-кеш npm — повторные сборки переиспользуют скачанные пакеты
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --prefer-offline --no-audit --no-fund
 
+# ── Dev stage: Vite HMR (используется compose.dev.yml) ───────────────────────
+FROM deps AS dev
+COPY . .
+EXPOSE 80
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "80"]
+
+# ── Production build ──────────────────────────────────────────────────────────
+FROM deps AS build
 COPY . .
 RUN npm run build
 

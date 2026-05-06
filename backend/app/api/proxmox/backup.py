@@ -137,20 +137,59 @@ def delete_storage(
 @router.get("/api/backups/list/{server_id}")
 def list_backups(
     server_id: int,
-    node: str,
     storage: str,
+    node: Optional[str] = None,
     vmid: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("backup:view")),
 ):
-    """List backup files stored in a given storage on a node"""
+    """List backup files stored in a given storage.
+
+    If ``node`` is omitted (or empty), backup files are aggregated from all
+    cluster nodes that have the storage available. Duplicate ``volid`` entries
+    (which appear on shared storages) are de-duplicated.
+    """
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
     try:
         client = _get_proxmox_client(server)
-        backups = client.list_backups(node, storage, vmid)
+
+        nodes_to_query: list[str] = []
+        if node:
+            nodes_to_query = [node]
+        else:
+            try:
+                cluster_nodes = client.get_nodes() or []
+                nodes_to_query = [
+                    n.get("node") for n in cluster_nodes
+                    if n.get("node") and (n.get("status") in (None, "online"))
+                ]
+            except Exception as e:
+                logger.warning(f"Failed to enumerate cluster nodes for backup listing: {e}")
+
+        seen: set[str] = set()
+        backups: list[dict] = []
+        for n in nodes_to_query:
+            try:
+                items = client.list_backups(n, storage, vmid) or []
+            except Exception as e:
+                logger.warning(f"Skipping node {n} when listing backups: {e}")
+                continue
+            for item in items:
+                volid = item.get("volid")
+                if volid and volid in seen:
+                    continue
+                if volid:
+                    seen.add(volid)
+                # annotate with the node where it was discovered (helpful for
+                # restore / delete actions on non-shared storages)
+                item.setdefault("node", n)
+                backups.append(item)
+
         return JSONResponse(content={"backups": backups})
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing backups: {e}")
         raise HTTPException(status_code=500, detail=str(e))

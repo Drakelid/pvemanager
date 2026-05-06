@@ -14,6 +14,7 @@ import {
   useNotificationChannels, useUpdateSMTP, useUpdateTelegram,
   useAppVersion, useCheckUpdates,
 } from '@/hooks/use-settings';
+import { SSHKeysManager } from './SSHKeysManager';
 
 export default function SettingsPage() {
   const { t } = useTranslation();
@@ -23,12 +24,19 @@ export default function SettingsPage() {
       <Tabs defaultValue="profile">
         <TabsList>
           <TabsTrigger value="profile">{t('settings.profile')}</TabsTrigger>
+          <TabsTrigger value="ssh-keys">{t('ssh_keys.title')}</TabsTrigger>
           <TabsTrigger value="panel">{t('settings.panel')}</TabsTrigger>
           <TabsTrigger value="security">{t('settings.security')}</TabsTrigger>
           <TabsTrigger value="notifications">{t('settings.notifications')}</TabsTrigger>
           <TabsTrigger value="about">{t('settings.about')}</TabsTrigger>
         </TabsList>
         <TabsContent value="profile"><ProfileTab /></TabsContent>
+        <TabsContent value="ssh-keys">
+          <Card>
+            <CardHeader><CardTitle className="text-sm">{t('ssh_keys.title')}</CardTitle></CardHeader>
+            <CardContent><SSHKeysManager /></CardContent>
+          </Card>
+        </TabsContent>
         <TabsContent value="panel"><PanelTab /></TabsContent>
         <TabsContent value="security"><SecurityTab /></TabsContent>
         <TabsContent value="notifications"><NotificationsTab /></TabsContent>

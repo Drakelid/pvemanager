@@ -35,7 +35,8 @@ export class WebSocketManager {
   }
 
   connect() {
-    if (this.ws?.readyState === WebSocket.OPEN) return;
+    // Don't create a new socket if one is already open or connecting
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
 
     const token = localStorage.getItem('access_token');
     const separator = this.options.url.includes('?') ? '&' : '?';
@@ -49,6 +50,13 @@ export class WebSocketManager {
       this._isConnected = true;
       this.reconnectAttempts = 0;
       this.startPing();
+      // Re-send subscribe messages for all active channels (handles initial
+      // subscribe-before-open and reconnect cases).
+      for (const channel of this.subscribers.keys()) {
+        try {
+          this.ws?.send(JSON.stringify({ type: 'subscribe', channel }));
+        } catch { /* ignore */ }
+      }
       this.options.onOpen?.();
     };
 
@@ -107,15 +115,20 @@ export class WebSocketManager {
   subscribe(channel: string, handler: MessageHandler) {
     if (!this.subscribers.has(channel)) {
       this.subscribers.set(channel, new Set());
+      // Only send a subscribe message the first time someone subscribes to
+      // this channel. If WS is not OPEN yet, onopen() will replay it.
+      this.send({ type: 'subscribe', channel });
     }
     this.subscribers.get(channel)!.add(handler);
 
-    // Send subscribe message
-    this.send({ type: 'subscribe', channel });
-
     // Return unsubscribe function
     return () => {
-      this.subscribers.get(channel)?.delete(handler);
+      const handlers = this.subscribers.get(channel);
+      handlers?.delete(handler);
+      if (handlers && handlers.size === 0) {
+        this.subscribers.delete(channel);
+        this.send({ type: 'unsubscribe', channel });
+      }
     };
   }
 

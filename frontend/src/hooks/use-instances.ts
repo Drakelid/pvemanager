@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { getTasksWebSocket } from '@/lib/websocket';
 import type { VMInstance, Snapshot, VMConfig } from '@/types';
@@ -18,21 +18,25 @@ export const vmKeys = {
 };
 
 // ==================== VM List ====================
+// No HTTP polling: live metrics arrive via WebSocket (`useInstancesMetricsSync`).
+// We still refetch on reconnect/focus to recover from missed events.
 export function useVirtualMachines() {
   return useQuery({
     queryKey: vmKeys.all,
     queryFn: () => apiClient.get<VMInstance[]>('/proxmox/api/virtual-machines'),
-    refetchInterval: 30000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
   });
 }
 
-/** Subscribes to WebSocket vm_status_update events and patches the VM list cache in real time. */
+/** Subscribes to WebSocket vm_status_update / vm_deleted / vm_created events and patches the VM list cache in real time. */
 export function useVMStatusSync() {
   const qc = useQueryClient();
   useEffect(() => {
     const ws = getTasksWebSocket();
     ws.connect();
-    const unsub = ws.onType('vm_status_update', (data: unknown) => {
+    const unsubStatus = ws.onType('vm_status_update', (data: unknown) => {
       const msg = data as { vmid: number; server_id: number; status: string };
       qc.setQueryData<VMInstance[]>(vmKeys.all, (old) =>
         old?.map((vm) =>
@@ -42,8 +46,54 @@ export function useVMStatusSync() {
         )
       );
     });
-    return () => unsub();
+    const unsubDeleted = ws.onType('vm_deleted', (data: unknown) => {
+      const msg = data as { vmid: number; server_id: number };
+      qc.setQueryData<VMInstance[]>(vmKeys.all, (old) =>
+        old?.filter((vm) => !(vm.server_id === msg.server_id && vm.vmid === msg.vmid))
+      );
+      // Also invalidate any per-VM detail queries so stale pages refresh
+      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    });
+    const unsubCreated = ws.onType('vm_created', () => {
+      // A new VM appeared on Proxmox; refetch the full list
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    });
+    return () => {
+      unsubStatus();
+      unsubDeleted();
+      unsubCreated();
+    };
   }, [qc]);
+}
+
+export type LiveInstanceMetrics = {
+  server_id: number; vmid: number; node?: string; status?: string;
+  cpu?: number; mem?: number; maxmem?: number; disk?: number; maxdisk?: number;
+  uptime?: number; netin?: number; netout?: number;
+};
+
+/**
+ * Subscribes to live VM/LXC metrics via WebSocket channel `instances_list_metrics`.
+ * Returns a Map keyed by `"server_id:vmid"` that updates every ~1 s.
+ * Uses its own useState — bypasses TanStack Query structural sharing entirely.
+ */
+export function useInstancesMetricsSync(): Map<string, LiveInstanceMetrics> {
+  const [metricsMap, setMetricsMap] = useState(() => new Map<string, LiveInstanceMetrics>());
+  useEffect(() => {
+    const ws = getTasksWebSocket();
+    ws.connect();
+    const apply = (data: unknown) => {
+      const items = (data as { data?: { items?: LiveInstanceMetrics[] } })?.data?.items;
+      if (!items?.length) return;
+      const next = new Map<string, LiveInstanceMetrics>();
+      for (const it of items) next.set(`${it.server_id}:${it.vmid}`, it);
+      setMetricsMap(next);
+    };
+    const unsub = ws.subscribe('instances_list_metrics', apply);
+    return () => unsub();
+  }, []);
+  return metricsMap;
 }
 
 export function useAllResources() {

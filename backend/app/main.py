@@ -23,6 +23,7 @@ from .api import settings as settings_router
 from .api import notifications as notifications_router
 from .api import users as users_router
 from .api import workspaces as workspaces_router
+from .api import ssh_keys as ssh_keys_router
 from .logging_middleware import RequestLoggingMiddleware
 from .language_middleware import LanguageMiddleware
 from .i18n import I18nService
@@ -408,6 +409,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router.router, tags=["notifications"])
     app.include_router(users_router.router, prefix="/admin", tags=["users", "admin"])
     app.include_router(workspaces_router.router, tags=["workspaces"])
+    app.include_router(ssh_keys_router.router, tags=["ssh-keys"])
 
     return app
 

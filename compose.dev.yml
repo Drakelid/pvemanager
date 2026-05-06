@@ -1,0 +1,26 @@
+# Режим разработки фронтенда с Vite HMR (горячая перезагрузка)
+# Использование: pve dev
+# или вручную: docker compose -f compose.yml -f compose.dev.yml up -d frontend
+#
+# Фронтенд запускается через Vite dev server (порт 80 внутри контейнера),
+# маппинг 3000:80 из compose.yml остаётся в силе — адрес не меняется.
+# Изменения в src/ применяются в браузере мгновенно без pereборки.
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    image: pvemanager-frontend-dev:latest
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+    environment:
+      - BACKEND_URL=http://app:8000
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M

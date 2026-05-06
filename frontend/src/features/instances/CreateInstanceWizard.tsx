@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
-import { Server, Cpu, CheckCircle, ChevronLeft, ChevronRight, Loader2, Monitor, Container, HardDrive } from 'lucide-react';
+import { Server, Cpu, CheckCircle, ChevronLeft, ChevronRight, Loader2, Monitor, Container, HardDrive, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +13,9 @@ import { useServers } from '@/hooks/use-nodes';
 import { useTemplates, useTemplateGroups } from '@/hooks/use-templates';
 import { useIPAMNetworks } from '@/hooks/use-ipam';
 import { useLXCTemplates, useLXCStorages, useDeployLXC } from '@/hooks/use-lxc-templates';
+import { useMySSHKeys, useUserSSHKeys } from '@/hooks/use-ssh-keys';
+import { useProfile } from '@/hooks/use-settings';
+import { useUsers } from '@/hooks/use-users';
 import { apiClient } from '@/lib/api-client';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
 import type { VMDeployRequest, OSTemplate, ProxmoxServer, LXCTemplate } from '@/types';
@@ -97,6 +100,21 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   const { data: lxcTemplates = [], isLoading: lxcLoading } = useLXCTemplates(selectedServer?.id);
   const { data: lxcStorages = [] } = useLXCStorages(selectedServer?.id);
 
+  // ── SSH Keys & ownership ──────────────────────────────────────────────────
+  const { data: profile } = useProfile();
+  const isAdmin = !!profile?.is_admin;
+  const { data: allUsers = [] } = useUsers();
+  const [ownerId, setOwnerId] = useState<number | null>(null);
+  const effectiveOwnerId = isAdmin && ownerId ? ownerId : null;
+  const { data: myKeys = [] } = useMySSHKeys();
+  const { data: targetUserKeys = [] } = useUserSSHKeys(effectiveOwnerId);
+  const [selectedKeyIds, setSelectedKeyIds] = useState<number[]>([]);
+  const availableKeys = isAdmin && effectiveOwnerId
+    ? [...myKeys, ...targetUserKeys.filter(k => !myKeys.find(m => m.id === k.id))]
+    : myKeys;
+  const toggleKey = (id: number) =>
+    setSelectedKeyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
   const deploy = useMutation({
     mutationFn: (data: VMDeployRequest) =>
       apiClient.post<{ task_id: number; status: string; name: string }>('/templates/api/deploy', data),
@@ -156,6 +174,8 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
           ipam_network_id: lxcConfig.ipam_network_id || undefined,
           password: lxcConfig.password || undefined,
           ssh_keys: lxcConfig.ssh_keys || undefined,
+          ssh_key_ids: selectedKeyIds.length ? selectedKeyIds : undefined,
+          owner_id: effectiveOwnerId ?? undefined,
           nameserver: lxcConfig.nameserver || undefined,
           unprivileged: lxcConfig.unprivileged,
           start_after_create: lxcConfig.start_after_create,
@@ -197,6 +217,8 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
         cloud_init_user: config.cloud_init_user || undefined,
         cloud_init_password: config.cloud_init_password || undefined,
         ssh_keys: config.ssh_keys || undefined,
+        ssh_key_ids: selectedKeyIds.length ? selectedKeyIds : undefined,
+        owner_id: effectiveOwnerId ?? undefined,
       });
     }
   };
@@ -487,8 +509,16 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   <Label>{t('wizard.ci_password')}</Label>
                   <Input type="password" value={config.cloud_init_password} onChange={e => setConfig(p => ({ ...p, cloud_init_password: e.target.value }))} />
                 </div>
+                {isAdmin && (
+                  <SSHOwnerSelector
+                    users={allUsers}
+                    value={ownerId}
+                    onChange={(v) => { setOwnerId(v); setSelectedKeyIds([]); }}
+                  />
+                )}
+                <SSHKeyPicker keys={availableKeys} selected={selectedKeyIds} onToggle={toggleKey} />
                 <div>
-                  <Label>SSH Keys</Label>
+                  <Label>SSH Keys ({t('common.optional')})</Label>
                   <textarea
                     className="w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono min-h-[60px]"
                     value={config.ssh_keys}
@@ -628,8 +658,16 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                     placeholder={t('wizard.lxc_password_placeholder')}
                   />
                 </div>
+                {isAdmin && (
+                  <SSHOwnerSelector
+                    users={allUsers}
+                    value={ownerId}
+                    onChange={(v) => { setOwnerId(v); setSelectedKeyIds([]); }}
+                  />
+                )}
+                <SSHKeyPicker keys={availableKeys} selected={selectedKeyIds} onToggle={toggleKey} />
                 <div>
-                  <Label>SSH Keys</Label>
+                  <Label>SSH Keys ({t('common.optional')})</Label>
                   <textarea
                     className="w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono min-h-[60px]"
                     value={lxcConfig.ssh_keys}
@@ -713,6 +751,74 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between">
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className="text-sm font-medium">{value}</span>
+    </div>
+  );
+}
+
+function SSHOwnerSelector({
+  users, value, onChange,
+}: {
+  users: { id: number; username: string; full_name?: string | null }[];
+  value: number | null;
+  onChange: (v: number | null) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div>
+      <Label>{t('wizard.ssh_keys_owner')}</Label>
+      <Select value={value ? String(value) : '__none__'} onValueChange={v => onChange(v === '__none__' ? null : Number(v))}>
+        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">{t('wizard.ssh_keys_owner_self')}</SelectItem>
+          {users.map(u => (
+            <SelectItem key={u.id} value={String(u.id)}>
+              {u.username}{u.full_name ? ` (${u.full_name})` : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function SSHKeyPicker({
+  keys, selected, onToggle,
+}: {
+  keys: { id: number; name: string; fingerprint?: string | null; comment?: string | null }[];
+  selected: number[];
+  onToggle: (id: number) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div>
+      <Label className="flex items-center gap-2">
+        <KeyRound className="h-3.5 w-3.5" />
+        {t('wizard.ssh_keys_select')}
+      </Label>
+      {keys.length === 0 ? (
+        <p className="text-xs text-muted-foreground mt-1">{t('wizard.no_saved_keys')}</p>
+      ) : (
+        <div className="mt-1 space-y-1 max-h-40 overflow-y-auto rounded-md border p-2">
+          {keys.map(k => (
+            <label
+              key={k.id}
+              className="flex items-start gap-2 text-xs cursor-pointer hover:bg-accent rounded px-2 py-1"
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 mt-0.5"
+                checked={selected.includes(k.id)}
+                onChange={() => onToggle(k.id)}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="font-medium truncate">{k.name}</div>
+                {k.fingerprint && <div className="font-mono text-muted-foreground truncate">{k.fingerprint}</div>}
+                {k.comment && <div className="text-muted-foreground truncate">{k.comment}</div>}
+              </div>
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

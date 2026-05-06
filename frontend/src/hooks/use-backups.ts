@@ -19,8 +19,13 @@ export function useBackupStorages(serverId: number) {
 export function useBackupList(serverId: number, node: string, storage: string) {
   return useQuery({
     queryKey: backupKeys.list(serverId, node, storage),
-    queryFn: () => apiClient.get<{ backups: unknown[] }>(`/proxmox/api/backups/list/${serverId}?node=${node}&storage=${storage}`),
-    enabled: serverId > 0 && !!node && !!storage,
+    queryFn: () => {
+      const params = new URLSearchParams();
+      params.set('storage', storage);
+      if (node) params.set('node', node);
+      return apiClient.get<{ backups: unknown[] }>(`/proxmox/api/backups/list/${serverId}?${params.toString()}`);
+    },
+    enabled: serverId > 0 && !!storage,
   });
 }
 
@@ -44,7 +49,11 @@ export function useDeleteBackup() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: { server_id: number; node: string; storage: string; volid: string }) =>
-      apiClient.delete(`/proxmox/api/backups/${data.server_id}/backup`),
+      apiClient.delete(`/proxmox/api/backups/${data.server_id}/backup`, {
+        node: data.node,
+        storage: data.storage,
+        volid: data.volid,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['backups'] }),
   });
 }
@@ -53,6 +62,48 @@ export function useRestoreBackup() {
   return useMutation({
     mutationFn: (data: { server_id: number; node: string; vmid: number; archive: string; storage: string; vm_type: string; new_vmid?: number; start?: boolean }) =>
       apiClient.post<{ success: boolean; upid: string }>('/proxmox/api/backups/restore', data),
+  });
+}
+
+export type BackupJobInput = {
+  server_id: number;
+  node: string;
+  vmids: (number | string)[];
+  storage: string;
+  mode?: string;
+  compress?: string;
+  notes?: string;
+  keep_last?: number;
+  keep_daily?: number;
+  keep_weekly?: number;
+  keep_monthly?: number;
+  cron_expression: string;
+  enabled?: boolean;
+};
+
+export function useCreateBackupJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: BackupJobInput) =>
+      apiClient.post<{ success: boolean; job: unknown }>('/proxmox/api/backups/jobs', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: backupKeys.jobs }),
+  });
+}
+
+export function useUpdateBackupJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<BackupJobInput> }) =>
+      apiClient.put<{ success: boolean; job: unknown }>(`/proxmox/api/backups/jobs/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: backupKeys.jobs }),
+  });
+}
+
+export function useDeleteBackupJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: number) => apiClient.delete<{ success: boolean }>(`/proxmox/api/backups/jobs/${jobId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: backupKeys.jobs }),
   });
 }
 

@@ -627,6 +627,7 @@ class MonitoringWorker:
             seen_standalone = {}  # server_id -> set of vmid
             
             all_vms_data = []  # List of (server_id, vm_data, vm_type)
+            server_clients = {}  # server_id (or cluster_id) -> ProxmoxClient
             sync_time = utcnow()
             
             # Collect all VMs from all servers with proper dedup
@@ -650,11 +651,15 @@ class MonitoringWorker:
                             seen_in_cluster[cluster_id] = set()
                         seen_set = seen_in_cluster[cluster_id]
                         use_server_id = cluster_id  # Use cluster_id for all VMs in cluster
+                        # Map cluster_id -> client for IP detection later
+                        if cluster_id not in server_clients:
+                            server_clients[cluster_id] = client
                     else:
                         if server.id not in seen_standalone:
                             seen_standalone[server.id] = set()
                         seen_set = seen_standalone[server.id]
                         use_server_id = server.id
+                        server_clients[server.id] = client
                     
                     server_vm_count = 0
                     server_ct_count = 0
@@ -690,6 +695,8 @@ class MonitoringWorker:
             all_seen = set()
             # Track status changes for WebSocket broadcast
             status_changes = []  # list of (server_id, vmid, node, old_status, new_status)
+            # Track newly-created VMs for WebSocket broadcast
+            created_vms = []  # list of (server_id, vmid, node, name, vm_type)
             
             # Upsert all VMs to database
             for server_id, vm_data, vm_type in all_vms_data:
@@ -706,6 +713,37 @@ class MonitoringWorker:
                         ipam_by_name.get(vm_name.lower())
                     )
                     ip_address = ipam_alloc.ip_address if ipam_alloc else None
+
+                    # If no IPAM IP, try to detect from Proxmox (LXC config or QEMU guest agent)
+                    if not ip_address:
+                        try:
+                            px_client = server_clients.get(server_id)
+                            if px_client and node_name:
+                                if vm_type == 'lxc':
+                                    config = px_client.proxmox.nodes(node_name).lxc(vmid).config.get()
+                                    for i in range(4):
+                                        ipconfig = config.get(f'ipconfig{i}', '')
+                                        if 'ip=' in str(ipconfig):
+                                            ip_part = str(ipconfig).split('ip=')[1].split(',')[0]
+                                            if ip_part and ip_part != 'dhcp':
+                                                ip_address = ip_part.split('/')[0] if '/' in ip_part else ip_part
+                                                break
+                                elif vm_type == 'qemu' and vm_data.get('status') == 'running':
+                                    result = px_client.proxmox.nodes(node_name).qemu(vmid).agent('network-get-interfaces').get()
+                                    if result and 'result' in result:
+                                        for iface in result['result']:
+                                            if iface.get('name') == 'lo':
+                                                continue
+                                            for ip_info in (iface.get('ip-addresses') or []):
+                                                if ip_info.get('ip-address-type') == 'ipv4':
+                                                    addr = ip_info.get('ip-address', '')
+                                                    if addr and not addr.startswith('127.'):
+                                                        ip_address = addr
+                                                        break
+                                            if ip_address:
+                                                break
+                        except Exception:
+                            pass
                     
                     # Get OS type
                     if vm_type == 'qemu':
@@ -727,6 +765,10 @@ class MonitoringWorker:
                         # Detect status change for WS broadcast
                         if existing.status != new_status:
                             status_changes.append((server_id, vmid, node_name, existing.status, new_status))
+                        # If this VM was previously soft-deleted but reappeared,
+                        # treat it as a new VM for broadcast purposes
+                        if existing.deleted_at is not None:
+                            created_vms.append((server_id, vmid, node_name, vm_name, vm_type))
                         # Update existing entry
                         existing.name = vm_name
                         existing.node = node_name
@@ -737,8 +779,8 @@ class MonitoringWorker:
                         existing.os_type = os_type
                         existing.vm_type = vm_type
                         existing.is_template = bool(vm_data.get('template'))
-                        # Only overwrite ip_address if IPAM has a value;
-                        # otherwise preserve user-assigned IP from deploy/wizard
+                        # Only overwrite ip_address if we have a value;
+                        # IPAM and detected IPs take priority; otherwise preserve existing
                         if ip_address:
                             existing.ip_address = ip_address
                         existing.last_sync_at = sync_time
@@ -761,6 +803,7 @@ class MonitoringWorker:
                             last_sync_at=sync_time
                         )
                         db.add(new_vm)
+                        created_vms.append((server_id, vmid, node_name, vm_name, vm_type))
                         
                 except Exception as e:
                     logger.error(f"[VM SYNC] Error processing VM {vmid}: {e}")
@@ -788,10 +831,12 @@ class MonitoringWorker:
             
             deleted_count = 0
             released_ips = 0
+            deleted_broadcasts = []  # list of (server_id, vmid, node, name, vm_type)
             for vm in active_vms:
                 if (vm.server_id, vm.vmid) not in all_seen:
                     vm.deleted_at = sync_time
                     deleted_count += 1
+                    deleted_broadcasts.append((vm.server_id, vm.vmid, vm.node, vm.name, vm.vm_type))
                     logger.debug(f"[VM SYNC] Marked VM {vm.name} (server={vm.server_id}, vmid={vm.vmid}) as deleted")
                     
                     # Release IPAM allocation for deleted VM
@@ -828,6 +873,40 @@ class MonitoringWorker:
                         }))
                 except Exception as _we:
                     logger.warning(f"[VM SYNC] Failed to broadcast status changes: {_we}")
+
+            # Broadcast deletions so connected clients can update their lists in real time
+            if deleted_broadcasts:
+                try:
+                    from app.websocket_manager import ws_manager, run_async_safe
+                    for srv_id, vmid, node_name, vm_name, vm_type in deleted_broadcasts:
+                        logger.info(f"[VM SYNC] VM deleted: server={srv_id} vmid={vmid} name={vm_name}")
+                        run_async_safe(ws_manager.broadcast({
+                            "type": "vm_deleted",
+                            "server_id": srv_id,
+                            "vmid": vmid,
+                            "node": node_name,
+                            "name": vm_name,
+                            "vm_type": vm_type,
+                        }))
+                except Exception as _we:
+                    logger.warning(f"[VM SYNC] Failed to broadcast deletions: {_we}")
+
+            # Broadcast newly-created VMs so clients can refetch and show them
+            if created_vms:
+                try:
+                    from app.websocket_manager import ws_manager, run_async_safe
+                    for srv_id, vmid, node_name, vm_name, vm_type in created_vms:
+                        logger.info(f"[VM SYNC] VM created: server={srv_id} vmid={vmid} name={vm_name}")
+                        run_async_safe(ws_manager.broadcast({
+                            "type": "vm_created",
+                            "server_id": srv_id,
+                            "vmid": vmid,
+                            "node": node_name,
+                            "name": vm_name,
+                            "vm_type": vm_type,
+                        }))
+                except Exception as _we:
+                    logger.warning(f"[VM SYNC] Failed to broadcast creations: {_we}")
             
         except Exception as e:
             logger.error(f"[VM SYNC] Critical error: {e}", exc_info=True)

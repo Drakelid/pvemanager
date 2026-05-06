@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Server, Monitor, Container, Plus, Pencil, Trash2, Wifi, Loader2 } from 'lucide-react';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestServer } from '@/hooks/use-nodes';
+import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestServerCredentials } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
 import type { ProxmoxServerCreate } from '@/types';
 import { toast } from 'sonner';
@@ -48,7 +48,6 @@ function ServerFormDialog({
   initialData,
   onSubmit,
   isPending,
-  serverId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -60,18 +59,17 @@ function ServerFormDialog({
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<ServerFormData>(initialData);
-  const testServer = useTestServer();
+  const testServer = useTestServerCredentials();
 
-  // Sync initialData when dialog opens
-  const handleOpen = (v: boolean) => {
-    if (v) setForm(initialData);
-    onOpenChange(v);
-  };
+  // Sync initialData whenever dialog opens (also covers programmatic open changes)
+  useEffect(() => {
+    if (open) setForm(initialData);
+  }, [open, initialData]);
 
   const set = (field: keyof ServerFormData, value: string | boolean) =>
     setForm(prev => ({ ...prev, [field]: value }));
 
-  const handleSubmit = () => {
+  const buildPayload = (): ProxmoxServerCreate => {
     const payload: ProxmoxServerCreate = {
       name: form.name,
       hostname: form.hostname || form.ip_address,
@@ -88,12 +86,19 @@ function ServerFormDialog({
       payload.api_token_name = form.api_token_name;
       payload.api_token_value = form.api_token_value;
     }
-    onSubmit(payload);
+    return payload;
+  };
+
+  const handleSubmit = () => {
+    onSubmit(buildPayload());
   };
 
   const handleTest = () => {
-    if (!serverId) return;
-    testServer.mutate(serverId, {
+    if (form.use_password ? !form.password : (!form.api_token_name || !form.api_token_value)) {
+      toast.error(t('nodes.connection_failed'));
+      return;
+    }
+    testServer.mutate(buildPayload(), {
       onSuccess: (res) => {
         if (res.success) toast.success(t('nodes.connection_ok'));
         else toast.error(t('nodes.connection_failed') + (res.message ? `: ${res.message}` : ''));
@@ -103,7 +108,7 @@ function ServerFormDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <div className="space-y-3">
@@ -172,12 +177,15 @@ function ServerFormDialog({
           </div>
         </div>
         <DialogFooter className="gap-2">
-          {serverId && (
-            <Button variant="outline" size="sm" onClick={handleTest} disabled={testServer.isPending}>
-              {testServer.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4 mr-1" />}
-              {t('nodes.test_connection')}
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleTest}
+            disabled={testServer.isPending || !form.ip_address}
+          >
+            {testServer.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4 mr-1" />}
+            {t('nodes.test_connection')}
+          </Button>
           <DialogClose render={<Button variant="outline" />}>{t('common.cancel')}</DialogClose>
           <Button onClick={handleSubmit} disabled={isPending || !form.name || !form.ip_address}>
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

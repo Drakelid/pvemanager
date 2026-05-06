@@ -523,6 +523,37 @@ def delete_proxmox_server(
     return None
 
 
+@router.post("/api/servers/test", status_code=status.HTTP_200_OK)
+def test_proxmox_credentials(
+    payload: ProxmoxServerCreate,
+    current_user: User = Depends(PermissionChecker("proxmox.view"))
+):
+    """Проверить произвольные учётные данные Proxmox без сохранения в БД."""
+    try:
+        if payload.use_password:
+            client = ProxmoxClient(
+                host=payload.ip_address,
+                user=payload.api_user,
+                password=payload.password,
+                verify_ssl=payload.verify_ssl,
+            )
+        else:
+            client = ProxmoxClient(
+                host=payload.ip_address,
+                user=payload.api_user,
+                token_name=payload.api_token_name,
+                token_value=payload.api_token_value,
+                verify_ssl=payload.verify_ssl,
+            )
+
+        if client.is_connected():
+            return {"success": True, "status": "success", "message": "Connection successful"}
+        return {"success": False, "status": "error", "message": "Failed to connect to Proxmox server"}
+    except Exception as e:
+        logger.error(f"Error testing Proxmox credentials for {payload.ip_address}: {e}")
+        return {"success": False, "status": "error", "message": str(e)}
+
+
 @router.post("/api/servers/{server_id}/test", status_code=status.HTTP_200_OK)
 def test_proxmox_connection(
     server_id: int,
@@ -533,25 +564,25 @@ def test_proxmox_connection(
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Proxmox server not found")
-    
+
     try:
         # Determine auth method
         client = _get_proxmox_client(server)
-        
+
         if client.is_connected():
             server.update_status(True)
             db.commit()
-            return {"status": "success", "message": "Connection successful"}
+            return {"success": True, "status": "success", "message": "Connection successful"}
         else:
             server.update_status(False, "Failed to connect")
             db.commit()
-            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
-    
+            return {"success": False, "status": "error", "message": "Failed to connect to Proxmox server"}
+
     except Exception as e:
         server.update_status(False, str(e))
         db.commit()
         logger.error(f"Error testing Proxmox connection to {server.name}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": False, "status": "error", "message": str(e)}
 
 
 # ==================== Proxmox Resources ====================

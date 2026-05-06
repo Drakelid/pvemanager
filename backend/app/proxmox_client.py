@@ -1,4 +1,5 @@
 import logging
+import shlex
 from typing import Dict, List, Optional, Union
 from contextlib import asynccontextmanager
 from proxmoxer import ProxmoxAPI
@@ -238,7 +239,25 @@ class ProxmoxClient:
             'vms': self.get_vms(node),
             'containers': self.get_containers(node)
         }
-    
+
+    def get_cluster_resources(self, type_: Optional[str] = None) -> List[Dict]:
+        """Получить живые метрики со всех VM/LXC одним запросом через /cluster/resources.
+
+        Args:
+            type_: 'vm' для VM/LXC, 'node' для нод, None для всех
+        Returns:
+            Список ресурсов с полями cpu, mem, maxmem, disk, maxdisk, uptime, netin, netout, status и т.д.
+        """
+        if not self.proxmox:
+            return []
+        try:
+            if type_:
+                return self.proxmox.cluster.resources.get(type=type_) or []
+            return self.proxmox.cluster.resources.get() or []
+        except Exception as e:
+            logger.error(f"Ошибка получения cluster/resources с {self.host}: {e}")
+            return []
+
     def get_vm_status(self, node: str, vmid: int) -> Optional[Dict]:
         """Получить статус конкретной VM"""
         if not self.proxmox:
@@ -433,15 +452,15 @@ class ProxmoxClient:
         if not self.proxmox:
             return {'success': False, 'error': 'Proxmox connection not initialized'}
         try:
-            # Используем `chpasswd` в формате "user:password"
-            # Запускаем bash -c "echo 'user:pass' | chpasswd"
-            cmd_str = f"echo '{username}:{password}' | chpasswd"
             result = self.proxmox.nodes(node).lxc(vmid).status.current.get()
             if result.get('status') != 'running':
                 return {'success': False, 'error': 'Container is not running'}
-            res = self.proxmox.nodes(node).lxc(vmid).exec.post(
-                command=['bash', '-c', cmd_str]
-            )
+            # Используем printf + chpasswd; shlex.quote защищает от shell-injection
+            # Proxmox exec API ожидает отдельные поля: command + args[N]
+            entry = shlex.quote(f'{username}:{password}')
+            cmd_str = f"printf '%s\\n' {entry} | chpasswd"
+            data = {'command': 'bash', 'args[0]': '-c', 'args[1]': cmd_str}
+            res = self.proxmox.nodes(node).lxc(vmid).exec.post(**data)
             return {'success': True, 'result': res}
         except Exception as e:
             logger.error(f"Не удалось сменить пароль в LXC {vmid}: {e}")
@@ -1156,6 +1175,56 @@ class ProxmoxClient:
                             templates.append(vm)
                 except Exception as e:
                     logger.error(f"Ошибка получения шаблонов с ноды {node_name}: {e}")
+                try:
+                    lxc_cts = self.proxmox.nodes(node_name).lxc.get()
+                    for ct in lxc_cts:
+                        # LXC контейнер-шаблон (template=1)
+                        if ct.get('template') in (1, '1', True):
+                            ct['node'] = node_name
+                            ct['type'] = 'lxc'
+                            templates.append(ct)
+                except Exception as e:
+                    logger.error(f"Ошибка получения LXC-шаблонов с ноды {node_name}: {e}")
+                # vztmpl файлы из storage (стандартные LXC шаблоны)
+                try:
+                    storages = self.proxmox.nodes(node_name).storage.get()
+                    seen_volids = set()
+                    for stor in storages:
+                        stor_name = stor.get('storage')
+                        stor_content = stor.get('content', '') or ''
+                        if 'vztmpl' not in stor_content:
+                            continue
+                        try:
+                            items = self.proxmox.nodes(node_name).storage(stor_name).content.get(content='vztmpl')
+                        except Exception as e:
+                            logger.warning(f"Не удалось прочитать vztmpl из {stor_name} на {node_name}: {e}")
+                            continue
+                        for item in items:
+                            volid = item.get('volid')
+                            if not volid or volid in seen_volids:
+                                continue
+                            seen_volids.add(volid)
+                            # Имя файла без 'storage:vztmpl/'
+                            fname = volid.split('/', 1)[-1] if '/' in volid else volid
+                            # Убираем расширения .tar.zst / .tar.gz / .tar.xz
+                            display_name = fname
+                            for ext in ('.tar.zst', '.tar.gz', '.tar.xz', '.tar'):
+                                if display_name.endswith(ext):
+                                    display_name = display_name[: -len(ext)]
+                                    break
+                            templates.append({
+                                'vmid': None,
+                                'volid': volid,
+                                'name': display_name,
+                                'node': node_name,
+                                'type': 'lxc',
+                                'is_file_template': True,
+                                'maxmem': 0,
+                                'maxdisk': int(item.get('size') or 0),
+                                'storage': stor_name,
+                            })
+                except Exception as e:
+                    logger.error(f"Ошибка получения vztmpl с ноды {node_name}: {e}")
         except Exception as e:
             logger.error(f"Ошибка получения списка шаблонов {self.host}: {e}")
         

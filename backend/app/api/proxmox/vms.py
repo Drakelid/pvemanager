@@ -152,7 +152,24 @@ def get_all_virtual_machines(
             query = query.filter(VMInstance.owner_id == current_user.id)
     
     cached_vms = query.order_by(VMInstance.name).all()
-    
+
+    # ── Live metrics from Proxmox cluster/resources (CPU, RAM, disk, uptime) ──
+    # One HTTP call per server returns metrics for all VMs/LXC in that cluster.
+    # Map: (server_id_in_db, vmid) -> live data dict
+    live_metrics: dict[tuple[int, int], dict] = {}
+    for server in servers:
+        try:
+            client = _get_proxmox_client(server)
+            if not client.is_connected():
+                continue
+            for res in client.get_cluster_resources(type_='vm'):
+                vmid = res.get('vmid')
+                if vmid is None:
+                    continue
+                live_metrics[(server.id, vmid)] = res
+        except Exception as e:
+            logger.debug(f"Could not fetch live metrics from {server.name}: {e}")
+
     result = []
     
     # Detect cluster servers (servers with hostnames pve1, pve2, pve3 pattern)
@@ -195,7 +212,10 @@ def get_all_virtual_machines(
         os_template = vm.template_name or vm.os_type or ("QEMU/KVM" if vm.vm_type == "qemu" else "Linux")
         if not vm.template_name and vm.vm_type == "lxc" and os_template:
             os_template = os_template.capitalize()
-        
+
+        # Live metrics (cpu/mem/disk/uptime/net) from cluster/resources
+        live = live_metrics.get((vm.server_id, vm.vmid)) or {}
+
         result.append({
             "server_id": vm.server_id,
             "server_name": server_name,
@@ -204,18 +224,28 @@ def get_all_virtual_machines(
             "name": vm.name,
             "hostname": ip_hostname or f"{'vps' if vm.vm_type == 'qemu' else 'lxc'}{vm.vmid}.{server.hostname if server else 'local'}",
             "type": vm.vm_type,
-            "status": vm.status or "unknown",
+            "status": live.get('status') or vm.status or "unknown",
             "node": vm.node,
             "cores": vm.cores or 0,
             "memory": vm.memory or 0,
-            "disk": vm.disk_size or 0,
+            "disk": live.get('disk') or 0,
             "ip": ip_address,
+            "ip_address": ip_address,
             "ip_hostname": ip_network_name,
             "os": os_template,
             "os_template": os_template,
             "owner": owner,
             "owner_hostname": "",
-            "storage": "Storage1 (DIR)"
+            "storage": "Storage1 (DIR)",
+            "tags": vm.tags or "",
+            # Live runtime metrics
+            "cpu": live.get('cpu'),
+            "mem": live.get('mem'),
+            "maxmem": live.get('maxmem') or vm.memory or 0,
+            "maxdisk": live.get('maxdisk') or vm.disk_size or 0,
+            "uptime": live.get('uptime'),
+            "netin": live.get('netin'),
+            "netout": live.get('netout'),
         })
     
     return JSONResponse(content=result)

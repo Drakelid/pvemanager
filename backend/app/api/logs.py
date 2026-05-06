@@ -197,11 +197,11 @@ async def get_log_categories():
     """Get available log categories"""
     return {
         "categories": [
-            {"value": "auth", "label": "🔐 Авторизация"},
-            {"value": "proxmox", "label": "🖥️ Proxmox"},
-            {"value": "ipam", "label": "🌐 IPAM"},
-            {"value": "system", "label": "⚙️ Система"},
-            {"value": "api", "label": "🔌 API"},
-            {"value": "docker", "label": "🐳 Docker"}
+            {"value": "auth", "label": "Авторизация"},
+            {"value": "proxmox", "label": "Proxmox"},
+            {"value": "ipam", "label": "IPAM"},
+            {"value": "system", "label": "Система"},
+            {"value": "api", "label": "API"},
+            {"value": "docker", "label": "Docker"}
         ]
     }

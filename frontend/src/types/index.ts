@@ -9,9 +9,12 @@ export interface User {
   is_admin: boolean;
   created_at: string;
   last_login?: string;
-  role_id?: number;
+  role_id?: number | null;
   role_name?: string;
   is_locked?: boolean;
+  failed_login_attempts?: number;
+  locked_until?: string | null;
+  require_password_change?: boolean;
   permissions?: string[];
 }
 
@@ -120,6 +123,8 @@ export interface VMDeployRequest {
   cloud_init_user?: string;
   cloud_init_password?: string;
   ssh_keys?: string;
+  ssh_key_ids?: number[];
+  owner_id?: number;
 }
 
 // ==================== LXC CT Template Types ====================
@@ -150,6 +155,8 @@ export interface LXCDeployRequest {
   ipam_pool_id?: number;
   password?: string;
   ssh_keys?: string;
+  ssh_key_ids?: number[];
+  owner_id?: number;
   nameserver?: string;
   searchdomain?: string;
   unprivileged: boolean;
@@ -254,7 +261,9 @@ export interface OSTemplate {
   group_id: number;
   server_id: number;
   name: string;
-  vmid: number;
+  vmid: number | null;
+  vm_type: 'qemu' | 'lxc';
+  volid?: string | null;
   node: string;
   default_cores: number;
   default_memory: number;

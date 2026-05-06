@@ -356,6 +356,76 @@ async def instance_metrics_loop(db_factory) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Instances list metrics loop  (push every 5 s)
+# Pushes a slim list of live VM/LXC metrics from cluster/resources for the
+# instances table page. One channel for all clients: 'instances_list_metrics'.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _fetch_all_instances_metrics(db_factory) -> list:
+    """Pull live metrics for all VMs/LXC across all online servers via cluster/resources."""
+    from ..models import ProxmoxServer
+    from ..api.proxmox._helpers import _get_proxmox_client
+    db = db_factory()
+    try:
+        servers = db.query(ProxmoxServer).filter(ProxmoxServer.is_online == True).all()
+    finally:
+        db.close()
+
+    out: list = []
+    for server in servers:
+        try:
+            client = _get_proxmox_client(server)
+            # Skip is_connected() check (makes extra HTTP call); just try and catch
+            for res in client.get_cluster_resources(type_='vm'):
+                vmid = res.get('vmid')
+                if vmid is None:
+                    continue
+                out.append({
+                    "server_id": server.id,
+                    "vmid": vmid,
+                    "node": res.get('node'),
+                    "status": res.get('status'),
+                    "cpu": res.get('cpu'),
+                    "mem": res.get('mem'),
+                    "maxmem": res.get('maxmem'),
+                    "disk": res.get('disk'),
+                    "maxdisk": res.get('maxdisk'),
+                    "uptime": res.get('uptime'),
+                    "netin": res.get('netin'),
+                    "netout": res.get('netout'),
+                })
+        except Exception as exc:
+            logger.debug(f"[metrics_broadcaster] instances list metrics error for server {server.id}: {exc}")
+    return out
+
+
+async def instances_list_metrics_loop(db_factory) -> None:
+    """Push live VM/LXC metrics list to 'instances_list_metrics' subscribers (~1 s)."""
+    wsman = _get_ws_manager()
+    channel = "instances_list_metrics"
+    while True:
+        await asyncio.sleep(1)
+        if not wsman.has_channel_subscribers(channel):
+            continue
+        try:
+            items = await asyncio.to_thread(_fetch_all_instances_metrics, db_factory)
+            if not items:
+                continue
+            payload = {
+                "type": "metrics_update",
+                "channel": channel,
+                "data": {"items": items},
+            }
+            _metrics_cache[channel] = payload
+            await wsman.broadcast_to_channel(channel, payload)
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.warning(f"[metrics_broadcaster] instances list loop error: {exc}")
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # On-demand RRD request handler
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -407,4 +477,5 @@ def start_metrics_broadcaster(db_factory) -> None:
     asyncio.create_task(dashboard_metrics_loop(db_factory), name="metrics:dashboard")
     asyncio.create_task(server_metrics_loop(db_factory), name="metrics:servers")
     asyncio.create_task(instance_metrics_loop(db_factory), name="metrics:instances")
+    asyncio.create_task(instances_list_metrics_loop(db_factory), name="metrics:instances_list")
     logger.info("[metrics_broadcaster] Metrics broadcasting tasks started")

@@ -205,6 +205,33 @@ class BlockedIP(Base):
         return f"<BlockedIP(id={self.id}, ip={self.ip_address})>"
 
 
+class UserSSHKey(Base):
+    """SSH key (public + optional encrypted private) attached to a user account.
+
+    Used as a library that user can pick from when deploying VM/LXC instances.
+    Admins can manage keys for any user; regular users only their own.
+    """
+    __tablename__ = "user_ssh_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    public_key = Column(Text, nullable=False)
+    private_key = Column(EncryptedString(8000), nullable=True)
+    fingerprint = Column(String(100), nullable=True, index=True)
+    comment = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", backref="ssh_keys_pool")
+
+    __table_args__ = (
+        Index('idx_user_ssh_keys_user', 'user_id'),
+    )
+
+    def __repr__(self):
+        return f"<UserSSHKey(id={self.id}, user_id={self.user_id}, name='{self.name}')>"
+
+
 class SecuritySetting(Base):
     """Security settings"""
     __tablename__ = "security_settings"
@@ -322,7 +349,9 @@ class OSTemplate(Base):
     server_id = Column(Integer, nullable=False, index=True)  # FK to ProxmoxServer
     
     name = Column(String(100), nullable=False)  # Display name, e.g., "Ubuntu 22.04 LTS"
-    vmid = Column(Integer, nullable=False)  # Proxmox template VMID on source node
+    vmid = Column(Integer, nullable=True)  # Proxmox template VMID (qemu/lxc-container template). NULL for vztmpl files.
+    vm_type = Column(String(10), nullable=False, default="qemu", server_default="qemu")  # 'qemu' or 'lxc'
+    volid = Column(String(500), nullable=True)  # vztmpl volume id, e.g. 'local:vztmpl/ubuntu-24.04...tar.zst'
     node = Column(String(100), nullable=True)  # Primary/source node (optional for cross-node templates)
     
     # Cross-node replication support

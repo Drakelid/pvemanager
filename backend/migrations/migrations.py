@@ -501,6 +501,20 @@ def migrate_cross_node_templates(conn):
     # Add replicated_nodes column
     if add_column_if_not_exists(conn, 'os_templates', 'replicated_nodes', "JSONB DEFAULT '{}'::jsonb"):
         logger.info("✓ Added replicated_nodes column to os_templates")
+
+    # Add vm_type column (qemu/lxc) — existing rows default to qemu
+    if add_column_if_not_exists(conn, 'os_templates', 'vm_type', "VARCHAR(10) NOT NULL DEFAULT 'qemu'"):
+        logger.info("✓ Added vm_type column to os_templates")
+
+    # Add volid column for LXC vztmpl file-based templates
+    if add_column_if_not_exists(conn, 'os_templates', 'volid', "VARCHAR(500)"):
+        logger.info("✓ Added volid column to os_templates")
+
+    # vmid must be nullable for vztmpl-based templates
+    try:
+        conn.execute(text("ALTER TABLE os_templates ALTER COLUMN vmid DROP NOT NULL"))
+    except Exception:
+        pass
     
     # Make node column nullable
     try:
@@ -1312,6 +1326,34 @@ def migrate_deploy_tasks_kind(conn):
     logger.info("✓ deploy_tasks.kind column added")
 
 
+def migrate_user_ssh_keys_table(conn):
+    """Migration 24: Create user_ssh_keys table for SSH key library per user."""
+    if table_exists(conn, 'user_ssh_keys'):
+        logger.info("✓ user_ssh_keys table already exists")
+        return
+
+    logger.info("Creating user_ssh_keys table...")
+    conn.execute(text("""
+        CREATE TABLE user_ssh_keys (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            public_key TEXT NOT NULL,
+            private_key VARCHAR(8000),
+            fingerprint VARCHAR(100),
+            comment VARCHAR(255),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("""
+        CREATE INDEX idx_user_ssh_keys_user ON user_ssh_keys(user_id)
+    """))
+    conn.execute(text("""
+        CREATE INDEX idx_user_ssh_keys_fp ON user_ssh_keys(fingerprint)
+    """))
+    logger.info("✓ user_ssh_keys table created")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1508,6 +1550,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Deploy tasks kind migration: {e}")
+                conn.rollback()
+
+            # Migration 24: user_ssh_keys table
+            try:
+                migrate_user_ssh_keys_table(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"User SSH keys table migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

@@ -4,7 +4,7 @@ import type { OSTemplate, OSTemplateGroup } from '@/types';
 
 export const templateKeys = {
   groups: ['template-groups'] as const,
-  templates: (groupId?: number, serverId?: number) => ['templates', groupId, serverId] as const,
+  templates: (groupId?: number, serverId?: number, vmType?: string) => ['templates', groupId, serverId, vmType] as const,
   template: (id: number) => ['template', id] as const,
   discover: (serverId: number) => ['template-discover', serverId] as const,
 };
@@ -16,13 +16,14 @@ export function useTemplateGroups() {
   });
 }
 
-export function useTemplates(groupId?: number, serverId?: number) {
+export function useTemplates(groupId?: number, serverId?: number, vmType?: string) {
   const params = new URLSearchParams();
   if (groupId) params.set('group_id', String(groupId));
   if (serverId) params.set('server_id', String(serverId));
+  if (vmType) params.set('vm_type', vmType);
   const qs = params.toString();
   return useQuery({
-    queryKey: templateKeys.templates(groupId, serverId),
+    queryKey: templateKeys.templates(groupId, serverId, vmType),
     queryFn: () => apiClient.get<OSTemplate[]>(`/templates/api/templates${qs ? `?${qs}` : ''}`),
   });
 }

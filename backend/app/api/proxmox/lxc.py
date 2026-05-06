@@ -53,6 +53,8 @@ class LXCDeployRequest(BaseModel):
     ipam_pool_id: Optional[int] = None
     password: Optional[str] = None
     ssh_keys: Optional[str] = None
+    ssh_key_ids: Optional[List[int]] = None
+    owner_id: Optional[int] = None
     nameserver: Optional[str] = None
     searchdomain: Optional[str] = None
     unprivileged: bool = True
@@ -105,7 +107,8 @@ def _update_task(task_id: int, status: str, step: str, progress: int,
         db.close()
 
 
-def _do_lxc_deploy(task_id: int, req: LXCDeployRequest, user_id: int, username: str):
+def _do_lxc_deploy(task_id: int, req: LXCDeployRequest, user_id: int, username: str,
+                   owner_id: Optional[int] = None):
     """Blocking LXC deploy — runs in thread pool."""
     db = SessionLocal()
     server = None
@@ -286,7 +289,7 @@ def _do_lxc_deploy(task_id: int, req: LXCDeployRequest, user_id: int, username: 
             template_id=None,
             template_name=req.ostemplate,
             description=f"Created from CT template {req.ostemplate}",
-            owner_id=user_id,
+            owner_id=owner_id or user_id,
         )
 
         LoggingService.log_proxmox_action(
@@ -434,6 +437,23 @@ async def deploy_lxc_from_template(
     if not req.name or len(req.name) < 1:
         raise HTTPException(status_code=400, detail="Укажите имя контейнера")
 
+    # Resolve owner / SSH keys
+    is_admin = current_user.has_permission("users.manage") or current_user.is_admin
+    instance_owner_id = current_user.id
+    if req.owner_id and req.owner_id != current_user.id:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Only admins can assign instance to another user")
+        owner = db.query(User).filter(User.id == req.owner_id).first()
+        if not owner:
+            raise HTTPException(status_code=404, detail="Owner user not found")
+        instance_owner_id = owner.id
+
+    if req.ssh_key_ids:
+        from ..ssh_keys import resolve_ssh_keys_for_deploy
+        resolved = resolve_ssh_keys_for_deploy(db, current_user, req.ssh_key_ids, instance_owner_id)
+        existing = (req.ssh_keys or "").strip()
+        req.ssh_keys = (existing + "\n" + resolved).strip() if existing else resolved
+
     # Create task record
     task = DeployTask(
         status="pending",
@@ -456,6 +476,7 @@ async def deploy_lxc_from_template(
         req,
         current_user.id,
         current_user.username,
+        instance_owner_id,
     )
 
     return LXCDeployResponse(task_id=task_id, status="pending", name=req.name)

@@ -6,7 +6,53 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+// Recursively walks through children and collects { value, label } pairs from
+// every <SelectItem> found, so that <Select.Value> can render the item's label
+// (e.g. node name) instead of the raw value (e.g. numeric id).
+function collectSelectItems(
+  node: React.ReactNode,
+  acc: Array<{ value: unknown; label: React.ReactNode }>,
+  seen: Set<unknown>,
+): void {
+  React.Children.forEach(node, (child) => {
+    if (!React.isValidElement(child)) return
+    const props = child.props as { value?: unknown; children?: React.ReactNode }
+    // Identify SelectItem either by component reference or by data-slot marker.
+    const isItem =
+      child.type === SelectItem ||
+      (typeof child.type !== "string" &&
+        (child.type as { displayName?: string })?.displayName === "SelectItem")
+    if (isItem && props.value !== undefined && !seen.has(props.value)) {
+      seen.add(props.value)
+      acc.push({ value: props.value, label: props.children })
+      return
+    }
+    if (props.children) {
+      collectSelectItems(props.children, acc, seen)
+    }
+  })
+}
+
+function Select<Value, Multiple extends boolean | undefined = false>(
+  props: SelectPrimitive.Root.Props<Value, Multiple>,
+) {
+  const { children, items, ...rest } = props
+  const autoItems = React.useMemo(() => {
+    if (items) return items
+    const acc: Array<{ value: unknown; label: React.ReactNode }> = []
+    collectSelectItems(children, acc, new Set<unknown>())
+    return acc.length ? acc : undefined
+  }, [children, items])
+
+  return (
+    <SelectPrimitive.Root
+      items={autoItems}
+      {...(rest as SelectPrimitive.Root.Props<Value, Multiple>)}
+    >
+      {children}
+    </SelectPrimitive.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (

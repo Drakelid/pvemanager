@@ -99,6 +99,13 @@ export function useDeleteServer() {
 
 export function useTestServer() {
   return useMutation({
-    mutationFn: (id: number) => apiClient.post<{ success: boolean; message?: string }>(`/proxmox/api/servers/${id}/test`, {}),
+    mutationFn: (id: number) => apiClient.post<{ success: boolean; status?: string; message?: string }>(`/proxmox/api/servers/${id}/test`, {}),
+  });
+}
+
+export function useTestServerCredentials() {
+  return useMutation({
+    mutationFn: (data: ProxmoxServerCreate) =>
+      apiClient.post<{ success: boolean; status?: string; message?: string }>(`/proxmox/api/servers/test`, data),
   });
 }
