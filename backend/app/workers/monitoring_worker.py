@@ -737,7 +737,10 @@ class MonitoringWorker:
                         existing.os_type = os_type
                         existing.vm_type = vm_type
                         existing.is_template = bool(vm_data.get('template'))
-                        existing.ip_address = ip_address
+                        # Only overwrite ip_address if IPAM has a value;
+                        # otherwise preserve user-assigned IP from deploy/wizard
+                        if ip_address:
+                            existing.ip_address = ip_address
                         existing.last_sync_at = sync_time
                         existing.deleted_at = None
                     else:
