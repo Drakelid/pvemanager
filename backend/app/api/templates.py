@@ -893,6 +893,15 @@ def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
         ssh_keys = deploy_data.ssh_keys or ""
         if user_ssh_key:
             ssh_keys = f"{ssh_keys}\n{user_ssh_key}".strip()
+        # Deduplicate SSH keys while preserving order
+        _seen_ssh: set = set()
+        _uniq_ssh = []
+        for _k in ssh_keys.splitlines():
+            _k = _k.strip()
+            if _k and _k not in _seen_ssh:
+                _seen_ssh.add(_k)
+                _uniq_ssh.append(_k)
+        ssh_keys = "\n".join(_uniq_ssh)
 
         config_success = client.configure_vm(
             node=deploy_node,

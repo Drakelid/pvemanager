@@ -319,7 +319,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">{t('wizard.select_template')}</h3>
           {groups.map(group => {
-            const groupTemplates = templates.filter(t => t.group_id === group.id);
+            const groupTemplates = templates.filter(t => t.group_id === group.id && t.vm_type === 'qemu');
             if (groupTemplates.length === 0) return null;
             return (
               <div key={group.id} className="space-y-2">
@@ -350,7 +350,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               </div>
             );
           })}
-          {templates.length === 0 && (
+          {templates.filter(t => t.vm_type === 'qemu').length === 0 && (
             <p className="text-center text-muted-foreground py-8">{t('wizard.no_templates')}</p>
           )}
         </div>

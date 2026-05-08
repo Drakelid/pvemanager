@@ -2358,6 +2358,15 @@ async def create_lxc_container(
                 combined_ssh_keys = f"{combined_ssh_keys}\n{current_user.ssh_public_key}"
             else:
                 combined_ssh_keys = current_user.ssh_public_key
+        # Deduplicate SSH keys while preserving order
+        _seen_ssh: set = set()
+        _uniq_ssh = []
+        for _k in combined_ssh_keys.splitlines():
+            _k = _k.strip()
+            if _k and _k not in _seen_ssh:
+                _seen_ssh.add(_k)
+                _uniq_ssh.append(_k)
+        combined_ssh_keys = "\n".join(_uniq_ssh)
         
         upid = client.create_lxc_container(
             node=node,
@@ -2492,6 +2501,15 @@ async def create_lxc_container_smart(
                 combined_ssh_keys = f"{combined_ssh_keys}\n{current_user.ssh_public_key}"
             else:
                 combined_ssh_keys = current_user.ssh_public_key
+        # Deduplicate SSH keys while preserving order
+        _seen_ssh: set = set()
+        _uniq_ssh = []
+        for _k in combined_ssh_keys.splitlines():
+            _k = _k.strip()
+            if _k and _k not in _seen_ssh:
+                _seen_ssh.add(_k)
+                _uniq_ssh.append(_k)
+        combined_ssh_keys = "\n".join(_uniq_ssh)
         
         # Создаём контейнер
         upid = client.create_lxc_container(
