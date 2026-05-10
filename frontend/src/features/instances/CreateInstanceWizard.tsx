@@ -98,7 +98,8 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   const { data: templates = [] } = useTemplates(undefined, selectedServer?.id);
   const { data: networks = [] } = useIPAMNetworks();
   const { data: lxcTemplates = [], isLoading: lxcLoading } = useLXCTemplates(selectedServer?.id);
-  const { data: lxcStorages = [] } = useLXCStorages(selectedServer?.id);
+  const { data: lxcStorages = [] } = useLXCStorages(selectedServer?.id, undefined, 'rootdir');
+  const { data: vmStorages = [] } = useLXCStorages(selectedServer?.id, undefined, 'images');
 
   // ── SSH Keys & ownership ──────────────────────────────────────────────────
   const { data: profile } = useProfile();
@@ -222,6 +223,21 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       });
     }
   };
+
+  // ── Filtered IPAM networks ────────────────────────────────────────────────
+  // Show only networks matching the selected server (or global networks with no server assigned)
+  // Further filter by node if a node is set
+  const vmFilteredNetworks = networks.filter(n =>
+    n.is_active &&
+    (!n.proxmox_server_id || !selectedServer || n.proxmox_server_id === selectedServer.id) &&
+    (!n.proxmox_node || !selectedNode || n.proxmox_node === selectedNode)
+  );
+
+  const lxcFilteredNetworks = networks.filter(n =>
+    n.is_active &&
+    (!n.proxmox_server_id || !selectedServer || n.proxmox_server_id === selectedServer.id) &&
+    (!n.proxmox_node || !selectedLXCTemplate?.node || n.proxmox_node === selectedLXCTemplate.node)
+  );
 
   // Apply template defaults when template selected
   const selectTemplate = (tpl: OSTemplate) => {
@@ -460,6 +476,18 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                     onChange={e => setConfig(p => ({ ...p, disk: Number(e.target.value) }))}
                   />
                 </div>
+                <div>
+                  <Label>{t('wizard.storage')}</Label>
+                  <Select value={config.storage} onValueChange={v => setConfig(p => ({ ...p, storage: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {vmStorages.length > 0
+                        ? vmStorages.map(s => <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>)
+                        : <SelectItem value="local-lvm">local-lvm</SelectItem>
+                      }
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardContent>
             </Card>
 
@@ -476,7 +504,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   <Select value={String(config.ipam_network_id || '')} onValueChange={v => setConfig(p => ({ ...p, ipam_network_id: v ? Number(v) : null }))}>
                     <SelectTrigger><SelectValue placeholder={t('wizard.manual_ip')} /></SelectTrigger>
                     <SelectContent>
-                      {networks.map(n => (
+                      {vmFilteredNetworks.map(n => (
                         <SelectItem key={n.id} value={String(n.id)}>{n.name} ({n.network})</SelectItem>
                       ))}
                     </SelectContent>
@@ -517,15 +545,17 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   />
                 )}
                 <SSHKeyPicker keys={availableKeys} selected={selectedKeyIds} onToggle={toggleKey} />
-                <div>
-                  <Label>SSH Keys ({t('common.optional')})</Label>
-                  <textarea
-                    className="w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono min-h-[60px]"
-                    value={config.ssh_keys}
-                    onChange={e => setConfig(p => ({ ...p, ssh_keys: e.target.value }))}
-                    placeholder={t('common.placeholder_ssh_key')}
-                  />
-                </div>
+                {availableKeys.length === 0 && (
+                  <div>
+                    <Label>SSH Keys <span className="text-muted-foreground text-xs font-normal">(безопаснее)</span></Label>
+                    <textarea
+                      className="w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono min-h-[60px]"
+                      value={config.ssh_keys}
+                      onChange={e => setConfig(p => ({ ...p, ssh_keys: e.target.value }))}
+                      placeholder={t('common.placeholder_ssh_key')}
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -620,7 +650,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   <Select value={String(lxcConfig.ipam_network_id || '')} onValueChange={v => setLxcConfig(p => ({ ...p, ipam_network_id: v ? Number(v) : null }))}>
                     <SelectTrigger><SelectValue placeholder={t('wizard.manual_ip')} /></SelectTrigger>
                     <SelectContent>
-                      {networks.map(n => (
+                      {lxcFilteredNetworks.map(n => (
                         <SelectItem key={n.id} value={String(n.id)}>{n.name} ({n.network})</SelectItem>
                       ))}
                     </SelectContent>
@@ -666,15 +696,17 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   />
                 )}
                 <SSHKeyPicker keys={availableKeys} selected={selectedKeyIds} onToggle={toggleKey} />
-                <div>
-                  <Label>SSH Keys ({t('common.optional')})</Label>
-                  <textarea
-                    className="w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono min-h-[60px]"
-                    value={lxcConfig.ssh_keys}
-                    onChange={e => setLxcConfig(p => ({ ...p, ssh_keys: e.target.value }))}
-                    placeholder={t('common.placeholder_ssh_key')}
-                  />
-                </div>
+                {availableKeys.length === 0 && (
+                  <div>
+                    <Label>SSH Keys <span className="text-muted-foreground text-xs font-normal">(безопаснее)</span></Label>
+                    <textarea
+                      className="w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono min-h-[60px]"
+                      value={lxcConfig.ssh_keys}
+                      onChange={e => setLxcConfig(p => ({ ...p, ssh_keys: e.target.value }))}
+                      placeholder={t('common.placeholder_ssh_key')}
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -694,6 +726,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               <Row label={t('common.vcpu')} value={String(config.cores)} />
               <Row label={t('wizard.memory_mb')} value={`${config.memory} MB`} />
               <Row label={t('wizard.disk_gb')} value={`${config.disk} GB`} />
+              <Row label={t('wizard.storage')} value={config.storage} />
               <Row label={t('wizard.bridge')} value={config.bridge} />
               {config.ipam_network_id && <Row label={t('common.ipam')} value={networks.find(n => n.id === config.ipam_network_id)?.name || 'Auto'} />}
               {config.ip_address && <Row label={t('common.primary_ip')} value={config.ip_address} />}

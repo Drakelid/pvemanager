@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Monitor, Search, Download, Trash2, Loader2 } from 'lucide-react';
+import { OsLogo } from './OsLogo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -99,7 +100,9 @@ export default function TemplatesPage() {
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
-                    {tpl.group_icon ? (
+                    {tpl.vm_type === 'qemu' ? (
+                      <OsLogo name={tpl.name} className="h-7 w-7" />
+                    ) : tpl.group_icon ? (
                       <span className="text-xl" dangerouslySetInnerHTML={{ __html: tpl.group_icon }} />
                     ) : (
                       <Monitor className="h-5 w-5 text-muted-foreground" />

@@ -29,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { StatusDot } from '@/components/shared/status-dot';
-import { useVirtualMachines, usePowerAction } from '@/hooks/use-instances';
+import { useVirtualMachines, usePowerAction, useVMInterfaces } from '@/hooks/use-instances';
 import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
 import { vmTypeLabel } from '@/lib/format';
 import { toast } from 'sonner';
@@ -59,6 +59,13 @@ export default function InstanceDetailPage() {
 
   const power = usePowerAction(sid, vid, type, node);
   const isRunning = vm?.status === 'running';
+
+  const { data: ifaces } = useVMInterfaces(sid, vid, type, node, isRunning);
+  const primaryLiveIP = ifaces?.interfaces
+    ?.flatMap((i) => i.ips || [])
+    .find((ip) => ip.type === 'ipv4' && !ip.address.startsWith('127.'))
+    ?.address;
+  const displayIP = primaryLiveIP || vm?.ip_address;
   const isQemu = type === 'qemu';
   const TypeIcon = type === 'qemu' ? Monitor : Container;
   const [dialog, setDialog] = useState<InstanceAction>(null);
@@ -125,7 +132,7 @@ export default function InstanceDetailPage() {
                   {vm?.status || 'unknown'}
                 </span>
                 <span>Node: {node}</span>
-                {vm?.ip_address && <span className="font-mono">{vm.ip_address}</span>}
+                {displayIP && <span className="font-mono">{displayIP}</span>}
               </div>
             </div>
           </div>
