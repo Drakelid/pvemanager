@@ -68,17 +68,10 @@ const OS_MAP: Array<{ keys: string[]; info: OsInfo }> = [
       fg: '#932279',
       svg: (
         <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-          {/* Green top-left */}
-          <polygon points="50,50 3,3 3,47 47,47" fill="#9ccd2a"/>
-          {/* Purple top-right */}
-          <polygon points="50,50 97,3 53,3 53,47" fill="#932279"/>
-          {/* Yellow bottom-right */}
-          <polygon points="50,50 97,97 97,53 53,53" fill="#efa724"/>
-          {/* Blue bottom-left */}
-          <polygon points="50,50 3,97 47,97 47,53" fill="#262577"/>
-          {/* White center cross */}
-          <rect x="47" y="3" width="6" height="94" fill="white"/>
-          <rect x="3" y="47" width="94" height="6" fill="white"/>
+          <rect x="3" y="3" width="44" height="44" rx="3" fill="#9ccd2a"/>
+          <rect x="53" y="3" width="44" height="44" rx="3" fill="#932279"/>
+          <rect x="3" y="53" width="44" height="44" rx="3" fill="#262577"/>
+          <rect x="53" y="53" width="44" height="44" rx="3" fill="#efa724"/>
         </svg>
       ),
     },
@@ -97,7 +90,7 @@ const OS_MAP: Array<{ keys: string[]; info: OsInfo }> = [
     },
   },
   {
-    keys: ['alma', 'almalinux'],
+    keys: ['alma', 'almalinux', 'alama'],
     info: {
       label: 'A',
       bg: '#ffffff',
