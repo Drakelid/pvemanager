@@ -167,3 +167,13 @@ def broadcast_task_update(user_id: int, event_type: str, task_data: dict) -> Non
     """
     payload = {"type": event_type, "task": task_data}
     run_async_safe(ws_manager.send_to_user(user_id, payload))
+
+
+def broadcast_event(event_type: str, **fields) -> None:
+    """
+    Fire-and-forget global broadcast of an event to all connected WebSocket
+    clients from a sync context. Used to push real-time invalidations such as
+    `server_added`, `server_updated`, `server_deleted`.
+    """
+    payload = {"type": event_type, **fields}
+    run_async_safe(ws_manager.broadcast(payload))

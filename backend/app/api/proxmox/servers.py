@@ -99,7 +99,49 @@ def create_proxmox_server(
     db.add(server)
     db.commit()
     db.refresh(server)
-    
+
+    # Сразу проверяем подключение, чтобы статус is_online отобразился без задержки
+    # в 30 секунд (период monitoring_worker.run_server_availability_check).
+    try:
+        client = _get_proxmox_client(server)
+        if client.is_connected():
+            server.update_status(True)
+        else:
+            server.update_status(False, "Failed to connect")
+        db.commit()
+        db.refresh(server)
+    except Exception as e:
+        logger.warning(f"Initial connectivity check failed for {server.name}: {e}")
+        try:
+            server.update_status(False, str(e))
+            db.commit()
+            db.refresh(server)
+        except Exception:
+            db.rollback()
+
+    # Если сервер онлайн — мгновенно подтягиваем VM/LXC в локальный кэш,
+    # чтобы NodeDetailPage и InstancesPage сразу увидели инстансы (без ожидания
+    # 10-секундного цикла vm_cache_sync).
+    if server.is_online:
+        try:
+            from ...workers.monitoring_worker import monitoring_worker
+            monitoring_worker.sync_vm_cache()
+        except Exception as e:
+            logger.warning(f"Initial VM cache sync failed for server {server.name}: {e}")
+
+    # Уведомляем все подключённые клиенты, что сервер добавлен — фронтенд
+    # сразу инвалидирует список серверов и список VM.
+    try:
+        from ...websocket_manager import broadcast_event
+        broadcast_event(
+            "server_added",
+            server_id=server.id,
+            name=server.name,
+            is_online=bool(server.is_online),
+        )
+    except Exception as e:
+        logger.debug(f"Failed to broadcast server_added: {e}")
+
     logger.info(f"User {current_user.username} added Proxmox server: {server.name}")
     return server
 
@@ -305,7 +347,19 @@ async def auto_setup_proxmox_server(
         
         db.commit()
         logger.info(f"User {current_user.username} auto-setup Proxmox cluster with {len(created_servers)} nodes")
-        
+
+        # Мгновенный sync VM-кэша + WS-broadcast для real-time обновления UI
+        try:
+            from ...workers.monitoring_worker import monitoring_worker
+            monitoring_worker.sync_vm_cache()
+        except Exception as _e:
+            logger.debug(f"VM sync after auto-setup failed: {_e}")
+        try:
+            from ...websocket_manager import broadcast_event
+            broadcast_event("server_added", cluster=True, count=len(created_servers))
+        except Exception as _e:
+            logger.debug(f"Failed to broadcast server_added (cluster): {_e}")
+
         return {
             "cluster": True,
             "nodes_count": len(created_servers),
@@ -334,7 +388,24 @@ async def auto_setup_proxmox_server(
         db.refresh(server)
         
         logger.info(f"User {current_user.username} auto-setup Proxmox server: {server.name}")
-        
+
+        # Мгновенный sync VM-кэша + WS-broadcast для real-time обновления UI
+        try:
+            from ...workers.monitoring_worker import monitoring_worker
+            monitoring_worker.sync_vm_cache()
+        except Exception as _e:
+            logger.debug(f"VM sync after auto-setup failed: {_e}")
+        try:
+            from ...websocket_manager import broadcast_event
+            broadcast_event(
+                "server_added",
+                server_id=server.id,
+                name=server.name,
+                is_online=bool(server.is_online),
+            )
+        except Exception as _e:
+            logger.debug(f"Failed to broadcast server_added: {_e}")
+
         return {
             "cluster": False,
             "id": server.id,
@@ -442,6 +513,50 @@ def update_proxmox_server(
     db.refresh(server)
     
     logger.info(f"User {current_user.username} updated Proxmox server: {server.name}")
+
+    # Если изменились параметры подключения — сразу проверяем доступность,
+    # чтобы статус обновился без 30-секундной задержки monitoring_worker.
+    creds_changed = any(
+        key in update_data
+        for key in ('password', 'api_token_name', 'api_token_value', 'api_user',
+                    'ip_address', 'hostname', 'port', 'verify_ssl', 'use_password')
+    )
+    if creds_changed:
+        try:
+            client = _get_proxmox_client(server)
+            if client.is_connected():
+                server.update_status(True)
+            else:
+                server.update_status(False, "Failed to connect")
+            db.commit()
+            db.refresh(server)
+            if server.is_online:
+                try:
+                    from ...workers.monitoring_worker import monitoring_worker
+                    monitoring_worker.sync_vm_cache()
+                except Exception as _e:
+                    logger.debug(f"VM sync after update failed: {_e}")
+        except Exception as e:
+            logger.warning(f"Connectivity check after update failed for {server.name}: {e}")
+            try:
+                server.update_status(False, str(e))
+                db.commit()
+                db.refresh(server)
+            except Exception:
+                db.rollback()
+
+    # Broadcast — фронтенд инвалидирует кэши списков серверов и инстансов
+    try:
+        from ...websocket_manager import broadcast_event
+        broadcast_event(
+            "server_updated",
+            server_id=server.id,
+            name=server.name,
+            is_online=bool(server.is_online),
+        )
+    except Exception as e:
+        logger.debug(f"Failed to broadcast server_updated: {e}")
+
     return server
 
 
@@ -519,7 +634,18 @@ def delete_proxmox_server(
         monitoring_worker.cleanup_server_state(server_id)
     except Exception as e:
         logger.warning(f"Failed to cleanup monitoring state for server {server_id}: {e}")
-    
+
+    # Broadcast — фронтенд мгновенно убирает удалённый сервер и его инстансы
+    try:
+        from ...websocket_manager import broadcast_event
+        broadcast_event(
+            "server_deleted",
+            server_id=server_id,
+            name=server_name,
+        )
+    except Exception as e:
+        logger.debug(f"Failed to broadcast server_deleted: {e}")
+
     return None
 
 

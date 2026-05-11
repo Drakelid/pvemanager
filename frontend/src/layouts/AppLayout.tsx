@@ -36,6 +36,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useWorkspaces } from '@/hooks/use-workspaces';
+import { useGlobalRealtimeSync } from '@/hooks/use-realtime-sync';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import NotificationsDropdown from '@/components/shared/NotificationsDropdown';
@@ -266,6 +267,11 @@ function TopBar() {
 }
 
 export default function AppLayout() {
+  // Глобальная подписка на real-time события WebSocket: server_added/updated/deleted,
+  // vm_status_update/created/deleted. Кэши React Query инвалидируются мгновенно,
+  // поэтому пользователю не нужно обновлять страницу.
+  useGlobalRealtimeSync();
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}

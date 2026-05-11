@@ -664,6 +664,7 @@ main() {
     check_requirements
     create_env_file
     install_update_watchdog
+    install_pve_cli --auto
     
     # Ask deployment mode
     echo ""
@@ -739,6 +740,7 @@ quick_deploy_standalone() {
     fi
     
     deploy_standalone
+    install_pve_cli --auto
     show_deployment_info "standalone"
 }
 
@@ -787,6 +789,8 @@ quick_deploy_nginx() {
     deploy_with_nginx "$domain" "$use_ssl" "$email"
     ssl_result=$?
     
+    install_pve_cli --auto
+
     if [ "$use_ssl" = true ] && [ $ssl_result -eq 0 ]; then
         show_deployment_info "nginx" "$domain" true
     else
@@ -931,22 +935,43 @@ EOF
 }
 
 # Install pve CLI tool to /usr/local/bin/pve
+# Usage:
+#   install_pve_cli              — интерактивный режим (--install-cli): печатает help в конце
+#   install_pve_cli --auto       — авто-установка во время deploy: тихая, не падает без root
 install_pve_cli() {
+    local mode="${1:-manual}"
     local project_dir
     project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local pve_source="$project_dir/pve"
     local install_path="/usr/local/bin/pve"
 
     if [ ! -f "$pve_source" ]; then
+        if [ "$mode" = "--auto" ]; then
+            print_warning "CLI скрипт 'pve' не найден рядом с deploy.sh — пропускаю авто-установку CLI."
+            return 0
+        fi
         print_error "CLI скрипт не найден: $pve_source"
         print_info "Убедитесь, что файл 'pve' находится в той же директории, что и deploy.sh"
         return 1
     fi
 
     if [ "$(id -u)" -ne 0 ]; then
+        if [ "$mode" = "--auto" ]; then
+            print_warning "Не root — пропускаю авто-установку 'pve' CLI в /usr/local/bin."
+            print_info "Чтобы установить вручную: sudo bash $project_dir/deploy.sh --install-cli"
+            return 0
+        fi
         print_error "Установка требует root-прав."
         print_info "Выполните: sudo bash deploy.sh --install-cli"
         return 1
+    fi
+
+    # Идемпотентность: если уже установлен и указывает на ту же директорию — пропускаем
+    if [ "$mode" = "--auto" ] && [ -f "$install_path" ]; then
+        if grep -q "^PVE_DIR=\"$project_dir\"" "$install_path" 2>/dev/null; then
+            print_info "pve CLI уже установлен ($install_path → $project_dir)"
+            return 0
+        fi
     fi
 
     print_info "Установка pve CLI..."
@@ -954,14 +979,20 @@ install_pve_cli() {
     print_info "  Установка : $install_path"
 
     # Подставить реальный путь к директории панели
-    sed "s|PVE_DIR=\"/opt/pvemanager\"|PVE_DIR=\"$project_dir\"|g" \
-        "$pve_source" > "$install_path"
+    if ! sed "s|PVE_DIR=\"/opt/pvemanager\"|PVE_DIR=\"$project_dir\"|g" \
+            "$pve_source" > "$install_path"; then
+        print_error "Не удалось записать $install_path"
+        return 1
+    fi
     chmod +x "$install_path"
 
     print_success "pve CLI установлен в $install_path"
     print_info "Теперь вы можете использовать команду 'pve' из любого места."
-    echo ""
-    "$install_path" help
+
+    if [ "$mode" != "--auto" ]; then
+        echo ""
+        "$install_path" help
+    fi
 }
 
 show_help() {

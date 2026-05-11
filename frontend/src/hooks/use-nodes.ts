@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import type { ProxmoxServer, ProxmoxNode, ProxmoxServerCreate } from '@/types';
+import { vmKeys } from './use-instances';
 
 export const nodeKeys = {
   servers: ['servers'] as const,
@@ -76,7 +77,14 @@ export function useCreateServer() {
   return useMutation({
     mutationFn: (data: ProxmoxServerCreate) =>
       apiClient.post<ProxmoxServer>('/proxmox/api/servers', data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.servers }),
+    onSuccess: () => {
+      // Немедленно подтягиваем список серверов, VM и топологию кластера,
+      // чтобы UI показал новый сервер со статусом и его инстансами без рефреша.
+      qc.invalidateQueries({ queryKey: nodeKeys.servers });
+      qc.invalidateQueries({ queryKey: nodeKeys.topology });
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    },
   });
 }
 
@@ -85,7 +93,12 @@ export function useUpdateServer() {
   return useMutation({
     mutationFn: ({ id, ...data }: { id: number } & Partial<ProxmoxServerCreate>) =>
       apiClient.put<ProxmoxServer>(`/proxmox/api/servers/${id}`, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.servers }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: nodeKeys.servers });
+      qc.invalidateQueries({ queryKey: nodeKeys.topology });
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    },
   });
 }
 
@@ -93,7 +106,12 @@ export function useDeleteServer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => apiClient.delete(`/proxmox/api/servers/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.servers }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: nodeKeys.servers });
+      qc.invalidateQueries({ queryKey: nodeKeys.topology });
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    },
   });
 }
 
