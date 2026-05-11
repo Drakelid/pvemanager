@@ -11,21 +11,23 @@ import InstanceDetailPage from '@/features/instances/InstanceDetailPage';
 import ConsolePage from '@/features/console/ConsolePage';
 
 // Lazy-loaded pages
-const CreateInstanceWizard = lazy(() => import('@/features/instances/CreateInstanceWizard'));
-const NodesPage = lazy(() => import('@/features/nodes/NodesPage'));
-const NodeDetailPage = lazy(() => import('@/features/nodes/NodeDetailPage'));
-const TemplatesPage = lazy(() => import('@/features/templates/TemplatesPage'));
-const BackupsPage = lazy(() => import('@/features/backups/BackupsPage'));
-const TasksPage = lazy(() => import('@/features/tasks/TasksPage'));
-const IPAMDashboardPage = lazy(() => import('@/features/ipam/IPAMDashboardPage'));
-const IPAMNetworksPage = lazy(() => import('@/features/ipam/IPAMNetworksPage'));
-const IPAMNetworkDetailPage = lazy(() => import('@/features/ipam/IPAMNetworkDetailPage'));
-const IPAMAllocationsPage = lazy(() => import('@/features/ipam/IPAMAllocationsPage'));
-const IPAMHistoryPage = lazy(() => import('@/features/ipam/IPAMHistoryPage'));
-const UsersPage = lazy(() => import('@/features/users/UsersPage'));
-const WorkspacesPage = lazy(() => import('@/features/workspaces/WorkspacesPage'));
-const LogsPage = lazy(() => import('@/features/logs/LogsPage'));
-const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
+// NOTE: явные относительные пути с расширением .tsx — обход бага rolldown-vite
+// (vite 8.0.5), который не добавляет расширение для dynamic import() с alias '@/'.
+const CreateInstanceWizard = lazy(() => import('./features/instances/CreateInstanceWizard.tsx'));
+const NodesPage = lazy(() => import('./features/nodes/NodesPage.tsx'));
+const NodeDetailPage = lazy(() => import('./features/nodes/NodeDetailPage.tsx'));
+const TemplatesPage = lazy(() => import('./features/templates/TemplatesPage.tsx'));
+const BackupsPage = lazy(() => import('./features/backups/BackupsPage.tsx'));
+const TasksPage = lazy(() => import('./features/tasks/TasksPage.tsx'));
+const IPAMDashboardPage = lazy(() => import('./features/ipam/IPAMDashboardPage.tsx'));
+const IPAMNetworksPage = lazy(() => import('./features/ipam/IPAMNetworksPage.tsx'));
+const IPAMNetworkDetailPage = lazy(() => import('./features/ipam/IPAMNetworkDetailPage.tsx'));
+const IPAMAllocationsPage = lazy(() => import('./features/ipam/IPAMAllocationsPage.tsx'));
+const IPAMHistoryPage = lazy(() => import('./features/ipam/IPAMHistoryPage.tsx'));
+const UsersPage = lazy(() => import('./features/users/UsersPage.tsx'));
+const WorkspacesPage = lazy(() => import('./features/workspaces/WorkspacesPage.tsx'));
+const LogsPage = lazy(() => import('./features/logs/LogsPage.tsx'));
+const SettingsPage = lazy(() => import('./features/settings/SettingsPage.tsx'));
 
 function LazyFallback() {
   return <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">Loading…</div>;

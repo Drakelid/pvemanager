@@ -4,6 +4,7 @@
 # Supports deployment with or without NGINX and SSL
 
 set -e
+set -o pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -418,6 +419,59 @@ obtain_ssl_certificate() {
     fi
 }
 
+# Resilient Docker build: try with cache + --pull first; on failure retry once
+# without cache. Returns non-zero only if both attempts fail.
+# Usage: build_images_resilient "-f compose.yml [-f compose.prod.yml]"
+build_images_resilient() {
+    local compose_args="$1"
+    print_info "Building Docker images (parallel, with pull)..."
+    if DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 \
+        docker compose $compose_args build --parallel --pull; then
+        return 0
+    fi
+
+    print_warning "Build failed. Retrying without cache (this can take a few minutes)..."
+    # Free space from any half-baked layers from the failed build
+    docker builder prune -f >/dev/null 2>&1 || true
+    if DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 \
+        docker compose $compose_args build --parallel --pull --no-cache; then
+        print_success "Rebuild without cache succeeded"
+        return 0
+    fi
+
+    print_error "Docker build failed twice. Showing recent build context:"
+    docker compose $compose_args config --services || true
+    return 1
+}
+
+# Detect a stale Postgres data volume whose stored password no longer matches
+# the freshly generated one in .env. This is the most common reason for
+# repeated deploys to fail with backend stuck in a restart loop.
+check_stale_db_volume() {
+    local volume_name
+    # Compose v2 prefixes volumes with the project (folder) name
+    volume_name="$(basename "$(pwd)")_postgres_data"
+
+    if ! docker volume inspect "$volume_name" >/dev/null 2>&1; then
+        return 0  # no volume yet, fresh install
+    fi
+
+    local env_password
+    env_password=$(grep "^POSTGRES_PASSWORD=" .env 2>/dev/null | cut -d'=' -f2)
+    [ -z "$env_password" ] && return 0
+
+    print_warning "Existing Postgres volume detected: $volume_name"
+    print_warning "If it was initialized with a different password, the backend will fail to connect."
+    if [ "$RESET_DATA" = "true" ]; then
+        print_warning "--reset-data given: removing old Postgres volume..."
+        docker compose -f compose.yml down -v 2>/dev/null || true
+        docker volume rm "$volume_name" 2>/dev/null || true
+        print_success "Old volume removed"
+    else
+        print_info "If deploy fails on the 'app' / backend container, re-run with: ./deploy.sh --reset-data"
+    fi
+}
+
 deploy_with_nginx() {
     local domain=$1
     local use_ssl=$2
@@ -430,11 +484,14 @@ deploy_with_nginx() {
     print_info "Cleaning up previous deployment..."
     docker compose -f compose.yml -f compose.prod.yml down --remove-orphans 2>/dev/null || true
     docker network prune -f 2>/dev/null || true
+
+    check_stale_db_volume
     
-    # Build images locally first (parallel + pull base images)
-    print_info "Building Docker images (parallel)..."
-    DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 \
-        docker compose -f compose.yml build --parallel --pull
+    # Build images locally first (parallel + pull base images, retry on failure)
+    if ! build_images_resilient "-f compose.yml -f compose.prod.yml"; then
+        print_error "Cannot continue without successfully built images"
+        exit 1
+    fi
     
     if [ "$use_ssl" = true ]; then
         # Setup HTTP config first for certificate challenge
@@ -523,11 +580,16 @@ deploy_standalone() {
     print_info "Cleaning up previous deployment..."
     docker compose -f compose.yml down --remove-orphans 2>/dev/null || true
     docker network prune -f 2>/dev/null || true
+
+    check_stale_db_volume
     
-    # Build and start containers (parallel build, BuildKit)
-    print_info "Building and starting containers..."
-    DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 \
-        docker compose -f compose.yml build --parallel --pull
+    # Build images (parallel + pull, with one no-cache retry on failure)
+    if ! build_images_resilient "-f compose.yml"; then
+        print_error "Cannot continue without successfully built images"
+        exit 1
+    fi
+
+    print_info "Starting containers..."
     docker compose -f compose.yml up -d
     
     print_success "Standalone deployment completed"
@@ -921,6 +983,7 @@ show_help() {
     echo "  $0 --restart                Restart all services"
     echo "  $0 --logs                   Show live logs"
     echo "  $0 --watchdog               Install/reinstall the host-side update watchdog (systemd)"
+    echo "  $0 --reset-data             Wipe existing Postgres volume before deploy (DANGER: data loss)"
     echo "  sudo $0 --install-cli       Install 'pve' CLI tool to /usr/local/bin/pve"
     echo ""
     echo "Examples:"
@@ -932,6 +995,20 @@ show_help() {
 }
 
 # Parse command line arguments
+# --reset-data is a modifier flag that may appear in any position; strip it here
+# so the remaining arguments are interpreted normally.
+RESET_DATA="false"
+NEW_ARGS=()
+for arg in "$@"; do
+    if [ "$arg" = "--reset-data" ]; then
+        RESET_DATA="true"
+    else
+        NEW_ARGS+=("$arg")
+    fi
+done
+set -- "${NEW_ARGS[@]}"
+export RESET_DATA
+
 if [ $# -gt 0 ]; then
     case "$1" in
         --help|-h)
