@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.5.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.5.1
 
 ---
 
@@ -30,9 +30,10 @@
 22. [Workspaces](#-workspaces)
 23. [User → Server Assignment](#-user--server-assignment)
 24. [VM / LXC Ownership](#-vm--lxc-ownership)
-25. [Deployment Guide](#-installation-and-deployment)
-26. [Troubleshooting](#-troubleshooting)
-27. [FAQ](#-faq)
+25. [Logs & Audit](#-logs--audit)
+26. [Deployment Guide](#-installation-and-deployment)
+27. [Troubleshooting](#-troubleshooting)
+28. [FAQ](#-faq)
 
 ---
 
@@ -1334,7 +1335,83 @@ Access via **Settings → Security**:
 
 ---
 
-## 🔑 SSH Keys Management
+## � Logs & Audit
+
+### Overview
+
+The **Logs** page (`/logs` in the sidebar) gives admins a full searchable view of the panel's `audit_logs` table. It complements the Dashboard activity feed with deeper filtering, pagination, and aggregated 24-hour stats.
+
+### Page Layout
+
+1. **Stat cards (24h window)** — total events, errors count, failed logins, current page row count
+2. **Filters** — free-text search (matches message and username) and a level dropdown populated from `GET /logs/api/levels`
+3. **Logs table** — timestamp, level badge, category, username, message
+4. **Pagination** — driven by the API (`page`, `limit`)
+
+### Log Levels
+
+| Level | Color | Description |
+|-------|-------|-------------|
+| `INFO` | 🔵 Blue | Informational events |
+| `SUCCESS` | 🟢 Green | Successful operations |
+| `WARNING` | 🟡 Yellow | Non-critical warnings |
+| `ERROR` | 🔴 Red | Failures |
+| `CRITICAL` | 🟣 Purple | Critical security / system events |
+
+### API Reference
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/logs/api/logs` | List audit log entries (paginated) |
+| `GET` | `/logs/api/stats` | Aggregated stats (24h by default) |
+| `GET` | `/logs/api/levels` | Distinct levels for the filter dropdown |
+| `GET` | `/logs/api/categories` | Distinct categories |
+
+#### Query Parameters for `GET /logs/api/logs`
+
+| Name | Type | Description |
+|------|------|-------------|
+| `search` | string | Free-text search over message/username |
+| `level` | string | Filter by level (`INFO`, `ERROR`, …) |
+| `category` | string | Filter by category |
+| `username` | string | Filter by username |
+| `page` | int | Page number (1-based) |
+| `limit` | int | Page size (default 50) |
+| `date_from` | ISO date | Inclusive lower bound |
+| `date_to` | ISO date | Inclusive upper bound |
+
+#### Response Shape
+
+```json
+{
+  "logs": [
+    {
+      "id": 1234,
+      "timestamp": "2026-06-04T10:21:33Z",
+      "level": "INFO",
+      "category": "vm",
+      "username": "admin",
+      "message": "VM 100 started on node pve1"
+    }
+  ],
+  "total": 532,
+  "page": 1,
+  "limit": 50,
+  "pages": 11
+}
+```
+
+### Access Control
+
+The Logs page is gated by the `log:view` permission in RBAC v2. The default `admin` role has it; `moderator` has read-only access; `user` and `demo` roles do not see the page.
+
+### Retention
+
+There is no automatic pruning in v1.5.1 — log entries accumulate until manually deleted via the database. A retention policy is planned for a future release.
+
+---
+
+## �🔑 SSH Keys Management
 
 ### Overview
 

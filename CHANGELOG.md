@@ -4,6 +4,20 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.5.1] - 2026-06-04
+
+### 🐛 Bug Fixes
+
+- **Frontend build: missing LogsPage component** — `src/router.tsx` referenced `./features/logs/LogsPage.tsx`, but the file was missing, so Vite 8.0.5 / rolldown failed to resolve the dynamic import. Added `frontend/src/features/logs/LogsPage.tsx` with stats cards (24h total, errors, failed logins, page count), level filter, search, pagination and i18n strings. Wires up to existing `useLogs` / `useLogStats` / `useLogLevels` hooks.
+- **Frontend build: `.gitignore` collision** — `frontend/.gitignore` had a bare `logs` entry that matched both the root `logs/` directory and `src/features/logs/`, hiding the new page from VCS. Scoped the rule to `/logs` so the features tree is no longer ignored.
+
+### 📚 Documentation
+
+- WIKI: bumped to v1.5.1 and added a new **Logs & Audit** section with page layout, log-level colour mapping, API reference (`/logs/api/logs`, `/logs/api/stats`, `/logs/api/levels`, `/logs/api/categories`), query parameters, response shape and access-control notes
+- README: updated version badge to 1.5.1
+
+---
+
 ## [v1.5.0] - 2026-05-07
 
 ### 🐧 LXC — CT Template Deployment
