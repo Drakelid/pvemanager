@@ -96,3 +96,12 @@ def utcnow() -> datetime:
     with PostgreSQL columns that have timezone=True.
     """
     return datetime.now(timezone.utc)
+
+
+def make_tz_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """Ensure datetime is timezone-aware. Defaults to UTC if naive."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt

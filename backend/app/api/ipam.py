@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import IPAMNetwork, IPAMPool, IPAMAllocation, IPAMHistory, ProxmoxServer, User, VMInstance
-from ..proxmox_client import ProxmoxClient
+from ..proxmox import ProxmoxClient
 from ..schemas import (
     IPAMNetworkCreate, IPAMNetworkUpdate, IPAMNetworkResponse, IPAMNetworkStats,
     IPAMPoolCreate, IPAMPoolUpdate, IPAMPoolResponse,

@@ -21,7 +21,7 @@ from ..schemas import (
     OSTemplateCreate, OSTemplateUpdate, OSTemplateResponse, OSTemplateWithGroup,
     VMDeployRequest, VMDeployResponse
 )
-from ..proxmox_client import ProxmoxClient
+from ..proxmox import ProxmoxClient
 from ..api.proxmox import get_next_vmid, save_vm_instance, get_vm_instance
 from ..auth import get_current_user, PermissionChecker
 from ..ipam_service import IPAMService

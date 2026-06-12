@@ -15,8 +15,9 @@ from typing import Optional
 from ...db import get_db
 from ...models import ProxmoxServer, User
 from ...auth import PermissionChecker
-from ...proxmox_client import ProxmoxClient
+from ...proxmox import ProxmoxClient
 from ._helpers import _get_proxmox_client
+from ...proxmox import _run_in_executor
 
 router = APIRouter()
 
@@ -136,13 +137,13 @@ async def create_cluster(
     client = _get_password_client(server, rootpw)
 
     # Verify server is not already in a cluster on Proxmox side
-    if client.is_cluster():
+    if await _run_in_executor(client.is_cluster):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Нода уже является частью кластера Proxmox. Используйте join для добавления в существующий кластер."
         )
 
-    result = client.create_cluster(cluster_name=cluster_name, link0=link0_ip)
+    result = await _run_in_executor(client.create_cluster, cluster_name=cluster_name, link0=link0_ip)
 
     if not result.get("success"):
         raise HTTPException(
@@ -316,12 +317,12 @@ async def prepare_join(
     server = _get_server_or_404(db, node_server_id)
     client = _get_proxmox_client(server)
 
-    nodes = client.get_nodes()
+    nodes = await _run_in_executor(client.get_nodes)
     node_name = nodes[0].get("node") if nodes else server.hostname
 
     # Collect all guests
-    vms = client.get_vms(node=node_name)
-    containers = client.get_containers(node=node_name)
+    vms = await _run_in_executor(client.get_vms, node=node_name)
+    containers = await _run_in_executor(client.get_containers, node=node_name)
     all_guests = [
         {"vmid": v.get("vmid"), "type": "qemu"} for v in vms
     ] + [
@@ -344,7 +345,8 @@ async def prepare_join(
     upid_map: dict = {}  # vmid -> upid
     for guest in all_guests:
         vmid = guest["vmid"]
-        result = client.vzdump_guest(
+        result = await _run_in_executor(
+            client.vzdump_guest,
             node=node_name,
             vmid=vmid,
             storage=backup_storage,
@@ -367,7 +369,7 @@ async def prepare_join(
         finished_vmids = []
         for vmid, upid in list(upid_map.items()):
             try:
-                task_status = client.proxmox.nodes(node_name).tasks(upid).status.get()
+                task_status = await _run_in_executor(client.proxmox.nodes(node_name).tasks(upid).status.get)
                 if task_status.get("status") == "stopped":
                     finished_vmids.append(vmid)
                     if task_status.get("exitstatus") == "OK":
@@ -400,17 +402,17 @@ async def prepare_join(
         try:
             if guest["type"] == "qemu":
                 # Stop first if running
-                qemu_info = client.proxmox.nodes(node_name).qemu(vmid).status.current.get()
+                qemu_info = await _run_in_executor(client.proxmox.nodes(node_name).qemu(vmid).status.current.get)
                 if qemu_info.get("status") == "running":
-                    client.proxmox.nodes(node_name).qemu(vmid).status.stop.post()
+                    await _run_in_executor(client.proxmox.nodes(node_name).qemu(vmid).status.stop.post)
                     await asyncio.sleep(3)
-                client.proxmox.nodes(node_name).qemu(vmid).delete()
+                await _run_in_executor(client.proxmox.nodes(node_name).qemu(vmid).delete)
             else:
-                ct_info = client.proxmox.nodes(node_name).lxc(vmid).status.current.get()
+                ct_info = await _run_in_executor(client.proxmox.nodes(node_name).lxc(vmid).status.current.get)
                 if ct_info.get("status") == "running":
-                    client.proxmox.nodes(node_name).lxc(vmid).status.stop.post()
+                    await _run_in_executor(client.proxmox.nodes(node_name).lxc(vmid).status.stop.post)
                     await asyncio.sleep(3)
-                client.proxmox.nodes(node_name).lxc(vmid).delete()
+                await _run_in_executor(client.proxmox.nodes(node_name).lxc(vmid).delete)
 
             deleted.append(vmid)
             logger.info(f"Deleted guest vmid {vmid} on {server.name} during prepare-join")
@@ -490,11 +492,11 @@ async def join_cluster(
 
     # --- Pre-check: ноды не должно содержать гестов ---
     node_client = _get_proxmox_client(node_server)
-    nodes = node_client.get_nodes()
+    nodes = await _run_in_executor(node_client.get_nodes)
     node_name = nodes[0].get("node") if nodes else node_server.hostname
 
-    vms = node_client.get_vms(node=node_name)
-    containers = node_client.get_containers(node=node_name)
+    vms = await _run_in_executor(node_client.get_vms, node=node_name)
+    containers = await _run_in_executor(node_client.get_containers, node=node_name)
 
     if vms or containers:
         raise HTTPException(
@@ -513,7 +515,7 @@ async def join_cluster(
 
     # --- Получить join-info с кластерной ноды ---
     cluster_client = _get_proxmox_client(cluster_server)
-    join_info_result = cluster_client.get_cluster_join_info()
+    join_info_result = await _run_in_executor(cluster_client.get_cluster_join_info)
 
     if not join_info_result.get("success"):
         raise HTTPException(
@@ -534,7 +536,8 @@ async def join_cluster(
 
     # --- Выполнить join на присоединяемой ноде (используем пароль из запроса) ---
     joining_client = _get_password_client(node_server, rootpw)
-    result = joining_client.join_cluster(
+    result = await _run_in_executor(
+        joining_client.join_cluster,
         cluster_host=cluster_server.ip_address,
         rootpw=rootpw,
         fingerprint=fingerprint,

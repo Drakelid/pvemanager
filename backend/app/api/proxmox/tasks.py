@@ -12,7 +12,7 @@ import websockets
 from ...db import get_db
 from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive, ProxmoxTask, DeployTask
 from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
-from ...proxmox_client import ProxmoxClient, get_proxmox_resources
+from ...proxmox import ProxmoxClient, get_proxmox_resources
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
 from ...logging_service import LoggingService
 from ...ipam_service import IPAMService

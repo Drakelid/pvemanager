@@ -114,6 +114,16 @@ async def lifespan(app: FastAPI):
     # Setup logging
     setup_logging()
     
+    # Security checks
+    if not settings.SECRET_KEY or settings.SECRET_KEY == "your-secret-key-here":
+        logger.error("CRITICAL: SECRET_KEY is missing or uses the default insecure value!")
+        logger.error("Please set a secure SECRET_KEY in your .env file.")
+        raise Exception("Insecure SECRET_KEY")
+
+    if not settings.FERNET_KEY:
+        logger.warning("FERNET_KEY is not set. Sensitive fields (like passwords) will be stored as plaintext.")
+        logger.warning("To enable encryption, generate a key and set FERNET_KEY in your .env file.")
+    
     # Check database connection
     if not check_db_connection():
         logger.error("Database connection failed!")
@@ -138,14 +148,9 @@ async def lifespan(app: FastAPI):
     
     # Initialize default admin user
     try:
-        import subprocess
-        import sys
-        result = subprocess.run([sys.executable, '/app/init_admin.py'], 
-                              capture_output=True, text=True, timeout=30)
-        if result.returncode == 0:
-            logger.info("Default admin user initialization completed")
-        else:
-            logger.error(f"Admin initialization failed: {result.stderr}")
+        import init_admin
+        init_admin.create_default_admin()
+        logger.info("Default admin user initialization completed")
     except Exception as e:
         logger.error(f"Error running admin initialization: {e}")
     

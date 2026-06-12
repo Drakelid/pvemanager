@@ -11,8 +11,8 @@ import websockets
 
 from ...db import get_db
 from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
-from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
-from ...proxmox_client import ProxmoxClient, get_proxmox_resources
+from app.schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
+from ...proxmox import ProxmoxClient, get_proxmox_resources, _run_in_executor
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
 from ...logging_service import LoggingService
 from ...ipam_service import IPAMService
@@ -193,7 +193,8 @@ async def auto_setup_proxmox_server(
     # 1. Получить auth ticket
     logger.info(f"Attempting to connect to Proxmox at {base_url}")
     try:
-        auth_response = http_requests.post(
+        auth_response = await _run_in_executor(
+            http_requests.post,
             f"{base_url}/api2/json/access/ticket",
             data={"username": api_user, "password": password},
             verify=verify_ssl,
@@ -239,7 +240,8 @@ async def auto_setup_proxmox_server(
     
     try:
         # Создаем токен через API
-        token_response = http_requests.post(
+        token_response = await _run_in_executor(
+            http_requests.post,
             f"{base_url}/api2/json/access/users/{api_user}/token/{token_name}",
             headers=headers,
             data={"privsep": "0"},  # Полные права как у пользователя
@@ -269,7 +271,8 @@ async def auto_setup_proxmox_server(
     
     try:
         # Получаем список нод
-        nodes_response = http_requests.get(
+        nodes_response = await _run_in_executor(
+            http_requests.get,
             f"{base_url}/api2/json/nodes",
             headers=headers,
             cookies={"PVEAuthCookie": ticket},
@@ -283,7 +286,8 @@ async def auto_setup_proxmox_server(
         
         # Получаем IP адреса нод из cluster/status
         if len(cluster_nodes) > 1:
-            cluster_status_response = http_requests.get(
+            cluster_status_response = await _run_in_executor(
+                http_requests.get,
                 f"{base_url}/api2/json/cluster/status",
                 headers=headers,
                 cookies={"PVEAuthCookie": ticket},
@@ -493,7 +497,7 @@ def update_proxmox_server(
     current_user: User = Depends(PermissionChecker("proxmox.servers.edit"))
 ):
     """Обновить Proxmox сервер"""
-    from ...proxmox_client import clear_server_cache
+    from ...proxmox import clear_server_cache
     
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
@@ -567,7 +571,7 @@ def delete_proxmox_server(
     current_user: User = Depends(PermissionChecker("proxmox.servers.delete"))
 ):
     """Удалить Proxmox сервер и связанные OS Templates"""
-    from ...proxmox_client import clear_server_cache
+    from ...proxmox import clear_server_cache
     from ...models import OSTemplate, OSTemplateGroup, VMInstance, Notification
     from ...workers import monitoring_worker
     

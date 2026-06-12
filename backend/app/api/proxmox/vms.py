@@ -12,7 +12,7 @@ import websockets
 from ...db import get_db
 from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
 from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
-from ...proxmox_client import ProxmoxClient, get_proxmox_resources
+from ...proxmox import ProxmoxClient, get_proxmox_resources
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
 from ...logging_service import LoggingService
 from ...ipam_service import IPAMService
@@ -21,6 +21,13 @@ from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         save_vm_instance, get_vm_instance, soft_delete_vm_instance)
 
 router = APIRouter()
+
+import time as time_lib
+import threading
+
+_live_metrics_cache = {}
+_live_metrics_lock = threading.Lock()
+METRICS_TTL = 10  # seconds
 
 from ...models import TaskQueue
 from ...services.task_queue_service import TaskQueueService, process_task_queue
@@ -154,21 +161,39 @@ def get_all_virtual_machines(
     cached_vms = query.order_by(VMInstance.name).all()
 
     # ── Live metrics from Proxmox cluster/resources (CPU, RAM, disk, uptime) ──
-    # One HTTP call per server returns metrics for all VMs/LXC in that cluster.
+    # One HTTP call per cluster returns metrics for all VMs/LXC.
     # Map: (server_id_in_db, vmid) -> live data dict
     live_metrics: dict[tuple[int, int], dict] = {}
-    for server in servers:
-        try:
-            client = _get_proxmox_client(server)
-            if not client.is_connected():
+    
+    with _live_metrics_lock:
+        now = time_lib.time()
+        for server in servers:
+            cache_key = server.id
+            if cache_key in _live_metrics_cache and (now - _live_metrics_cache[cache_key]['time']) < METRICS_TTL:
+                # Use cached metrics
+                for vmid, res in _live_metrics_cache[cache_key]['data'].items():
+                    live_metrics[(server.id, vmid)] = res
                 continue
-            for res in client.get_cluster_resources(type_='vm'):
-                vmid = res.get('vmid')
-                if vmid is None:
+                
+            try:
+                client = _get_proxmox_client(server)
+                if not client.is_connected():
                     continue
-                live_metrics[(server.id, vmid)] = res
-        except Exception as e:
-            logger.debug(f"Could not fetch live metrics from {server.name}: {e}")
+                
+                server_metrics = {}
+                for res in client.get_cluster_resources(type_='vm'):
+                    vmid = res.get('vmid')
+                    if vmid is None:
+                        continue
+                    live_metrics[(server.id, vmid)] = res
+                    server_metrics[vmid] = res
+                    
+                _live_metrics_cache[cache_key] = {
+                    'time': now,
+                    'data': server_metrics
+                }
+            except Exception as e:
+                logger.debug(f"Could not fetch live metrics from {server.name}: {e}")
 
     result = []
     
@@ -738,9 +763,8 @@ async def delete_vm(
                 client.stop_vm(node, vmid, force=True)
             except Exception as _se:
                 logger.warning(f"stop_vm({vmid}) failed: {_se}")
-            import time as _t
             for _ in range(30):
-                _t.sleep(0.5)
+                await asyncio.sleep(0.5)
                 st = client.get_vm_status(node, vmid)
                 if not st or not isinstance(st, dict) or st.get('status') != 'running':
                     break
@@ -1147,9 +1171,8 @@ async def delete_container(
             except Exception as _se:
                 logger.warning(f"stop_container({vmid}) failed: {_se}")
             # Wait up to 15s for it to actually stop
-            import time as _t
             for _ in range(30):
-                _t.sleep(0.5)
+                await asyncio.sleep(0.5)
                 st = client.get_container_status(node, vmid)
                 if not st or not isinstance(st, dict) or st.get('status') != 'running':
                     break

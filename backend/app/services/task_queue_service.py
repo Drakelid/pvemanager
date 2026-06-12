@@ -17,12 +17,12 @@ def utcnow() -> datetime:
 try:
     from backend.app.db import SessionLocal
     from backend.app.models import TaskQueue, ProxmoxServer, User
-    from backend.app.proxmox_client import ProxmoxClient
+    from backend.app.proxmox import ProxmoxClient
     from backend.app.websocket_manager import broadcast_task_update
 except ImportError:
     from app.db import SessionLocal
     from app.models import TaskQueue, ProxmoxServer, User
-    from app.proxmox_client import ProxmoxClient
+    from app.proxmox import ProxmoxClient
     from app.websocket_manager import broadcast_task_update
 
 

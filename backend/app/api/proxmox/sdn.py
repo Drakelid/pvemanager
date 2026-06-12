@@ -9,6 +9,7 @@ from ...models import ProxmoxServer, User, IPAMNetwork
 from ...auth import PermissionChecker
 from ...logging_service import LoggingService
 from ._helpers import _get_proxmox_client
+from ...proxmox import _run_in_executor
 
 router = APIRouter()
 
@@ -92,7 +93,7 @@ async def create_sdn_zone(
         
         # Pass additional options from request
         kwargs = {k: v for k, v in data.items() if k not in ['zone', 'type']}
-        result = client.create_sdn_zone(zone_name, zone_type, **kwargs)
+        result = await _run_in_executor(client.create_sdn_zone, zone_name, zone_type, **kwargs)
         
         if result.get('success'):
             logger.info(f"User {current_user.username} created SDN zone: {zone_name}")
@@ -181,7 +182,7 @@ async def create_sdn_vnet(
     try:
         client = _get_proxmox_client(server)
         
-        result = client.create_sdn_vnet(vnet_name, zone, tag=tag, alias=alias, vlanaware=vlanaware)
+        result = await _run_in_executor(client.create_sdn_vnet, vnet_name, zone, tag=tag, alias=alias, vlanaware=vlanaware)
         
         if result.get('success'):
             logger.info(f"User {current_user.username} created SDN vnet: {vnet_name} in zone {zone}")
@@ -271,7 +272,7 @@ async def create_sdn_subnet(
 
     try:
         client = _get_proxmox_client(server)
-        result = client.create_sdn_subnet(vnet, subnet, gateway=gateway, snat=snat, dnszoneprefix=dnszoneprefix)
+        result = await _run_in_executor(client.create_sdn_subnet, vnet, subnet, gateway=gateway, snat=snat, dnszoneprefix=dnszoneprefix)
 
         if result.get('success'):
             logger.info(f"User {current_user.username} created subnet {subnet} in vnet {vnet}")
@@ -356,7 +357,7 @@ async def update_sdn_zone(
     data = await request.json()
     try:
         client = _get_proxmox_client(server)
-        result = client.update_sdn_zone(zone, **data)
+        result = await _run_in_executor(client.update_sdn_zone, zone, **data)
         if result.get('success'):
             logger.info(f"User {current_user.username} updated SDN zone: {zone}")
             return JSONResponse(content=result)
@@ -385,7 +386,7 @@ async def update_sdn_vnet(
     data = await request.json()
     try:
         client = _get_proxmox_client(server)
-        result = client.update_sdn_vnet(vnet, **data)
+        result = await _run_in_executor(client.update_sdn_vnet, vnet, **data)
         if result.get('success'):
             logger.info(f"User {current_user.username} updated SDN vnet: {vnet}")
             return JSONResponse(content=result)

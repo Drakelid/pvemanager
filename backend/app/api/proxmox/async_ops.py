@@ -14,7 +14,7 @@ from loguru import logger
 
 from ...db import SessionLocal
 from ...models import ProxmoxServer, VMInstance, OSTemplate, DeployTask, User
-from ...proxmox_client import ProxmoxClient
+from ...proxmox import ProxmoxClient
 from ...logging_service import LoggingService
 from ._helpers import _get_proxmox_client, get_next_vmid
 

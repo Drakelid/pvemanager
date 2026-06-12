@@ -12,7 +12,7 @@ import websockets
 from ...db import get_db
 from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
 from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
-from ...proxmox_client import ProxmoxClient, get_proxmox_resources
+from ...proxmox import ProxmoxClient, get_proxmox_resources, _run_in_executor
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
 from ...logging_service import LoggingService
 from ...ipam_service import IPAMService
@@ -81,7 +81,7 @@ async def create_vm_snapshot(
     try:
         client = _get_proxmox_client(server)
         
-        result = client.create_vm_snapshot(node, vmid, snapname, description, vmstate)
+        result = await _run_in_executor(client.create_vm_snapshot, node, vmid, snapname, description, vmstate)
         
         if result.get('success'):
             LoggingService.log_proxmox_action(
@@ -257,7 +257,7 @@ async def create_container_snapshot(
     try:
         client = _get_proxmox_client(server)
         
-        result = client.create_container_snapshot(node, vmid, snapname, description)
+        result = await _run_in_executor(client.create_container_snapshot, node, vmid, snapname, description)
         
         if result.get('success'):
             LoggingService.log_proxmox_action(

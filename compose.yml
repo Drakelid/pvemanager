@@ -2,8 +2,6 @@ services:
   db:
     image: postgres:16-alpine
     container_name: pvemanager-db
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_DB: pvemanager
       POSTGRES_USER: pvemanager
@@ -57,7 +55,6 @@ services:
       - /etc/localtime:/etc/localtime:ro
       # For system updates
       - .:/project:rw
-      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql://pvemanager:${POSTGRES_PASSWORD:-pvemanager_secure_password}@db:5432/pvemanager
@@ -97,7 +94,7 @@ services:
     pull_policy: build
     container_name: pvemanager-frontend
     ports:
-      - "3000:80"
+      - "3001:80"
     depends_on:
       app:
         condition: service_healthy

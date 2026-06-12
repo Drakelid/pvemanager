@@ -49,7 +49,8 @@ def create_default_admin():
             hashed_password=hashed_password,
             is_admin=True,
             is_active=True,
-            role_id=admin_role.id if admin_role else None
+            role_id=admin_role.id if admin_role else None,
+            require_password_change=(password == "admin123")
         )
         
         db.add(admin)

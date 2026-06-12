@@ -7,6 +7,7 @@ from ...db import get_db
 from ...models import ProxmoxServer, User, IPAMNetwork
 from ...auth import PermissionChecker
 from ._helpers import _get_proxmox_client
+from ...proxmox import _run_in_executor
 
 router = APIRouter()
 
@@ -101,7 +102,7 @@ async def create_node_network(
 
     try:
         client = _get_proxmox_client(server)
-        result = client.create_node_network(node, iface_type, **data)
+        result = await _run_in_executor(client.create_node_network, node, iface_type, **data)
         if result.get("success"):
             logger.info(
                 f"User {current_user.username} created {iface_type} interface "
@@ -133,7 +134,7 @@ async def update_node_network(
     data = await request.json()
     try:
         client = _get_proxmox_client(server)
-        result = client.update_node_network(node, iface, **data)
+        result = await _run_in_executor(client.update_node_network, node, iface, **data)
         if result.get("success"):
             logger.info(
                 f"User {current_user.username} updated interface {iface} "

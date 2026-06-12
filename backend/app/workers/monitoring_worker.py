@@ -9,9 +9,7 @@ from typing import Dict, Any, List
 from loguru import logger
 
 
-def utcnow() -> datetime:
-    """Get current UTC time as timezone-aware datetime"""
-    return datetime.now(timezone.utc)
+from ..config import utcnow
 
 
 try:
@@ -19,7 +17,7 @@ try:
     from backend.app.models import User, ProxmoxServer, PanelSettings, VMInstance, IPAMAllocation, Notification, ProxmoxTask
     from backend.app.services.notification_service import NotificationService
     from backend.app.logging_service import LoggingService
-    from backend.app.proxmox_client import ProxmoxClient
+    from backend.app.proxmox import ProxmoxClient
     from backend.app.schemas import NotificationCreate
     from backend.app.i18n import t
     from backend.app.websocket_manager import broadcast_task_update
@@ -28,7 +26,7 @@ except ImportError:
     from app.models import User, ProxmoxServer, PanelSettings, VMInstance, IPAMAllocation, Notification, ProxmoxTask
     from app.services.notification_service import NotificationService
     from app.logging_service import LoggingService
-    from app.proxmox_client import ProxmoxClient
+    from app.proxmox import ProxmoxClient
     from app.schemas import NotificationCreate
     from app.i18n import t
     from app.websocket_manager import broadcast_task_update
@@ -639,9 +637,10 @@ class MonitoringWorker:
                         logger.warning(f"[VM SYNC] Server {server.name} not connected, skipping")
                         continue
                     
-                    # Get all VMs and containers
-                    vms = client.get_vms()
-                    containers = client.get_containers()
+                    # Get all VMs and containers efficiently in one request
+                    resources = client.get_cluster_resources(type_='vm')
+                    vms = [res for res in resources if res.get('type') == 'qemu']
+                    containers = [res for res in resources if res.get('type') == 'lxc']
                     
                     cluster_id = cluster_map.get(server.id)
                     
@@ -1182,7 +1181,7 @@ def start_monitoring_worker():
 
     # Cleanup expired Proxmox connection cache - every hour
     try:
-        from app.proxmox_client import cleanup_expired_connections
+        from app.proxmox import cleanup_expired_connections
         scheduler.add_job(
             cleanup_expired_connections,
             trigger=IntervalTrigger(hours=1),

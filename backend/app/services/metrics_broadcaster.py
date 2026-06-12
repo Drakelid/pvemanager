@@ -64,7 +64,7 @@ def _fetch_server_resources_with_nodes(server) -> dict:
     Pull VMs + containers + per-node CPU/RAM/Disk status + cached RRD slices.
     Runs in a thread pool — safe to block.
     """
-    from ..proxmox_client import get_proxmox_resources
+    from ..proxmox import get_proxmox_resources
     from ..api.proxmox._helpers import _get_proxmox_client
 
     base: dict = {

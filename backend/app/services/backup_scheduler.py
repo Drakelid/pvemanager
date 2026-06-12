@@ -14,7 +14,7 @@ from loguru import logger
 
 from ..db import SessionLocal
 from ..models import BackupJob, ProxmoxServer
-from ..proxmox_client import ProxmoxClient
+from ..proxmox import ProxmoxClient
 
 
 # Singleton scheduler instance

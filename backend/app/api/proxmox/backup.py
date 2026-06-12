@@ -18,6 +18,7 @@ from ...models import BackupJob, ProxmoxServer, User
 from ...auth import PermissionChecker
 from ...logging_service import LoggingService
 from ._helpers import _get_proxmox_client
+from ...proxmox import _run_in_executor
 
 router = APIRouter()
 
@@ -63,7 +64,7 @@ async def create_storage(
 
     try:
         client = _get_proxmox_client(server)
-        result = client.create_storage(storage_id, storage_type, **data)
+        result = await _run_in_executor(client.create_storage, storage_id, storage_type, **data)
         if result.get("success"):
             LoggingService.log_proxmox_action(
                 db=db, action="storage_create", resource_type="storage",
@@ -94,7 +95,7 @@ async def update_storage(
     data = await request.json()
     try:
         client = _get_proxmox_client(server)
-        result = client.update_storage(storage_id, **data)
+        result = await _run_in_executor(client.update_storage, storage_id, **data)
         if result.get("success"):
             return JSONResponse(content={"success": True})
         raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
@@ -216,7 +217,7 @@ async def delete_backup(
 
     try:
         client = _get_proxmox_client(server)
-        result = client.delete_backup(node, storage, volid)
+        result = await _run_in_executor(client.delete_backup, node, storage, volid)
         if result.get("success"):
             LoggingService.log_proxmox_action(
                 db=db, action="backup_delete", resource_type="backup",
@@ -262,7 +263,8 @@ async def create_backup(
 
     try:
         client = _get_proxmox_client(server)
-        result = client.create_backup(
+        result = await _run_in_executor(
+            client.create_backup,
             node=node, vmid=int(vmid), storage=storage,
             mode=mode, compress=compress, remove=remove,
             keep_last=keep_last, notes=notes,
@@ -339,13 +341,15 @@ async def restore_backup(
     try:
         client = _get_proxmox_client(server)
         if vm_type == "lxc":
-            result = client.restore_lxc(
+            result = await _run_in_executor(
+                client.restore_lxc,
                 node=node, vmid=int(vmid), archive=archive,
                 storage=storage, new_vmid=int(new_vmid) if new_vmid else None,
                 start=start,
             )
         else:
-            result = client.restore_vm(
+            result = await _run_in_executor(
+                client.restore_vm,
                 node=node, vmid=int(vmid), archive=archive,
                 storage=storage, new_vmid=int(new_vmid) if new_vmid else None,
                 start=start, unique=unique,

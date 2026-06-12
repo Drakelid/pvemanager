@@ -20,6 +20,15 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def make_tz_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """Ensure datetime is timezone-aware. Defaults to UTC if naive."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 class SecurityService:
     """Service for security operations"""
     
@@ -103,7 +112,7 @@ class SecurityService:
         
         # Compare timezone-aware datetimes
         now = utcnow()
-        if blocked.expires_at and blocked.expires_at > now:
+        if blocked.expires_at and make_tz_aware(blocked.expires_at) > now:
             return True, blocked.reason
         
         # Block expired, remove it
@@ -305,7 +314,7 @@ class SecurityService:
         # Check expiration
         # Compare timezone-aware datetimes
         now = utcnow()
-        if session.expires_at < now:
+        if make_tz_aware(session.expires_at) < now:
             session.is_active = False
             db.commit()
             return None
@@ -403,7 +412,7 @@ class SecurityService:
             return False, None
         
         # Compare timezone-aware datetimes
-        if user.locked_until > utcnow():
+        if make_tz_aware(user.locked_until) > utcnow():
             return True, user.locked_until
         
         return False, None

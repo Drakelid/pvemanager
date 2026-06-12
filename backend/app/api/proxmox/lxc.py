@@ -20,7 +20,7 @@ from ...db import get_db, SessionLocal
 from ...ipam_service import IPAMService
 from ...logging_service import LoggingService
 from ...models import DeployTask, IPAMNetwork, ProxmoxServer, User, VMInstance
-from ...proxmox_client import ProxmoxClient
+from ...proxmox import ProxmoxClient
 from ...websocket_manager import broadcast_task_update
 from ._helpers import _get_proxmox_client, get_next_vmid, save_vm_instance
 

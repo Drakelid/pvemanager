@@ -12,7 +12,7 @@ import websockets
 from ...db import get_db
 from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
 from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
-from ...proxmox_client import ProxmoxClient, get_proxmox_resources
+from ...proxmox import ProxmoxClient, get_proxmox_resources
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
 from ...logging_service import LoggingService
 from ...ipam_service import IPAMService
@@ -72,15 +72,19 @@ def require_vm_access(db: Session, current_user: User, server_id: int, vmid: int
 
 def _get_proxmox_client(server: ProxmoxServer) -> ProxmoxClient:
     """Build a ProxmoxClient from a ProxmoxServer model (password or token auth)."""
-    if server.use_password:
+    host = server.ip_address or getattr(server, 'hostname', '')
+    if hasattr(server, 'port') and server.port and server.port != 8006:
+        host = f"{host}:{server.port}"
+        
+    if getattr(server, 'use_password', False) and getattr(server, 'password', ''):
         return ProxmoxClient(
-            host=server.ip_address,
+            host=host,
             user=server.api_user,
             password=server.password,
             verify_ssl=server.verify_ssl
         )
     return ProxmoxClient(
-        host=server.ip_address,
+        host=host,
         user=server.api_user,
         token_name=server.api_token_name,
         token_value=server.api_token_value,
@@ -110,7 +114,7 @@ def get_next_vmid(db: Session, server_id: int) -> int:
     # Fallback: get from DB if Proxmox not available
     used_vmids = set(
         row[0] for row in db.query(VMInstance.vmid)
-        .filter(VMInstance.server_id == server_id, VMInstance.deleted_at == None)
+        .filter(VMInstance.server_id == server_id, VMInstance.deleted_at.is_(None))
         .all()
     )
 
@@ -291,7 +295,7 @@ def save_vm_instance(
     existing = db.query(VMInstance).filter(
         VMInstance.server_id == server_id,
         VMInstance.vmid == vmid,
-        VMInstance.deleted_at == None
+        VMInstance.deleted_at.is_(None)
     ).first()
 
     if existing:
@@ -322,7 +326,7 @@ def save_vm_instance(
     deleted_existing = db.query(VMInstance).filter(
         VMInstance.server_id == server_id,
         VMInstance.vmid == vmid,
-        VMInstance.deleted_at != None
+        VMInstance.deleted_at.isnot(None)
     ).first()
 
     if deleted_existing:
@@ -386,7 +390,7 @@ def get_vm_instance(db: Session, server_id: int, vmid: int) -> VMInstance:
     return db.query(VMInstance).filter(
         VMInstance.server_id == server_id,
         VMInstance.vmid == vmid,
-        VMInstance.deleted_at == None
+        VMInstance.deleted_at.is_(None)
     ).first()
 
 
