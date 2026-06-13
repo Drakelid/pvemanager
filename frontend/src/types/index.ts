@@ -290,6 +290,8 @@ export interface Workspace {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  server_count?: number;
+  user_count?: number;
   servers?: WorkspaceServer[];
   users?: WorkspaceUser[];
 }

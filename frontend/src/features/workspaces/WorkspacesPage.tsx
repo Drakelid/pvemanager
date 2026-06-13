@@ -82,8 +82,8 @@ export default function WorkspacesPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-1"><Server className="h-3.5 w-3.5" />{ws.servers?.length ?? 0} {t('workspaces.servers')}</div>
-                <div className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{ws.users?.length ?? 0} {t('workspaces.users')}</div>
+                <div className="flex items-center gap-1"><Server className="h-3.5 w-3.5" />{ws.server_count ?? ws.servers?.length ?? 0} {t('workspaces.servers')}</div>
+                <div className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{ws.user_count ?? ws.users?.length ?? 0} {t('workspaces.users')}</div>
               </div>
               {ws.servers && ws.servers.length > 0 && (
                 <div className="flex flex-wrap gap-1">
