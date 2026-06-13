@@ -371,6 +371,124 @@ async def restore_backup(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/api/backups/restore-bulk")
+async def restore_backup_bulk(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("backup:restore")),
+):
+    """Restore several backups at once.
+
+    Body:
+        server_id (int), storage (str)
+        mode: "in_place" (overwrite original VMID, force) | "new_vmid" (clone to fresh VMIDs)
+        start (bool): start each guest after restore
+        items: [{node, vmid, archive, vm_type}]  — expected one archive per distinct VMID
+
+    Returns a per-item result list with UPIDs / errors.
+    """
+    data = await request.json()
+    server_id = data.get("server_id")
+    storage = data.get("storage")
+    mode = data.get("mode", "in_place")
+    start = bool(data.get("start", False))
+    items = data.get("items", [])
+
+    if not server_id or not storage or not items:
+        raise HTTPException(status_code=400, detail="server_id, storage and items are required")
+    if mode not in ("in_place", "new_vmid"):
+        raise HTTPException(status_code=400, detail="mode must be 'in_place' or 'new_vmid'")
+
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    client = _get_proxmox_client(server)
+    allocated: set = set()
+
+    def alloc_vmid(start_from: int):
+        """Find the next free VMID at/above start_from, skipping ones already handed out."""
+        candidate = start_from
+        for _ in range(10000):
+            if candidate in allocated:
+                candidate += 1
+                continue
+            try:
+                # /cluster/nextid?vmid=X returns X if free, raises if taken
+                ok = client.proxmox.cluster.nextid.get(vmid=candidate)
+                chosen = int(ok) if ok else candidate
+                allocated.add(chosen)
+                return chosen
+            except Exception:
+                candidate += 1
+        return None
+
+    next_start = None
+    if mode == "new_vmid":
+        next_start = await _run_in_executor(client.get_next_vmid) or 100
+
+    results = []
+    for it in items:
+        node = it.get("node")
+        vmid = it.get("vmid")
+        archive = it.get("archive")
+        vm_type = it.get("vm_type", "qemu")
+
+        if not node or not vmid or not archive:
+            results.append({"vmid": vmid, "archive": archive, "success": False,
+                            "error": "node, vmid and archive are required"})
+            continue
+
+        new_vmid = None
+        if mode == "new_vmid":
+            new_vmid = await _run_in_executor(alloc_vmid, next_start)
+            if not new_vmid:
+                results.append({"vmid": vmid, "archive": archive, "success": False,
+                                "error": "No free VMID available"})
+                continue
+            next_start = new_vmid + 1
+
+        force = (mode == "in_place")
+        try:
+            if vm_type == "lxc":
+                r = await _run_in_executor(
+                    client.restore_lxc,
+                    node=node, vmid=int(vmid), archive=archive, storage=storage,
+                    new_vmid=new_vmid, start=start, force=force,
+                )
+            else:
+                r = await _run_in_executor(
+                    client.restore_vm,
+                    node=node, vmid=int(vmid), archive=archive, storage=storage,
+                    new_vmid=new_vmid, start=start, unique=(mode == "new_vmid"), force=force,
+                )
+            target = new_vmid or int(vmid)
+            if r.get("success"):
+                results.append({"vmid": vmid, "target_vmid": target, "archive": archive,
+                                "success": True, "upid": r.get("upid")})
+                LoggingService.log_proxmox_action(
+                    db=db, action="backup_restore", resource_type="backup",
+                    resource_id=str(target), username=current_user.username,
+                    server_id=server_id, server_name=server.name, node_name=node, success=True,
+                    details={"archive": archive, "storage": storage, "vm_type": vm_type,
+                             "mode": mode, "bulk": True},
+                )
+            else:
+                results.append({"vmid": vmid, "target_vmid": target, "archive": archive,
+                                "success": False, "error": r.get("error", "Failed")})
+        except Exception as e:
+            results.append({"vmid": vmid, "archive": archive, "success": False, "error": str(e)})
+
+    succeeded = sum(1 for r in results if r["success"])
+    return JSONResponse(content={
+        "success": succeeded > 0,
+        "total": len(results),
+        "succeeded": succeeded,
+        "failed": len(results) - succeeded,
+        "results": results,
+    })
+
+
 # ==================== Scheduled Backup Jobs ====================
 
 @router.get("/api/backups/proxmox-jobs/{server_id}")

@@ -65,6 +65,24 @@ export function useRestoreBackup() {
   });
 }
 
+export type BulkRestoreItem = { node: string; vmid: number; archive: string; vm_type: string };
+export type BulkRestoreResult = {
+  success: boolean;
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: { vmid: number; target_vmid?: number; archive: string; success: boolean; upid?: string; error?: string }[];
+};
+
+export function useBulkRestoreBackup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { server_id: number; storage: string; mode: 'in_place' | 'new_vmid'; start: boolean; items: BulkRestoreItem[] }) =>
+      apiClient.post<BulkRestoreResult>('/proxmox/api/backups/restore-bulk', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['backups'] }),
+  });
+}
+
 export type BackupJobInput = {
   server_id: number;
   node: string;

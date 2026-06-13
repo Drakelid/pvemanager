@@ -20,6 +20,7 @@ import {
   useRunBackupJob,
   useDeleteBackup,
   useRestoreBackup,
+  useBulkRestoreBackup,
   useCreateBackupJob,
   useUpdateBackupJob,
   useDeleteBackupJob,
@@ -108,6 +109,7 @@ export default function BackupsPage() {
   const runJob = useRunBackupJob();
   const deleteBackup = useDeleteBackup();
   const restoreBackup = useRestoreBackup();
+  const bulkRestore = useBulkRestoreBackup();
   const createJob = useCreateBackupJob();
   const updateJob = useUpdateBackupJob();
   const deleteJob = useDeleteBackupJob();
@@ -131,6 +133,13 @@ export default function BackupsPage() {
   // --- Delete confirmation state ---
   const [deleteTarget, setDeleteTarget] = useState<BackupItem | null>(null);
 
+  // --- Bulk restore selection (one archive per VMID) ---
+  const [selectedBackups, setSelectedBackups] = useState<Map<number, BackupItem>>(new Map());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkMode, setBulkMode] = useState<'in_place' | 'new_vmid'>('in_place');
+  const [bulkStart, setBulkStart] = useState(false);
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+
   const nodes = useMemo(() => (nodesData?.nodes || []), [nodesData]);
   const storages = useMemo(() => {
     const list = (storagesData?.storages || []) as { storage: string; type: string; content: string; used: number; total: number }[];
@@ -138,6 +147,17 @@ export default function BackupsPage() {
   }, [storagesData]);
   const backups = (backupsData?.backups || []) as BackupItem[];
   const jobs = (jobsData?.jobs || []) as BackupJob[];
+
+  // Latest backup per VMID — used by the "select all" checkbox (one archive per VMID).
+  const latestPerVmid = useMemo(() => {
+    const m = new Map<number, BackupItem>();
+    for (const b of backups) {
+      const cur = m.get(b.vmid);
+      if (!cur || b.ctime > cur.ctime) m.set(b.vmid, b);
+    }
+    return m;
+  }, [backups]);
+  const allVmidsSelected = latestPerVmid.size > 0 && selectedBackups.size === latestPerVmid.size;
 
   // Servers/storages for the job dialog (across all servers, not only the file-tab selection)
   const jobServerId = jobForm.server_id;
@@ -223,6 +243,62 @@ export default function BackupsPage() {
         onSuccess: () => {
           toast.success(t('backups.restore_started'));
           setRestoreTarget(null);
+        },
+        onError: (e: any) => toast.error(e?.message || t('backups.restore_failed')),
+      },
+    );
+  };
+
+  // --- Bulk restore selection helpers (one archive per VMID) ---
+  // Reset selection whenever the visible backup set changes (server/node/storage switch).
+  useEffect(() => {
+    setSelectedBackups(new Map());
+  }, [sid, nodeParam, selectedStorage]);
+
+  const toggleBackupSelected = (b: BackupItem) => {
+    setSelectedBackups(prev => {
+      const next = new Map(prev);
+      const current = next.get(b.vmid);
+      if (current && current.volid === b.volid) {
+        next.delete(b.vmid);           // unselect this one
+      } else {
+        next.set(b.vmid, b);           // select / replace the archive chosen for this VMID
+      }
+      return next;
+    });
+  };
+
+  const openBulkRestore = () => {
+    if (selectedBackups.size === 0) return;
+    setBulkMode('in_place');
+    setBulkStart(false);
+    setBulkConfirm(false);
+    setBulkOpen(true);
+  };
+
+  const submitBulkRestore = () => {
+    if (!sid || selectedBackups.size === 0) return;
+    const items = Array.from(selectedBackups.values()).map(b => ({
+      node: b.node || (selectedNode === ALL_NODES ? '' : selectedNode) || nodes[0]?.node || '',
+      vmid: b.vmid,
+      archive: b.volid,
+      vm_type: detectVmType(b.volid),
+    }));
+    if (items.some(it => !it.node)) {
+      toast.error(t('backups.node_required'));
+      return;
+    }
+    bulkRestore.mutate(
+      { server_id: sid, storage: selectedStorage, mode: bulkMode, start: bulkStart, items },
+      {
+        onSuccess: (res) => {
+          if (res.failed === 0) {
+            toast.success(t('backups.bulk_restore_done', { count: res.succeeded }));
+          } else {
+            toast.warning(t('backups.bulk_restore_partial', { ok: res.succeeded, fail: res.failed }));
+          }
+          setBulkOpen(false);
+          setSelectedBackups(new Map());
         },
         onError: (e: any) => toast.error(e?.message || t('backups.restore_failed')),
       },
@@ -356,12 +432,38 @@ export default function BackupsPage() {
             </Select>
           </div>
 
+          {/* Bulk selection toolbar */}
+          {selectedBackups.size > 0 && (
+            <div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-2">
+              <span className="text-sm font-medium">
+                {t('backups.selected_count', { count: selectedBackups.size })}
+              </span>
+              <Button size="sm" onClick={openBulkRestore}>
+                <RotateCcw className="mr-1 h-3.5 w-3.5" />{t('backups.restore_selected')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedBackups(new Map())}>
+                {t('common.clear', 'Clear')}
+              </Button>
+            </div>
+          )}
+
           {/* Backup files table */}
           {backups.length > 0 ? (
             <div className="rounded-lg border">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={allVmidsSelected}
+                        title={t('backups.select_all_one_per_vmid')}
+                        onChange={() =>
+                          setSelectedBackups(allVmidsSelected ? new Map() : new Map(latestPerVmid))
+                        }
+                      />
+                    </TableHead>
                     <TableHead>VMID</TableHead>
                     <TableHead>{t('backups.type')}</TableHead>
                     <TableHead>{t('backups.node')}</TableHead>
@@ -376,8 +478,17 @@ export default function BackupsPage() {
                 <TableBody>
                   {backups.map((b, i) => {
                     const vmType = detectVmType(b.volid);
+                    const isSelected = selectedBackups.get(b.vmid)?.volid === b.volid;
                     return (
-                      <TableRow key={i}>
+                      <TableRow key={i} data-selected={isSelected}>
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={isSelected}
+                            onChange={() => toggleBackupSelected(b)}
+                          />
+                        </TableCell>
                         <TableCell className="font-mono">{b.vmid}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="uppercase text-xs">{vmType}</Badge>
@@ -540,6 +651,86 @@ export default function BackupsPage() {
             <Button onClick={submitRestore} disabled={restoreBackup.isPending}>
               {restoreBackup.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
               {t('backups.restore')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk restore dialog */}
+      <Dialog open={bulkOpen} onOpenChange={(o) => { if (!o) setBulkOpen(false); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('backups.bulk_restore_title')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            {/* Mode toggle */}
+            <div>
+              <Label>{t('backups.bulk_mode')}</Label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={bulkMode === 'in_place' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setBulkMode('in_place')}
+                >
+                  {t('backups.mode_in_place')}
+                </Button>
+                <Button
+                  type="button"
+                  variant={bulkMode === 'new_vmid' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setBulkMode('new_vmid')}
+                >
+                  {t('backups.mode_new_vmid')}
+                </Button>
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {bulkMode === 'in_place' ? t('backups.mode_in_place_hint') : t('backups.mode_new_vmid_hint')}
+              </p>
+            </div>
+
+            {/* Selected items */}
+            <div>
+              <Label>{t('backups.selected_count', { count: selectedBackups.size })}</Label>
+              <div className="mt-1 max-h-44 overflow-y-auto rounded-md border divide-y">
+                {Array.from(selectedBackups.values()).map((b) => (
+                  <div key={b.volid} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <Badge variant="outline" className="uppercase text-[10px] shrink-0">{detectVmType(b.volid)}</Badge>
+                      <span className="font-mono shrink-0">#{b.vmid}</span>
+                      <span className="font-mono text-xs text-muted-foreground truncate">{b.volid}</span>
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">{new Date(b.ctime * 1000).toLocaleDateString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2">
+              <input type="checkbox" className="h-4 w-4" checked={bulkStart} onChange={(e) => setBulkStart(e.target.checked)} />
+              <span>{t('backups.start_after_restore')}</span>
+            </label>
+
+            {/* In-place warning + confirm */}
+            {bulkMode === 'in_place' && (
+              <div className="space-y-2 rounded-md bg-destructive/10 p-3">
+                <p className="text-xs">{t('backups.bulk_in_place_warning')}</p>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" className="h-4 w-4" checked={bulkConfirm} onChange={(e) => setBulkConfirm(e.target.checked)} />
+                  <span>{t('backups.confirm_overwrite')}</span>
+                </label>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>{t('common.cancel')}</DialogClose>
+            <Button
+              onClick={submitBulkRestore}
+              disabled={bulkRestore.isPending || (bulkMode === 'in_place' && !bulkConfirm)}
+              variant={bulkMode === 'in_place' ? 'destructive' : 'default'}
+            >
+              {bulkRestore.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              {t('backups.restore_selected')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -2395,14 +2395,18 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 return {"success": False, "error": str(e)}
 
         def restore_vm(self, node: str, vmid: int, archive: str, storage: str,
-                       new_vmid: int = None, start: bool = False, unique: bool = True) -> Dict:
+                       new_vmid: int = None, start: bool = False, unique: bool = True,
+                       force: bool = False) -> Dict:
             """
             Restore a QEMU VM from backup.
             archive: volume id like 'local:backup/vzdump-qemu-100-...'
+            force: overwrite an existing VM with the same vmid (must be stopped).
             """
             if not self.proxmox:
                 return {"success": False, "error": "Not connected"}
             try:
+                # For QEMU, restore is triggered by passing `archive` to POST /nodes/{node}/qemu.
+                # There is NO `restore` parameter (unlike LXC) — sending it returns a 400.
                 params = {
                     "vmid": new_vmid if new_vmid else vmid,
                     "archive": archive,
@@ -2410,15 +2414,21 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                     "start": 1 if start else 0,
                     "unique": 1 if unique else 0,
                 }
-                upid = self.proxmox.nodes(node).qemu.post(**{"restore": 1, **params})
+                if force:
+                    params["force"] = 1
+                upid = self.proxmox.nodes(node).qemu.post(**params)
                 return {"success": True, "upid": upid}
             except Exception as e:
                 logger.error(f"Error restoring VM {vmid} on {node}: {e}")
                 return {"success": False, "error": str(e)}
 
         def restore_lxc(self, node: str, vmid: int, archive: str, storage: str,
-                        new_vmid: int = None, start: bool = False) -> Dict:
-            """Restore an LXC container from backup"""
+                        new_vmid: int = None, start: bool = False,
+                        force: bool = False) -> Dict:
+            """Restore an LXC container from backup.
+
+            force: overwrite an existing container with the same vmid (must be stopped).
+            """
             if not self.proxmox:
                 return {"success": False, "error": "Not connected"}
             try:
@@ -2429,6 +2439,8 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                     "restore": 1,
                     "start": 1 if start else 0,
                 }
+                if force:
+                    params["force"] = 1
                 upid = self.proxmox.nodes(node).lxc.post(**params)
                 return {"success": True, "upid": upid}
             except Exception as e:
