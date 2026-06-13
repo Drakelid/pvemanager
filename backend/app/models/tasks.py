@@ -79,6 +79,9 @@ class ProxmoxTask(Base):
     status = Column(String(20), nullable=False, default="running", index=True)
     exit_status = Column(String(100), nullable=True)
     log_text = Column(Text, nullable=True)
+    # 0-100 percentage parsed from the task log (e.g. qmrestore "progress N%").
+    # NULL when the task type does not report progress.
+    progress = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -97,6 +100,7 @@ class ProxmoxTask(Base):
             'status': self.status,
             'exit_status': self.exit_status,
             'log_text': self.log_text,
+            'progress': self.progress,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
         }

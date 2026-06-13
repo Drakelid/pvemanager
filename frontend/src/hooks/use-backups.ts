@@ -60,7 +60,7 @@ export function useDeleteBackup() {
 
 export function useRestoreBackup() {
   return useMutation({
-    mutationFn: (data: { server_id: number; node: string; vmid: number; archive: string; storage: string; vm_type: string; new_vmid?: number; start?: boolean }) =>
+    mutationFn: (data: { server_id: number; node: string; vmid: number; archive: string; storage?: string; vm_type: string; new_vmid?: number; start?: boolean; unique?: boolean }) =>
       apiClient.post<{ success: boolean; upid: string }>('/proxmox/api/backups/restore', data),
   });
 }
@@ -77,7 +77,7 @@ export type BulkRestoreResult = {
 export function useBulkRestoreBackup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { server_id: number; storage: string; mode: 'in_place' | 'new_vmid'; start: boolean; items: BulkRestoreItem[] }) =>
+    mutationFn: (data: { server_id: number; storage?: string; mode: 'in_place' | 'new_vmid'; start: boolean; items: BulkRestoreItem[] }) =>
       apiClient.post<BulkRestoreResult>('/proxmox/api/backups/restore-bulk', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['backups'] }),
   });

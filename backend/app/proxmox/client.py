@@ -2394,12 +2394,16 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.error(f"Error creating backup for VM {vmid} on {node}: {e}")
                 return {"success": False, "error": str(e)}
 
-        def restore_vm(self, node: str, vmid: int, archive: str, storage: str,
+        def restore_vm(self, node: str, vmid: int, archive: str, storage: str = None,
                        new_vmid: int = None, start: bool = False, unique: bool = True,
                        force: bool = False) -> Dict:
             """
             Restore a QEMU VM from backup.
             archive: volume id like 'local:backup/vzdump-qemu-100-...'
+            storage: TARGET storage for the restored disks. When empty/None, Proxmox
+                     restores each disk to the storage recorded in the backup config
+                     ("from backup configuration"). The backup source is encoded in
+                     `archive`, so this must NOT be the backup storage.
             force: overwrite an existing VM with the same vmid (must be stopped).
             """
             if not self.proxmox:
@@ -2410,10 +2414,11 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 params = {
                     "vmid": new_vmid if new_vmid else vmid,
                     "archive": archive,
-                    "storage": storage,
                     "start": 1 if start else 0,
                     "unique": 1 if unique else 0,
                 }
+                if storage:
+                    params["storage"] = storage
                 if force:
                     params["force"] = 1
                 upid = self.proxmox.nodes(node).qemu.post(**params)
@@ -2422,11 +2427,14 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.error(f"Error restoring VM {vmid} on {node}: {e}")
                 return {"success": False, "error": str(e)}
 
-        def restore_lxc(self, node: str, vmid: int, archive: str, storage: str,
+        def restore_lxc(self, node: str, vmid: int, archive: str, storage: str = None,
                         new_vmid: int = None, start: bool = False,
                         force: bool = False) -> Dict:
             """Restore an LXC container from backup.
 
+            storage: TARGET storage for the restored rootfs. When empty/None, Proxmox
+                     restores to the storage recorded in the backup config. The backup
+                     source is encoded in `archive`, so this must NOT be the backup storage.
             force: overwrite an existing container with the same vmid (must be stopped).
             """
             if not self.proxmox:
@@ -2435,10 +2443,11 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 params = {
                     "vmid": new_vmid if new_vmid else vmid,
                     "ostemplate": archive,
-                    "storage": storage,
                     "restore": 1,
                     "start": 1 if start else 0,
                 }
+                if storage:
+                    params["storage"] = storage
                 if force:
                     params["force"] = 1
                 upid = self.proxmox.nodes(node).lxc.post(**params)

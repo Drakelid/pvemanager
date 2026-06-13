@@ -30,6 +30,9 @@ import { formatBytes } from '@/lib/format';
 import { toast } from 'sonner';
 
 const ALL_NODES = '__all__';
+// Sentinel for the target-storage selects: restore disks to the storage recorded
+// in the backup config (i.e. omit the `storage` param), rather than a chosen one.
+const FROM_BACKUP = '__from_backup__';
 
 type BackupItem = {
   volid: string;
@@ -126,6 +129,8 @@ export default function BackupsPage() {
 
   // --- Restore dialog state ---
   const [restoreTarget, setRestoreTarget] = useState<BackupItem | null>(null);
+  const [restoreTargetNode, setRestoreTargetNode] = useState('');
+  const [restoreTargetStorage, setRestoreTargetStorage] = useState(FROM_BACKUP);
   const [restoreNewVmid, setRestoreNewVmid] = useState('');
   const [restoreStart, setRestoreStart] = useState(false);
   const [restoreUnique, setRestoreUnique] = useState(true);
@@ -137,14 +142,32 @@ export default function BackupsPage() {
   const [selectedBackups, setSelectedBackups] = useState<Map<number, BackupItem>>(new Map());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkMode, setBulkMode] = useState<'in_place' | 'new_vmid'>('in_place');
+  const [bulkTargetNode, setBulkTargetNode] = useState('__source__');
+  const [bulkTargetStorage, setBulkTargetStorage] = useState(FROM_BACKUP);
   const [bulkStart, setBulkStart] = useState(false);
   const [bulkConfirm, setBulkConfirm] = useState(false);
 
   const nodes = useMemo(() => (nodesData?.nodes || []), [nodesData]);
-  const storages = useMemo(() => {
-    const list = (storagesData?.storages || []) as { storage: string; type: string; content: string; used: number; total: number }[];
-    return list.filter(s => (s.content || '').split(',').includes('backup'));
-  }, [storagesData]);
+  const allStorages = useMemo(
+    () => (storagesData?.storages || []) as { storage: string; type: string; content: string; nodes?: string; used?: number; total?: number }[],
+    [storagesData],
+  );
+  const storages = useMemo(
+    () => allStorages.filter(s => (s.content || '').split(',').includes('backup')),
+    [allStorages],
+  );
+  // Storages that can hold restored guest disks on a given node.
+  // qemu => content 'images', lxc => 'rootdir', 'any' => either (bulk, mixed types).
+  const diskStoragesFor = (node: string, vmType: 'qemu' | 'lxc' | 'any') => {
+    const needed = vmType === 'lxc' ? ['rootdir'] : vmType === 'qemu' ? ['images'] : ['images', 'rootdir'];
+    return allStorages.filter(s => {
+      const contents = (s.content || '').split(',');
+      if (!needed.some(c => contents.includes(c))) return false;
+      // `nodes` empty/absent => storage is available on all nodes.
+      if (node && s.nodes) return s.nodes.split(',').includes(node);
+      return true;
+    });
+  };
   const backups = (backupsData?.backups || []) as BackupItem[];
   const jobs = (jobsData?.jobs || []) as BackupJob[];
 
@@ -209,6 +232,8 @@ export default function BackupsPage() {
 
   const openRestore = (b: BackupItem) => {
     setRestoreTarget(b);
+    setRestoreTargetNode(b.node || (selectedNode === ALL_NODES ? '' : selectedNode) || nodes[0]?.node || '');
+    setRestoreTargetStorage(FROM_BACKUP);
     setRestoreNewVmid('');
     setRestoreStart(false);
     setRestoreUnique(true);
@@ -216,7 +241,7 @@ export default function BackupsPage() {
 
   const submitRestore = () => {
     if (!restoreTarget || !sid) return;
-    const node = restoreTarget.node || (selectedNode === ALL_NODES ? '' : selectedNode) || nodes[0]?.node;
+    const node = restoreTargetNode;
     if (!node) {
       toast.error(t('backups.node_required'));
       return;
@@ -233,7 +258,7 @@ export default function BackupsPage() {
         node,
         vmid: newVmidNum ?? restoreTarget.vmid,
         archive: restoreTarget.volid,
-        storage: selectedStorage,
+        ...(restoreTargetStorage !== FROM_BACKUP ? { storage: restoreTargetStorage } : {}),
         vm_type: vmType,
         new_vmid: newVmidNum,
         start: restoreStart,
@@ -271,6 +296,8 @@ export default function BackupsPage() {
   const openBulkRestore = () => {
     if (selectedBackups.size === 0) return;
     setBulkMode('in_place');
+    setBulkTargetNode('__source__');
+    setBulkTargetStorage(FROM_BACKUP);
     setBulkStart(false);
     setBulkConfirm(false);
     setBulkOpen(true);
@@ -278,8 +305,9 @@ export default function BackupsPage() {
 
   const submitBulkRestore = () => {
     if (!sid || selectedBackups.size === 0) return;
+    const overrideNode = bulkTargetNode === '__source__' ? '' : bulkTargetNode;
     const items = Array.from(selectedBackups.values()).map(b => ({
-      node: b.node || (selectedNode === ALL_NODES ? '' : selectedNode) || nodes[0]?.node || '',
+      node: overrideNode || b.node || (selectedNode === ALL_NODES ? '' : selectedNode) || nodes[0]?.node || '',
       vmid: b.vmid,
       archive: b.volid,
       vm_type: detectVmType(b.volid),
@@ -289,7 +317,13 @@ export default function BackupsPage() {
       return;
     }
     bulkRestore.mutate(
-      { server_id: sid, storage: selectedStorage, mode: bulkMode, start: bulkStart, items },
+      {
+        server_id: sid,
+        ...(bulkTargetStorage !== FROM_BACKUP ? { storage: bulkTargetStorage } : {}),
+        mode: bulkMode,
+        start: bulkStart,
+        items,
+      },
       {
         onSuccess: (res) => {
           if (res.failed === 0) {
@@ -615,6 +649,28 @@ export default function BackupsPage() {
                 <div><span className="text-muted-foreground">{t('backups.size')}:</span> {formatBytes(restoreTarget.size)}</div>
               </div>
               <div>
+                <Label>{t('backups.restore_target_node')}</Label>
+                <Select value={restoreTargetNode} onValueChange={v => { if (v !== null) setRestoreTargetNode(v); }}>
+                  <SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    {nodes.map(n => <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{t('backups.restore_target_storage')}</Label>
+                <Select value={restoreTargetStorage} onValueChange={v => { if (v !== null) setRestoreTargetStorage(v); }}>
+                  <SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectItem value={FROM_BACKUP}>{t('backups.storage_from_backup')}</SelectItem>
+                    {diskStoragesFor(restoreTargetNode, detectVmType(restoreTarget.volid)).map(s => (
+                      <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-muted-foreground">{t('backups.target_storage_hint')}</p>
+              </div>
+              <div>
                 <Label>{t('backups.new_vmid_optional')}</Label>
                 <Input
                   className="mt-1"
@@ -662,7 +718,7 @@ export default function BackupsPage() {
           <DialogHeader>
             <DialogTitle>{t('backups.bulk_restore_title')}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 text-sm">
+          <div className="min-w-0 space-y-4 text-sm">
             {/* Mode toggle */}
             <div>
               <Label>{t('backups.bulk_mode')}</Label>
@@ -692,7 +748,7 @@ export default function BackupsPage() {
             {/* Selected items */}
             <div>
               <Label>{t('backups.selected_count', { count: selectedBackups.size })}</Label>
-              <div className="mt-1 max-h-44 overflow-y-auto rounded-md border divide-y">
+              <div className="mt-1 max-h-44 overflow-y-auto overflow-x-hidden rounded-md border divide-y">
                 {Array.from(selectedBackups.values()).map((b) => (
                   <div key={b.volid} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
                     <span className="flex items-center gap-2 min-w-0">
@@ -704,6 +760,32 @@ export default function BackupsPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <Label>{t('backups.bulk_target_node')}</Label>
+              <Select value={bulkTargetNode} onValueChange={v => setBulkTargetNode(v)}>
+                <SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectItem value="__source__">— {t('backups.bulk_target_node_source')}</SelectItem>
+                  {nodes.map(n => <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">{t('backups.bulk_target_node_hint')}</p>
+            </div>
+
+            <div>
+              <Label>{t('backups.restore_target_storage')}</Label>
+              <Select value={bulkTargetStorage} onValueChange={v => setBulkTargetStorage(v)}>
+                <SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectItem value={FROM_BACKUP}>{t('backups.storage_from_backup')}</SelectItem>
+                  {diskStoragesFor(bulkTargetNode === '__source__' ? '' : bulkTargetNode, 'any').map(s => (
+                    <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">{t('backups.target_storage_hint')}</p>
             </div>
 
             <label className="flex items-center gap-2">

@@ -4,12 +4,33 @@ Uses APScheduler for periodic tasks
 """
 
 import asyncio
+import re
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from loguru import logger
 
 
 from ..config import utcnow
+
+
+# qmrestore / vma extract emit lines like "progress 47% (read ...)".
+# Some restores instead print bare "47% ..." markers. Capture either form.
+_PROGRESS_RE = re.compile(r"(?:progress\s+)?(\d{1,3})\s*%")
+
+
+def parse_task_progress(log_text: Optional[str]) -> Optional[int]:
+    """Extract the latest restore/backup progress percentage from a task log.
+
+    Returns the last percentage seen (0-100), or None when the log has none.
+    """
+    if not log_text:
+        return None
+    matches = _PROGRESS_RE.findall(log_text)
+    if not matches:
+        return None
+    # The log is appended in order, so the last match is the most recent progress.
+    pct = int(matches[-1])
+    return max(0, min(100, pct))
 
 
 try:
@@ -968,6 +989,10 @@ class MonitoringWorker:
                                 entry.get("t", "") if isinstance(entry, dict) else str(entry)
                                 for entry in log_entries
                             )
+                            # Extract a live progress % from the log (qmrestore etc.)
+                            parsed = parse_task_progress(task.log_text)
+                            if parsed is not None:
+                                task.progress = parsed
                     except Exception:
                         pass
 
@@ -977,6 +1002,10 @@ class MonitoringWorker:
                         task.exit_status = exit_status
                         task.status = "completed" if exit_status == "OK" else "failed"
                         task.completed_at = utcnow()
+                        # A successfully finished task is 100% done even if the last
+                        # log line didn't print a percentage.
+                        if exit_status == "OK" and task.progress is not None:
+                            task.progress = 100
                         logger.info(f"[UPID SYNC] Task #{task.id} finished: {task.status} ({exit_status})")
 
                     db.commit()

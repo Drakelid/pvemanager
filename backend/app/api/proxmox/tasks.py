@@ -223,8 +223,28 @@ def get_all_tasks(
     proxmox_tasks = proxmox_q.order_by(ProxmoxTask.created_at.desc()).limit(limit).all()
     deploy_tasks = deploy_q.order_by(DeployTask.created_at.desc()).limit(limit).all()
 
+    # Resolve server_id -> name once for enrichment (proxmox/deploy tasks carry server_id).
+    server_ids = {t.server_id for t in proxmox_tasks if t.server_id} | {t.server_id for t in deploy_tasks if t.server_id}
+    server_names = {}
+    if server_ids:
+        for sid, sname in db.query(ProxmoxServer.id, ProxmoxServer.name).filter(ProxmoxServer.id.in_(server_ids)).all():
+            server_names[sid] = sname
+
+    def _enrich(d: dict) -> dict:
+        # All listed tasks belong to the current user.
+        if not d.get("user"):
+            d["user"] = current_user.username
+        if d.get("server_id") and not d.get("server_name"):
+            d["server_name"] = server_names.get(d["server_id"])
+        # Тип column reads `type` first; fall back to action/task_type/kind.
+        if not d.get("type"):
+            d["type"] = d.get("action") or d.get("task_type") or d.get("kind")
+        return d
+
     all_tasks = sorted(
-        [t.to_dict() for t in bulk_tasks] + [t.to_dict() for t in proxmox_tasks] + [t.to_dict() for t in deploy_tasks],
+        [_enrich(t.to_dict()) for t in bulk_tasks]
+        + [_enrich(t.to_dict()) for t in proxmox_tasks]
+        + [_enrich(t.to_dict()) for t in deploy_tasks],
         key=lambda t: t.get("created_at") or "",
         reverse=True,
     )[:limit]

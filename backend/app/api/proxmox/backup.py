@@ -19,6 +19,7 @@ from ...auth import PermissionChecker
 from ...logging_service import LoggingService
 from ._helpers import _get_proxmox_client
 from ...proxmox import _run_in_executor
+from .tasks import ProxmoxTaskService
 
 router = APIRouter()
 
@@ -322,16 +323,18 @@ async def restore_backup(
     node = data.get("node")
     vmid = data.get("vmid")
     archive = data.get("archive")   # volume id
-    storage = data.get("storage")
+    # Target storage for the restored disks. Empty => "from backup configuration"
+    # (disks go to the storage recorded in the backup). NOT the backup storage.
+    storage = data.get("storage") or None
     vm_type = data.get("vm_type", "qemu")
     new_vmid = data.get("new_vmid")
     start = bool(data.get("start", False))
     unique = bool(data.get("unique", True))
 
-    if not all([server_id, node, vmid, archive, storage]):
+    if not all([server_id, node, vmid, archive]):
         raise HTTPException(
             status_code=400,
-            detail="server_id, node, vmid, archive, storage are required",
+            detail="server_id, node, vmid, archive are required",
         )
 
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -356,6 +359,21 @@ async def restore_backup(
             )
 
         if result.get("success"):
+            target_vmid = int(new_vmid) if new_vmid else int(vmid)
+            upid = result.get("upid")
+            # Track the restore as a Proxmox UPID task so it shows up on the Tasks
+            # page and the poller can report live progress / final status.
+            if upid:
+                try:
+                    ptask = ProxmoxTaskService.register(
+                        db=db, upid=upid, server_id=server_id, user_id=current_user.id,
+                        action="backup_restore", node=node, vmid=target_vmid,
+                        vm_type=vm_type, description=f"Восстановление {vm_type.upper()} {target_vmid}",
+                    )
+                    ptask.progress = 0
+                    db.commit()
+                except Exception as _te:
+                    logger.warning(f"Could not register restore task: {_te}")
             LoggingService.log_proxmox_action(
                 db=db, action="backup_restore", resource_type="backup",
                 resource_id=str(vmid), username=current_user.username,
@@ -363,7 +381,7 @@ async def restore_backup(
                 node_name=node, success=True,
                 details={"archive": archive, "storage": storage, "vm_type": vm_type},
             )
-            return JSONResponse(content={"success": True, "upid": result.get("upid")})
+            return JSONResponse(content={"success": True, "upid": upid})
         raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
     except HTTPException:
         raise
@@ -389,13 +407,14 @@ async def restore_backup_bulk(
     """
     data = await request.json()
     server_id = data.get("server_id")
-    storage = data.get("storage")
+    # Target storage for restored disks. Empty => "from backup configuration".
+    storage = data.get("storage") or None
     mode = data.get("mode", "in_place")
     start = bool(data.get("start", False))
     items = data.get("items", [])
 
-    if not server_id or not storage or not items:
-        raise HTTPException(status_code=400, detail="server_id, storage and items are required")
+    if not server_id or not items:
+        raise HTTPException(status_code=400, detail="server_id and items are required")
     if mode not in ("in_place", "new_vmid"):
         raise HTTPException(status_code=400, detail="mode must be 'in_place' or 'new_vmid'")
 
@@ -466,6 +485,18 @@ async def restore_backup_bulk(
             if r.get("success"):
                 results.append({"vmid": vmid, "target_vmid": target, "archive": archive,
                                 "success": True, "upid": r.get("upid")})
+                upid = r.get("upid")
+                if upid:
+                    try:
+                        ptask = ProxmoxTaskService.register(
+                            db=db, upid=upid, server_id=server_id, user_id=current_user.id,
+                            action="backup_restore", node=node, vmid=target,
+                            vm_type=vm_type, description=f"Восстановление {vm_type.upper()} {target}",
+                        )
+                        ptask.progress = 0
+                        db.commit()
+                    except Exception as _te:
+                        logger.warning(f"Could not register bulk restore task: {_te}")
                 LoggingService.log_proxmox_action(
                     db=db, action="backup_restore", resource_type="backup",
                     resource_id=str(target), username=current_user.username,

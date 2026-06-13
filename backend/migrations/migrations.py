@@ -1354,6 +1354,18 @@ def migrate_user_ssh_keys_table(conn):
     logger.info("✓ user_ssh_keys table created")
 
 
+def migrate_proxmox_task_progress(conn):
+    """Migration 25: Add 'progress' column to proxmox_tasks (0-100, parsed from log)."""
+    if not table_exists(conn, 'proxmox_tasks'):
+        logger.info("Table proxmox_tasks does not exist, skipping progress migration")
+        return
+
+    if add_column_if_not_exists(conn, 'proxmox_tasks', 'progress', 'INTEGER'):
+        logger.info("✓ Added progress column to proxmox_tasks")
+    else:
+        logger.info("✓ proxmox_tasks.progress already exists")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1558,6 +1570,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"User SSH keys table migration: {e}")
+                conn.rollback()
+
+            # Migration 25: proxmox_tasks.progress column
+            try:
+                migrate_proxmox_task_progress(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Proxmox task progress migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)
