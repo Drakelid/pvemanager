@@ -945,7 +945,20 @@ class MonitoringWorker:
 
                     # --- status -----------------------------------------------
                     proxmox_status = client.get_task_status(task.node, task.upid)
-                    pve_status = proxmox_status.get("status", "running") if proxmox_status else "running"
+                    # If status is empty, it means Proxmox API rejected the UPID
+                    if not proxmox_status:
+                        logger.warning(f"[UPID SYNC] Cannot fetch status for task #{task.id} (UPID={task.upid[:30]}...) — marking as failed")
+                        task.status = "failed"
+                        task.exit_status = "Invalid UPID"
+                        task.completed_at = utcnow()
+                        db.commit()
+                        try:
+                            broadcast_task_update(task.user_id, "task_update", task.to_dict())
+                        except Exception:
+                            pass
+                        continue
+
+                    pve_status = proxmox_status.get("status", "running")
 
                     # --- log --------------------------------------------------
                     try:
