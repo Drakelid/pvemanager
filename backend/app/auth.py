@@ -135,6 +135,42 @@ def get_current_session_token(
     return payload.get("session")
 
 
+def authenticate_ws_token(token: Optional[str], db: Session) -> Optional[User]:
+    """Authenticate a WebSocket connection from a JWT passed as a query parameter.
+
+    Browsers cannot set Authorization headers on WebSocket handshakes, so the
+    token is supplied via ?token=<jwt>. Returns the authenticated, active User
+    (with a valid session, if the token is session-bound) or ``None`` on any
+    failure. Unlike ``decode_access_token`` this never raises — callers close
+    the socket with an appropriate code instead.
+    """
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except jwt.PyJWTError:
+        return None
+
+    username = payload.get("sub")
+    if not username:
+        return None
+
+    # Validate the bound session, mirroring get_current_user.
+    session_token = payload.get("session")
+    if session_token:
+        from .services.security_service import SecurityService
+        if not SecurityService.validate_session(db, session_token):
+            return None
+
+    user = db.query(User).options(joinedload(User.role)).filter(User.username == username).first()
+    if user is None or not user.is_active:
+        return None
+    if user.is_locked():
+        return None
+
+    return user
+
+
 def get_current_active_admin(current_user: User = Depends(get_current_user)) -> User:
     """Get current active admin user"""
     if not current_user.is_admin and (not current_user.role or current_user.role.name != "admin"):

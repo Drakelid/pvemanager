@@ -13,7 +13,9 @@ from ...db import get_db
 from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
 from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
 from ...proxmox import ProxmoxClient, get_proxmox_resources
-from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
+from ...auth import (get_current_user, PermissionChecker, require_permission,
+                     check_permission, authenticate_ws_token)
+from ...rbac import PermissionEngine
 from ...logging_service import LoggingService
 from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
@@ -2001,15 +2003,28 @@ async def vnc_websocket_proxy(
     vncticket: str,
     vnc_password: str = None,  # VNC пароль сгенерированный через generate-password
     auth_ticket: str = None,  # Auth ticket переданный с frontend
+    token: str = Query(None),  # JWT панели (?token=) — браузеры не шлют заголовки на WS
     db: Session = Depends(get_db)
 ):
     """WebSocket прокси для VNC подключения к Proxmox"""
     import websockets
     import urllib.parse
-    
+
+    # --- Authenticate the panel user before bridging to Proxmox ------------
+    user = authenticate_ws_token(token, db)
+    if not user:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+    if not PermissionEngine.has_permission(user, "vms.console"):
+        await websocket.close(code=4003, reason="Permission denied")
+        return
+    if not check_vm_access(db, user, server_id, vmid):
+        await websocket.close(code=4003, reason="Access denied")
+        return
+
     await websocket.accept()
-    logger.info(f"VNC WebSocket connection accepted for {vmtype}/{vmid}")
-    
+    logger.info(f"VNC WebSocket connection accepted for {vmtype}/{vmid} (user={user.username})")
+
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
         logger.error(f"Proxmox server {server_id} not found")
@@ -2954,6 +2969,7 @@ async def terminal_websocket_fixed(
     server_id: int,
     node: str,
     vmid: int,
+    token: str = Query(None),  # JWT панели (?token=) — браузеры не шлют заголовки на WS
     db: Session = Depends(get_db)
 ):
     """WebSocket терминал для LXC контейнеров через Proxmox termproxy API"""
@@ -2961,8 +2977,20 @@ async def terminal_websocket_fixed(
     import httpx
     from urllib.parse import quote
 
+    # --- Authenticate the panel user before opening a root shell -----------
+    user = authenticate_ws_token(token, db)
+    if not user:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+    if not PermissionEngine.has_permission(user, "vms.console"):
+        await websocket.close(code=4003, reason="Permission denied")
+        return
+    if not check_vm_access(db, user, server_id, vmid):
+        await websocket.close(code=4003, reason="Access denied")
+        return
+
     await websocket.accept()
-    logger.info(f"Terminal WebSocket accepted for container {vmid} on node {node}")
+    logger.info(f"Terminal WebSocket accepted for container {vmid} on node {node} (user={user.username})")
 
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:

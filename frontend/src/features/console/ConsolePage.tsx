@@ -78,6 +78,8 @@ export default function ConsolePage() {
       });
       if (data.password) params.set('vnc_password', data.password);
       if (data.auth_ticket) params.set('auth_ticket', data.auth_ticket);
+      const authToken = apiClient.getToken();
+      if (authToken) params.set('token', authToken);
 
       const wsUrl = `${wsProto}//${window.location.host}/proxmox/ws/vnc/${sid}/${data.node}/qemu/${vid}?${params}`;
 
@@ -154,7 +156,9 @@ export default function ConsolePage() {
 
       // WebSocket connection
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProto}//${window.location.host}/proxmox/ws/terminal/${sid}/${data.node}/${vid}`;
+      const authToken = apiClient.getToken();
+      const tokenParam = authToken ? `?token=${encodeURIComponent(authToken)}` : '';
+      const wsUrl = `${wsProto}//${window.location.host}/proxmox/ws/terminal/${sid}/${data.node}/${vid}${tokenParam}`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;

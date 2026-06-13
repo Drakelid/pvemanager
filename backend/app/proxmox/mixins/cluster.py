@@ -286,8 +286,10 @@ class ClusterMixin:
         def _delete_cluster_node_via_ssh(self, node_name: str) -> Dict:
             """SSH fallback для удаления ноды через pvecm delnode"""
             from app.ssh_client import SSHClient
+            # self.host may carry an API port suffix (e.g. "1.2.3.4:8006"); SSH needs the bare host.
+            ssh_host = self.host.split(':')[0] if self.host else self.host
             ssh = SSHClient(
-                hostname=self.host,
+                hostname=ssh_host,
                 username='root',
                 password=getattr(self, '_password', None),
             )

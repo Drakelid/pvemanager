@@ -56,8 +56,15 @@ def decrypt_value(value: str) -> str:
         return value
     try:
         return f.decrypt(value.encode()).decode()
-    except (InvalidToken, Exception):
-        # Value is likely plaintext (pre-encryption legacy row)
+    except InvalidToken:
+        # Value is likely plaintext (pre-encryption legacy row) or was
+        # encrypted with a different FERNET_KEY. Return as-is for backward
+        # compatibility, but warn so key-rotation mistakes are visible.
+        logger.warning(
+            "Fernet decryption failed (InvalidToken). Value returned as-is — "
+            "this is expected for legacy plaintext rows, but check FERNET_KEY "
+            "if previously-encrypted data is now unreadable."
+        )
         return value
 
 

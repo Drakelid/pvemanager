@@ -101,6 +101,8 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             self.host = host
             self.user = user
             self.timeout = timeout
+            # Stored for SSH fallbacks (e.g. pvecm delnode) that need root password auth
+            self._password = password
             # Улучшенный ключ кеша - включаем token_name для уникальности
             self.connection_key = f"{host}:{user}:{token_name or 'password'}"
             self.proxmox = None

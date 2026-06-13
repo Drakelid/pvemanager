@@ -16,7 +16,8 @@ def get_version() -> str:
     for version_file in possible_paths:
         if version_file.exists():
             return version_file.read_text().strip()
-    return "1.7.0"
+    # Fallback only if the VERSION file is missing — keep in sync with /VERSION.
+    return "1.5.1"
 
 
 class Settings(BaseSettings):
@@ -46,6 +47,10 @@ class Settings(BaseSettings):
     SSH_TIMEOUT: int = Field(default=10, env="SSH_TIMEOUT")
     DEFAULT_SSH_USER: str = Field(default="root", env="DEFAULT_SSH_USER")
     DEFAULT_SSH_PORT: int = Field(default=22, env="DEFAULT_SSH_PORT")
+    # Reject SSH connections to hosts with unknown/changed host keys (mitigates MITM).
+    # Default False preserves legacy behaviour (warn & accept); enable in production
+    # once your servers' host keys are in known_hosts.
+    SSH_REJECT_UNKNOWN_HOSTS: bool = Field(default=False, env="SSH_REJECT_UNKNOWN_HOSTS")
     
     # CORS — comma-separated list of allowed origins; "*" is insecure in production
     CORS_ORIGINS: str = Field(default="*", env="CORS_ORIGINS")

@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from ..db import get_db
 from ..models import ProxmoxServer, AuditLog, User
 from ..auth import PermissionChecker
+from ..config import utcnow
 
 router = APIRouter()
 
@@ -39,7 +40,7 @@ def dashboard_stats(
         cluster_q = cluster_q.filter(ProxmoxServer.id.in_(server_ids))
     total_clusters = cluster_q.scalar() or 0
 
-    since_24h = datetime.utcnow() - timedelta(hours=24)
+    since_24h = utcnow() - timedelta(hours=24)
     total_alerts = db.query(AuditLog).filter(
         AuditLog.level.in_(['error', 'critical']),
         AuditLog.created_at >= since_24h
@@ -88,7 +89,7 @@ def get_dashboard_alerts(
     current_user: User = Depends(PermissionChecker("logs.view"))
 ):
     """Вернуть события error/critical за последние 24 ч для дашборда"""
-    since_24h = datetime.utcnow() - timedelta(hours=24)
+    since_24h = utcnow() - timedelta(hours=24)
     alerts = db.query(AuditLog).filter(
         AuditLog.level.in_(['error', 'critical']),
         AuditLog.created_at >= since_24h

@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import threading
 from typing import Dict, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
 import paramiko
@@ -16,17 +17,20 @@ ssh_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="ssh_")
 
 class SSHClient:
     """Улучшенный SSH клиент для подключения к серверам с кешированием"""
-    
-    # Connection cache
+
+    # Connection cache (shared across threads — guard every access with _cache_lock)
     _connections = {}
     _connection_times = {}
+    _cache_lock = threading.Lock()
     
-    def __init__(self, hostname: str, port: int = 22, username: str = "root", 
-                 key_path: Optional[str] = None, timeout: int = 10, max_retries: int = 3):
+    def __init__(self, hostname: str, port: int = 22, username: str = "root",
+                 key_path: Optional[str] = None, timeout: int = 10, max_retries: int = 3,
+                 password: Optional[str] = None):
         self.hostname = hostname
         self.port = port
         self.username = username
         self.key_path = key_path
+        self.password = password
         self.timeout = timeout
         self.max_retries = max_retries
         self.client = None
@@ -35,10 +39,12 @@ class SSHClient:
     
     def _get_cached_connection(self) -> Optional[paramiko.SSHClient]:
         """Get cached connection if available and valid"""
-        if self.connection_key in self._connections:
-            client = self._connections[self.connection_key]
+        with self._cache_lock:
+            client = self._connections.get(self.connection_key)
+            if client is None:
+                return None
             connection_time = self._connection_times.get(self.connection_key, 0)
-            
+
             # Check if connection is still valid (max 5 minutes)
             if time.time() - connection_time < 300:
                 try:
@@ -48,26 +54,31 @@ class SSHClient:
                         return client
                 except Exception:
                     pass
-            
+
             # Remove invalid connection
-            self._cleanup_connection()
-        
+            self._cleanup_connection_locked()
         return None
-    
+
     def _cache_connection(self, client: paramiko.SSHClient):
         """Cache successful connection"""
-        self._connections[self.connection_key] = client
-        self._connection_times[self.connection_key] = time.time()
-    
+        with self._cache_lock:
+            self._connections[self.connection_key] = client
+            self._connection_times[self.connection_key] = time.time()
+
     def _cleanup_connection(self):
-        """Clean up cached connection"""
-        if self.connection_key in self._connections:
+        """Clean up cached connection (acquires the cache lock)."""
+        with self._cache_lock:
+            self._cleanup_connection_locked()
+
+    def _cleanup_connection_locked(self):
+        """Clean up cached connection. Caller must hold _cache_lock."""
+        client = self._connections.pop(self.connection_key, None)
+        if client is not None:
             try:
-                self._connections[self.connection_key].close()
+                client.close()
             except Exception:
                 pass
-            del self._connections[self.connection_key]
-            del self._connection_times[self.connection_key]
+            self._connection_times.pop(self.connection_key, None)
     
     def connect(self) -> bool:
         """Установить SSH соединение с повторными попытками"""
@@ -83,7 +94,17 @@ class SSHClient:
             try:
                 client = paramiko.SSHClient()
                 client.load_system_host_keys()
-                client.set_missing_host_key_policy(paramiko.WarningPolicy())
+                # Strict host-key checking is opt-in to avoid breaking existing
+                # deployments whose known_hosts isn't populated yet.
+                try:
+                    from .config import settings
+                    strict = settings.SSH_REJECT_UNKNOWN_HOSTS
+                except Exception:
+                    strict = False
+                if strict:
+                    client.set_missing_host_key_policy(paramiko.RejectPolicy())
+                else:
+                    client.set_missing_host_key_policy(paramiko.WarningPolicy())
                 
                 connect_kwargs = {
                     'hostname': self.hostname,
@@ -93,7 +114,9 @@ class SSHClient:
                     'banner_timeout': self.timeout,
                     'auth_timeout': self.timeout,
                 }
-                
+                if self.password:
+                    connect_kwargs['password'] = self.password
+
                 # Try key authentication first
                 if self.key_path:
                     try:
@@ -101,7 +124,7 @@ class SSHClient:
                         client.connect(**connect_kwargs, look_for_keys=False, allow_agent=False)
                     except paramiko.AuthenticationException:
                         logger.debug(f"Key auth failed for {self.hostname}, trying other methods")
-                        # Remove key and try other methods
+                        # Remove key and try other methods (password / agent / default keys)
                         del connect_kwargs['key_filename']
                         client.connect(**connect_kwargs, look_for_keys=True, allow_agent=True)
                 else:
@@ -233,13 +256,14 @@ class SSHClient:
     @classmethod
     def cleanup_all_connections(cls):
         """Clean up all cached connections"""
-        for key in list(cls._connections.keys()):
-            try:
-                cls._connections[key].close()
-            except Exception:
-                pass
-        cls._connections.clear()
-        cls._connection_times.clear()
+        with cls._cache_lock:
+            for key in list(cls._connections.keys()):
+                try:
+                    cls._connections[key].close()
+                except Exception:
+                    pass
+            cls._connections.clear()
+            cls._connection_times.clear()
 
 
 def check_server_status(hostname: str, port: int = 22, username: str = "root",
@@ -400,21 +424,21 @@ async def cleanup_ssh_connections():
         try:
             await asyncio.sleep(300)  # Check every 5 minutes
             current_time = time.time()
-            expired_keys = []
-            
-            for key, connection_time in SSHClient._connection_times.items():
-                if current_time - connection_time > 600:  # 10 minutes
-                    expired_keys.append(key)
-            
-            for key in expired_keys:
-                if key in SSHClient._connections:
-                    try:
-                        SSHClient._connections[key].close()
-                    except Exception:
-                        pass
-                    del SSHClient._connections[key]
-                    del SSHClient._connection_times[key]
-                    logger.debug(f"Cleaned up expired SSH connection: {key}")
+
+            with SSHClient._cache_lock:
+                expired_keys = [
+                    key for key, connection_time in SSHClient._connection_times.items()
+                    if current_time - connection_time > 600  # 10 minutes
+                ]
+                for key in expired_keys:
+                    client = SSHClient._connections.pop(key, None)
+                    if client is not None:
+                        try:
+                            client.close()
+                        except Exception:
+                            pass
+                        SSHClient._connection_times.pop(key, None)
+                        logger.debug(f"Cleaned up expired SSH connection: {key}")
         except Exception as e:
             logger.error(f"Error in SSH cleanup task: {e}")
             await asyncio.sleep(60)  # Wait a minute on error

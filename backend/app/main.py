@@ -37,10 +37,11 @@ def setup_logging():
     
     # Remove default logger
     logger.remove()
-    
-    # Add console logging
+
+    # Add console logging (stderr keeps logs off stdout, which may carry data)
+    import sys
     logger.add(
-        sink=lambda msg: print(msg, end=""),
+        sink=sys.stderr,
         level=settings.LOG_LEVEL,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
     )
@@ -123,6 +124,19 @@ async def lifespan(app: FastAPI):
     if not settings.FERNET_KEY:
         logger.warning("FERNET_KEY is not set. Sensitive fields (like passwords) will be stored as plaintext.")
         logger.warning("To enable encryption, generate a key and set FERNET_KEY in your .env file.")
+
+    # Production hardening warnings (DEBUG is off in production)
+    if not settings.DEBUG:
+        if settings.ADMIN_PASSWORD == "admin123":
+            logger.warning(
+                "ADMIN_PASSWORD uses the insecure default 'admin123'. "
+                "Set a strong ADMIN_PASSWORD env var for production."
+            )
+        if settings.CORS_ORIGINS.strip() == "*":
+            logger.warning(
+                "CORS_ORIGINS is '*' (any origin). Set an explicit comma-separated "
+                "origin list (e.g. https://panel.example.com) for production."
+            )
     
     # Check database connection
     if not check_db_connection():
