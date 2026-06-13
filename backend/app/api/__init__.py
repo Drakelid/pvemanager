@@ -9,10 +9,11 @@ from . import settings
 from . import notifications
 from . import users
 from . import workspaces
+from . import ssh_keys
 
 __all__ = [
     "auth",
-    "dashboard", 
+    "dashboard",
     "proxmox",
     "templates",
     "ipam",
@@ -21,4 +22,5 @@ __all__ = [
     "notifications",
     "users",
     "workspaces",
+    "ssh_keys",
 ]
