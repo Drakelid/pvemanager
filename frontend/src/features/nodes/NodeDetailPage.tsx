@@ -10,6 +10,7 @@ import { StatusDot } from '@/components/shared/status-dot';
 import { formatBytes, formatUptime, formatPercent } from '@/lib/format';
 import NodeNetworks from './NodeNetworks';
 import HAResources from './HAResources';
+import SDNManager from './SDNManager';
 
 export default function NodeDetailPage() {
   const { t } = useTranslation();
@@ -70,6 +71,11 @@ export default function NodeDetailPage() {
       {/* High Availability */}
       {nodes.length > 0 && (
         <HAResources serverId={sid} vms={serverVMs} />
+      )}
+
+      {/* Software Defined Networking */}
+      {nodes.length > 0 && (
+        <SDNManager serverId={sid} />
       )}
 
       {/* VMs on this server */}

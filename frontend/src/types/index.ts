@@ -233,6 +233,52 @@ export interface HAStatus {
   groups: HAGroup[];
 }
 
+export interface SDNZone {
+  zone: string;
+  type: string; // simple, vlan, qinq, vxlan, evpn
+  pending?: string | number;
+  state?: string;
+  mtu?: number;
+  dns?: string;
+  ipam?: string;
+  nodes?: string;
+  [k: string]: unknown;
+}
+
+export interface SDNVNet {
+  vnet: string;
+  zone: string;
+  tag?: number;
+  alias?: string;
+  vlanaware?: number;
+  type?: string;
+  pending?: string | number;
+  [k: string]: unknown;
+}
+
+export interface SDNSubnet {
+  subnet: string; // PVE id, e.g. "zone-10.0.0.0-24"
+  cidr?: string;
+  gateway?: string;
+  snat?: number;
+  vnet?: string;
+  [k: string]: unknown;
+}
+
+export interface SDNPendingChange {
+  type: string;
+  id: string;
+  pending: unknown;
+}
+
+export interface SDNStatus {
+  server_id: number;
+  sdn_available: boolean;
+  pending_changes: boolean;
+  pending: SDNPendingChange[];
+  error?: string;
+}
+
 // ==================== IPAM Types ====================
 
 export interface IPAMNetwork {
