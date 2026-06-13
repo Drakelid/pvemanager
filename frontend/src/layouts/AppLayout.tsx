@@ -59,6 +59,7 @@ const navGroups: NavGroup[] = [
       { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
       { label: 'Instances', icon: Monitor, path: '/instances' },
       { label: 'Nodes', icon: Server, path: '/nodes' },
+      { label: 'Cluster', icon: Network, path: '/cluster' },
       { label: 'Templates', icon: HardDrive, path: '/templates' },
       { label: 'Backups', icon: Archive, path: '/backups' },
       { label: 'Tasks', icon: ClipboardList, path: '/tasks' },

@@ -16,6 +16,7 @@ import ConsolePage from '@/features/console/ConsolePage';
 const CreateInstanceWizard = lazy(() => import('./features/instances/CreateInstanceWizard.tsx'));
 const NodesPage = lazy(() => import('./features/nodes/NodesPage.tsx'));
 const NodeDetailPage = lazy(() => import('./features/nodes/NodeDetailPage.tsx'));
+const ClusterPage = lazy(() => import('./features/cluster/ClusterPage.tsx'));
 const TemplatesPage = lazy(() => import('./features/templates/TemplatesPage.tsx'));
 const BackupsPage = lazy(() => import('./features/backups/BackupsPage.tsx'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage.tsx'));
@@ -68,6 +69,7 @@ export const router = createBrowserRouter([
           { path: '/instances/:serverId/:vmid', element: <InstanceDetailPage /> },
           { path: '/nodes', element: <SuspenseWrap><NodesPage /></SuspenseWrap> },
           { path: '/nodes/:serverId', element: <SuspenseWrap><NodeDetailPage /></SuspenseWrap> },
+          { path: '/cluster', element: <SuspenseWrap><ClusterPage /></SuspenseWrap> },
           { path: '/templates', element: <SuspenseWrap><TemplatesPage /></SuspenseWrap> },
           { path: '/backups', element: <SuspenseWrap><BackupsPage /></SuspenseWrap> },
           { path: '/tasks', element: <SuspenseWrap><TasksPage /></SuspenseWrap> },
