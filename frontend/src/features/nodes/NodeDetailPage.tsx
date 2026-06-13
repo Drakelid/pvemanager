@@ -8,6 +8,7 @@ import { useServer, useNodes } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
 import { StatusDot } from '@/components/shared/status-dot';
 import { formatBytes, formatUptime, formatPercent } from '@/lib/format';
+import NodeNetworks from './NodeNetworks';
 
 export default function NodeDetailPage() {
   const { t } = useTranslation();
@@ -58,6 +59,11 @@ export default function NodeDetailPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Node network interfaces */}
+      {nodes.length > 0 && (
+        <NodeNetworks serverId={sid} nodeNames={nodes.map(n => n.node)} />
       )}
 
       {/* VMs on this server */}

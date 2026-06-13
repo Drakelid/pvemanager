@@ -182,6 +182,30 @@ export interface ProxmoxNode {
   ct_count?: number;
 }
 
+export interface NodeNetworkInterface {
+  iface: string;
+  type: string; // bridge, bond, eth, vlan, alias, OVSBridge, ...
+  method?: string; // static, manual, dhcp
+  method6?: string;
+  address?: string;
+  netmask?: string;
+  cidr?: string;
+  gateway?: string;
+  bridge_ports?: string;
+  bond_slaves?: string;
+  bond_mode?: string;
+  'vlan-id'?: number | string;
+  'vlan-raw-device'?: string;
+  autostart?: number;
+  active?: number;
+  exists?: number;
+  comments?: string;
+  // Enriched server-side with IPAM linkage when a matching network exists
+  ipam_network_id?: number;
+  ipam_cidr?: string;
+  ipam_name?: string;
+}
+
 // ==================== IPAM Types ====================
 
 export interface IPAMNetwork {

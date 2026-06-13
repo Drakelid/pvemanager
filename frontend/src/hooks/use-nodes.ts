@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import type { ProxmoxServer, ProxmoxNode, ProxmoxServerCreate } from '@/types';
+import type { ProxmoxServer, ProxmoxNode, ProxmoxServerCreate, NodeNetworkInterface } from '@/types';
 import { vmKeys } from './use-instances';
 
 export const nodeKeys = {
@@ -12,6 +12,7 @@ export const nodeKeys = {
   clusterInfo: (serverId: number) => ['cluster-info', serverId] as const,
   topology: ['cluster-topology'] as const,
   storages: (serverId: number, node: string) => ['storages', serverId, node] as const,
+  networks: (serverId: number, node: string) => ['node-networks', serverId, node] as const,
 };
 
 export function useServers() {
@@ -125,5 +126,63 @@ export function useTestServerCredentials() {
   return useMutation({
     mutationFn: (data: ProxmoxServerCreate) =>
       apiClient.post<{ success: boolean; status?: string; message?: string }>(`/proxmox/api/servers/test`, data),
+  });
+}
+
+// ==================== Node network interfaces ====================
+
+export function useNodeNetworks(serverId: number, node: string) {
+  return useQuery({
+    queryKey: nodeKeys.networks(serverId, node),
+    queryFn: () =>
+      apiClient.get<{ node: string; interfaces: NodeNetworkInterface[] }>(
+        `/proxmox/api/servers/${serverId}/nodes/${node}/networks`,
+      ),
+    enabled: serverId > 0 && !!node,
+  });
+}
+
+export function useCreateNodeNetwork(serverId: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      apiClient.post(`/proxmox/api/servers/${serverId}/nodes/${node}/networks`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.networks(serverId, node) }),
+  });
+}
+
+export function useUpdateNodeNetwork(serverId: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ iface, ...data }: { iface: string } & Record<string, unknown>) =>
+      apiClient.put(`/proxmox/api/servers/${serverId}/nodes/${node}/networks/${iface}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.networks(serverId, node) }),
+  });
+}
+
+export function useDeleteNodeNetwork(serverId: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (iface: string) =>
+      apiClient.delete(`/proxmox/api/servers/${serverId}/nodes/${node}/networks/${iface}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.networks(serverId, node) }),
+  });
+}
+
+export function useApplyNodeNetwork(serverId: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient.post(`/proxmox/api/servers/${serverId}/nodes/${node}/networks/apply`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.networks(serverId, node) }),
+  });
+}
+
+export function useRevertNodeNetwork(serverId: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient.post(`/proxmox/api/servers/${serverId}/nodes/${node}/networks/revert`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeKeys.networks(serverId, node) }),
   });
 }
