@@ -716,7 +716,7 @@ export default function InstancesPage() {
               <SelectValue placeholder={t('backups.select_server', 'Server')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{t('instances.all_nodes', 'All servers')}</SelectItem>
+              <SelectItem value="all">{t('instances.all_servers', 'All servers')}</SelectItem>
               {servers.map((s) => (
                 <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
               ))}

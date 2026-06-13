@@ -141,7 +141,7 @@ export default function TemplatesPage() {
 
       {/* Import Dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('templates.auto_import')}</DialogTitle>
           </DialogHeader>

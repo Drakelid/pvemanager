@@ -122,6 +122,7 @@
     "search_placeholder": "Поиск по имени, IP или VMID...",
     "all_statuses": "Все статусы",
     "all_nodes": "Все узлы",
+    "all_servers": "Все серверы",
     "no_instances": "Инстансы не найдены",
     "try_other_search": "Попробуйте другой поисковый запрос",
     "create_first": "Создайте свой первый инстанс",

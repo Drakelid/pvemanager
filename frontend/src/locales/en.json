@@ -122,6 +122,7 @@
     "search_placeholder": "Search by name, IP, or VMID...",
     "all_statuses": "All statuses",
     "all_nodes": "All nodes",
+    "all_servers": "All servers",
     "no_instances": "No instances found",
     "try_other_search": "Try a different search query",
     "create_first": "Create your first instance",
