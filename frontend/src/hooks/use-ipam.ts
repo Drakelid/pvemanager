@@ -129,3 +129,90 @@ export function useDeleteAllocation() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ipam-allocations'] }),
   });
 }
+
+// ==================== Tools / maintenance ====================
+
+export interface IPAMConflict { ip_address: string; [k: string]: unknown }
+export interface IPAMOrphan {
+  id: number; ip_address: string; resource_name?: string; resource_type?: string;
+  proxmox_vmid?: number; proxmox_server_id?: number; reason: string;
+}
+export interface IPAMUnlinked {
+  id: number | null; ip_address: string; resource_name?: string; resource_type?: string;
+  can_link: boolean; suggested_vmid?: number; suggested_server_id?: number; suggested_server_name?: string | null;
+}
+
+export function useIPAMConflicts() {
+  return useQuery({
+    queryKey: ipamKeys.conflicts,
+    queryFn: () => apiClient.get<{ conflicts: IPAMConflict[]; count: number }>('/ipam/api/conflicts'),
+  });
+}
+
+export function useIPAMOrphans() {
+  return useQuery({
+    queryKey: ['ipam-orphans'],
+    queryFn: () => apiClient.get<{ orphans: IPAMOrphan[]; count: number }>('/ipam/api/orphans'),
+  });
+}
+
+export function useIPAMUnlinked() {
+  return useQuery({
+    queryKey: ['ipam-unlinked'],
+    queryFn: () => apiClient.get<{ unlinked: IPAMUnlinked[]; count: number; linkable_count: number }>('/ipam/api/unlinked'),
+  });
+}
+
+// Invalidate everything that orphan/link/auto operations can affect.
+function useInvalidateIPAM() {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: ['ipam-allocations'] });
+    qc.invalidateQueries({ queryKey: ['ipam-orphans'] });
+    qc.invalidateQueries({ queryKey: ['ipam-unlinked'] });
+    qc.invalidateQueries({ queryKey: ipamKeys.summary });
+    qc.invalidateQueries({ queryKey: ipamKeys.conflicts });
+    qc.invalidateQueries({ queryKey: ipamKeys.networks });
+  };
+}
+
+export function useCleanupOrphans() {
+  const invalidate = useInvalidateIPAM();
+  return useMutation({
+    mutationFn: () => apiClient.post<{ released: string[]; released_count: number; errors: unknown[]; error_count: number }>('/ipam/api/cleanup-orphans', {}),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useLinkAllocations() {
+  const invalidate = useInvalidateIPAM();
+  return useMutation({
+    mutationFn: (body?: { server_id?: number; network_id?: number }) =>
+      apiClient.post<{ linked: unknown[]; not_found: unknown[] }>('/ipam/api/link-allocations', body ?? {}),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useAutoAllocate() {
+  const invalidate = useInvalidateIPAM();
+  return useMutation({
+    mutationFn: (data: { network_id: number; pool_id?: number; resource_type?: string; resource_name?: string; hostname?: string; notes?: string }) =>
+      apiClient.post<IPAMAllocation>('/ipam/api/allocations/auto', data),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useNextAvailableIP() {
+  return useMutation({
+    mutationFn: ({ networkId, poolId }: { networkId: number; poolId?: number }) => {
+      const qs = poolId ? `?pool_id=${poolId}` : '';
+      return apiClient.get<{ next_available_ip: string }>(`/ipam/api/allocations/next-available/${networkId}${qs}`);
+    },
+  });
+}
+
+export function useIPHistoryLookup() {
+  return useMutation({
+    mutationFn: (ip: string) => apiClient.get<unknown[]>(`/ipam/api/history/ip/${encodeURIComponent(ip)}`),
+  });
+}

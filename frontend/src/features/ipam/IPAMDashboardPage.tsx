@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
-import { Network, Globe, AlertTriangle, Activity } from 'lucide-react';
+import { Network, Globe, AlertTriangle, Activity, Wrench } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useIPAMSummary, useIPAMNetworks } from '@/hooks/use-ipam';
 
@@ -13,7 +13,12 @@ export default function IPAMDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">{t('nav.ipam')}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">{t('nav.ipam')}</h1>
+        <Link to="/ipam/tools" className="flex items-center gap-1 text-sm text-blue-400 hover:underline">
+          <Wrench className="h-4 w-4" />{t('ipam.tools')}
+        </Link>
+      </div>
 
       {/* Summary cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

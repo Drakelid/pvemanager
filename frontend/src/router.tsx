@@ -25,6 +25,7 @@ const IPAMNetworksPage = lazy(() => import('./features/ipam/IPAMNetworksPage.tsx
 const IPAMNetworkDetailPage = lazy(() => import('./features/ipam/IPAMNetworkDetailPage.tsx'));
 const IPAMAllocationsPage = lazy(() => import('./features/ipam/IPAMAllocationsPage.tsx'));
 const IPAMHistoryPage = lazy(() => import('./features/ipam/IPAMHistoryPage.tsx'));
+const IPAMToolsPage = lazy(() => import('./features/ipam/IPAMToolsPage.tsx'));
 const UsersPage = lazy(() => import('./features/users/UsersPage.tsx'));
 const WorkspacesPage = lazy(() => import('./features/workspaces/WorkspacesPage.tsx'));
 const LogsPage = lazy(() => import('./features/logs/LogsPage.tsx'));
@@ -78,6 +79,7 @@ export const router = createBrowserRouter([
           { path: '/ipam/network/:id', element: <SuspenseWrap><IPAMNetworkDetailPage /></SuspenseWrap> },
           { path: '/ipam/allocations', element: <SuspenseWrap><IPAMAllocationsPage /></SuspenseWrap> },
           { path: '/ipam/history', element: <SuspenseWrap><IPAMHistoryPage /></SuspenseWrap> },
+          { path: '/ipam/tools', element: <SuspenseWrap><IPAMToolsPage /></SuspenseWrap> },
           { path: '/networks', element: <SuspenseWrap><IPAMNetworksPage /></SuspenseWrap> },
           { path: '/users', element: <SuspenseWrap><UsersPage /></SuspenseWrap> },
           { path: '/workspaces', element: <SuspenseWrap><WorkspacesPage /></SuspenseWrap> },
