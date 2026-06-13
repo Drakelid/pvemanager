@@ -1642,16 +1642,17 @@ def get_vm_status(
     current_user: User = Depends(PermissionChecker("vms.view"))
 ):
     """Получить детальный статус VM (CPU, RAM, Disk, Network)"""
+    require_vm_access(db, current_user, server_id, vmid)
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Proxmox server not found")
-    
+
     try:
         client = _get_proxmox_client(server)
-        
+
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
-        
+
         status = client.get_vm_status(node, vmid)
         return JSONResponse(content=status)
     except Exception as e:
@@ -1668,16 +1669,17 @@ def get_container_status(
     current_user: User = Depends(PermissionChecker("vms.view"))
 ):
     """Получить детальный статус LXC контейнера"""
+    require_vm_access(db, current_user, server_id, vmid)
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Proxmox server not found")
-    
+
     try:
         client = _get_proxmox_client(server)
-        
+
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
-        
+
         status = client.get_container_status(node, vmid)
         return JSONResponse(content=status)
     except Exception as e:
