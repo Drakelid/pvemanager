@@ -14,7 +14,13 @@ import {
   useNotificationChannels, useUpdateSMTP, useUpdateTelegram,
   useAppVersion, useCheckUpdates,
   useUpdateRepository, useSetUpdateRepository, useUpdateStatus, usePerformUpdate, useResetUpdate,
+  useTestSMTP, useTestTelegram,
 } from '@/hooks/use-settings';
+import {
+  useNotificationPreferences, useUpdateNotificationPreferences,
+  useChannelsStatus, useSendTestNotification, useVerifyTelegramChat, useTelegramBotInfo,
+} from '@/hooks/use-notifications';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SSHKeysManager } from './SSHKeysManager';
 
 export default function SettingsPage() {
@@ -188,6 +194,28 @@ function NotificationsTab() {
     }
   }, [channels?.telegram]);
 
+  const testSmtp = useTestSMTP();
+  const testTg = useTestTelegram();
+  const botInfo = useTelegramBotInfo();
+  const [testEmail, setTestEmail] = useState('');
+
+  const handleTestSmtp = () => {
+    if (!testEmail) { toast.error(t('settings.test_email_required')); return; }
+    testSmtp.mutate(testEmail, {
+      onSuccess: (r) => toast.success(r.message),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+  const handleTestTg = () => {
+    if (!tgChatId) { toast.error(t('settings.chat_id_required')); return; }
+    testTg.mutate(tgChatId, {
+      onSuccess: (r) => toast.success(r.message),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  const bot = botInfo.data?.bot_info as { username?: string; first_name?: string } | null | undefined;
+
   return (
     <div className="space-y-4">
       <Card>
@@ -201,17 +229,141 @@ function NotificationsTab() {
             <div><Label>From Email</Label><Input value={smtpFrom} onChange={e => setSmtpFrom(e.target.value)} className="mt-1" /></div>
           </div>
           <Button size="sm" onClick={() => updateSmtp.mutate({ host: smtpHost, port: Number(smtpPort), username: smtpUser, password: smtpPass || undefined, from_email: smtpFrom })}>{t('common.save')}</Button>
+          <div className="flex items-center gap-2 border-t pt-3">
+            <Input value={testEmail} onChange={e => setTestEmail(e.target.value)} className="max-w-xs" placeholder={t('settings.test_email_placeholder')} />
+            <Button size="sm" variant="outline" onClick={handleTestSmtp} disabled={testSmtp.isPending}>{t('settings.send_test')}</Button>
+          </div>
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle className="text-sm">Telegram</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            Telegram
+            {bot?.username && <Badge variant="outline">@{bot.username}</Badge>}
+          </CardTitle>
+        </CardHeader>
         <CardContent className="space-y-3">
           <div><Label>Bot Token</Label><Input value={tgToken} onChange={e => setTgToken(e.target.value)} className="mt-1" /></div>
           <div><Label>Chat ID</Label><Input value={tgChatId} onChange={e => setTgChatId(e.target.value)} className="mt-1" /></div>
-          <Button size="sm" onClick={() => updateTg.mutate({ telegram_bot_token: tgToken })}>{t('common.save')}</Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => updateTg.mutate({ telegram_bot_token: tgToken })}>{t('common.save')}</Button>
+            <Button size="sm" variant="outline" onClick={handleTestTg} disabled={testTg.isPending}>{t('settings.send_test')}</Button>
+          </div>
         </CardContent>
       </Card>
+
+      <NotificationPreferencesCard />
     </div>
+  );
+}
+
+function Toggle({ id, checked, onChange, label }: { id: string; checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <input id={id} type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-4 w-4" />
+      <Label htmlFor={id} className="cursor-pointer">{label}</Label>
+    </div>
+  );
+}
+
+function NotificationPreferencesCard() {
+  const { t } = useTranslation();
+  const { data: prefs } = useNotificationPreferences();
+  const update = useUpdateNotificationPreferences();
+  const sendTest = useSendTestNotification();
+  const verifyTg = useVerifyTelegramChat();
+  const { data: channelsStatus } = useChannelsStatus();
+
+  const [enabled, setEnabled] = useState(true);
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [emailCritical, setEmailCritical] = useState(false);
+  const [tgEnabled, setTgEnabled] = useState(false);
+  const [tgChatId, setTgChatId] = useState('');
+  const [webhook, setWebhook] = useState('');
+  const [quietStart, setQuietStart] = useState('');
+  const [quietEnd, setQuietEnd] = useState('');
+  const [testChannel, setTestChannel] = useState('all');
+
+  useEffect(() => {
+    if (!prefs) return;
+    setEnabled(prefs.enabled);
+    setEmailEnabled(prefs.email_enabled);
+    setEmailCritical(prefs.email_critical_only);
+    setTgEnabled(prefs.telegram_enabled);
+    setTgChatId(prefs.telegram_chat_id ?? '');
+    setWebhook(prefs.webhook_url ?? '');
+    setQuietStart(prefs.quiet_hours_start ?? '');
+    setQuietEnd(prefs.quiet_hours_end ?? '');
+  }, [prefs]);
+
+  const handleSave = () => {
+    update.mutate({
+      enabled, email_enabled: emailEnabled, email_critical_only: emailCritical,
+      telegram_enabled: tgEnabled, telegram_chat_id: tgChatId || undefined,
+      webhook_url: webhook || undefined,
+      quiet_hours_start: quietStart || undefined, quiet_hours_end: quietEnd || undefined,
+    }, {
+      onSuccess: () => toast.success(t('settings.prefs_saved')),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  const handleVerify = () => {
+    if (!tgChatId) { toast.error(t('settings.chat_id_required')); return; }
+    verifyTg.mutate(tgChatId, {
+      onSuccess: (r) => toast.success(r.message),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  const handleTest = () => {
+    sendTest.mutate(testChannel, {
+      onSuccess: () => toast.success(t('settings.test_sent')),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-sm">{t('settings.my_notifications')}</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <Toggle id="np_enabled" checked={enabled} onChange={setEnabled} label={t('settings.notifications_enabled')} />
+        <Toggle id="np_email" checked={emailEnabled} onChange={setEmailEnabled} label={t('settings.email_enabled')} />
+        <Toggle id="np_email_crit" checked={emailCritical} onChange={setEmailCritical} label={t('settings.email_critical_only')} />
+        <Toggle id="np_tg" checked={tgEnabled} onChange={setTgEnabled} label={t('settings.telegram_enabled')} />
+        <div className="flex items-end gap-2">
+          <div className="flex-1"><Label>Telegram Chat ID</Label><Input value={tgChatId} onChange={e => setTgChatId(e.target.value)} className="mt-1" /></div>
+          <Button size="sm" variant="outline" onClick={handleVerify} disabled={verifyTg.isPending}>{t('settings.verify')}</Button>
+        </div>
+        <div><Label>Webhook URL</Label><Input value={webhook} onChange={e => setWebhook(e.target.value)} className="mt-1" placeholder="https://..." /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><Label>{t('settings.quiet_start')}</Label><Input value={quietStart} onChange={e => setQuietStart(e.target.value)} className="mt-1" placeholder="22:00" /></div>
+          <div><Label>{t('settings.quiet_end')}</Label><Input value={quietEnd} onChange={e => setQuietEnd(e.target.value)} className="mt-1" placeholder="08:00" /></div>
+        </div>
+        <Button size="sm" onClick={handleSave} disabled={update.isPending}>{t('common.save')}</Button>
+
+        <div className="flex items-center gap-2 border-t pt-3">
+          <Select value={testChannel} onValueChange={v => { if (v) setTestChannel(v); }}>
+            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('common.all')}</SelectItem>
+              <SelectItem value="email">Email</SelectItem>
+              <SelectItem value="telegram">Telegram</SelectItem>
+              <SelectItem value="inapp">In-app</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button size="sm" variant="outline" onClick={handleTest} disabled={sendTest.isPending}>{t('settings.send_test_notification')}</Button>
+          {channelsStatus && (
+            <span className="ml-auto text-xs text-muted-foreground">
+              {Object.entries(channelsStatus).map(([k, v]) => {
+                const conf = (v as { configured?: boolean })?.configured;
+                return typeof conf === 'boolean' ? `${k}: ${conf ? '✓' : '✗'}` : null;
+              }).filter(Boolean).join('  ')}
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

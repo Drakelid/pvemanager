@@ -131,6 +131,20 @@ export function useUpdateTelegram() {
   });
 }
 
+export function useTestSMTP() {
+  return useMutation({
+    mutationFn: (testEmail: string) =>
+      apiClient.post<{ success: boolean; message: string }>(`/settings/api/notification-channels/smtp/test?test_email=${encodeURIComponent(testEmail)}`, {}),
+  });
+}
+
+export function useTestTelegram() {
+  return useMutation({
+    mutationFn: (chatId: string) =>
+      apiClient.post<{ success: boolean; message: string }>(`/settings/api/notification-channels/telegram/test?chat_id=${encodeURIComponent(chatId)}`, {}),
+  });
+}
+
 export function useAppVersion() {
   return useQuery({
     queryKey: settingsKeys.version,

@@ -581,7 +581,22 @@
     "update_confirm": "Запустить обновление? Панель скачает последнюю версию, пересоберётся и перезапустится — на короткое время будет недоступна.",
     "update_started": "Обновление запущено",
     "update_in_progress": "Идёт обновление",
-    "update_reset": "Сбросить статус"
+    "update_reset": "Сбросить статус",
+    "send_test": "Тест",
+    "test_email_placeholder": "test@example.com",
+    "test_email_required": "Укажите email для теста",
+    "chat_id_required": "Укажите Telegram chat ID",
+    "my_notifications": "Мои уведомления",
+    "notifications_enabled": "Включить уведомления",
+    "email_enabled": "Уведомления на email",
+    "email_critical_only": "Email: только критичные",
+    "telegram_enabled": "Уведомления в Telegram",
+    "verify": "Проверить",
+    "quiet_start": "Тихие часы с",
+    "quiet_end": "Тихие часы до",
+    "prefs_saved": "Настройки сохранены",
+    "test_sent": "Тестовое уведомление отправлено",
+    "send_test_notification": "Отправить тест"
   },
   "ssh_keys": {
     "title": "SSH ключи",

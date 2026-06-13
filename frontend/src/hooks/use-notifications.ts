@@ -75,3 +75,66 @@ export function useDeleteAllRead() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   });
 }
+
+// ==================== Preferences & channels ====================
+
+export interface NotificationPreferences {
+  id: number;
+  user_id: number;
+  enabled: boolean;
+  email_enabled: boolean;
+  email_critical_only: boolean;
+  telegram_enabled: boolean;
+  telegram_chat_id: string | null;
+  webhook_url: string | null;
+  notification_levels: string[];
+  notification_types: string[];
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+}
+
+export function useNotificationPreferences() {
+  return useQuery({
+    queryKey: notificationKeys.preferences,
+    queryFn: () => apiClient.get<NotificationPreferences>('/api/notifications/preferences'),
+  });
+}
+
+export function useUpdateNotificationPreferences() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<NotificationPreferences>) =>
+      apiClient.put<NotificationPreferences>('/api/notifications/preferences', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: notificationKeys.preferences }),
+  });
+}
+
+export function useChannelsStatus() {
+  return useQuery({
+    queryKey: ['notification-channels-status'],
+    queryFn: () => apiClient.get<Record<string, unknown>>('/api/notifications/channels/status'),
+  });
+}
+
+export function useSendTestNotification() {
+  return useMutation({
+    mutationFn: (channel: string) =>
+      apiClient.post<Record<string, unknown>>(`/api/notifications/test?channel=${encodeURIComponent(channel)}`, {}),
+  });
+}
+
+export function useVerifyTelegramChat() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chatId: string) =>
+      apiClient.post<{ success: boolean; message: string; chat_id: string }>(`/api/notifications/telegram/verify?chat_id=${encodeURIComponent(chatId)}`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: notificationKeys.preferences }),
+  });
+}
+
+export function useTelegramBotInfo() {
+  return useQuery({
+    queryKey: ['telegram-bot-info'],
+    queryFn: () => apiClient.get<{ configured: boolean; bot_info: Record<string, unknown> | null }>('/api/notifications/telegram/bot-info'),
+  });
+}

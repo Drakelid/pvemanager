@@ -581,7 +581,22 @@
     "update_confirm": "Start the update? The panel will pull the latest version, rebuild and restart — it will be briefly unavailable.",
     "update_started": "Update started",
     "update_in_progress": "Update in progress",
-    "update_reset": "Reset status"
+    "update_reset": "Reset status",
+    "send_test": "Send test",
+    "test_email_placeholder": "test@example.com",
+    "test_email_required": "Enter a test email address",
+    "chat_id_required": "Enter a Telegram chat ID",
+    "my_notifications": "My notifications",
+    "notifications_enabled": "Enable notifications",
+    "email_enabled": "Email notifications",
+    "email_critical_only": "Email: critical only",
+    "telegram_enabled": "Telegram notifications",
+    "verify": "Verify",
+    "quiet_start": "Quiet hours start",
+    "quiet_end": "Quiet hours end",
+    "prefs_saved": "Preferences saved",
+    "test_sent": "Test notification sent",
+    "send_test_notification": "Send test notification"
   },
   "ssh_keys": {
     "title": "SSH Keys",
