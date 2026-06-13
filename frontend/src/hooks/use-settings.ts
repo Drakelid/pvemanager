@@ -7,7 +7,31 @@ export const settingsKeys = {
   security: ['settings-security'] as const,
   channels: ['notification-channels'] as const,
   version: ['app-version'] as const,
+  updateRepository: ['update-repository'] as const,
+  updateStatus: ['update-status'] as const,
 };
+
+export interface CheckUpdateResult {
+  current_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+  changelog: string | null;
+  error: string | null;
+  git_available: boolean;
+  project_mounted: boolean;
+  disabled: boolean;
+  repository_url?: string;
+  commits_behind?: number;
+}
+
+export interface UpdateStatus {
+  is_updating: boolean;
+  started_at: string | null;
+  stage: string | null;
+  progress: number;
+  error: string | null;
+  completed: boolean;
+}
 
 interface ProfileResponse {
   id: number;
@@ -117,6 +141,50 @@ export function useAppVersion() {
 
 export function useCheckUpdates() {
   return useMutation({
-    mutationFn: () => apiClient.get<Record<string, unknown>>('/settings/api/updates/check'),
+    mutationFn: () => apiClient.get<CheckUpdateResult>('/settings/api/updates/check'),
+  });
+}
+
+export function useUpdateRepository() {
+  return useQuery({
+    queryKey: settingsKeys.updateRepository,
+    queryFn: () => apiClient.get<{ repository_url: string }>('/settings/api/updates/repository'),
+  });
+}
+
+export function useSetUpdateRepository() {
+  const qc = useQueryClient();
+  return useMutation({
+    // The endpoint takes repository_url as a query parameter, not a JSON body.
+    mutationFn: (repository_url: string) =>
+      apiClient.put<{ message: string; repository_url: string }>(
+        `/settings/api/updates/repository?repository_url=${encodeURIComponent(repository_url)}`,
+        {},
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.updateRepository }),
+  });
+}
+
+export function useUpdateStatus(poll = false) {
+  return useQuery({
+    queryKey: settingsKeys.updateStatus,
+    queryFn: () => apiClient.get<UpdateStatus>('/settings/api/updates/status'),
+    refetchInterval: poll ? 3000 : false,
+  });
+}
+
+export function usePerformUpdate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.post<{ success: boolean; message?: string; error?: string }>('/settings/api/updates/perform', {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.updateStatus }),
+  });
+}
+
+export function useResetUpdate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.post<{ success: boolean; message: string }>('/settings/api/updates/reset', {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.updateStatus }),
   });
 }

@@ -554,7 +554,14 @@
     "version": "Version",
     "check_updates": "Check for Updates",
     "update_available": "Update available",
-    "up_to_date": "You are up to date"
+    "up_to_date": "You are up to date",
+    "update_repository": "Update repository",
+    "repo_saved": "Repository URL saved",
+    "perform_update": "Update now",
+    "update_confirm": "Start the update? The panel will pull the latest version, rebuild and restart — it will be briefly unavailable.",
+    "update_started": "Update started",
+    "update_in_progress": "Update in progress",
+    "update_reset": "Reset status"
   },
   "ssh_keys": {
     "title": "SSH Keys",

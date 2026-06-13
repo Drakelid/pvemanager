@@ -13,6 +13,7 @@ import {
   useSecuritySettings, useUpdateSecuritySettings,
   useNotificationChannels, useUpdateSMTP, useUpdateTelegram,
   useAppVersion, useCheckUpdates,
+  useUpdateRepository, useSetUpdateRepository, useUpdateStatus, usePerformUpdate, useResetUpdate,
 } from '@/hooks/use-settings';
 import { SSHKeysManager } from './SSHKeysManager';
 
@@ -218,20 +219,102 @@ function AboutTab() {
   const { t } = useTranslation();
   const { data: version } = useAppVersion();
   const checkUpdates = useCheckUpdates();
+  const { data: repo } = useUpdateRepository();
+  const setRepo = useSetUpdateRepository();
+  const performUpdate = usePerformUpdate();
+  const resetUpdate = useResetUpdate();
+
+  const check = checkUpdates.data;
+  const updating = check?.update_available ?? false;
+  // Poll the update status only while an update is running.
+  const { data: status } = useUpdateStatus(performUpdate.isSuccess);
+
+  const [repoUrl, setRepoUrl] = useState('');
+  const [repoEdit, setRepoEdit] = useState(false);
+
+  useEffect(() => {
+    if (repo?.repository_url) setRepoUrl(repo.repository_url);
+  }, [repo?.repository_url]);
+
+  const handleSaveRepo = () => {
+    setRepo.mutate(repoUrl, {
+      onSuccess: () => { toast.success(t('settings.repo_saved')); setRepoEdit(false); },
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  const handlePerform = () => {
+    if (!confirm(t('settings.update_confirm'))) return;
+    performUpdate.mutate(undefined, {
+      onSuccess: (r) => r.success ? toast.success(r.message || t('settings.update_started')) : toast.error(r.error || 'Error'),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
 
   return (
     <Card>
       <CardHeader><CardTitle className="text-sm">{t('settings.about')}</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{t('settings.version')}:</span>
           <Badge variant="outline">{version?.version || '—'}</Badge>
         </div>
-        <Button size="sm" variant="outline" onClick={() => checkUpdates.mutate()}>
-          {t('settings.check_updates')}
-        </Button>
-        {checkUpdates.data && (
-          <p className="text-sm">{checkUpdates.data.has_update ? `${t('settings.update_available')}: ${checkUpdates.data.latest_version}` : t('settings.up_to_date')}</p>
+
+        {/* Repository */}
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">{t('settings.update_repository')}</Label>
+          {repoEdit ? (
+            <div className="flex items-center gap-2">
+              <Input value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="https://git.example.com/owner/repo" />
+              <Button size="sm" onClick={handleSaveRepo} disabled={setRepo.isPending || !repoUrl}>{t('common.save')}</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setRepoEdit(false); setRepoUrl(repo?.repository_url || ''); }}>{t('common.cancel')}</Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <code className="rounded bg-muted px-2 py-1 text-xs">{repo?.repository_url || '—'}</code>
+              <Button size="sm" variant="ghost" onClick={() => setRepoEdit(true)}>{t('common.edit', 'Edit')}</Button>
+            </div>
+          )}
+        </div>
+
+        {/* Check */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => checkUpdates.mutate()} disabled={checkUpdates.isPending}>
+            {t('settings.check_updates')}
+          </Button>
+          {updating && (
+            <Button size="sm" onClick={handlePerform} disabled={performUpdate.isPending || status?.is_updating}>
+              {t('settings.perform_update')}
+            </Button>
+          )}
+        </div>
+
+        {check && (
+          <div className="space-y-1 text-sm">
+            {check.error ? (
+              <p className="text-destructive">{check.error}</p>
+            ) : check.update_available ? (
+              <p className="font-medium text-amber-600 dark:text-amber-500">
+                {t('settings.update_available')}: {check.latest_version}
+              </p>
+            ) : (
+              <p className="text-muted-foreground">{t('settings.up_to_date')}</p>
+            )}
+            {check.changelog && (
+              <pre className="mt-2 max-h-48 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap">{check.changelog}</pre>
+            )}
+          </div>
+        )}
+
+        {/* Update in progress banner */}
+        {status?.is_updating && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            <p className="font-medium">{t('settings.update_in_progress')}</p>
+            <p className="text-xs text-muted-foreground">{status.stage} — {status.progress}%</p>
+            <Button size="sm" variant="ghost" className="mt-2" onClick={() => resetUpdate.mutate()} disabled={resetUpdate.isPending}>
+              {t('settings.update_reset')}
+            </Button>
+          </div>
         )}
       </CardContent>
     </Card>
