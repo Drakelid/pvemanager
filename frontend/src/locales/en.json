@@ -309,6 +309,23 @@
     "applied": "Network configuration applied",
     "reverted": "Pending changes reverted"
   },
+  "ha": {
+    "title": "High Availability",
+    "add": "Add to HA",
+    "resource": "Resource",
+    "state": "State",
+    "group": "Group",
+    "no_group": "No group",
+    "groups": "HA groups",
+    "max_restart": "Max restart",
+    "max_relocate": "Max relocate",
+    "cluster_only": "HA is only available in cluster mode.",
+    "no_resources": "No resources are managed by HA.",
+    "select_guest": "Select a VM or container",
+    "remove_confirm": "Remove from HA",
+    "added": "Added to HA",
+    "removed": "Removed from HA"
+  },
   "templates": {
     "title": "OS Templates",
     "search": "Search templates...",

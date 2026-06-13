@@ -206,6 +206,33 @@ export interface NodeNetworkInterface {
   ipam_name?: string;
 }
 
+export interface HAResource {
+  sid: string; // "vm:100" or "ct:101"
+  type?: string; // "vm" | "ct"
+  state?: string; // started, stopped, disabled, ignored
+  group?: string;
+  max_restart?: number;
+  max_relocate?: number;
+  comment?: string;
+  digest?: string;
+}
+
+export interface HAGroup {
+  group: string;
+  nodes?: string;
+  nofailback?: number;
+  restricted?: number;
+  comment?: string;
+}
+
+export interface HAStatus {
+  server_id: number;
+  is_cluster: boolean;
+  ha_enabled: boolean;
+  resources: HAResource[];
+  groups: HAGroup[];
+}
+
 // ==================== IPAM Types ====================
 
 export interface IPAMNetwork {

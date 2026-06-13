@@ -9,6 +9,7 @@ import { useVirtualMachines } from '@/hooks/use-instances';
 import { StatusDot } from '@/components/shared/status-dot';
 import { formatBytes, formatUptime, formatPercent } from '@/lib/format';
 import NodeNetworks from './NodeNetworks';
+import HAResources from './HAResources';
 
 export default function NodeDetailPage() {
   const { t } = useTranslation();
@@ -64,6 +65,11 @@ export default function NodeDetailPage() {
       {/* Node network interfaces */}
       {nodes.length > 0 && (
         <NodeNetworks serverId={sid} nodeNames={nodes.map(n => n.node)} />
+      )}
+
+      {/* High Availability */}
+      {nodes.length > 0 && (
+        <HAResources serverId={sid} vms={serverVMs} />
       )}
 
       {/* VMs on this server */}
