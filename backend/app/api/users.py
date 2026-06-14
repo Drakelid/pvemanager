@@ -273,14 +273,6 @@ async def delete_role(
     return {"message": "Role deleted"}
 
 
-@router.get("/api/permissions")
-async def get_all_permissions(
-    current_user: User = Depends(PermissionChecker("roles.view"))
-):
-    """Get all available permissions (legacy format for backwards compatibility)"""
-    return SecurityService.get_all_permissions()
-
-
 @router.get("/api/permissions/v2")
 async def get_all_permissions_v2(
     current_user: User = Depends(PermissionChecker("roles.view"))
