@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Trash2, X, ClipboardList, RefreshCw, Loader2 } from 'lucide-react';
+import { Trash2, X, ClipboardList, RefreshCw, Loader2, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useAllTasks, useCancelTask, useClearCompletedTasks } from '@/hooks/use-tasks';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useAllTasks, useCancelTask, useClearCompletedTasks, useTaskLog, useTaskStatus, type TaskItem } from '@/hooks/use-tasks';
 
 export default function TasksPage() {
   const { t } = useTranslation();
@@ -16,6 +17,7 @@ export default function TasksPage() {
   const tasks = tasksData?.tasks ?? [];
   const cancelTask = useCancelTask();
   const clearCompleted = useClearCompletedTasks();
+  const [logTask, setLogTask] = useState<TaskItem | null>(null);
 
   const filtered = tasks.filter(task => {
     if (statusFilter === 'all') return true;
@@ -133,17 +135,30 @@ export default function TasksPage() {
                       ) : '—'}
                     </TableCell>
                     <TableCell>
-                      {active && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive"
-                          onClick={() => cancelTask.mutate(Number(task.id ?? 0))}
-                          disabled={cancelTask.isPending}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {task.upid && task.node && task.server_id && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => setLogTask(task)}
+                            title={t('tasks.view_log')}
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {active && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive"
+                            onClick={() => cancelTask.mutate(Number(task.id ?? 0))}
+                            disabled={cancelTask.isPending}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -159,6 +174,48 @@ export default function TasksPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <TaskLogDialog task={logTask} onClose={() => setLogTask(null)} />
     </div>
+  );
+}
+
+function TaskLogDialog({ task, onClose }: { task: TaskItem | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  const open = !!task;
+  const serverId = task?.server_id ?? 0;
+  const upid = task?.upid ?? '';
+  const node = task?.node ?? '';
+  // Poll while the task is still running.
+  const running = task?.status === 'running' || task?.status === 'in_progress';
+  const { data: statusData } = useTaskStatus(serverId, upid, node, open && running);
+  const { data: logData, isLoading } = useTaskLog(serverId, upid, node, open);
+
+  const lines = logData?.logs ?? [];
+  const status = statusData?.status ?? task?.status;
+  const exit = statusData?.exitstatus as string | undefined;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {t('tasks.task_log')}
+            {status != null && <Badge variant="outline">{String(status)}</Badge>}
+            {exit && exit !== 'OK' && <Badge variant="destructive">{exit}</Badge>}
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-xs font-mono text-muted-foreground break-all">{upid}</p>
+        {isLoading ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+        ) : lines.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">{t('common.no_data')}</p>
+        ) : (
+          <pre className="max-h-[60vh] overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap">
+            {lines.map(l => l.t).join('\n')}
+          </pre>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

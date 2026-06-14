@@ -177,6 +177,13 @@
     "no_owner": "Без владельца",
     "owner_saved": "Владелец обновлён",
     "owner_hint": "Назначить инстанс пользователю (только админ).",
+    "execute_script": "Выполнить скрипт",
+    "execute_script_hint": "Выполняется через QEMU guest agent (должен быть установлен и запущен в VM).",
+    "interpreter": "Интерпретатор",
+    "timeout_sec": "Таймаут (сек)",
+    "run_script": "Запустить скрипт",
+    "script_required": "Скрипт пустой",
+    "exit_code": "Код выхода",
     "search_placeholder": "Поиск по имени, IP или VMID...",
     "all_statuses": "Все статусы",
     "all_nodes": "Все узлы",
@@ -747,6 +754,8 @@
     "no_users": "Пользователи недоступны"
   },
   "tasks": {
+    "view_log": "Показать лог",
+    "task_log": "Лог задачи",
     "clear_completed": "Очистить завершённые",
     "running": "Выполняется",
     "queued": "В очереди",

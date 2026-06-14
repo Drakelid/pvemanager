@@ -280,6 +280,40 @@ export function useSnapshotArchiveDetail(archiveId: number | null) {
   });
 }
 
+// ==================== Execute script (guest agent) ====================
+
+export interface ExecuteScriptResult {
+  success?: boolean;
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number;
+  error?: string;
+  [k: string]: unknown;
+}
+
+export function useExecuteScript(serverId: number, vmid: number) {
+  return useMutation({
+    // Endpoint takes script/interpreter as multipart form fields and node/timeout as query params,
+    // so we bypass the JSON apiClient and post FormData directly.
+    mutationFn: async ({ script, interpreter, node, timeout }: { script: string; interpreter: string; node: string; timeout: number }) => {
+      const fd = new FormData();
+      fd.set('script', script);
+      fd.set('interpreter', interpreter);
+      const qs = new URLSearchParams({ node, timeout: String(timeout) });
+      const res = await fetch(`/proxmox/api/${serverId}/vm/${vmid}/execute-script?${qs}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiClient.getToken()}` },
+        body: fd,
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error((e as { detail?: string }).detail || `HTTP ${res.status}`);
+      }
+      return res.json() as Promise<ExecuteScriptResult>;
+    },
+  });
+}
+
 // ==================== Power Actions ====================
 interface PowerActionResult {
   status: string;

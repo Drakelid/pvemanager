@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useVMConfig, useUpdateConfig, useResizeDisk, useVMOwner, useSetVMOwner } from '@/hooks/use-instances';
+import { useVMConfig, useUpdateConfig, useResizeDisk, useVMOwner, useSetVMOwner, useExecuteScript } from '@/hooks/use-instances';
 import { useProfile } from '@/hooks/use-settings';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
@@ -69,6 +69,74 @@ function OwnerCard({ serverId, vmid }: { serverId: number; vmid: number }) {
   );
 }
 
+function ExecuteScriptCard({ serverId, vmid, node }: { serverId: number; vmid: number; node: string }) {
+  const { t } = useTranslation();
+  const { data: profile } = useProfile();
+  const exec = useExecuteScript(serverId, vmid);
+  const [script, setScript] = useState('');
+  const [interpreter, setInterpreter] = useState('/bin/bash');
+  const [timeout, setTimeoutVal] = useState('60');
+
+  if (!profile?.is_admin) return null;
+
+  const run = () => {
+    if (!script.trim()) { toast.error(t('instances.script_required')); return; }
+    exec.mutate(
+      { script, interpreter, node, timeout: Number(timeout) || 60 },
+      { onError: (e: Error) => toast.error(e.message) },
+    );
+  };
+
+  const r = exec.data;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Settings className="h-4 w-4" />{t('instances.execute_script')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{t('instances.execute_script_hint')}</p>
+        <textarea
+          value={script}
+          onChange={e => setScript(e.target.value)}
+          rows={6}
+          spellCheck={false}
+          placeholder={'uptime\ndf -h'}
+          className="w-full rounded-md border bg-background p-2 font-mono text-xs"
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <div><Label>{t('instances.interpreter')}</Label><Input value={interpreter} onChange={e => setInterpreter(e.target.value)} className="mt-1 font-mono" /></div>
+          <div><Label>{t('instances.timeout_sec')}</Label><Input type="number" min={1} max={600} value={timeout} onChange={e => setTimeoutVal(e.target.value)} className="mt-1" /></div>
+        </div>
+        <Button size="sm" onClick={run} disabled={exec.isPending}>
+          {exec.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {t('instances.run_script')}
+        </Button>
+
+        {r && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">{t('instances.exit_code')}:</span>
+              <code className={r.exit_code === 0 ? 'text-green-600 dark:text-green-500' : 'text-destructive'}>{r.exit_code ?? '—'}</code>
+            </div>
+            {r.error && <p className="text-xs text-destructive">{r.error}</p>}
+            {r.stdout != null && r.stdout !== '' && (
+              <div><p className="text-xs font-medium text-muted-foreground">stdout</p>
+                <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap">{r.stdout}</pre></div>
+            )}
+            {r.stderr != null && r.stderr !== '' && (
+              <div><p className="text-xs font-medium text-muted-foreground">stderr</p>
+                <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap text-destructive">{r.stderr}</pre></div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsTab({ serverId, vmid, type, node }: Props) {
   const { t } = useTranslation();
   const { data: config } = useVMConfig(serverId, vmid, type, node);
@@ -121,6 +189,8 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
   return (
     <div className="space-y-6 max-w-2xl">
       <OwnerCard serverId={serverId} vmid={vmid} />
+
+      {type !== 'lxc' && <ExecuteScriptCard serverId={serverId} vmid={vmid} node={node} />}
 
       {/* CPU & Memory */}
       <Card>

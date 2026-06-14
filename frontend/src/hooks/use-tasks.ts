@@ -48,6 +48,30 @@ export function useAllTasks(params?: { limit?: number; status?: string }) {
   });
 }
 
+export interface TaskLogLine { n: number; t: string }
+
+export function useTaskLog(serverId: number, upid: string, node: string, enabled = true) {
+  return useQuery({
+    queryKey: ['task-log', serverId, upid, node],
+    queryFn: () => apiClient.get<{ logs: TaskLogLine[] }>(
+      `/proxmox/api/${serverId}/task/${upid}/log?node=${encodeURIComponent(node)}&limit=500`,
+    ),
+    enabled: enabled && serverId > 0 && !!upid && !!node,
+    refetchInterval: enabled ? 3000 : false,
+  });
+}
+
+export function useTaskStatus(serverId: number, upid: string, node: string, enabled = true) {
+  return useQuery({
+    queryKey: ['task-status', serverId, upid, node],
+    queryFn: () => apiClient.get<Record<string, unknown>>(
+      `/proxmox/api/${serverId}/task/${upid}/status?node=${encodeURIComponent(node)}`,
+    ),
+    enabled: enabled && serverId > 0 && !!upid && !!node,
+    refetchInterval: enabled ? 3000 : false,
+  });
+}
+
 export function useActiveTaskCount() {
   return useQuery({
     queryKey: taskKeys.activeCount,

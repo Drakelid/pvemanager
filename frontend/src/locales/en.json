@@ -177,6 +177,13 @@
     "no_owner": "No owner",
     "owner_saved": "Owner updated",
     "owner_hint": "Assign this instance to a user (admin only).",
+    "execute_script": "Execute script",
+    "execute_script_hint": "Runs via the QEMU guest agent (must be installed and running in the VM).",
+    "interpreter": "Interpreter",
+    "timeout_sec": "Timeout (sec)",
+    "run_script": "Run script",
+    "script_required": "Script is empty",
+    "exit_code": "Exit code",
     "search_placeholder": "Search by name, IP, or VMID...",
     "all_statuses": "All statuses",
     "all_nodes": "All nodes",
@@ -747,6 +754,8 @@
     "no_users": "No users available"
   },
   "tasks": {
+    "view_log": "View log",
+    "task_log": "Task log",
     "clear_completed": "Clear Completed",
     "running": "Running",
     "queued": "Queued",
