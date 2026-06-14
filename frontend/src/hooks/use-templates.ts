@@ -79,3 +79,38 @@ export function useDeleteTemplate() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['templates'] }),
   });
 }
+
+export interface QuickDeployInfo {
+  template: { id: number; name: string; vmid?: number; node?: string; description?: string;
+    default_cores: number; default_memory: number; default_disk: number;
+    min_cores: number; min_memory: number; min_disk: number };
+  group: { name?: string; icon?: string };
+  server: { id?: number; name?: string };
+}
+
+export function useQuickDeployInfo(templateId: number | null) {
+  return useQuery({
+    queryKey: ['quick-deploy', templateId],
+    queryFn: () => apiClient.get<QuickDeployInfo>(`/templates/api/quick-deploy/${templateId}`),
+    enabled: !!templateId,
+  });
+}
+
+export interface DeployVMArgs {
+  template_id: number; name: string;
+  cores?: number; memory?: number; disk?: number;
+  target_node?: string; target_storage?: string;
+  start_after_create?: boolean; onboot?: boolean;
+}
+
+export function useDeployVM() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: DeployVMArgs) =>
+      apiClient.post<{ task_id: number; status: string; name?: string }>('/templates/api/deploy', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['all-tasks'] });
+      qc.invalidateQueries({ queryKey: ['virtual-machines'] });
+    },
+  });
+}

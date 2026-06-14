@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import type { LXCTemplate, LXCDeployRequest } from '@/types';
 
@@ -40,5 +40,39 @@ export function useDeployLXC() {
   return useMutation({
     mutationFn: (data: LXCDeployRequest) =>
       apiClient.post<{ task_id: number; status: string; name: string }>('/proxmox/api/lxc/deploy', data),
+  });
+}
+
+export interface AvailableLXCTemplate {
+  template: string;
+  type?: string;
+  os?: string;
+  version?: string;
+  headline?: string;
+  section?: string;
+  package?: string;
+  [k: string]: unknown;
+}
+
+// Templates available to download from the PVE appliance repository for a node.
+export function useAvailableLXCTemplates(serverId?: number, node?: string) {
+  return useQuery({
+    queryKey: ['available-lxc-templates', serverId, node],
+    queryFn: () =>
+      apiClient.get<AvailableLXCTemplate[]>(`/proxmox/api/${serverId}/available-lxc-templates?node=${encodeURIComponent(node!)}`),
+    enabled: !!serverId && !!node,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useDownloadLXCTemplate(serverId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { node: string; storage: string; template: string }) =>
+      apiClient.post<{ success?: boolean; upid?: string; task_id?: number }>(`/proxmox/api/${serverId}/download-lxc-template`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['all-tasks'] });
+      qc.invalidateQueries({ queryKey: ['lxc-templates', serverId] });
+    },
   });
 }

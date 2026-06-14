@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Monitor, Search, Download, Trash2, Loader2 } from 'lucide-react';
+import { Monitor, Search, Download, Trash2, Loader2, Rocket, PackagePlus } from 'lucide-react';
 import { OsLogo } from './OsLogo';
+import { DeployDialog, DownloadCTDialog } from './TemplateDialogs';
+import type { OSTemplate } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +22,8 @@ export default function TemplatesPage() {
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importServerId, setImportServerId] = useState<string>('');
+  const [deployTpl, setDeployTpl] = useState<OSTemplate | null>(null);
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   const { data: groups = [] } = useTemplateGroups();
   const { data: templates = [], isLoading } = useTemplates(
@@ -50,9 +54,14 @@ export default function TemplatesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('nav.templates')}</h1>
-        <Button onClick={() => setImportDialogOpen(true)}>
-          <Download className="mr-2 h-4 w-4" />{t('templates.auto_import')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setDownloadOpen(true)}>
+            <PackagePlus className="mr-2 h-4 w-4" />{t('templates.download_ct')}
+          </Button>
+          <Button onClick={() => setImportDialogOpen(true)}>
+            <Download className="mr-2 h-4 w-4" />{t('templates.auto_import')}
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -133,11 +142,19 @@ export default function TemplatesPage() {
                   <span>{tpl.server_name}</span>
                   <span>{tpl.vmid != null ? `VMID: ${tpl.vmid}` : t('templates.file_template')}</span>
                 </div>
+                {tpl.vm_type === 'qemu' && tpl.vmid != null && (
+                  <Button size="sm" className="w-full" onClick={() => setDeployTpl(tpl)}>
+                    <Rocket className="mr-1.5 h-4 w-4" />{t('templates.deploy')}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
+      <DeployDialog template={deployTpl} onClose={() => setDeployTpl(null)} />
+      <DownloadCTDialog open={downloadOpen} onClose={() => setDownloadOpen(false)} />
 
       {/* Import Dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
