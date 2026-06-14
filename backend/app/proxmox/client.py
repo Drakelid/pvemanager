@@ -1376,36 +1376,10 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                     }
                 
                 pid = exec_result['pid']
-                
-                # Ждем завершения команды
-                start_time = time.time()
-                while time.time() - start_time < timeout:
-                    try:
-                        status = self.proxmox.nodes(node).qemu(vmid).agent('exec-status').get(pid=pid)
-                        
-                        if status.get('exited'):
-                            # Команда завершена
-                            return {
-                                'success': True,
-                                'stdout': status.get('out-data', ''),
-                                'stderr': status.get('err-data', ''),
-                                'exit_code': status.get('exitcode', 0)
-                            }
-                    except Exception as e:
-                        logger.debug(f"Error checking command status: {e}")
-                    
-                    # Ждем немного перед следующей проверкой
-                    time.sleep(0.5)
-                
-                # Таймаут
-                return {
-                    'success': False,
-                    'error': f'Command execution timeout ({timeout}s)',
-                    'stdout': '',
-                    'stderr': '',
-                    'exit_code': -1
-                }
-                
+
+                # Ждем завершения команды и возвращаем результат
+                return self._wait_exec_status(node, vmid, pid, timeout)
+
             except Exception as e:
                 logger.error(f"Failed to execute command on VM {vmid}: {e}")
                 return {
@@ -1415,6 +1389,41 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                     'stderr': '',
                     'exit_code': -1
                 }
+
+        def _wait_exec_status(self, node: str, vmid: int, pid: int, timeout: int) -> Dict:
+            """
+            Опросить статус выполнения команды guest agent по pid до завершения.
+
+            Returns:
+                Dict с ключами: success, stdout, stderr, exit_code
+            """
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                try:
+                    status = self.proxmox.nodes(node).qemu(vmid).agent('exec-status').get(pid=pid)
+
+                    if status.get('exited'):
+                        # Команда завершена
+                        return {
+                            'success': True,
+                            'stdout': status.get('out-data', ''),
+                            'stderr': status.get('err-data', ''),
+                            'exit_code': status.get('exitcode', 0)
+                        }
+                except Exception as e:
+                    logger.debug(f"Error checking command status: {e}")
+
+                # Ждем немного перед следующей проверкой
+                time.sleep(0.5)
+
+            # Таймаут
+            return {
+                'success': False,
+                'error': f'Command execution timeout ({timeout}s)',
+                'stdout': '',
+                'stderr': '',
+                'exit_code': -1
+            }
 
         def execute_script(self, node: str, vmid: int, script_content: str, 
                           interpreter: str = "/bin/bash", timeout: int = 60) -> Dict:
@@ -1441,20 +1450,29 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 }
             
             try:
-                # Вместо создания файла, передаем скрипт напрямую через stdin
-                # Это более надежно и не требует записи файлов
-                
-                # Кодируем скрипт в base64 для безопасной передачи
-                script_b64 = base64.b64encode(script_content.encode('utf-8')).decode('utf-8')
-                
-                # Выполняем скрипт через sh -c с heredoc
-                # Это позволяет избежать проблем с кавычками и специальными символами
-                exec_cmd = f"{interpreter} -c \"$(echo '{script_b64}' | base64 -d)\""
-                
-                exec_result = self.execute_command(node, vmid, exec_cmd, timeout=timeout)
-                
-                return exec_result
-                
+                # Передаем скрипт напрямую интерпретатору через stdin (input-data).
+                # Интерпретатор запускается без -c, читая тело скрипта со stdin,
+                # поэтому многострочные скрипты, кавычки и shebang (#!...) в первой
+                # строке обрабатываются корректно без дополнительного слоя кавычек.
+                #
+                # Proxmox API сам кодирует input-data в base64 перед передачей
+                # guest agent'у, поэтому передаем сырое содержимое скрипта.
+                exec_result = self.proxmox.nodes(node).qemu(vmid).agent.exec.post(
+                    command=[interpreter],
+                    **{'input-data': script_content}
+                )
+
+                if 'pid' not in exec_result:
+                    return {
+                        'success': False,
+                        'error': 'Failed to start script execution',
+                        'stdout': '',
+                        'stderr': '',
+                        'exit_code': -1
+                    }
+
+                return self._wait_exec_status(node, vmid, exec_result['pid'], timeout)
+
             except Exception as e:
                 logger.error(f"Failed to execute script on VM {vmid}: {e}")
                 return {
