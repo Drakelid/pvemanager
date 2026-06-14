@@ -280,6 +280,26 @@ export function useSnapshotArchiveDetail(archiveId: number | null) {
   });
 }
 
+// ==================== Saved config (DB) ====================
+
+export interface SavedVMConfig {
+  found: boolean;
+  config?: {
+    cores?: number; memory?: number; disk_size?: number;
+    ip_address?: string; ip_prefix?: number; gateway?: string; nameserver?: string;
+    cloud_init_user?: string; cloud_init_password?: string; ssh_keys?: string;
+    name?: string; template_id?: number;
+  };
+}
+
+export function useSavedConfig(serverId: number, vmid: number, enabled = true) {
+  return useQuery<SavedVMConfig>({
+    queryKey: ['vm-saved-config', serverId, vmid],
+    queryFn: () => apiClient.get(`/proxmox/api/${serverId}/vm/${vmid}/saved-config`),
+    enabled: enabled && serverId > 0 && vmid > 0,
+  });
+}
+
 // ==================== Execute script (guest agent) ====================
 
 export interface ExecuteScriptResult {

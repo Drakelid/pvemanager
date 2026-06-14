@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useVMConfig, useUpdateConfig, useResizeDisk, useVMOwner, useSetVMOwner, useExecuteScript } from '@/hooks/use-instances';
+import { useVMConfig, useUpdateConfig, useResizeDisk, useVMOwner, useSetVMOwner, useExecuteScript, useSavedConfig } from '@/hooks/use-instances';
 import { useProfile } from '@/hooks/use-settings';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
@@ -132,6 +132,45 @@ function ExecuteScriptCard({ serverId, vmid, node }: { serverId: number; vmid: n
             )}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SavedConfigCard({ serverId, vmid }: { serverId: number; vmid: number }) {
+  const { t } = useTranslation();
+  const { data } = useSavedConfig(serverId, vmid);
+  if (!data?.found || !data.config) return null;
+  const c = data.config;
+
+  const rows: [string, string | number | undefined][] = [
+    [t('instances.saved_name'), c.name],
+    ['vCPU', c.cores],
+    [`${t('nodes.memory')} (MB)`, c.memory],
+    [`${t('nodes.disk')} (GB)`, c.disk_size],
+    ['IP', c.ip_address ? `${c.ip_address}${c.ip_prefix ? `/${c.ip_prefix}` : ''}` : undefined],
+    [t('netif.gateway'), c.gateway],
+    ['DNS', c.nameserver],
+    [t('instances.cloud_user'), c.cloud_init_user],
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Settings className="h-4 w-4" />{t('instances.saved_config')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="mb-3 text-xs text-muted-foreground">{t('instances.saved_config_hint')}</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+          {rows.filter(([, v]) => v != null && v !== '').map(([label, v]) => (
+            <div key={label} className="flex justify-between gap-2 border-b py-1">
+              <span className="text-muted-foreground">{label}</span>
+              <span className="font-mono">{String(v)}</span>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
@@ -281,6 +320,8 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
           </p>
         </CardContent>
       </Card>
+
+      <SavedConfigCard serverId={serverId} vmid={vmid} />
 
       {/* Raw Config */}
       {config && (
