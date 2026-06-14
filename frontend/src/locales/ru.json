@@ -160,8 +160,23 @@
     "placeholder_disk": "scsi0",
     "placeholder_notes": "Описание / заметки об инстансе..."
   },
+  "snap_archive": {
+    "title": "Архив снапшотов",
+    "subtitle": "Снапшоты, сохранённые от удалённых VM/контейнеров",
+    "empty": "Архивных снапшотов нет",
+    "snapshot": "Снапшот",
+    "deleted_by": "Удалил",
+    "archived_at": "Заархивирован",
+    "parent": "Родитель",
+    "reason": "Причина",
+    "config": "Конфиг снапшота"
+  },
   "instances": {
     "create": "Создать инстанс",
+    "owner": "Владелец",
+    "no_owner": "Без владельца",
+    "owner_saved": "Владелец обновлён",
+    "owner_hint": "Назначить инстанс пользователю (только админ).",
     "search_placeholder": "Поиск по имени, IP или VMID...",
     "all_statuses": "Все статусы",
     "all_nodes": "Все узлы",

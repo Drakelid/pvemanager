@@ -5,7 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useVMConfig, useUpdateConfig, useResizeDisk } from '@/hooks/use-instances';
+import { useVMConfig, useUpdateConfig, useResizeDisk, useVMOwner, useSetVMOwner } from '@/hooks/use-instances';
+import { useProfile } from '@/hooks/use-settings';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 
 interface Props {
@@ -13,6 +15,58 @@ interface Props {
   vmid: number;
   type: string;
   node: string;
+}
+
+const OWNER_NONE = '__none__';
+
+function OwnerCard({ serverId, vmid }: { serverId: number; vmid: number }) {
+  const { t } = useTranslation();
+  const { data: profile } = useProfile();
+  const isAdmin = !!profile?.is_admin;
+  const { data: owner } = useVMOwner(serverId, vmid, isAdmin);
+  const setOwner = useSetVMOwner(serverId, vmid);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  if (!isAdmin) return null;
+
+  const current = owner?.owner_id != null ? String(owner.owner_id) : OWNER_NONE;
+  const value = selected ?? current;
+
+  const handleSave = () => {
+    const userId = value === OWNER_NONE ? null : Number(value);
+    setOwner.mutate(userId, {
+      onSuccess: () => { toast.success(t('instances.owner_saved')); setSelected(null); },
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Settings className="h-4 w-4" />{t('instances.owner')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <Label>{t('instances.owner')}</Label>
+            <Select value={value} onValueChange={v => { if (v) setSelected(v); }}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={OWNER_NONE}>{t('instances.no_owner')}</SelectItem>
+                {(owner?.users ?? []).map(u => (
+                  <SelectItem key={u.id} value={String(u.id)}>{u.username}{u.full_name ? ` (${u.full_name})` : ''}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button size="sm" onClick={handleSave} disabled={setOwner.isPending || value === current}>{t('common.save')}</Button>
+        </div>
+        <p className="text-xs text-muted-foreground">{t('instances.owner_hint')}</p>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function SettingsTab({ serverId, vmid, type, node }: Props) {
@@ -66,6 +120,8 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
 
   return (
     <div className="space-y-6 max-w-2xl">
+      <OwnerCard serverId={serverId} vmid={vmid} />
+
       {/* CPU & Memory */}
       <Card>
         <CardHeader className="pb-2">

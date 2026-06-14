@@ -8,6 +8,7 @@ import LoginPage from '@/features/auth/LoginPage';
 import DashboardPage from '@/features/dashboard/DashboardPage';
 import InstancesPage from '@/features/instances/InstancesPage';
 import InstanceDetailPage from '@/features/instances/InstanceDetailPage';
+const SnapshotArchivesPage = lazy(() => import('./features/instances/SnapshotArchivesPage.tsx'));
 import ConsolePage from '@/features/console/ConsolePage';
 
 // Lazy-loaded pages
@@ -67,6 +68,7 @@ export const router = createBrowserRouter([
           { path: '/dashboard', element: <DashboardPage /> },
           { path: '/instances', element: <InstancesPage /> },
           { path: '/instances/create', element: <SuspenseWrap><CreateInstanceWizard /></SuspenseWrap> },
+          { path: '/instances/snapshot-archives', element: <SuspenseWrap><SnapshotArchivesPage /></SuspenseWrap> },
           { path: '/instances/:serverId/:vmid', element: <InstanceDetailPage /> },
           { path: '/nodes', element: <SuspenseWrap><NodesPage /></SuspenseWrap> },
           { path: '/nodes/:serverId', element: <SuspenseWrap><NodeDetailPage /></SuspenseWrap> },

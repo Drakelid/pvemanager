@@ -213,6 +213,73 @@ export function useRollbackSnapshot(serverId: number, vmid: number, type: string
   });
 }
 
+// ==================== Owner (admin) ====================
+
+export interface VMOwnerInfo {
+  owner_id: number | null;
+  owner: { id: number; username: string; full_name?: string } | null;
+  users: { id: number; username: string; full_name?: string }[];
+}
+
+export function useVMOwner(serverId: number, vmid: number, enabled = true) {
+  return useQuery<VMOwnerInfo>({
+    queryKey: ['vm-owner', serverId, vmid],
+    queryFn: () => apiClient.get(`/proxmox/api/${serverId}/vm/${vmid}/owner`),
+    enabled: enabled && serverId > 0 && vmid > 0,
+    retry: false,
+  });
+}
+
+export function useSetVMOwner(serverId: number, vmid: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (user_id: number | null) =>
+      apiClient.put(`/proxmox/api/${serverId}/vm/${vmid}/owner`, { user_id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vm-owner', serverId, vmid] }),
+  });
+}
+
+// ==================== Snapshot archives (admin audit) ====================
+
+export interface SnapshotArchive {
+  id: number;
+  server_id: number;
+  server_name?: string;
+  vmid: number;
+  vm_name?: string;
+  vm_type?: string;
+  node?: string;
+  snapname: string;
+  description?: string;
+  snaptime?: number;
+  parent?: string;
+  vmstate?: number;
+  snapshot_config?: string;
+  deleted_by?: string;
+  deletion_reason?: string;
+  archived_at?: string;
+}
+
+export function useSnapshotArchives(params?: { server_id?: number; vmid?: number; limit?: number; offset?: number }) {
+  const qs = new URLSearchParams();
+  if (params?.server_id) qs.set('server_id', String(params.server_id));
+  if (params?.vmid) qs.set('vmid', String(params.vmid));
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (params?.offset) qs.set('offset', String(params.offset));
+  return useQuery<{ total: number; offset: number; limit: number; archives: SnapshotArchive[] }>({
+    queryKey: ['snapshot-archives', params],
+    queryFn: () => apiClient.get(`/proxmox/api/snapshot-archives?${qs}`),
+  });
+}
+
+export function useSnapshotArchiveDetail(archiveId: number | null) {
+  return useQuery<SnapshotArchive>({
+    queryKey: ['snapshot-archive', archiveId],
+    queryFn: () => apiClient.get(`/proxmox/api/snapshot-archives/${archiveId}`),
+    enabled: !!archiveId,
+  });
+}
+
 // ==================== Power Actions ====================
 interface PowerActionResult {
   status: string;

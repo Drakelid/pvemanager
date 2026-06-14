@@ -67,6 +67,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { StatusDot } from '@/components/shared/status-dot';
 import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync, useInstancesMetricsSync } from '@/hooks/use-instances';
 import { useServers } from '@/hooks/use-nodes';
+import { useProfile } from '@/hooks/use-settings';
 import { formatBytes, vmTypeLabel, formatUptime } from '@/lib/format';
 import { apiClient } from '@/lib/api-client';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
@@ -258,6 +259,7 @@ export default function InstancesPage() {
   }, [activeTasks.length, activeTasks.map((t) => t.id).join(',')]);
 
   const { data: servers = [] } = useServers();
+  const { data: profile } = useProfile();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -664,10 +666,18 @@ export default function InstancesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-[22px] font-semibold">{t('nav.instances', 'Instances')}</h1>
-        <Button render={<Link to="/instances/create" />} size="sm">
-          <Plus className="mr-1.5 h-4 w-4" />
-          {t('instances.create', 'Create Instance')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {profile?.is_admin && (
+            <Button render={<Link to="/instances/snapshot-archives" />} size="sm" variant="outline">
+              <Camera className="mr-1.5 h-4 w-4" />
+              {t('snap_archive.title')}
+            </Button>
+          )}
+          <Button render={<Link to="/instances/create" />} size="sm">
+            <Plus className="mr-1.5 h-4 w-4" />
+            {t('instances.create', 'Create Instance')}
+          </Button>
+        </div>
       </div>
 
       {/* Type Tabs */}

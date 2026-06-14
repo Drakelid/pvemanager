@@ -160,8 +160,23 @@
     "placeholder_disk": "scsi0",
     "placeholder_notes": "Описание / заметки об инстансе..."
   },
+  "snap_archive": {
+    "title": "Snapshot archive",
+    "subtitle": "Snapshots preserved from deleted VMs/containers",
+    "empty": "No archived snapshots",
+    "snapshot": "Snapshot",
+    "deleted_by": "Deleted by",
+    "archived_at": "Archived at",
+    "parent": "Parent",
+    "reason": "Reason",
+    "config": "Snapshot config"
+  },
   "instances": {
     "create": "Create Instance",
+    "owner": "Owner",
+    "no_owner": "No owner",
+    "owner_saved": "Owner updated",
+    "owner_hint": "Assign this instance to a user (admin only).",
     "search_placeholder": "Search by name, IP, or VMID...",
     "all_statuses": "All statuses",
     "all_nodes": "All nodes",
