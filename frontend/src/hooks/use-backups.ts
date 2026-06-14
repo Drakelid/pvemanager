@@ -16,6 +16,41 @@ export function useBackupStorages(serverId: number) {
   });
 }
 
+export function useProxmoxBackupJobs(serverId: number) {
+  return useQuery({
+    queryKey: backupKeys.proxmoxJobs(serverId),
+    queryFn: () => apiClient.get<{ jobs: unknown[]; server_name?: string; error?: string }>(`/proxmox/api/backups/proxmox-jobs/${serverId}`),
+    enabled: serverId > 0,
+  });
+}
+
+export function useCreateStorage(serverId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      apiClient.post(`/proxmox/api/backups/storages/${serverId}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: backupKeys.storages(serverId) }),
+  });
+}
+
+export function useUpdateStorage(serverId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storage, ...data }: { storage: string } & Record<string, unknown>) =>
+      apiClient.put(`/proxmox/api/backups/storages/${serverId}/${storage}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: backupKeys.storages(serverId) }),
+  });
+}
+
+export function useDeleteStorage(serverId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (storage: string) =>
+      apiClient.delete(`/proxmox/api/backups/storages/${serverId}/${storage}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: backupKeys.storages(serverId) }),
+  });
+}
+
 export function useBackupList(serverId: number, node: string, storage: string) {
   return useQuery({
     queryKey: backupKeys.list(serverId, node, storage),

@@ -28,6 +28,7 @@ import {
 } from '@/hooks/use-backups';
 import { formatBytes } from '@/lib/format';
 import { toast } from 'sonner';
+import StoragesTab from './StoragesTab';
 
 const ALL_NODES = '__all__';
 // Sentinel for the target-storage selects: restore disks to the storage recorded
@@ -440,6 +441,7 @@ export default function BackupsPage() {
         <TabsList>
           <TabsTrigger value="files">{t('backups.files')}</TabsTrigger>
           <TabsTrigger value="jobs">{t('backups.scheduled_jobs')}</TabsTrigger>
+          <TabsTrigger value="storages">{t('storages.title')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="files" className="space-y-4 mt-4">
@@ -630,6 +632,10 @@ export default function BackupsPage() {
               <p>{t('backups.no_jobs')}</p>
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="storages" className="mt-4">
+          <StoragesTab />
         </TabsContent>
       </Tabs>
 
