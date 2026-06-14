@@ -299,7 +299,12 @@
     "use_password": "Use password auth",
     "verify_ssl": "Verify SSL",
     "connection_ok": "Connection successful",
-    "connection_failed": "Connection failed"
+    "connection_failed": "Connection failed",
+    "auto_setup": "Auto-setup",
+    "auto_setup_hint": "Connect by password — an API token is created automatically. For a cluster, all nodes are added.",
+    "auto_fields_required": "Name, host and password are required",
+    "cluster_mode": "Cluster",
+    "standalone": "Standalone"
   },
   "netif": {
     "title": "Network Interfaces",

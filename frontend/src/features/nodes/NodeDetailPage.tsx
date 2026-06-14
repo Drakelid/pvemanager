@@ -4,7 +4,7 @@ import { ArrowLeft, Cpu, MemoryStick, HardDrive, Clock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useServer, useNodes } from '@/hooks/use-nodes';
+import { useServer, useNodes, useClusterInfo } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
 import { StatusDot } from '@/components/shared/status-dot';
 import { formatBytes, formatUptime, formatPercent } from '@/lib/format';
@@ -18,6 +18,7 @@ export default function NodeDetailPage() {
   const sid = Number(serverId);
   const { data: server } = useServer(sid);
   const { data: nodesData } = useNodes(sid);
+  const { data: clusterInfo } = useClusterInfo(sid);
   const { data: allVMs = [] } = useVirtualMachines();
 
   const nodes = nodesData?.nodes || [];
@@ -33,9 +34,18 @@ export default function NodeDetailPage() {
           <h1 className="text-2xl font-bold">{server?.name || `Server #${sid}`}</h1>
           <p className="text-sm text-muted-foreground font-mono">{server?.ip_address}:{server?.port}</p>
         </div>
-        <Badge variant={server?.is_online ? 'default' : 'destructive'} className="ml-auto">
-          {server?.is_online ? t('common.online') : t('common.offline')}
-        </Badge>
+        <div className="ml-auto flex items-center gap-2">
+          {clusterInfo && (
+            <Badge variant={clusterInfo.is_cluster ? 'default' : 'secondary'}>
+              {clusterInfo.is_cluster
+                ? `${t('nodes.cluster_mode')} · ${clusterInfo.node_count ?? clusterInfo.nodes?.length ?? 0}`
+                : t('nodes.standalone')}
+            </Badge>
+          )}
+          <Badge variant={server?.is_online ? 'default' : 'destructive'}>
+            {server?.is_online ? t('common.online') : t('common.offline')}
+          </Badge>
+        </div>
       </div>
 
       {/* Nodes in cluster */}
