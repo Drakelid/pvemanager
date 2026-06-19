@@ -38,10 +38,14 @@ export function useIPAMNetworkStats(id: number) {
 }
 
 export interface IPAMIPMapEntry {
-  ip: string;
+  ip_address: string;
   status: 'gateway' | 'allocated' | 'reserved' | 'available' | string;
   resource_name?: string | null;
   resource_type?: string | null;
+  hostname?: string | null;
+  proxmox_vmid?: number | null;
+  is_gateway?: boolean;
+  allocation_id?: number | null;
   last_seen?: string | null;
 }
 

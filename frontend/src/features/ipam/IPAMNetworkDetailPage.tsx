@@ -367,13 +367,20 @@ function IPMapCard({ networkId }: { networkId: number }) {
         ) : (
           <>
             <div className="flex flex-wrap gap-1">
-              {shown.map(e => (
-                <div
-                  key={e.ip}
-                  title={`${e.ip}${e.resource_name ? ` · ${e.resource_name}` : ''} (${e.status})`}
-                  className={`h-3.5 w-3.5 rounded-sm ${ipMapColors[e.status] ?? 'bg-muted'} ${e.status === 'available' ? 'border border-border' : ''}`}
-                />
-              ))}
+              {shown.map(e => {
+                const label = [
+                  e.proxmox_vmid != null ? `VMID ${e.proxmox_vmid}` : null,
+                  e.resource_name || e.hostname || null,
+                  e.ip_address,
+                ].filter(Boolean).join(' · ');
+                return (
+                  <div
+                    key={e.ip_address}
+                    title={`${label} (${e.status})`}
+                    className={`h-3.5 w-3.5 rounded-sm ${ipMapColors[e.status] ?? 'bg-muted'} ${e.status === 'available' ? 'border border-border' : ''}`}
+                  />
+                );
+              })}
             </div>
             {entries.length > MAX && (
               <p className="mt-2 text-xs text-muted-foreground">{t('ipam.ip_map_truncated', { shown: MAX, total: entries.length })}</p>
