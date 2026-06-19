@@ -83,6 +83,34 @@ def get_cached_client(host: str, user: str, password_hash: str = None,
     )
 
 class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin, SnapshotMixin):
+        @classmethod
+        def from_server(cls, server) -> "ProxmoxClient":
+            """Single source of truth for building a client from a ProxmoxServer model.
+
+            Picks token auth when available, otherwise password auth, and appends a
+            non-default port to the host. Callers across the API and services layers
+            (see api/proxmox/_helpers.py and services/task_queue_service.py) should
+            go through here instead of duplicating the host/auth branching.
+            """
+            host = server.ip_address or getattr(server, "hostname", "") or ""
+            if getattr(server, "port", None) and server.port != 8006:
+                host = f"{host}:{server.port}"
+
+            if getattr(server, "use_password", False) and getattr(server, "password", ""):
+                return cls(
+                    host=host,
+                    user=server.api_user,
+                    password=server.password,
+                    verify_ssl=server.verify_ssl,
+                )
+            return cls(
+                host=host,
+                user=server.api_user,
+                token_name=server.api_token_name,
+                token_value=server.api_token_value,
+                verify_ssl=server.verify_ssl,
+            )
+
         def __init__(self, host: str, user: str = "root@pam", password: str = None,
                      token_name: str = None, token_value: str = None, verify_ssl: bool = True,
                      timeout: int = 30):

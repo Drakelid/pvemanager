@@ -86,32 +86,12 @@ class MonitoringWorker:
         self.last_server_alerts: Dict[int, float] = {}  # server_id -> last_alert_time
     
     def _create_proxmox_client(self, server: ProxmoxServer) -> ProxmoxClient:
-        """Create ProxmoxClient from server model"""
-        # ALWAYS prefer ip_address over hostname (hostname may not be DNS-resolvable)
-        host = server.ip_address or server.hostname
-        if server.port and server.port != 8006:
-            host = f"{host}:{server.port}"
-        
-        # Determine authentication method
-        if server.use_password and server.password:
-            # Password authentication
-            return ProxmoxClient(
-                host=host,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl
-            )
-        elif server.api_token_name and server.api_token_value:
-            # API Token authentication
-            return ProxmoxClient(
-                host=host,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl
-            )
-        else:
+        """Create ProxmoxClient from server model, raising if auth is missing."""
+        has_password = server.use_password and server.password
+        has_token = server.api_token_name and server.api_token_value
+        if not (has_password or has_token):
             raise ValueError(f"Server {server.name} has no valid authentication configured")
+        return ProxmoxClient.from_server(server)
     
     def _notify_server_offline(self, db, server: ProxmoxServer, error: str, users: List[User]):
         """Send notification that server went offline"""

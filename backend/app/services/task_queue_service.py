@@ -147,30 +147,16 @@ class TaskQueueProcessor:
         server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
         if not server:
             return None
-        
+
+        # Require valid credentials before building (from_server would otherwise
+        # construct a client with no usable auth).
+        has_password = server.use_password and server.password
+        has_token = server.api_token_name and server.api_token_value
+        if not (has_password or has_token):
+            return None
+
         try:
-            host = server.ip_address or server.hostname
-            if server.port and server.port != 8006:
-                host = f"{host}:{server.port}"
-            
-            if server.use_password and server.password:
-                client = ProxmoxClient(
-                    host=host,
-                    user=server.api_user,
-                    password=server.password,
-                    verify_ssl=server.verify_ssl
-                )
-            elif server.api_token_name and server.api_token_value:
-                client = ProxmoxClient(
-                    host=host,
-                    user=server.api_user,
-                    token_name=server.api_token_name,
-                    token_value=server.api_token_value,
-                    verify_ssl=server.verify_ssl
-                )
-            else:
-                return None
-            
+            client = ProxmoxClient.from_server(server)
             self._proxmox_clients[server_id] = client
             return client
         except Exception as e:

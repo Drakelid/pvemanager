@@ -72,24 +72,7 @@ def require_vm_access(db: Session, current_user: User, server_id: int, vmid: int
 
 def _get_proxmox_client(server: ProxmoxServer) -> ProxmoxClient:
     """Build a ProxmoxClient from a ProxmoxServer model (password or token auth)."""
-    host = server.ip_address or getattr(server, 'hostname', '')
-    if hasattr(server, 'port') and server.port and server.port != 8006:
-        host = f"{host}:{server.port}"
-        
-    if getattr(server, 'use_password', False) and getattr(server, 'password', ''):
-        return ProxmoxClient(
-            host=host,
-            user=server.api_user,
-            password=server.password,
-            verify_ssl=server.verify_ssl
-        )
-    return ProxmoxClient(
-        host=host,
-        user=server.api_user,
-        token_name=server.api_token_name,
-        token_value=server.api_token_value,
-        verify_ssl=server.verify_ssl
-    )
+    return ProxmoxClient.from_server(server)
 
 
 def get_next_vmid(db: Session, server_id: int) -> int:

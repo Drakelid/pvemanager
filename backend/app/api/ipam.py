@@ -740,16 +740,6 @@ async def cleanup_orphan_allocations(
     }
 
 
-def _build_proxmox_client(server: ProxmoxServer) -> ProxmoxClient:
-    """Build ProxmoxClient from ProxmoxServer model."""
-    host = server.ip_address or server.hostname
-    if server.port and server.port != 8006:
-        host = f"{host}:{server.port}"
-    if server.use_password and server.password:
-        return ProxmoxClient(host=host, user=server.api_user, password=server.password, verify_ssl=server.verify_ssl)
-    return ProxmoxClient(host=host, user=server.api_user, token_name=server.api_token_name, token_value=server.api_token_value, verify_ssl=server.verify_ssl)
-
-
 def _extract_primary_ipv4(interfaces: list, parsed_networks: list):
     """Extract first IPv4 that belongs to any IPAM network from interface list."""
     for iface in interfaces:
@@ -900,7 +890,7 @@ def link_allocations_to_vms(
             continue
 
         try:
-            client = _build_proxmox_client(server)
+            client = ProxmoxClient.from_server(server)
             if not client.is_connected():
                 logger.warning(f"[IPAM link] Server {server.name} not reachable, skipping")
                 for vm in server_vms:
