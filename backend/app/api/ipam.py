@@ -766,6 +766,7 @@ def get_unlinked_allocations(
 ):
     """
     Return VM instances that have no IPAM allocation linked to them (by vmid+server_id).
+    Only VMs whose cached ip_address falls within an active IPAM network are included.
     """
     unlinked = []
 
@@ -782,13 +783,32 @@ def get_unlinked_allocations(
 
     servers_map = {s.id: s for s in db.query(ProxmoxServer).all()}
 
+    # Parse active IPAM networks to filter by IP membership
+    ipam_nets = []
+    for net in db.query(IPAMNetwork).filter(IPAMNetwork.is_active == True).all():
+        try:
+            ipam_nets.append(ipaddress_module.ip_network(net.network, strict=False))
+        except ValueError:
+            pass
+
     for vm in vms:
         if (vm.server_id, vm.vmid) in linked_pairs:
             continue
+
+        # Skip VMs with no IP or an IP outside all IPAM networks
+        if not vm.ip_address:
+            continue
+        try:
+            vm_ip = ipaddress_module.ip_address(vm.ip_address)
+            if not any(vm_ip in net for net in ipam_nets):
+                continue
+        except ValueError:
+            continue
+
         server = servers_map.get(vm.server_id)
         unlinked.append({
             'id': None,
-            'ip_address': vm.ip_address or '?',
+            'ip_address': vm.ip_address,
             'resource_name': vm.name,
             'resource_type': vm.vm_type,
             'can_link': True,
