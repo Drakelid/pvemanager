@@ -120,7 +120,7 @@ class SecuritySettingsUpdate(BaseModel):
 @router.get("/api/roles", response_model=List[RoleResponse])
 async def list_roles(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("roles.view"))
+    current_user: User = Depends(PermissionChecker("role:view"))
 ):
     """Get all roles"""
     from sqlalchemy import func
@@ -154,7 +154,7 @@ async def list_roles(
 async def get_role(
     role_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("roles.view"))
+    current_user: User = Depends(PermissionChecker("role:view"))
 ):
     """Get role by ID"""
     role = db.query(Role).filter(Role.id == role_id).first()
@@ -168,7 +168,7 @@ async def create_role(
     role_data: RoleCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("roles.manage"))
+    current_user: User = Depends(PermissionChecker("role:manage"))
 ):
     """Create a new role"""
     # Check if role name exists
@@ -207,7 +207,7 @@ async def update_role(
     role_data: RoleUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("roles.manage"))
+    current_user: User = Depends(PermissionChecker("role:manage"))
 ):
     """Update a role"""
     role = db.query(Role).filter(Role.id == role_id).first()
@@ -250,7 +250,7 @@ async def delete_role(
     role_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("roles.manage"))
+    current_user: User = Depends(PermissionChecker("role:manage"))
 ):
     """Delete a role"""
     success, message = SecurityService.delete_role(db, role_id)
@@ -275,7 +275,7 @@ async def delete_role(
 
 @router.get("/api/permissions/v2")
 async def get_all_permissions_v2(
-    current_user: User = Depends(PermissionChecker("roles.view"))
+    current_user: User = Depends(PermissionChecker("role:view"))
 ):
     """
     Get all available permissions in new format.
@@ -289,7 +289,7 @@ async def get_all_permissions_v2(
 @router.get("/api/users", response_model=List[UserResponse])
 async def list_users(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.view"))
+    current_user: User = Depends(PermissionChecker("user:view"))
 ):
     """Get all users"""
     users = db.query(User).order_by(User.username).all()
@@ -320,7 +320,7 @@ async def list_users(
 async def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.view"))
+    current_user: User = Depends(PermissionChecker("user:view"))
 ):
     """Get user by ID"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -348,7 +348,7 @@ async def create_user(
     user_data: UserCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.create"))
+    current_user: User = Depends(PermissionChecker("user:create"))
 ):
     """Create a new user"""
     # Check username
@@ -423,7 +423,7 @@ async def update_user(
     user_data: UserUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.edit"))
+    current_user: User = Depends(PermissionChecker("user:update"))
 ):
     """Update a user"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -521,7 +521,7 @@ async def delete_user(
     user_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.delete"))
+    current_user: User = Depends(PermissionChecker("user:delete"))
 ):
     """Delete a user"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -584,7 +584,7 @@ def _get_server_workspace_info(db: Session, server_id: int):
 async def get_user_servers(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.view"))
+    current_user: User = Depends(PermissionChecker("user:view"))
 ):
     """Get list of Proxmox servers assigned to a specific user"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -600,7 +600,7 @@ async def get_user_servers(
 async def get_user_server_assignments(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.view"))
+    current_user: User = Depends(PermissionChecker("user:view"))
 ):
     """
     Return all Proxmox servers enriched with:
@@ -649,7 +649,7 @@ async def set_user_servers(
     user_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.edit"))
+    current_user: User = Depends(PermissionChecker("user:update"))
 ):
     """Assign a list of Proxmox servers to a user (replaces current assignment).
     Rejects the operation if any server's workspaces don't intersect with the user's workspaces.
@@ -723,7 +723,7 @@ async def reset_user_password(
     password_data: PasswordChange,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.edit"))
+    current_user: User = Depends(PermissionChecker("user:update"))
 ):
     """Reset user password (admin action)"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -768,7 +768,7 @@ async def unlock_user(
     user_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.edit"))
+    current_user: User = Depends(PermissionChecker("user:update"))
 ):
     """Unlock a locked user account"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -801,7 +801,7 @@ async def terminate_user_sessions(
     user_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.edit"))
+    current_user: User = Depends(PermissionChecker("user:update"))
 ):
     """Terminate all sessions for a user"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -832,7 +832,7 @@ async def terminate_user_sessions(
 @router.get("/api/security/settings")
 async def get_security_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.security"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Get security settings"""
     return {
@@ -854,7 +854,7 @@ async def update_security_settings(
     settings_data: SecuritySettingsUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.security"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Update security settings"""
     updated = []
@@ -883,7 +883,7 @@ async def update_security_settings(
 @router.get("/api/security/blocked-ips")
 async def list_blocked_ips(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.security"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Get list of blocked IPs"""
     from ..models import BlockedIP
@@ -906,7 +906,7 @@ async def unblock_ip(
     ip_address: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.security"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Unblock an IP address"""
     if SecurityService.unblock_ip(db, ip_address):
@@ -930,7 +930,7 @@ async def unblock_ip(
 @router.get("/api/sessions")
 async def list_sessions(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.view"))
+    current_user: User = Depends(PermissionChecker("user:view"))
 ):
     """Get list of active sessions"""
     from ..models import ActiveSession
@@ -961,7 +961,7 @@ async def terminate_session(
     session_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.edit"))
+    current_user: User = Depends(PermissionChecker("user:update"))
 ):
     """Terminate a specific session"""
     from ..models import ActiveSession
@@ -991,7 +991,7 @@ async def terminate_session(
 async def terminate_all_sessions(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.edit"))
+    current_user: User = Depends(PermissionChecker("user:update"))
 ):
     """Terminate all sessions except current user's"""
     from ..models import ActiveSession
@@ -1022,7 +1022,7 @@ async def terminate_all_sessions(
 async def list_security_events(
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.security"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Get security events from logs"""
     from ..models import AuditLog
@@ -1049,7 +1049,7 @@ async def block_ip(
     ip_data: dict,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.security"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Block an IP address manually"""
     from ..models import BlockedIP
@@ -1103,7 +1103,7 @@ async def unblock_ip_by_id(
     blocked_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.security"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Unblock an IP address by ID"""
     from ..models import BlockedIP

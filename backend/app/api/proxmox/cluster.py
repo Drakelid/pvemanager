@@ -59,7 +59,7 @@ def _get_password_client(server: ProxmoxServer, override_password: str = None) -
 @router.get("/api/cluster/topology")
 def get_cluster_topology(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.view")),
+    current_user: User = Depends(PermissionChecker("server:view")),
 ):
     """
     Получить все серверы, сгруппированные по кластеру.
@@ -94,7 +94,7 @@ def get_cluster_topology(
 async def create_cluster(
     body: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+    current_user: User = Depends(PermissionChecker("cluster:manage")),
 ):
     """
     Создать новый Proxmox corosync кластер на указанной ноде.
@@ -175,7 +175,7 @@ async def create_cluster(
 def get_cluster_join_info(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+    current_user: User = Depends(PermissionChecker("cluster:manage")),
 ):
     """
     Получить fingerprint и join-данные с кластерной ноды.
@@ -213,7 +213,7 @@ def get_cluster_join_info(
 def pre_join_check(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+    current_user: User = Depends(PermissionChecker("cluster:manage")),
 ):
     """
     Проверить ноду перед присоединением к кластеру:
@@ -287,7 +287,7 @@ def pre_join_check(
 async def prepare_join(
     body: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+    current_user: User = Depends(PermissionChecker("cluster:manage")),
 ):
     """
     Создать резервные копии всех VM/LXC на ноде через vzdump и удалить их,
@@ -446,7 +446,7 @@ async def prepare_join(
 async def join_cluster(
     body: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+    current_user: User = Depends(PermissionChecker("cluster:manage")),
 ):
     """
     Присоединить standalone-ноду к существующему кластеру.
@@ -580,7 +580,7 @@ def eject_cluster_node(
     server_id: int,
     body: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.cluster.manage")),
+    current_user: User = Depends(PermissionChecker("cluster:manage")),
 ):
     """
     Удалить ноду из кластера Proxmox.

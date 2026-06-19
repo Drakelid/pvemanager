@@ -31,7 +31,7 @@ def get_vm_snapshots(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Get all snapshots for a VM"""
     # VPS-style user isolation
@@ -60,7 +60,7 @@ async def create_vm_snapshot(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Create a VM snapshot"""
     # VPS-style user isolation
@@ -114,7 +114,7 @@ def delete_vm_snapshot(
     snapname: str,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Delete a VM snapshot"""
     # VPS-style user isolation
@@ -161,7 +161,7 @@ def rollback_vm_snapshot(
     node: str,
     start: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Rollback a VM to a snapshot"""
     # VPS-style user isolation
@@ -208,7 +208,7 @@ def get_container_snapshots(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Get all snapshots for a container"""
     # VPS-style user isolation
@@ -237,7 +237,7 @@ async def create_container_snapshot(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Create a container snapshot"""
     # VPS-style user isolation
@@ -290,7 +290,7 @@ def delete_container_snapshot(
     snapname: str,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Delete a container snapshot"""
     # VPS-style user isolation
@@ -337,7 +337,7 @@ def rollback_container_snapshot(
     node: str,
     start: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Rollback a container to a snapshot"""
     # VPS-style user isolation
@@ -385,7 +385,7 @@ def get_snapshot_archives(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("logs.view"))
+    current_user: User = Depends(PermissionChecker("log:view"))
 ):
     """
     Get archived snapshots from deleted VMs/containers.
@@ -432,7 +432,7 @@ def get_snapshot_archives(
 def get_snapshot_archive_detail(
     archive_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("logs.view"))
+    current_user: User = Depends(PermissionChecker("log:view"))
 ):
     """Get full details of an archived snapshot including config"""
     archive = db.query(VMSnapshotArchive).filter(VMSnapshotArchive.id == archive_id).first()

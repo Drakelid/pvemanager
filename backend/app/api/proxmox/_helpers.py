@@ -37,7 +37,7 @@ def check_vm_access(db: Session, current_user: User, server_id: int, vmid: int) 
     if current_user.role and current_user.role.permissions:
         perms = current_user.role.permissions
         # If user has full vms:view, they can access all VMs
-        has_full_view = perms.get('vms.view', False) or perms.get('vms:view', False)
+        has_full_view = perms.get('vm:view', False) or perms.get('vms:view', False)
         has_own_only = perms.get('vms:view:own', False) or perms.get('vms.view.own', False)
 
         if has_full_view and not has_own_only:

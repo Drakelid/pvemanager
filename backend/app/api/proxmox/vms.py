@@ -58,7 +58,7 @@ class VMOwnerUpdate(BaseModel):
 @router.post("/api/sync-vms")
 def sync_vms_now(
     db: Session = Depends(get_db), 
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """
     Force immediate synchronization of VMs/containers from all Proxmox servers.
@@ -89,7 +89,7 @@ def sync_vms_now(
 def get_all_virtual_machines(
     request: Request,
     db: Session = Depends(get_db), 
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """
     API для получения всех VM/LXC в плоском списке для таблицы.
@@ -145,7 +145,7 @@ def get_all_virtual_machines(
         query = query.filter(VMInstance.server_id.in_(workspace_server_ids))
     
     # VPS-style user isolation: users with 'user' role see only their own instances
-    # Check if user has 'vms.view' but not 'vms.view:all' (or is user role)
+    # Check if user has 'vm:view' but not 'vms.view:all' (or is user role)
     user_role = current_user.role.name if current_user.role else None
     is_limited_user = user_role == 'user'
     
@@ -154,7 +154,7 @@ def get_all_virtual_machines(
         perms = current_user.role.permissions or {}
         # If user has vms:view:own but not vms:view (full), filter by owner
         has_view_own = perms.get('vms:view:own', False) or perms.get('vms.view.own', False)
-        has_view_all = perms.get('vms:view', False) or perms.get('vms.view', False)
+        has_view_all = perms.get('vms:view', False) or perms.get('vm:view', False)
         
         # Limited users can only see their own VMs
         if is_limited_user or (has_view_own and not has_view_all):
@@ -288,7 +288,7 @@ def execute_vm_command(
     command: str = Query(..., description="Команда для выполнения"),
     timeout: int = Query(30, ge=1, le=300, description="Таймаут в секундах"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.console"))
+    current_user: User = Depends(PermissionChecker("vm:console"))
 ):
     """
     Выполнить команду на VM через QEMU guest agent
@@ -325,7 +325,7 @@ def execute_vm_script(
     interpreter: str = Form("/bin/bash", description="Путь к интерпретатору"),
     timeout: int = Query(60, ge=1, le=600, description="Таймаут в секундах"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.console"))
+    current_user: User = Depends(PermissionChecker("vm:console"))
 ):
     """
     Выполнить bash скрипт на VM через QEMU guest agent
@@ -388,7 +388,7 @@ def clone_vm_endpoint(
     node: str,
     body: CloneRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.create"))
+    current_user: User = Depends(PermissionChecker("vm:create"))
 ):
     """Клонировать существующую VM (qemu) — фоновая задача."""
     from ...models import DeployTask
@@ -419,7 +419,7 @@ def clone_container_endpoint(
     node: str,
     body: CloneRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.create"))
+    current_user: User = Depends(PermissionChecker("vm:create"))
 ):
     """Клонировать существующий LXC контейнер — фоновая задача."""
     from ...models import DeployTask
@@ -451,7 +451,7 @@ def reinstall_vm_endpoint(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.delete"))
+    current_user: User = Depends(PermissionChecker("vm:delete"))
 ):
     """Переустановить VM/LXC из исходного шаблона — фоновая задача."""
     from ...models import DeployTask, OSTemplate
@@ -504,7 +504,7 @@ def change_vm_password_endpoint(
     node: str,
     body: ChangePasswordRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.console"))
+    current_user: User = Depends(PermissionChecker("vm:console"))
 ):
     """Сменить пароль на VM через QEMU guest agent — фоновая задача."""
     from ...models import DeployTask
@@ -544,7 +544,7 @@ def change_container_password_endpoint(
     node: str,
     body: ChangePasswordRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.console"))
+    current_user: User = Depends(PermissionChecker("vm:console"))
 ):
     """Сменить пароль в LXC через pct exec/chpasswd — фоновая задача."""
     from ...models import DeployTask
@@ -595,10 +595,10 @@ def control_vm(
     
     # Проверка прав в зависимости от действия
     permission_map = {
-        'start': 'vms.start',
-        'stop': 'vms.stop',
-        'shutdown': 'vms.stop',
-        'restart': 'vms.restart',
+        'start': 'vm:start',
+        'stop': 'vm:stop',
+        'shutdown': 'vm:stop',
+        'restart': 'vm:restart',
     }
     if not current_user.has_permission(permission_map[action]):
         raise HTTPException(
@@ -738,7 +738,7 @@ async def delete_vm(
     node: str,
     force: bool = Query(False, description="Force delete without saving config"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.delete"))
+    current_user: User = Depends(PermissionChecker("vm:delete"))
 ):
     """Удалить VM"""
     from ...i18n import t
@@ -940,7 +940,7 @@ async def delete_vm(
 def get_ha_status(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить статус HA кластера и список ресурсов в HA"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -977,7 +977,7 @@ def get_resource_ha_status(
     vm_type: str,
     vmid: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить HA статус конкретной VM или контейнера"""
     if vm_type not in ['vm', 'ct']:
@@ -1031,7 +1031,7 @@ def add_resource_to_ha(
     state: str = Query("started", description="Target state: started, stopped, enabled, disabled, ignored"),
     comment: str = Query(None, description="Comment"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Добавить VM или контейнер в HA"""
     if vm_type not in ['vm', 'ct']:
@@ -1094,7 +1094,7 @@ def remove_resource_from_ha(
     vm_type: str,
     vmid: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Удалить VM или контейнер из HA"""
     if vm_type not in ['vm', 'ct']:
@@ -1145,7 +1145,7 @@ async def delete_container(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.delete"))
+    current_user: User = Depends(PermissionChecker("vm:delete"))
 ):
     """Удалить LXC контейнер"""
     from ...i18n import t
@@ -1269,7 +1269,7 @@ def get_vm_config(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить конфигурацию VM"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1296,7 +1296,7 @@ async def update_vm_config(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Обновить конфигурацию VM (CPU, Memory, etc.)"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1331,7 +1331,7 @@ async def resize_vm_disk(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Изменить размер диска VM"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1384,7 +1384,7 @@ async def resize_container_disk(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Изменить размер диска контейнера"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1441,7 +1441,7 @@ def get_container_config(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить конфигурацию LXC контейнера"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1468,7 +1468,7 @@ async def update_container_config(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Обновить конфигурацию LXC контейнера"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1512,10 +1512,10 @@ def control_container(
     
     # Проверка прав в зависимости от действия
     permission_map = {
-        'start': 'vms.start',
-        'stop': 'vms.stop',
-        'shutdown': 'vms.stop',
-        'restart': 'vms.restart',
+        'start': 'vm:start',
+        'stop': 'vm:stop',
+        'shutdown': 'vm:stop',
+        'restart': 'vm:restart',
     }
     require_permission(current_user, permission_map[action])
     
@@ -1594,7 +1594,7 @@ def control_container(
 def get_server_nodes(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.view"))
+    current_user: User = Depends(PermissionChecker("server:view"))
 ):
     """Получить список нод Proxmox сервера вместе с идентификатором кластера"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1639,7 +1639,7 @@ def get_vm_status(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить детальный статус VM (CPU, RAM, Disk, Network)"""
     require_vm_access(db, current_user, server_id, vmid)
@@ -1666,7 +1666,7 @@ def get_container_status(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить детальный статус LXC контейнера"""
     require_vm_access(db, current_user, server_id, vmid)
@@ -1693,7 +1693,7 @@ def get_vm_interfaces(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить сетевые интерфейсы и IP адреса VM через QEMU guest agent"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1719,7 +1719,7 @@ def get_container_interfaces(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить сетевые интерфейсы и IP адреса контейнера"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1745,7 +1745,7 @@ def get_container_status_api(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить статус контейнера"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1772,7 +1772,7 @@ def get_vm_rrddata(
     node: str,
     timeframe: str = Query("hour", regex="^(hour|day|week|month|year)$"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить исторические данные VM для графиков (CPU, RAM, Network, Disk IO)"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1799,7 +1799,7 @@ def get_container_rrddata(
     node: str,
     timeframe: str = Query("hour", regex="^(hour|day|week|month|year)$"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить исторические данные контейнера для графиков"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -1827,7 +1827,7 @@ def get_vm_vnc(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.console"))
+    current_user: User = Depends(PermissionChecker("vm:console"))
 ):
     """Получить VNC данные для подключения к VM"""
     import requests
@@ -1914,7 +1914,7 @@ def get_container_vnc(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.console"))
+    current_user: User = Depends(PermissionChecker("vm:console"))
 ):
     """Получить VNC данные для подключения к LXC контейнеру"""
     import requests
@@ -2017,7 +2017,7 @@ async def vnc_websocket_proxy(
     if not user:
         await websocket.close(code=4001, reason="Authentication required")
         return
-    if not PermissionEngine.has_permission(user, "vms.console"):
+    if not PermissionEngine.has_permission(user, "vm:console"):
         await websocket.close(code=4003, reason="Permission denied")
         return
     if not check_vm_access(db, user, server_id, vmid):
@@ -2158,7 +2158,7 @@ def get_saved_vm_config(
     server_id: int,
     vmid: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Get saved VM configuration from database"""
     instance = get_vm_instance(db, server_id, vmid)
@@ -2190,7 +2190,7 @@ def get_saved_vm_config(
 def get_all_lxc_templates(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.view"))
+    current_user: User = Depends(PermissionChecker("template:view"))
 ):
     """Получить список LXC шаблонов со всех нод кластера с информацией о shared storage"""
     logger.info(f"[LXC API] Request for ALL templates from server_id={server_id}")
@@ -2219,7 +2219,7 @@ def get_available_lxc_templates(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.view"))
+    current_user: User = Depends(PermissionChecker("template:view"))
 ):
     """Получить список шаблонов доступных для загрузки из репозитория"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -2247,7 +2247,7 @@ async def download_lxc_template(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.manage"))
+    current_user: User = Depends(PermissionChecker("template:manage"))
 ):
     """Скачать шаблон LXC из репозитория"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -2318,7 +2318,7 @@ def get_vm_terminal(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.console"))
+    current_user: User = Depends(PermissionChecker("vm:console"))
 ):
     """Получить данные для xterm.js терминального подключения к VM"""
     import requests
@@ -2391,7 +2391,7 @@ def get_container_terminal(
     vmid: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.console"))
+    current_user: User = Depends(PermissionChecker("vm:console"))
 ):
     """Получить данные для xterm.js терминального подключения к LXC контейнеру"""
     import requests
@@ -2465,7 +2465,7 @@ async def exec_in_container(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.console"))
+    current_user: User = Depends(PermissionChecker("vm:console"))
 ):
     """Выполнить команду в LXC контейнере через pct exec"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -2520,7 +2520,7 @@ async def terminal_websocket_fixed(
     if not user:
         await websocket.close(code=4001, reason="Authentication required")
         return
-    if not PermissionEngine.has_permission(user, "vms.console"):
+    if not PermissionEngine.has_permission(user, "vm:console"):
         await websocket.close(code=4003, reason="Permission denied")
         return
     if not check_vm_access(db, user, server_id, vmid):
@@ -2693,7 +2693,7 @@ async def terminal_websocket_fixed(
 def create_bulk_operation(
     request: BulkOperationRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.vm.manage"))
+    current_user: User = Depends(PermissionChecker("vm:manage"))
 ):
     """
     Create a bulk operation task.
@@ -2717,7 +2717,7 @@ def create_bulk_operation(
     
     # For delete action, require higher permission
     if request.action == 'delete':
-        if not check_permission(current_user, "vms.delete"):
+        if not check_permission(current_user, "vm:delete"):
             raise HTTPException(status_code=403, detail="Delete permission required")
     
     # Convert to list of dicts
@@ -2842,7 +2842,7 @@ def update_vm_notes(
     node: str,
     body: NotesRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Обновить заметку (description) у VM."""
     require_vm_access(db, current_user, server_id, vmid)
@@ -2872,7 +2872,7 @@ def update_container_notes(
     node: str,
     body: NotesRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Обновить заметку (description) у LXC."""
     require_vm_access(db, current_user, server_id, vmid)
@@ -2902,7 +2902,7 @@ def list_node_isos(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Список ISO-образов на ноде."""
     server = _resolve_server(db, server_id)
@@ -2917,7 +2917,7 @@ def attach_iso_endpoint(
     node: str,
     body: IsoAttachRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Подключить ISO (CD-ROM) к VM."""
     require_vm_access(db, current_user, server_id, vmid)
@@ -2942,7 +2942,7 @@ def detach_iso_endpoint(
     node: str,
     body: IsoDetachRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Отключить ISO (CD-ROM) у VM."""
     require_vm_access(db, current_user, server_id, vmid)

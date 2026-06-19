@@ -255,9 +255,9 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
     if current_user.role:
         permissions = current_user.role.permissions or {}
     elif current_user.is_admin:
-        # Admin has all permissions
+        # Admin has all permissions (new resource:action format)
         from ..services.security_service import SecurityService
-        all_perms = SecurityService.get_all_permissions()
+        all_perms = SecurityService.get_all_permissions_v2()
         for category, perms in all_perms.items():
             for perm in perms:
                 permissions[perm] = True

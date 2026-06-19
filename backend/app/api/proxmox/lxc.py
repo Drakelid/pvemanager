@@ -356,7 +356,7 @@ def _do_lxc_deploy(task_id: int, req: LXCDeployRequest, user_id: int, username: 
 def list_lxc_templates(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view")),
+    current_user: User = Depends(PermissionChecker("vm:view")),
 ):
     """
     Список LXC CT-шаблонов (vztmpl) на хранилищах выбранного Proxmox сервера.
@@ -382,7 +382,7 @@ def list_lxc_storages(
     server_id: int,
     node: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view")),
+    current_user: User = Depends(PermissionChecker("vm:view")),
 ):
     """
     Список хранилищ ноды, пригодных для rootfs LXC контейнера.
@@ -422,7 +422,7 @@ def list_lxc_storages(
 async def deploy_lxc_from_template(
     req: LXCDeployRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.create")),
+    current_user: User = Depends(PermissionChecker("vm:create")),
 ):
     """
     Асинхронное создание LXC контейнера из CT-шаблона.
@@ -438,7 +438,7 @@ async def deploy_lxc_from_template(
         raise HTTPException(status_code=400, detail="Укажите имя контейнера")
 
     # Resolve owner / SSH keys
-    is_admin = current_user.has_permission("users.manage") or current_user.is_admin
+    is_admin = current_user.has_permission("user:manage") or current_user.is_admin
     instance_owner_id = current_user.id
     if req.owner_id and req.owner_id != current_user.id:
         if not is_admin:

@@ -235,7 +235,7 @@ async def change_password(
 @router.get("/api/panel", response_model=PanelSettingsResponse)
 async def get_panel_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.view"))
+    current_user: User = Depends(PermissionChecker("setting:view"))
 ):
     """Get panel settings"""
     from ..config import settings
@@ -255,7 +255,7 @@ async def get_panel_settings(
 async def update_panel_settings(
     data: UpdatePanelSettingsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.panel"))
+    current_user: User = Depends(PermissionChecker("setting:update"))
 ):
     """Update panel settings (requires settings.panel permission)"""
     updated_fields = []
@@ -666,7 +666,7 @@ async def get_version():
 @router.get("/api/updates/repository")
 async def get_repository_url(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.manage"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Get configured git repository URL"""
     setting = db.query(PanelSettings).filter(PanelSettings.key == "git_repository_url").first()
@@ -679,7 +679,7 @@ async def get_repository_url(
 async def set_repository_url(
     repository_url: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.manage"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Set git repository URL for updates"""
     # Validate URL format
@@ -707,7 +707,7 @@ async def set_repository_url(
 @router.get("/api/updates/check")
 async def check_updates(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.manage"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Check for available updates (admin only)"""
     result = await check_for_updates()
@@ -734,7 +734,7 @@ async def updates_status():
 @router.post("/api/updates/perform")
 async def perform_system_update(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.manage"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Perform system update (admin only)"""
     
@@ -766,7 +766,7 @@ async def perform_system_update(
 
 @router.post("/api/updates/reset")
 async def reset_update(
-    current_user: User = Depends(PermissionChecker("settings.manage"))
+    current_user: User = Depends(PermissionChecker("setting:manage"))
 ):
     """Reset update status (admin only)"""
     reset_update_status()

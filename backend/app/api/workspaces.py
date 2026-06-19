@@ -180,7 +180,7 @@ def list_workspaces(
 def create_workspace(
     data: WorkspaceCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.panel")),
+    current_user: User = Depends(PermissionChecker("setting:update")),
 ):
     """Create a new workspace (admin only)."""
     existing = db.query(Workspace).filter(Workspace.name == data.name).first()
@@ -259,7 +259,7 @@ def update_workspace(
     workspace_id: int,
     data: WorkspaceUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.panel")),
+    current_user: User = Depends(PermissionChecker("setting:update")),
 ):
     """Update workspace name/description/color (admin only)."""
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
@@ -288,7 +288,7 @@ def update_workspace(
 def delete_workspace(
     workspace_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.panel")),
+    current_user: User = Depends(PermissionChecker("setting:update")),
 ):
     """Delete workspace (admin only). Default workspace cannot be deleted."""
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
@@ -318,7 +318,7 @@ def assign_servers(
     workspace_id: int,
     body: _IdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.panel")),
+    current_user: User = Depends(PermissionChecker("setting:update")),
 ):
     """Replace the server list of a workspace (admin only)."""
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
@@ -344,7 +344,7 @@ def remove_server(
     workspace_id: int,
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.panel")),
+    current_user: User = Depends(PermissionChecker("setting:update")),
 ):
     """Remove a single server from a workspace (admin only)."""
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
@@ -369,7 +369,7 @@ def assign_users(
     workspace_id: int,
     body: _IdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.panel")),
+    current_user: User = Depends(PermissionChecker("setting:update")),
 ):
     """Replace the user list of a workspace (admin only)."""
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
@@ -393,7 +393,7 @@ def remove_user(
     workspace_id: int,
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("settings.panel")),
+    current_user: User = Depends(PermissionChecker("setting:update")),
 ):
     """Remove a single user from a workspace (admin only)."""
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()

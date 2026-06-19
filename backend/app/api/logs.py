@@ -91,7 +91,7 @@ async def get_logs(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=500, description="Items per page"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("logs.view"))
+    current_user: User = Depends(PermissionChecker("log:view"))
 ):
     """Get logs with filtering and pagination"""
     
@@ -146,7 +146,7 @@ async def get_logs(
 async def get_log_stats(
     hours: int = Query(24, ge=1, le=720, description="Period in hours"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("logs.view"))
+    current_user: User = Depends(PermissionChecker("log:view"))
 ):
     """Get log statistics for the specified period"""
     stats = LoggingService.get_stats(db, hours=hours)
@@ -157,7 +157,7 @@ async def get_log_stats(
 async def cleanup_logs(
     days: int = Query(30, ge=1, le=365, description="Delete logs older than this many days"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("logs.delete"))
+    current_user: User = Depends(PermissionChecker("log:delete"))
 ):
     """Delete old logs (admin only)"""
     if not current_user.is_admin:

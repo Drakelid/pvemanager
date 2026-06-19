@@ -18,7 +18,7 @@ router = APIRouter()
 def get_server_nodes(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.view"))
+    current_user: User = Depends(PermissionChecker("server:view"))
 ):
     """List nodes for a Proxmox server"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -41,7 +41,7 @@ def list_node_networks(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.view"))
+    current_user: User = Depends(PermissionChecker("server:view"))
 ):
     """List all network interfaces on a node, with IPAM linkage info."""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -84,7 +84,7 @@ async def create_node_network(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Create a new network interface on a node."""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -124,7 +124,7 @@ async def update_node_network(
     iface: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Update a network interface on a node."""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -155,7 +155,7 @@ def delete_node_network(
     node: str,
     iface: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Delete a network interface from a node."""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -184,7 +184,7 @@ def apply_node_network(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Apply pending network configuration changes on a node."""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -213,7 +213,7 @@ def revert_node_network(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.manage"))
+    current_user: User = Depends(PermissionChecker("server:manage"))
 ):
     """Revert pending network configuration changes on a node."""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()

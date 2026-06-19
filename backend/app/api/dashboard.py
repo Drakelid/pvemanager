@@ -14,7 +14,7 @@ router = APIRouter()
 @router.get("/api/dashboard/alerts")
 def get_dashboard_alerts(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("logs.view"))
+    current_user: User = Depends(PermissionChecker("log:view"))
 ):
     """Вернуть события error/critical за последние 24 ч для дашборда"""
     since_24h = utcnow() - timedelta(hours=24)

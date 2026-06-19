@@ -66,7 +66,7 @@ class DeployTaskStatusResponse(BaseModel):
 @router.get("/api/groups", response_model=List[OSTemplateGroupResponse])
 def list_template_groups(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.view"))
+    current_user: User = Depends(PermissionChecker("template:view"))
 ):
     """Получить список всех групп шаблонов"""
     groups = db.query(OSTemplateGroup).order_by(OSTemplateGroup.sort_order).all()
@@ -77,7 +77,7 @@ def list_template_groups(
 def create_template_group(
     group_data: OSTemplateGroupCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.manage"))
+    current_user: User = Depends(PermissionChecker("template:manage"))
 ):
     """Создать новую группу шаблонов"""
     # Check if group with same name exists
@@ -101,7 +101,7 @@ def create_template_group(
 def get_template_group(
     group_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.view"))
+    current_user: User = Depends(PermissionChecker("template:view"))
 ):
     """Получить группу шаблонов по ID"""
     group = db.query(OSTemplateGroup).filter(OSTemplateGroup.id == group_id).first()
@@ -115,7 +115,7 @@ def update_template_group(
     group_id: int,
     group_data: OSTemplateGroupUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.manage"))
+    current_user: User = Depends(PermissionChecker("template:manage"))
 ):
     """Обновить группу шаблонов"""
     group = db.query(OSTemplateGroup).filter(OSTemplateGroup.id == group_id).first()
@@ -137,7 +137,7 @@ def update_template_group(
 def delete_template_group(
     group_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.manage"))
+    current_user: User = Depends(PermissionChecker("template:manage"))
 ):
     """Удалить группу шаблонов"""
     group = db.query(OSTemplateGroup).filter(OSTemplateGroup.id == group_id).first()
@@ -163,7 +163,7 @@ def delete_template_group(
 @router.get("/api/templates", response_model=List[OSTemplateWithGroup])
 def list_os_templates(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.view")),
+    current_user: User = Depends(PermissionChecker("template:view")),
     group_id: int = None,
     server_id: int = None,
     vm_type: Optional[str] = None,
@@ -206,7 +206,7 @@ def list_os_templates(
 def create_os_template(
     template_data: OSTemplateCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.manage"))
+    current_user: User = Depends(PermissionChecker("template:manage"))
 ):
     """Создать новый OS шаблон"""
     # Validate group exists
@@ -243,7 +243,7 @@ def create_os_template(
 def get_os_template(
     template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.view"))
+    current_user: User = Depends(PermissionChecker("template:view"))
 ):
     """Получить OS шаблон по ID"""
     template = db.query(OSTemplate).filter(OSTemplate.id == template_id).first()
@@ -269,7 +269,7 @@ def update_os_template(
     template_id: int,
     template_data: OSTemplateUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.manage"))
+    current_user: User = Depends(PermissionChecker("template:manage"))
 ):
     """Обновить OS шаблон"""
     template = db.query(OSTemplate).filter(OSTemplate.id == template_id).first()
@@ -304,7 +304,7 @@ def update_os_template(
 def delete_os_template(
     template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.manage"))
+    current_user: User = Depends(PermissionChecker("template:manage"))
 ):
     """Удалить OS шаблон"""
     template = db.query(OSTemplate).filter(OSTemplate.id == template_id).first()
@@ -323,7 +323,7 @@ def delete_os_template(
 def discover_proxmox_templates(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.view"))
+    current_user: User = Depends(PermissionChecker("template:view"))
 ):
     """
     Обнаружить все VM-шаблоны на Proxmox сервере.
@@ -562,7 +562,7 @@ def _do_auto_import(server_id: int, username: str):
 def auto_import_templates(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.manage"))
+    current_user: User = Depends(PermissionChecker("template:manage"))
 ):
     """
     Синхронный импорт шаблонов с Proxmox сервера.
@@ -1006,7 +1006,7 @@ def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
 async def deploy_vm_from_template(
     deploy_data: VMDeployRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.create"))
+    current_user: User = Depends(PermissionChecker("vm:create"))
 ):
     """
     Асинхронный деплой VM из шаблона.
@@ -1034,7 +1034,7 @@ async def deploy_vm_from_template(
         raise HTTPException(status_code=400, detail=f"Минимум {template.min_disk} GB диска")
 
     # Resolve owner / SSH keys (admin may target another user)
-    is_admin = current_user.has_permission("users.manage") or current_user.is_admin
+    is_admin = current_user.has_permission("user:manage") or current_user.is_admin
     instance_owner_id = current_user.id
     if deploy_data.owner_id and deploy_data.owner_id != current_user.id:
         if not is_admin:
@@ -1105,7 +1105,7 @@ async def get_deploy_task_status(
 def get_quick_deploy_info(
     template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("templates.view"))
+    current_user: User = Depends(PermissionChecker("template:view"))
 ):
     """Получить информацию для быстрого развертывания VM"""
     template = db.query(OSTemplate).filter(OSTemplate.id == template_id).first()

@@ -33,7 +33,7 @@ def get_networks(
     is_active: Optional[bool] = None,
     proxmox_server_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get all IPAM networks"""
     query = db.query(IPAMNetwork)
@@ -75,7 +75,7 @@ def get_networks(
 def get_network(
     network_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get a specific IPAM network"""
     network = db.query(IPAMNetwork).filter(IPAMNetwork.id == network_id).first()
@@ -98,7 +98,7 @@ def get_network(
 def get_network_stats(
     network_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get detailed statistics for a network"""
     ipam = IPAMService(db)
@@ -114,7 +114,7 @@ def get_network_stats(
 def get_network_ip_map(
     network_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get IP address map for visualization"""
     ipam = IPAMService(db)
@@ -132,7 +132,7 @@ def get_network_ip_map(
 def create_network(
     network_data: IPAMNetworkCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Create a new IPAM network"""
     # Check for duplicate network CIDR
@@ -154,7 +154,7 @@ def update_network(
     network_id: int,
     network_data: IPAMNetworkUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Update an IPAM network"""
     network = db.query(IPAMNetwork).filter(IPAMNetwork.id == network_id).first()
@@ -177,7 +177,7 @@ def delete_network(
     network_id: int,
     force: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Delete an IPAM network"""
     network = db.query(IPAMNetwork).filter(IPAMNetwork.id == network_id).first()
@@ -210,7 +210,7 @@ def get_pools(
     network_id: Optional[int] = None,
     is_active: Optional[bool] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get all IP pools"""
     query = db.query(IPAMPool)
@@ -243,7 +243,7 @@ def get_pools(
 def create_pool(
     pool_data: IPAMPoolCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Create a new IP pool"""
     # Validate network exists
@@ -275,7 +275,7 @@ def update_pool(
     pool_id: int,
     pool_data: IPAMPoolUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Update an IP pool"""
     pool = db.query(IPAMPool).filter(IPAMPool.id == pool_id).first()
@@ -309,7 +309,7 @@ def update_pool(
 def delete_pool(
     pool_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Delete an IP pool"""
     pool = db.query(IPAMPool).filter(IPAMPool.id == pool_id).first()
@@ -337,7 +337,7 @@ def get_allocations(
     limit: int = Query(default=100, le=1000),
     offset: int = 0,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get IP allocations with filtering"""
     query = db.query(IPAMAllocation)
@@ -400,7 +400,7 @@ def get_allocations(
 def get_allocation(
     allocation_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get a specific allocation"""
     allocation = db.query(IPAMAllocation).filter(IPAMAllocation.id == allocation_id).first()
@@ -421,7 +421,7 @@ def get_allocation(
 def create_allocation(
     alloc_data: IPAMAllocationCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Manually create an IP allocation"""
     ipam = IPAMService(db)
@@ -454,7 +454,7 @@ def create_allocation(
 def auto_allocate_ip(
     request: IPAMAutoAllocateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Automatically allocate the next available IP"""
     ipam = IPAMService(db)
@@ -480,7 +480,7 @@ def update_allocation(
     allocation_id: int,
     alloc_data: IPAMAllocationUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Update an allocation"""
     allocation = db.query(IPAMAllocation).filter(IPAMAllocation.id == allocation_id).first()
@@ -505,7 +505,7 @@ def delete_allocation(
     allocation_id: int,
     reason: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """Release/delete an IP allocation"""
     allocation = db.query(IPAMAllocation).filter(IPAMAllocation.id == allocation_id).first()
@@ -530,7 +530,7 @@ def get_next_available_ip(
     network_id: int,
     pool_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get the next available IP in a network (without allocating)"""
     ipam = IPAMService(db)
@@ -551,7 +551,7 @@ def get_history(
     action: Optional[str] = None,
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get IPAM history"""
     query = db.query(IPAMHistory)
@@ -573,7 +573,7 @@ def get_ip_history(
     ip_address: str,
     limit: int = Query(default=50, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get history for a specific IP address"""
     ipam = IPAMService(db)
@@ -586,7 +586,7 @@ def get_ip_history(
 def detect_conflicts(
     network_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Detect IP address conflicts"""
     ipam = IPAMService(db)
@@ -597,7 +597,7 @@ def detect_conflicts(
 @router.get("/api/summary")
 def get_ipam_summary(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.view"))
+    current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
     """Get overall IPAM summary"""
     networks_count = db.query(IPAMNetwork).filter(IPAMNetwork.is_active == True).count()
@@ -640,7 +640,7 @@ def get_ipam_summary(
 @router.get("/api/orphans")
 def get_orphan_allocations(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """
     Get orphan IPAM allocations - IPs allocated to VMs that no longer exist.
@@ -704,7 +704,7 @@ def get_orphan_allocations(
 @router.post("/api/cleanup-orphans")
 async def cleanup_orphan_allocations(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """
     Clean up orphan IPAM allocations - release IPs for VMs that no longer exist.
@@ -762,7 +762,7 @@ def _extract_primary_ipv4(interfaces: list, parsed_networks: list):
 @router.get("/api/unlinked")
 def get_unlinked_allocations(
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """
     Return VM instances that have no IPAM allocation linked to them (by vmid+server_id).
@@ -813,7 +813,7 @@ class LinkAllocationsRequest(BaseModel):
 def link_allocations_to_vms(
     body: LinkAllocationsRequest = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("ipam.manage"))
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """
     Scan Proxmox servers, get VM IP addresses via QEMU guest agent / LXC config,

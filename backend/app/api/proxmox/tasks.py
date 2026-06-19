@@ -85,7 +85,7 @@ def get_task_status(
     upid: str,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить статус задачи по UPID"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -115,7 +115,7 @@ def get_task_log(
     start: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить лог задачи по UPID"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()

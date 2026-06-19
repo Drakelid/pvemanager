@@ -27,7 +27,7 @@ async def get_notifications(
     level: Optional[str] = Query(None, description="Filter by level: critical, warning, info, success"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """
@@ -58,7 +58,7 @@ async def get_notifications(
 
 @router.get("/unread-count")
 async def get_unread_count(
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """Get count of unread notifications"""
@@ -69,7 +69,7 @@ async def get_unread_count(
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)
 async def mark_notification_as_read(
     notification_id: int,
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """Mark notification as read"""
@@ -87,7 +87,7 @@ async def mark_notification_as_read(
 
 @router.post("/mark-all-read")
 async def mark_all_notifications_as_read(
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """Mark all notifications as read"""
@@ -98,7 +98,7 @@ async def mark_all_notifications_as_read(
 @router.delete("/{notification_id}")
 async def delete_notification(
     notification_id: int,
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """Delete a notification"""
@@ -116,7 +116,7 @@ async def delete_notification(
 
 @router.delete("/read/all")
 async def delete_all_read_notifications(
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """Delete all read notifications"""
@@ -128,7 +128,7 @@ async def delete_all_read_notifications(
 
 @router.get("/preferences", response_model=NotificationPreferenceResponse)
 async def get_notification_preferences(
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """Get user notification preferences"""
@@ -139,7 +139,7 @@ async def get_notification_preferences(
 @router.put("/preferences", response_model=NotificationPreferenceResponse)
 async def update_notification_preferences(
     prefs_data: NotificationPreferenceUpdate,
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """Update user notification preferences"""
@@ -157,7 +157,7 @@ async def update_notification_preferences(
 
 @router.get("/channels/status")
 async def get_channels_status(
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """
@@ -175,7 +175,7 @@ async def get_channels_status(
 @router.post("/test")
 async def send_test_notification(
     channel: str = Query("all", description="Channel to test: all, email, telegram, inapp"),
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """
@@ -193,7 +193,7 @@ async def send_test_notification(
 @router.post("/telegram/verify")
 async def verify_telegram_chat(
     chat_id: str = Query(..., description="Telegram chat ID to verify"),
-    current_user: User = Depends(PermissionChecker("notifications.manage")),
+    current_user: User = Depends(PermissionChecker("notification:manage")),
     db: Session = Depends(get_db)
 ):
     """
@@ -237,7 +237,7 @@ async def verify_telegram_chat(
 
 @router.get("/telegram/bot-info")
 async def get_telegram_bot_info(
-    current_user: User = Depends(PermissionChecker("notifications.manage"))
+    current_user: User = Depends(PermissionChecker("notification:manage"))
 ):
     """Get information about the configured Telegram bot"""
     from ..services.notification_channels import get_telegram_channel

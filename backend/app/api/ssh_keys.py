@@ -174,7 +174,7 @@ async def download_my_private_key(
 async def list_user_ssh_keys(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.manage")),
+    current_user: User = Depends(PermissionChecker("user:manage")),
 ):
     """Admin: list a user's SSH keys."""
     _ensure_target_user(db, user_id)
@@ -197,7 +197,7 @@ async def admin_create_user_ssh_key(
     data: SSHKeyCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.manage")),
+    current_user: User = Depends(PermissionChecker("user:manage")),
 ):
     target = _ensure_target_user(db, user_id)
     return _create_key_for_user(db, request, current_user, target.id, data)
@@ -213,7 +213,7 @@ async def admin_update_user_ssh_key(
     data: SSHKeyUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.manage")),
+    current_user: User = Depends(PermissionChecker("user:manage")),
 ):
     _ensure_target_user(db, user_id)
     return _update_key(db, request, current_user, user_id, key_id, data)
@@ -225,7 +225,7 @@ async def admin_delete_user_ssh_key(
     key_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.manage")),
+    current_user: User = Depends(PermissionChecker("user:manage")),
 ):
     _ensure_target_user(db, user_id)
     return _delete_key(db, request, current_user, user_id, key_id)
@@ -236,7 +236,7 @@ async def admin_download_user_private_key(
     user_id: int,
     key_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("users.manage")),
+    current_user: User = Depends(PermissionChecker("user:manage")),
 ):
     _ensure_target_user(db, user_id)
     return _read_private_key(db, user_id, key_id)
@@ -427,7 +427,7 @@ def resolve_ssh_keys_for_deploy(
         return ""
 
     allowed_owners = {requester.id}
-    is_admin = requester.has_permission("users.manage") or requester.is_admin
+    is_admin = requester.has_permission("user:manage") or requester.is_admin
     if is_admin and instance_owner_id:
         allowed_owners.add(instance_owner_id)
 

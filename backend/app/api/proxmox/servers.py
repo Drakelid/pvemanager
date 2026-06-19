@@ -29,7 +29,7 @@ router = APIRouter()
 def list_proxmox_servers(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.view"))
+    current_user: User = Depends(PermissionChecker("server:view"))
 ):
     """Получить список всех Proxmox серверов (фильтруется по активному workspace)"""
     from ...api.workspaces import get_workspace_server_ids
@@ -83,7 +83,7 @@ def list_proxmox_servers(
 def create_proxmox_server(
     server_data: ProxmoxServerCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.servers.add"))
+    current_user: User = Depends(PermissionChecker("server:create"))
 ):
     """Добавить новый Proxmox сервер"""
     # Разрешаем несколько серверов с одинаковым IP (например, разные порты или кластеры)
@@ -152,7 +152,7 @@ def create_proxmox_server(
 def get_proxmox_server(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.view"))
+    current_user: User = Depends(PermissionChecker("server:view"))
 ):
     """Получить информацию о конкретном Proxmox сервере"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -165,7 +165,7 @@ def get_proxmox_server(
 def get_server_cluster_info(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.view"))
+    current_user: User = Depends(PermissionChecker("server:view"))
 ):
     """
     Получить информацию о кластерном режиме сервера.
@@ -216,7 +216,7 @@ def update_proxmox_server(
     server_id: int,
     server_data: ProxmoxServerUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.servers.edit"))
+    current_user: User = Depends(PermissionChecker("server:update"))
 ):
     """Обновить Proxmox сервер"""
     from ...proxmox import clear_server_cache
@@ -290,7 +290,7 @@ def update_proxmox_server(
 def delete_proxmox_server(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.servers.delete"))
+    current_user: User = Depends(PermissionChecker("server:delete"))
 ):
     """Удалить Proxmox сервер и связанные OS Templates"""
     from ...proxmox import clear_server_cache
@@ -378,7 +378,7 @@ def delete_proxmox_server(
 @router.post("/api/servers/test", status_code=status.HTTP_200_OK)
 def test_proxmox_credentials(
     payload: ProxmoxServerCreate,
-    current_user: User = Depends(PermissionChecker("proxmox.view"))
+    current_user: User = Depends(PermissionChecker("server:view"))
 ):
     """Проверить произвольные учётные данные Proxmox без сохранения в БД."""
     try:
@@ -410,7 +410,7 @@ def test_proxmox_credentials(
 def test_proxmox_connection(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.view"))
+    current_user: User = Depends(PermissionChecker("server:view"))
 ):
     """Проверить подключение к Proxmox серверу"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -443,7 +443,7 @@ def test_proxmox_connection(
 def get_server_resources(
     server_id: int, 
     db: Session = Depends(get_db), 
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """API для получения всех ресурсов (VM + LXC) с Proxmox сервера"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -514,7 +514,7 @@ def get_server_resources(
 @router.get("/api/resources/all")
 def get_all_resources(
     db: Session = Depends(get_db), 
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """API для получения всех ресурсов со всех Proxmox серверов"""
     proxmox_servers = db.query(ProxmoxServer).all()
@@ -595,7 +595,7 @@ def get_storages(
     node: str = Query(..., description="Node name"),
     content_type: str = Query(None, description="Filter by content type (images, rootdir, vztmpl, etc)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("proxmox.view"))
+    current_user: User = Depends(PermissionChecker("server:view"))
 ):
     """Получить список хранилищ на ноде Proxmox"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -633,7 +633,7 @@ def get_node_status(
     server_id: int,
     node: str = Query(..., description="Node name"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить текущий статус ноды Proxmox (хоста)"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -662,7 +662,7 @@ def get_node_rrddata(
     node: str = Query(..., description="Node name"),
     timeframe: str = Query("hour", regex="^(hour|day|week|month|year)$"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vms.view"))
+    current_user: User = Depends(PermissionChecker("vm:view"))
 ):
     """Получить исторические данные ноды для графиков"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
