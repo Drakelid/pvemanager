@@ -216,12 +216,20 @@ def mock_proxmox():
     mock_client_instance.delete_vm.return_value = "UPID:pve1:00001D4C:00000000:666:qvmdelete:100:testadmin:"
     mock_client_instance.delete_container.return_value = "UPID:pve1:00001D4C:00000000:666:ctdelete:200:testadmin:"
     
-    with patch("app.proxmox.client.ProxmoxClient", return_value=mock_client_instance), \
-         patch("app.proxmox.ProxmoxClient", return_value=mock_client_instance), \
-         patch("app.api.proxmox._helpers.ProxmoxClient", return_value=mock_client_instance), \
+    with patch("app.proxmox.client.ProxmoxClient") as mock_client_cls_a, \
+         patch("app.proxmox.ProxmoxClient") as mock_client_cls_b, \
+         patch("app.api.proxmox._helpers.ProxmoxClient") as mock_client_cls_c, \
          patch("app.api.proxmox._helpers._get_proxmox_client", return_value=mock_client_instance), \
          patch("app.proxmox.get_proxmox_resources") as mock_resources:
-         
+
+        # Clients are now built via the ``ProxmoxClient.from_server`` classmethod
+        # (see commit d66928e). Wire both the constructor call and ``from_server``
+        # to return the configured instance so every construction path resolves
+        # to the same mock.
+        for mock_cls in (mock_client_cls_a, mock_client_cls_b, mock_client_cls_c):
+            mock_cls.return_value = mock_client_instance
+            mock_cls.from_server.return_value = mock_client_instance
+
         mock_resources.return_value = mock_client_instance.get_all_resources()
         yield {
             "client": mock_client_instance,
