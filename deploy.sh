@@ -244,7 +244,10 @@ create_env_file() {
     # Generate random passwords and keys
     local RANDOM_DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
     local RANDOM_SECRET_KEY=$(openssl rand -hex 32)
-    
+    # Fernet key: url-safe base64 of 32 random bytes (same format as
+    # cryptography.fernet.Fernet.generate_key())
+    local RANDOM_FERNET_KEY=$(openssl rand -base64 32 | tr '+/' '-_')
+
     # Ensure required directories exist
     mkdir -p logs nginx/conf.d nginx/ssl nginx/certbot/conf nginx/certbot/www
     
@@ -330,7 +333,9 @@ EOF
         # Replace passwords and keys
         sed -i "s/pvemanager_secure_password/${RANDOM_DB_PASSWORD}/g" backend/.env
         sed -i "s/your-very-secure-secret-key-change-this-in-production-minimum-32-chars/${RANDOM_SECRET_KEY}/g" backend/.env
-        
+        # Fill the (empty) FERNET_KEY so sensitive fields are encrypted at rest
+        sed -i "s|^FERNET_KEY=.*|FERNET_KEY=${RANDOM_FERNET_KEY}|" backend/.env
+
         print_success "backend/.env file created"
     else
         print_info "backend/.env file already exists"
@@ -449,8 +454,10 @@ build_images_resilient() {
 # repeated deploys to fail with backend stuck in a restart loop.
 check_stale_db_volume() {
     local volume_name
-    # Compose v2 prefixes volumes with the project (folder) name
-    volume_name="$(basename "$(pwd)")_postgres_data"
+    # Compose v2 prefixes volumes with the project (folder) name.
+    # The volume key in compose.yml is `db_data`, so the real name is
+    # <project>_db_data (NOT _postgres_data).
+    volume_name="$(basename "$(pwd)")_db_data"
 
     if ! docker volume inspect "$volume_name" >/dev/null 2>&1; then
         return 0  # no volume yet, fresh install
@@ -719,7 +726,8 @@ quick_deploy_standalone() {
     
     local RANDOM_DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
     local RANDOM_SECRET_KEY=$(openssl rand -hex 32)
-    
+    local RANDOM_FERNET_KEY=$(openssl rand -base64 32 | tr '+/' '-_')
+
     if [ ! -f .env ]; then
         if [ -f .env.example ]; then
             cp .env.example .env
@@ -734,8 +742,9 @@ quick_deploy_standalone() {
             cp backend/.env.example backend/.env
             sed -i "s/pvemanager_secure_password/${RANDOM_DB_PASSWORD}/g" backend/.env 2>/dev/null || true
             sed -i "s/your-very-secure-secret-key-change-this-in-production-minimum-32-chars/${RANDOM_SECRET_KEY}/g" backend/.env 2>/dev/null || true
+            sed -i "s|^FERNET_KEY=.*|FERNET_KEY=${RANDOM_FERNET_KEY}|" backend/.env 2>/dev/null || true
         else
-            create_default_backend_env "${RANDOM_DB_PASSWORD}" "${RANDOM_SECRET_KEY}"
+            create_default_backend_env "${RANDOM_DB_PASSWORD}" "${RANDOM_SECRET_KEY}" "${RANDOM_FERNET_KEY}"
         fi
     fi
     
@@ -766,7 +775,8 @@ quick_deploy_nginx() {
     
     local RANDOM_DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
     local RANDOM_SECRET_KEY=$(openssl rand -hex 32)
-    
+    local RANDOM_FERNET_KEY=$(openssl rand -base64 32 | tr '+/' '-_')
+
     if [ ! -f .env ]; then
         if [ -f .env.example ]; then
             cp .env.example .env
@@ -781,8 +791,9 @@ quick_deploy_nginx() {
             cp backend/.env.example backend/.env
             sed -i "s/pvemanager_secure_password/${RANDOM_DB_PASSWORD}/g" backend/.env 2>/dev/null || true
             sed -i "s/your-very-secure-secret-key-change-this-in-production-minimum-32-chars/${RANDOM_SECRET_KEY}/g" backend/.env 2>/dev/null || true
+            sed -i "s|^FERNET_KEY=.*|FERNET_KEY=${RANDOM_FERNET_KEY}|" backend/.env 2>/dev/null || true
         else
-            create_default_backend_env "${RANDOM_DB_PASSWORD}" "${RANDOM_SECRET_KEY}"
+            create_default_backend_env "${RANDOM_DB_PASSWORD}" "${RANDOM_SECRET_KEY}" "${RANDOM_FERNET_KEY}"
         fi
     fi
     
@@ -810,6 +821,7 @@ EOF
 create_default_backend_env() {
     local db_password="${1:-pvemanager_secure_password}"
     local secret_key="${2:-your-very-secure-secret-key-change-this-in-production-minimum-32-chars}"
+    local fernet_key="${3:-$(openssl rand -base64 32 | tr '+/' '-_')}"
     cat > backend/.env << EOF
 PANEL_NAME=PVEmanager
 DEBUG=false
@@ -821,6 +833,7 @@ DB_PASSWORD=${db_password}
 DB_NAME=pvemanager
 DATABASE_URL=postgresql://pvemanager:${db_password}@db:5432/pvemanager
 SECRET_KEY=${secret_key}
+FERNET_KEY=${fernet_key}
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 SSH_TIMEOUT=10
