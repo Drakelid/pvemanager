@@ -28,6 +28,10 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      '/logs': {
+        target: backendUrl,
+        changeOrigin: true,
+      },
     },
   },
 })

@@ -54,7 +54,7 @@ interface ResourceCardProps {
 
 function ResourceCard({ label, percent, used, total, icon: Icon }: ResourceCardProps) {
   const barColor =
-    percent >= 90 ? 'bg-red' : percent >= 70 ? 'bg-amber' : 'bg-green';
+    percent >= 90 ? 'bg-red-500' : percent >= 70 ? 'bg-amber-500' : 'bg-green-500';
 
   return (
     <Card>
@@ -66,7 +66,7 @@ function ResourceCard({ label, percent, used, total, icon: Icon }: ResourceCardP
           </span>
         </div>
         <p className="mb-2 text-2xl font-bold tabular-nums">{percent.toFixed(1)}%</p>
-        <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="mb-2 h-2 overflow-hidden rounded-full bg-white/10">
           <div
             className={`h-full rounded-full transition-all ${barColor}`}
             style={{ width: `${Math.min(percent, 100)}%` }}
@@ -92,10 +92,10 @@ interface ActivityItem {
 function ActivityFeed({ items }: { items: ActivityItem[] }) {
   const { t } = useTranslation();
   const typeColor: Record<string, string> = {
-    success: 'bg-green/20 text-green',
-    error: 'bg-red/20 text-red',
-    warning: 'bg-amber/20 text-amber',
-    info: 'bg-blue/20 text-blue',
+    success: 'bg-green-500/20 text-green-500',
+    error: 'bg-red-500/20 text-red-500',
+    warning: 'bg-amber-500/20 text-amber-500',
+    info: 'bg-blue-500/20 text-blue-500',
   };
 
   return (
@@ -163,7 +163,7 @@ export default function DashboardPage() {
   // Fetch recent activity from audit logs
   const { data: recentLogs } = useQuery({
     queryKey: ['dashboard-activity'],
-    queryFn: () => apiClient.get<{ items: Array<{ timestamp: string; username?: string; message: string; category?: string; level?: string }> }>('/logs/api/logs?limit=10'),
+    queryFn: () => apiClient.get<{ logs: Array<{ created_at: string; username?: string; message: string; category?: string; level?: string }> }>('/logs/api/logs?limit=10'),
     refetchInterval: 30000,
   });
 
@@ -309,7 +309,7 @@ export default function DashboardPage() {
                 <div key={i} className="flex items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50">
                   <span
                     className={`h-2 w-2 shrink-0 rounded-full ${
-                      vm.status === 'running' ? 'bg-green' : 'bg-muted-foreground'
+                      vm.status === 'running' ? 'bg-green-500' : 'bg-muted-foreground'
                     }`}
                   />
                   <span className="min-w-0 flex-1 truncate font-medium">
@@ -329,8 +329,8 @@ export default function DashboardPage() {
         </Card>
 
         {/* Activity */}
-        <ActivityFeed items={(recentLogs?.items ?? []).map((log) => {
-          const d = new Date(log.timestamp);
+        <ActivityFeed items={(recentLogs?.logs ?? []).map((log) => {
+          const d = new Date(log.created_at);
           return {
             time: `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`,
             user: log.username,
