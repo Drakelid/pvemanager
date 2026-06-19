@@ -298,32 +298,45 @@ export default function DashboardPage() {
 
       {/* Bottom row */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Recent instances */}
+        {/* Top loaded instances */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold">{t('dashboard.instances', 'Instances')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {allVMs.slice(0, 6).map((vm, i) => (
-                <div key={i} className="flex items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50">
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      vm.status === 'running' ? 'bg-green-500' : 'bg-muted-foreground'
-                    }`}
-                  />
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {String(vm.name ?? `VM ${vm.vmid}`)}
-                  </span>
-                  <Badge variant="secondary" className="text-[10px]">
-                    {String(vm.type ?? 'vm').toUpperCase()}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">{String(vm.node ?? '')}</span>
-                </div>
-              ))}
-              {allVMs.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">{t('common.no_data')}</p>
-              )}
+              {(() => {
+                const topInstances = allVMs
+                  .filter((v) => v.status === 'running' && Number(v.cpu) > 0)
+                  .sort((a, b) => Number(b.cpu) - Number(a.cpu))
+                  .slice(0, 10);
+                if (topInstances.length === 0) {
+                  return <p className="py-4 text-center text-sm text-muted-foreground">{t('common.no_data')}</p>;
+                }
+                return topInstances.map((vm, i) => {
+                  const cpuPct = Math.min(Number(vm.cpu) * 100, 100);
+                  const barColor = cpuPct >= 90 ? 'bg-red-500' : cpuPct >= 70 ? 'bg-amber-500' : 'bg-green-500';
+                  return (
+                    <div key={i} className="flex items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50">
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
+                      <span className="min-w-0 flex-1 truncate font-medium">
+                        {String(vm.name ?? `VM ${vm.vmid}`)}
+                      </span>
+                      <div className="flex w-20 shrink-0 items-center gap-1.5">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${cpuPct}%` }} />
+                        </div>
+                        <span className="w-9 text-right text-[11px] tabular-nums text-muted-foreground">
+                          {cpuPct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {String(vm.type ?? 'vm').toUpperCase()}
+                      </Badge>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </CardContent>
         </Card>
