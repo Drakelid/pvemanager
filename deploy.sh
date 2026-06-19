@@ -644,7 +644,7 @@ show_deployment_info() {
     else
         local server_ip
         server_ip=$(get_server_ip)
-        echo "📍 Access URL: http://${server_ip}:8000"
+        echo "📍 Access URL: http://${server_ip}:3001"
         echo "🔒 SSL: Not configured (standalone mode)"
     fi
 
@@ -676,7 +676,7 @@ main() {
     # Ask deployment mode
     echo ""
     print_info "Select deployment mode:"
-    echo "  1) Standalone (without NGINX, direct port 8000)"
+    echo "  1) Standalone (without NGINX, direct port 3001)"
     echo "  2) Production with NGINX (HTTP only)"
     echo "  3) Production with NGINX and SSL (HTTPS)"
     echo ""
@@ -1016,7 +1016,7 @@ show_help() {
     echo "  $0                          Run interactive deployment wizard"
     echo ""
     echo "Quick deploy options:"
-    echo "  $0 --standalone             Deploy without NGINX (port 8000)"
+    echo "  $0 --standalone             Deploy without NGINX (port 3001)"
     echo "  $0 --nginx <domain>         Deploy with NGINX (HTTP only)"
     echo "  $0 --nginx <domain> <email> Deploy with NGINX and SSL (HTTPS)"
     echo ""
