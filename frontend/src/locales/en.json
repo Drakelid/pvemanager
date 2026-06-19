@@ -583,6 +583,7 @@
     "linked": "Linked",
     "ip_history": "IP history lookup",
     "pool_required_hint": "Auto-allocation requires an auto-assign pool in the network.",
+    "resource_required": "Please specify a resource before allocating an IP.",
     "dashboard": "IPAM Dashboard",
     "networks": "Networks",
     "networks_count": "Networks",

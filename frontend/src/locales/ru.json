@@ -583,6 +583,7 @@
     "linked": "Связано",
     "ip_history": "История по IP",
     "pool_required_hint": "Авто-выделение требует пул с auto-assign в сети.",
+    "resource_required": "Укажите ресурс перед выделением IP.",
     "dashboard": "IPAM Дашборд",
     "networks": "Сети",
     "networks_count": "Сетей",

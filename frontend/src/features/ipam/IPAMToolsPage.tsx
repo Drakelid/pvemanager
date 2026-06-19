@@ -97,6 +97,7 @@ function AllocateCard() {
   };
   const handleAllocate = () => {
     if (!networkId) { toast.error(t('ipam.select_network')); return; }
+    if (!resourceName.trim()) { toast.error(t('ipam.resource_required')); return; }
     autoAllocate.mutate(
       { network_id: Number(networkId), resource_name: resourceName || undefined, hostname: hostname || undefined },
       {

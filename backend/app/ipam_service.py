@@ -707,8 +707,16 @@ class IPAMService:
                     last_seen=utcnow()
                 )
             else:
-                # Just update last_seen
+                # vmid/server already match — update last_seen and fill missing resource_name/node
                 existing.last_seen = utcnow()
+                if not existing.resource_name and vm_name:
+                    existing.resource_name = vm_name
+                if not existing.proxmox_node and node:
+                    existing.proxmox_node = node
+                if not existing.resource_type and vm_type:
+                    existing.resource_type = vm_type
+                if mac_address and not existing.mac_address:
+                    existing.mac_address = mac_address
                 self.db.commit()
                 return existing, None
         
