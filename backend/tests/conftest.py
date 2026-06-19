@@ -96,7 +96,7 @@ def clean_database():
         user_role = Role(
             name="user", 
             display_name="User", 
-            permissions={"proxmox.view": True, "vms.view": True}, 
+            permissions={"server:view": True, "vm:view": True},
             is_system=True
         )
         db.add_all([admin_role, user_role])

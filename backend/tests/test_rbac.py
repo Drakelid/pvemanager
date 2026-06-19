@@ -47,9 +47,15 @@ class TestEngineHasPermission:
         assert rbac.PermissionEngine.has_permission(user, "vm:view") is True
         assert rbac.PermissionEngine.has_permission(user, "vm:delete") is False
 
-    def test_legacy_grant_resolves_to_new(self, rbac, fake_user_factory):
+    def test_legacy_keys_not_resolved_at_runtime(self, rbac, fake_user_factory):
+        # Roles are migrated to the new ``resource:action`` format once at
+        # startup (RBAC v2 DB migration). The engine no longer resolves legacy
+        # dot-format keys at request time, so a role still holding a legacy key
+        # grants nothing until it has been migrated.
         user = fake_user_factory(permissions={"vms.create": True})
-        assert rbac.PermissionEngine.has_permission(user, "vm:create") is True
+        assert rbac.PermissionEngine.has_permission(user, "vm:create") is False
+        # The migration utility is what bridges the formats, not the engine.
+        assert rbac.resolve_permission("vms.create") == "vm:create"
 
     def test_wildcard_grants_all_actions_on_resource(self, rbac, fake_user_factory):
         user = fake_user_factory(permissions={"vm:*": True})

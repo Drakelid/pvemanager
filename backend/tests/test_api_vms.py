@@ -62,9 +62,10 @@ class TestAPIVirtualMachines:
         # First restrict user's permissions to 'vms.view.own'
         user_role = seed_users["user"].role
         old_perms = dict(user_role.permissions)
-        # We need both 'vms.view' (to pass the endpoint route dependency) 
-        # and 'vms.view.own' (to fail the `require_vm_access` owner check).
-        user_role.permissions = {"proxmox.view": True, "vms.view": True, "vms.view.own": True}
+        # We need both 'vm:view' (to pass the endpoint route dependency)
+        # and the 'vms.view.own' ownership flag (to fail the `require_vm_access`
+        # owner check, which reads that key directly).
+        user_role.permissions = {"server:view": True, "vm:view": True, "vms.view.own": True}
         db_session.commit()
         
         response = client.get(

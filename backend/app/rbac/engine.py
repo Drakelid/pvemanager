@@ -9,12 +9,10 @@ from fastapi import HTTPException, status
 from loguru import logger
 
 from .permissions import (
-    Permission, 
-    PermissionRegistry, 
-    PERMISSIONS, 
+    Permission,
+    PermissionRegistry,
+    PERMISSIONS,
     ScopeType,
-    resolve_permission,
-    LEGACY_PERMISSION_MAP
 )
 
 
@@ -36,19 +34,14 @@ class PermissionEngine:
         if getattr(user, 'is_admin', False):
             return {p.code for p in PERMISSIONS.all()}
         
-        # Get permissions from role
+        # Get permissions from role. Roles are stored in the new
+        # ``resource:action`` format (legacy keys are converted once at startup
+        # by the RBAC v2 DB migration), so no runtime resolution is needed.
         if user.role and user.role.permissions:
-            role_perms = user.role.permissions
-            for perm_code, enabled in role_perms.items():
+            for perm_code, enabled in user.role.permissions.items():
                 if enabled:
-                    # Resolve legacy to new format
-                    resolved = resolve_permission(perm_code)
-                    permissions.add(resolved)
-                    
-                    # Also keep legacy for backwards compatibility
-                    if perm_code != resolved:
-                        permissions.add(perm_code)
-        
+                    permissions.add(perm_code)
+
         return permissions
     
     @staticmethod
@@ -80,29 +73,26 @@ class PermissionEngine:
         
         # Get user permissions
         user_permissions = PermissionEngine.get_user_permissions(user)
-        
-        # Resolve permission code
-        resolved_perm = resolve_permission(permission)
-        
-        # Check direct permission
-        if resolved_perm in user_permissions or permission in user_permissions:
+
+        # Check direct permission (new resource:action format)
+        if permission in user_permissions:
             return True
-        
+
         # Check wildcard permissions (e.g., vm:* grants all vm permissions)
-        resource = resolved_perm.split(':')[0] if ':' in resolved_perm else permission.split('.')[0]
+        resource = permission.split(':')[0]
         wildcard = f"{resource}:*"
         if wildcard in user_permissions:
             return True
-        
+
         # Check manage permission (implies most actions)
         manage_perm = f"{resource}:manage"
         if manage_perm in user_permissions:
             # manage implies view, update, and some actions
-            action = resolved_perm.split(':')[1] if ':' in resolved_perm else None
+            action = permission.split(':')[1] if ':' in permission else None
             implied_actions = {'view', 'list', 'update', 'start', 'stop', 'restart'}
             if action in implied_actions:
                 return True
-        
+
         return False
     
     @staticmethod

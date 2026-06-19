@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from .engine import PermissionEngine
-from .permissions import ScopeType, resolve_permission
+from .permissions import ScopeType
 
 
 class PermissionChecker:
