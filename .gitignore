@@ -1,4 +1,3 @@
-```
 # Compiled and build artifacts
 *.pyc
 __pycache__/
@@ -69,4 +68,9 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-```
+
+# graphify knowledge-graph output (generated)
+graphify-out/
+
+# Claude Code local preview config
+.claude/launch.json
