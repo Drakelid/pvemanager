@@ -336,6 +336,10 @@ export interface IPAMAllocation {
   proxmox_node?: string;
   status: 'allocated' | 'reserved' | 'available' | 'conflict';
   description?: string;
+  hostname?: string;
+  fqdn?: string;
+  allocation_type?: string;
+  notes?: string;
   created_at: string;
   updated_at: string;
 }

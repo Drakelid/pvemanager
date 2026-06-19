@@ -37,10 +37,18 @@ export function useIPAMNetworkStats(id: number) {
   });
 }
 
+export interface IPAMIPMapEntry {
+  ip: string;
+  status: 'gateway' | 'allocated' | 'reserved' | 'available' | string;
+  resource_name?: string | null;
+  resource_type?: string | null;
+  last_seen?: string | null;
+}
+
 export function useIPAMIPMap(id: number) {
   return useQuery({
     queryKey: ipamKeys.ipMap(id),
-    queryFn: () => apiClient.get<{ network_id: number; ip_map: unknown[] }>(`/ipam/api/networks/${id}/ip-map`),
+    queryFn: () => apiClient.get<{ network_id: number; ip_map: IPAMIPMapEntry[] }>(`/ipam/api/networks/${id}/ip-map`),
     enabled: id > 0,
   });
 }
@@ -109,8 +117,46 @@ export function useUpdateNetwork() {
 export function useDeleteNetwork() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => apiClient.delete(`/ipam/api/networks/${id}`),
+    mutationFn: ({ id, force }: { id: number; force?: boolean }) =>
+      apiClient.delete(`/ipam/api/networks/${id}${force ? '?force=true' : ''}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ipamKeys.networks }),
+  });
+}
+
+// ==================== Pools ====================
+
+export function useCreatePool() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<IPAMPool>) => apiClient.post<IPAMPool>('/ipam/api/pools', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ipam-pools'] });
+      qc.invalidateQueries({ queryKey: ['ipam-network-stats'] });
+      qc.invalidateQueries({ queryKey: ipamKeys.summary });
+    },
+  });
+}
+
+export function useUpdatePool() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: Partial<IPAMPool> & { id: number }) =>
+      apiClient.put<IPAMPool>(`/ipam/api/pools/${id}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ipam-pools'] });
+      qc.invalidateQueries({ queryKey: ['ipam-network-stats'] });
+    },
+  });
+}
+
+export function useDeletePool() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => apiClient.delete(`/ipam/api/pools/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ipam-pools'] });
+      qc.invalidateQueries({ queryKey: ['ipam-network-stats'] });
+    },
   });
 }
 
@@ -118,6 +164,19 @@ export function useCreateAllocation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Partial<IPAMAllocation>) => apiClient.post<IPAMAllocation>('/ipam/api/allocations', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ipam-allocations'] });
+      qc.invalidateQueries({ queryKey: ipamKeys.summary });
+      qc.invalidateQueries({ queryKey: ['ipam-network-stats'] });
+    },
+  });
+}
+
+export function useUpdateAllocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: Partial<IPAMAllocation> & { id: number }) =>
+      apiClient.put<IPAMAllocation>(`/ipam/api/allocations/${id}`, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ipam-allocations'] }),
   });
 }
@@ -126,7 +185,11 @@ export function useDeleteAllocation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => apiClient.delete(`/ipam/api/allocations/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ipam-allocations'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ipam-allocations'] });
+      qc.invalidateQueries({ queryKey: ipamKeys.summary });
+      qc.invalidateQueries({ queryKey: ['ipam-network-stats'] });
+    },
   });
 }
 
