@@ -263,7 +263,9 @@ export default function InstancesPage() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [serverFilter, setServerFilter] = useState<string>('all');
+  const [serverFilter, setServerFilter] = useState<string>(() => {
+    return localStorage.getItem('instances-server-filter') ?? 'all';
+  });
   const [nodeFilter, setNodeFilter] = useState<string>(() => {
     return localStorage.getItem('instances-node-filter') ?? 'all';
   });
@@ -721,7 +723,7 @@ export default function InstancesPage() {
         </Select>
 
         {servers.length > 1 && (
-          <Select value={serverFilter} onValueChange={v => { if (v !== null) { setServerFilter(v); setNodeFilter('all'); } }}>
+          <Select value={serverFilter} onValueChange={v => { if (v !== null) { setServerFilter(v); localStorage.setItem('instances-server-filter', v); setNodeFilter('all'); localStorage.setItem('instances-node-filter', 'all'); } }}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder={t('backups.select_server', 'Server')} />
             </SelectTrigger>
