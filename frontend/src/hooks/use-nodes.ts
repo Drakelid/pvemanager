@@ -68,7 +68,9 @@ export function useClusterTopology() {
 export function useStorages(serverId: number, node: string) {
   return useQuery({
     queryKey: nodeKeys.storages(serverId, node),
-    queryFn: () => apiClient.get<unknown[]>(`/proxmox/api/${serverId}/storages?node=${node}`),
+    queryFn: () => apiClient
+      .get<{ storages: unknown[] } | unknown[]>(`/proxmox/api/${serverId}/storages?node=${node}`)
+      .then(r => Array.isArray(r) ? r : (r as { storages: unknown[] }).storages),
     enabled: serverId > 0 && !!node,
   });
 }
@@ -143,38 +145,6 @@ export function useClusterInfo(serverId: number) {
     queryKey: nodeKeys.clusterInfo(serverId),
     queryFn: () => apiClient.get<ClusterInfo>(`/proxmox/api/servers/${serverId}/cluster-info`),
     enabled: serverId > 0,
-  });
-}
-
-export interface AutoSetupArgs {
-  name: string;
-  hostname?: string;
-  ip_address: string;
-  port?: number;
-  api_user?: string;
-  password: string;
-  verify_ssl?: boolean;
-  description?: string;
-}
-
-export interface AutoSetupResult {
-  cluster?: boolean;
-  nodes_count?: number;
-  servers?: Array<{ name: string; node: string; ip: string; status: string }>;
-  message?: string;
-}
-
-// Add a server by password — the backend auto-creates an API token.
-export function useAutoSetupServer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: AutoSetupArgs) => apiClient.post<AutoSetupResult>('/proxmox/api/servers/auto-setup', data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: nodeKeys.servers });
-      qc.invalidateQueries({ queryKey: nodeKeys.topology });
-      qc.invalidateQueries({ queryKey: vmKeys.all });
-      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
-    },
   });
 }
 

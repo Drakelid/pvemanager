@@ -105,7 +105,9 @@ export function DownloadCTDialog({ open, onClose }: { open: boolean; onClose: ()
 
   // Storages that accept CT templates (vztmpl content).
   const storages = useMemo(
-    () => (storagesRaw as { storage: string; content?: string }[]).filter(s => (s.content || '').split(',').includes('vztmpl')),
+    () => (storagesRaw as { storage: string; content?: string }[]).filter(
+      s => (s.content || '').split(',').includes('vztmpl')
+    ),
     [storagesRaw],
   );
 

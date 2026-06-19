@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Server, Monitor, Container, Plus, Pencil, Trash2, Wifi, Loader2, Zap } from 'lucide-react';
+import { Server, Monitor, Container, Plus, Pencil, Trash2, Wifi, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestServerCredentials, useAutoSetupServer } from '@/hooks/use-nodes';
+import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestServerCredentials } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
 import type { ProxmoxServerCreate } from '@/types';
 import { toast } from 'sonner';
@@ -61,7 +61,6 @@ function ServerFormDialog({
   const [form, setForm] = useState<ServerFormData>(initialData);
   const testServer = useTestServerCredentials();
 
-  // Sync initialData whenever dialog opens (also covers programmatic open changes)
   useEffect(() => {
     if (open) setForm(initialData);
   }, [open, initialData]);
@@ -206,7 +205,6 @@ export default function NodesPage() {
   const deleteServer = useDeleteServer();
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [autoOpen, setAutoOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editServerId, setEditServerId] = useState<number | null>(null);
   const [editInitial, setEditInitial] = useState<ServerFormData>(emptyForm);
@@ -241,14 +239,9 @@ export default function NodesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('nav.nodes')}</h1>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setAutoOpen(true)}>
-            <Zap className="h-4 w-4 mr-1" />{t('nodes.auto_setup')}
-          </Button>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" />{t('nodes.add_server')}
-          </Button>
-        </div>
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus className="h-4 w-4 mr-1" />{t('nodes.add_server')}
+        </Button>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -358,56 +351,6 @@ export default function NodesPage() {
         serverId={editServerId ?? undefined}
       />
 
-      <AutoSetupDialog open={autoOpen} onOpenChange={setAutoOpen} />
     </div>
-  );
-}
-
-function AutoSetupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const { t } = useTranslation();
-  const autoSetup = useAutoSetupServer();
-  const [form, setForm] = useState({ name: '', ip_address: '', port: '8006', api_user: 'root@pam', password: '', verify_ssl: false, description: '' });
-  const set = (k: keyof typeof form, v: string | boolean) => setForm(p => ({ ...p, [k]: v }));
-
-  useEffect(() => { if (open) setForm({ name: '', ip_address: '', port: '8006', api_user: 'root@pam', password: '', verify_ssl: false, description: '' }); }, [open]);
-
-  const submit = () => {
-    if (!form.name || !form.ip_address || !form.password) { toast.error(t('nodes.auto_fields_required')); return; }
-    autoSetup.mutate(
-      { name: form.name, hostname: form.ip_address, ip_address: form.ip_address, port: Number(form.port) || 8006, api_user: form.api_user || 'root@pam', password: form.password, verify_ssl: form.verify_ssl, description: form.description || undefined },
-      {
-        onSuccess: (r) => { toast.success(r.message || t('common.save')); onOpenChange(false); },
-        onError: (e: Error) => toast.error(e.message),
-      },
-    );
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{t('nodes.auto_setup')}</DialogTitle></DialogHeader>
-        <p className="text-xs text-muted-foreground">{t('nodes.auto_setup_hint')}</p>
-        <div className="space-y-3">
-          <div><Label>{t('common.name')}</Label><Input value={form.name} onChange={e => set('name', e.target.value)} className="mt-1" /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><Label>{t('nodes.hostname')}</Label><Input value={form.ip_address} onChange={e => set('ip_address', e.target.value)} className="mt-1" placeholder="192.168.1.100" /></div>
-            <div><Label>{t('nodes.port')}</Label><Input type="number" value={form.port} onChange={e => set('port', e.target.value)} className="mt-1" /></div>
-            <div><Label>{t('nodes.api_user')}</Label><Input value={form.api_user} onChange={e => set('api_user', e.target.value)} className="mt-1" /></div>
-            <div><Label>{t('wizard.password')}</Label><Input type="password" value={form.password} onChange={e => set('password', e.target.value)} className="mt-1" /></div>
-          </div>
-          <div className="flex items-center gap-2">
-            <input id="auto_verify_ssl" type="checkbox" checked={form.verify_ssl} onChange={e => set('verify_ssl', e.target.checked)} className="h-4 w-4" />
-            <Label htmlFor="auto_verify_ssl" className="cursor-pointer">{t('nodes.verify_ssl')}</Label>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button onClick={submit} disabled={autoSetup.isPending}>
-            {autoSetup.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('nodes.auto_setup')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
