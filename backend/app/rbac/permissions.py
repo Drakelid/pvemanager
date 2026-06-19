@@ -318,7 +318,14 @@ def _create_permissions() -> PermissionRegistry:
         category="Virtual Machines",
         requires=["vm:console"]
     ))
-    
+    registry.register(Permission(
+        resource="vm", action="manage",
+        display_name="Manage VMs",
+        description="Full VM management including bulk operations",
+        category="Virtual Machines",
+        requires=["vm:view"]
+    ))
+
     # LXC (Container) permissions - same structure as VM
     registry.register(Permission(
         resource="lxc", action="view",
@@ -513,7 +520,14 @@ def _create_permissions() -> PermissionRegistry:
         category="User Management",
         requires=["user:view"]
     ))
-    
+    registry.register(Permission(
+        resource="user", action="manage",
+        display_name="Manage Users",
+        description="Full user administration including managing other users' SSH keys",
+        category="User Management",
+        requires=["user:view"]
+    ))
+
     # Role management permissions
     registry.register(Permission(
         resource="role", action="view",
@@ -646,10 +660,12 @@ LEGACY_PERMISSION_MAP = {
     "settings.view": "setting:view",
     "settings.panel": "setting:update",
     "settings.security": "setting:manage",
+    "settings.manage": "setting:manage",
     "users.view": "user:view",
     "users.create": "user:create",
     "users.edit": "user:update",
     "users.delete": "user:delete",
+    "users.manage": "user:manage",
     "roles.view": "role:view",
     "roles.manage": "role:manage",
     "notifications.manage": "notification:manage",

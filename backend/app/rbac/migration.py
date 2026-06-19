@@ -37,6 +37,7 @@ NEW_DEFAULT_ROLES = [
             "vm:console": True,
             "vm:migrate": True,
             "vm:execute": True,
+            "vm:manage": True,
             # LXC
             "lxc:view": True,
             "lxc:create": True,
@@ -69,6 +70,7 @@ NEW_DEFAULT_ROLES = [
             "user:create": True,
             "user:update": True,
             "user:delete": True,
+            "user:manage": True,
             # Roles
             "role:view": True,
             "role:create": True,
