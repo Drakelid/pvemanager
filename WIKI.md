@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.5.1
+> Complete guide for installation, configuration and usage of PVEmanager v1.5.2
 
 ---
 
@@ -974,8 +974,27 @@ Download [virtio-win drivers](https://fedorapeople.org/groups/virt/virtio-win/di
 
 - **CPU**: Total load + per core
 - **RAM**: Used/Total
-- **Disk**: Used/Total + I/O
-- **Network**: In/Out traffic
+- **Disk**: Used/Total + I/O (per-disk cards on Overview tab)
+- **Network**: In/Out traffic (rates in bytes/sec)
+- **Disk IOPS**: Read/write rates per disk via QEMU guest agent (`get_vm_fsinfo`)
+- **Network I/O rates**: Live bytes/sec computed from cumulative counters in `metrics_broadcaster`
+
+#### Data Granularity
+
+| Source | Granularity | Used for |
+|--------|-------------|---------|
+| `cluster/resources` (pvestatd) | 10 s | Node and storage overview |
+| `status/current` | 1 s | Running VM real-time metrics |
+
+All running VMs are polled via `status/current` at a 1 s cadence with bounded concurrency. Results are broadcast via WebSocket.
+
+#### Where Metrics Appear
+
+| Location | Data shown |
+|----------|-----------|
+| Instance → Overview tab | Per-disk fill cards, Network I/O card, Disk I/O-rate card |
+| Instances list | Net I/O and Disk I/O columns; Disk% for LXC |
+| Dashboard top-loaded list | CPU, RAM, Disk, Net metrics overlay |
 
 ### Graph Periods
 
@@ -1497,6 +1516,7 @@ it up automatically on next startup (or call `I18nService.reload()` at runtime).
 - Full name
 - Email (for notifications)
 - Password change
+- **Language** — per-user UI language (stored in DB column `users.language`); applies immediately on save via `i18n.changeLanguage()`; each account keeps its own preference
 - **SSH Public Key** — stored in user profile and automatically injected into VM/LXC during cloud-init deployment
 
 ### Panel Settings
@@ -1505,7 +1525,9 @@ it up automatically on next startup (or call `I18nService.reload()` at runtime).
 |-----------|-------------|---------|
 | Refresh interval | Data refresh frequency | 30 sec |
 | Log retention | How many days to keep logs | 30 days |
-| Language | Interface language | English |
+| Panel name | Display name (read-only in UI, can be overridden in DB) | `PANEL_NAME` env |
+
+> **Note:** The language setting was moved from the Panel tab to the Profile tab in v1.5.2 — each user now controls their own language independently.
 
 ### System Updates & Repository Selection
 

@@ -4,6 +4,28 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.5.2] - 2026-06-20
+
+### 📊 Metrics
+
+- **Real-time VM disk fill, IOPS and network I/O** — live per-disk usage, disk read/write and network in/out rates added to the instance Overview tab, instances list and dashboard top-loaded list
+  - Backend: `get_vm_fsinfo()` pulls per-filesystem usage via QEMU guest agent; `metrics_broadcaster` computes I/O rates (bytes/sec) from cumulative counters; instances-list loop now refreshes each running VM via `status/current` (1 s granularity) instead of `cluster/resources` (10 s pvestatd), with bounded concurrency and 1 s cadence
+  - Frontend: per-disk cards, Network I/O and I/O-rate cards on OverviewTab via WebSocket; Net and Disk I/O columns in InstancesPage; Disk% shown for LXC; realtime metrics overlay in DashboardPage top-loaded list
+
+### ⚙️ Settings
+
+- **Per-user language preference** — each user account now has its own `language` column (migration 26); the language selector moved from the Panel tab to the Profile tab; language is saved to DB and applied via `i18n.changeLanguage()` immediately on save
+- **Panel tab improvements** — `panel_name` field is read-only in UI (falls back to env `PANEL_NAME`); `log_retention_days` field exposed; Panel API accepts `panel_name` in `PUT` to allow DB override without touching the env var
+
+### 🐛 Bug Fixes
+
+- **SMTP/security settings fields** — renamed SMTP request/response fields (`host`, `port`, `username`, `password`, `from_email`, `tls`) and pointed security settings hooks at `/admin/api/security/settings` with a typed `SecuritySettings` shape; added `minutes` / `security_saved` i18n keys
+- **Notifications form UX** — added success/error toasts to SMTP and Telegram save buttons; Profile tab language selector wired up; password-change fields cleared only on success
+- **Telegram admin section** — removed the Chat ID field from the global Telegram section (it was never persisted to DB); testing is now done via the personal "My notifications → Send test" flow
+- **Webhook URL field** — removed the unimplemented Webhook URL field from the notifications settings to avoid misleading users
+
+---
+
 ## [v1.5.1] - 2026-06-04
 
 ### 🐛 Bug Fixes
