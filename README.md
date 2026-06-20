@@ -45,15 +45,16 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **Smart login redirect** — users are automatically routed to the first page they have access to
 
 ### Monitoring & Alerts
-- **Real-time metrics** — CPU, RAM, Disk, Network charts per node and per VM
-- **Background sync** — automatic VM state synchronization from Proxmox API
+- **Real-time metrics** — CPU, RAM, Disk, Network charts per node and per VM; live per-disk fill, IOPS and network I/O rates (bytes/sec) on the instance Overview tab and instances list
+- **Background sync** — automatic VM state synchronization from Proxmox API (`status/current` at 1 s granularity for running VMs)
 - **Notifications** — In-App (bell icon), Email (SMTP), Telegram (Bot API)
 - **Audit log** — full action log with user, timestamp, and details
 
 ### Other
 - **IPAM** — IP Address Management with allocation history and orphan detection
-- **Multilingual** — Russian and English interface
+- **Multilingual** — Russian and English interface; language preference is per-user account
 - **Encrypted credentials** — sensitive fields stored encrypted in the database
+- **Styled confirmation dialogs** — all destructive actions use a consistent themed modal instead of the native browser `confirm()`
 
 ---
 

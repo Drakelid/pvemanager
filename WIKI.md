@@ -1426,7 +1426,7 @@ The Logs page is gated by the `log:view` permission in RBAC v2. The default `adm
 
 ### Retention
 
-There is no automatic pruning in v1.5.1 — log entries accumulate until manually deleted via the database. A retention policy is planned for a future release.
+Log retention is controlled via **Settings → Panel → Log Retention Days** (added in v1.5.2). Entries older than the configured number of days are pruned automatically. Default is 30 days.
 
 ---
 
@@ -1485,10 +1485,11 @@ GET  /api/ssh-keys/user/{user_id}   — list keys for a specific user
 
 ### Switching Language
 
-1. **Settings** → **Panel Settings**
-2. Select language
-3. Save
-4. Page will reload
+Since v1.5.2, language is a **per-user** preference stored in the database.
+
+1. **Settings** → **Profile**
+2. Select language in the **Language** dropdown
+3. Click **Save** — the interface switches immediately without a page reload
 
 ### Adding New Language
 
@@ -2052,5 +2053,5 @@ A: Not yet, but planned for future versions.
 
 ---
 
-*Last updated: May 7, 2026*
-*Version: 1.5.0*
+*Last updated: June 20, 2026*
+*Version: 1.5.2-1*
