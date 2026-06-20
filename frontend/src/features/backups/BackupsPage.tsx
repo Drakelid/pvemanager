@@ -101,6 +101,7 @@ export default function BackupsPage() {
   const [selectedServer, setSelectedServer] = useState<string>('');
   const [selectedNode, setSelectedNode] = useState<string>(ALL_NODES);
   const [selectedStorage, setSelectedStorage] = useState('');
+  const [search, setSearch] = useState('');
 
   const { data: servers = [] } = useServers();
   const sid = selectedServer ? Number(selectedServer) : 0;
@@ -169,7 +170,17 @@ export default function BackupsPage() {
       return true;
     });
   };
-  const backups = (backupsData?.backups || []) as BackupItem[];
+  const allBackups = (backupsData?.backups || []) as BackupItem[];
+  const backups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allBackups;
+    return allBackups.filter(b =>
+      String(b.vmid).includes(q) ||
+      (b.volid || '').toLowerCase().includes(q) ||
+      (b.notes || '').toLowerCase().includes(q) ||
+      (b.node || '').toLowerCase().includes(q),
+    );
+  }, [allBackups, search]);
   const jobs = (jobsData?.jobs || []) as BackupJob[];
 
   // Latest backup per VMID — used by the "select all" checkbox (one archive per VMID).
@@ -466,6 +477,13 @@ export default function BackupsPage() {
                 {storages.map(s => <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>)}
               </SelectContent>
             </Select>
+            <Input
+              className="w-[260px]"
+              placeholder={t('backups.search_backups')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              disabled={!sid}
+            />
           </div>
 
           {/* Bulk selection toolbar */}
@@ -565,7 +583,13 @@ export default function BackupsPage() {
           ) : (
             <div className="text-center py-16 text-muted-foreground">
               <Archive className="mx-auto h-12 w-12 mb-3 opacity-50" />
-              <p>{selectedServer ? t('backups.no_backups') : t('backups.select_server_first')}</p>
+              <p>
+                {!selectedServer
+                  ? t('backups.select_server_first')
+                  : search.trim() && allBackups.length > 0
+                    ? t('backups.no_backups_match')
+                    : t('backups.no_backups')}
+              </p>
             </div>
           )}
         </TabsContent>
@@ -899,6 +923,7 @@ export default function BackupsPage() {
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
                   <input
                     type="checkbox"
+                    className="accent-amber-500"
                     checked={selectAllVmids}
                     onChange={(e) => { setSelectAllVmids(e.target.checked); if (e.target.checked) setSelectedVmids(new Set()); }}
                   />
@@ -949,6 +974,7 @@ export default function BackupsPage() {
                           >
                             <input
                               type="checkbox"
+                              className="accent-amber-500"
                               checked={checked}
                               disabled={selectAllVmids}
                               onChange={(e) => {
