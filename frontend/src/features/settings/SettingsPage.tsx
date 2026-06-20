@@ -343,7 +343,6 @@ function NotificationPreferencesCard() {
           <div className="flex-1"><Label>Telegram Chat ID</Label><Input value={tgChatId} onChange={e => setTgChatId(e.target.value)} className="mt-1" /></div>
           <Button size="sm" variant="outline" onClick={handleVerify} disabled={verifyTg.isPending}>{t('settings.verify')}</Button>
         </div>
-        <div><Label>Webhook URL</Label><Input value={webhook} onChange={e => setWebhook(e.target.value)} className="mt-1" placeholder="https://..." /></div>
         <div className="grid grid-cols-2 gap-3">
           <div><Label>{t('settings.quiet_start')}</Label><Input value={quietStart} onChange={e => setQuietStart(e.target.value)} className="mt-1" placeholder="22:00" /></div>
           <div><Label>{t('settings.quiet_end')}</Label><Input value={quietEnd} onChange={e => setQuietEnd(e.target.value)} className="mt-1" placeholder="08:00" /></div>
