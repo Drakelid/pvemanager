@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request, HTTPException, Query, Form, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from loguru import logger
 from typing import List
@@ -135,7 +135,8 @@ def get_all_virtual_machines(
             ipam_by_name[alloc.resource_name.lower()] = alloc
     
     # Build base query for cached VMs (not deleted, not templates)
-    query = db.query(VMInstance).filter(
+    # joinedload(owner) avoids an N+1 query when rendering the owner column.
+    query = db.query(VMInstance).options(joinedload(VMInstance.owner)).filter(
         VMInstance.deleted_at.is_(None),
         VMInstance.is_template == False
     )
@@ -252,6 +253,7 @@ def get_all_virtual_machines(
             "hostname": ip_hostname or f"{'vps' if vm.vm_type == 'qemu' else 'lxc'}{vm.vmid}.{server.hostname if server else 'local'}",
             "type": vm.vm_type,
             "status": live.get('status') or vm.status or "unknown",
+            "lock": live.get('lock') or None,
             "node": vm.node,
             "cores": vm.cores or 0,
             "memory": vm.memory or 0,
@@ -262,6 +264,14 @@ def get_all_virtual_machines(
             "os": os_template,
             "os_template": os_template,
             "owner": owner,
+            "owner_user": (
+                {
+                    "username": vm.owner.username,
+                    "email": vm.owner.email,
+                    "full_name": vm.owner.full_name,
+                }
+                if vm.owner else None
+            ),
             "owner_hostname": "",
             "storage": "Storage1 (DIR)",
             "tags": vm.tags or "",
@@ -358,6 +368,20 @@ class CloneRequest(BaseModel):
     target_node: Optional[str] = None
     target_storage: Optional[str] = None
     description: Optional[str] = None
+    owner_id: Optional[int] = None
+
+
+def _resolve_clone_owner(db: Session, current_user: User, owner_id: Optional[int]) -> int:
+    """Resolve the owner for a cloned instance (admins may assign to others)."""
+    if owner_id and owner_id != current_user.id:
+        is_admin = current_user.has_permission("user:manage") or current_user.is_admin
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Only admins can assign instance to another user")
+        owner = db.query(User).filter(User.id == owner_id).first()
+        if not owner:
+            raise HTTPException(status_code=404, detail="Owner user not found")
+        return owner.id
+    return current_user.id
 
 
 class ChangePasswordRequest(BaseModel):
@@ -397,6 +421,7 @@ def clone_vm_endpoint(
 
     require_vm_access(db, current_user, server_id, vmid)
     _resolve_server(db, server_id)
+    owner_id = _resolve_clone_owner(db, current_user, body.owner_id)
 
     task = DeployTask(
         kind='clone', name=body.new_name, status='pending', step='В очереди...', progress=0,
@@ -407,7 +432,7 @@ def clone_vm_endpoint(
     _deploy_executor.submit(
         _do_clone_sync, task.id, server_id, vmid, node, 'qemu',
         body.new_name, body.full, body.target_node, body.target_storage, body.description,
-        current_user.id, current_user.username,
+        current_user.id, current_user.username, owner_id,
     )
     return DeployTaskStartResponse(task_id=task.id, status='pending', name=body.new_name)
 
@@ -428,6 +453,7 @@ def clone_container_endpoint(
 
     require_vm_access(db, current_user, server_id, vmid)
     _resolve_server(db, server_id)
+    owner_id = _resolve_clone_owner(db, current_user, body.owner_id)
 
     task = DeployTask(
         kind='clone', name=body.new_name, status='pending', step='В очереди...', progress=0,
@@ -438,7 +464,7 @@ def clone_container_endpoint(
     _deploy_executor.submit(
         _do_clone_sync, task.id, server_id, vmid, node, 'lxc',
         body.new_name, body.full, body.target_node, body.target_storage, body.description,
-        current_user.id, current_user.username,
+        current_user.id, current_user.username, owner_id,
     )
     return DeployTaskStartResponse(task_id=task.id, status='pending', name=body.new_name)
 

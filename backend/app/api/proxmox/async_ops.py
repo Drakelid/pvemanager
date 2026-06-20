@@ -7,6 +7,7 @@ progress through DeployTask records (with `kind` field) + WebSocket broadcast.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Optional
 
@@ -16,7 +17,7 @@ from ...db import SessionLocal
 from ...models import ProxmoxServer, VMInstance, OSTemplate, DeployTask, User
 from ...proxmox import ProxmoxClient
 from ...logging_service import LoggingService
-from ._helpers import _get_proxmox_client, get_next_vmid
+from ._helpers import _get_proxmox_client, get_next_vmid, save_vm_instance, save_vm_instance
 
 
 # Re-use deploy executor and update helper
@@ -386,10 +387,56 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
 
 # ==================== Clone ====================
 
+_PCT_RE = re.compile(r"\((\d{1,3}(?:\.\d+)?)\s*%\)")
+
+
+def _wait_clone_with_progress(client, task_id: int, node: str, upid: str,
+                              timeout: int = 600) -> bool:
+    """Wait for a PVE clone task, mapping its disk-copy % to deploy progress 50→95.
+
+    PVE reports copy progress only in the task log (e.g. "transferred 12.0 GiB of
+    20.0 GiB (59.94%)"), so we tail the log and parse the last percentage seen.
+    """
+    start = time.time()
+    log_pos = 0
+    last_reported = -1
+    while time.time() - start < timeout:
+        # Tail new log lines and extract the most recent percentage.
+        try:
+            lines = client.get_task_log(node, upid, start=log_pos, limit=500) or []
+        except Exception:
+            lines = []
+        pct = None
+        for line in lines:
+            log_pos = max(log_pos, line.get('n', log_pos) or log_pos)
+            m = _PCT_RE.search(line.get('t', '') or '')
+            if m:
+                try:
+                    pct = float(m.group(1))
+                except ValueError:
+                    pass
+        if pct is not None:
+            progress = 50 + int(min(pct, 100) * 0.45)  # 50..95
+            if progress != last_reported:
+                last_reported = progress
+                _update_deploy_task(task_id, 'running',
+                                    f'Копирование диска... {pct:.0f}%', progress)
+
+        status = client.get_task_status(node, upid)
+        if status and status.get('status') == 'stopped':
+            exit_status = status.get('exitstatus')
+            return exit_status == 'OK' or (
+                isinstance(exit_status, str) and exit_status.startswith('WARNINGS:'))
+        time.sleep(2)
+
+    logger.warning(f"Таймаут ожидания задачи клонирования {upid}")
+    return False
+
+
 def _do_clone_sync(task_id: int, server_id: int, src_vmid: int, node: str, vm_type: str,
                    new_name: str, full: bool, target_node: Optional[str],
                    target_storage: Optional[str], description: Optional[str],
-                   user_id: int, username: str):
+                   user_id: int, username: str, owner_id: Optional[int] = None):
     """Clone existing VM/LXC into a new VMID."""
     db = SessionLocal()
     server = None
@@ -438,9 +485,20 @@ def _do_clone_sync(task_id: int, server_id: int, src_vmid: int, node: str, vm_ty
         _update_deploy_task(task_id, 'running', 'Ожидание завершения клонирования...', 70,
                             vmid=new_vmid, node=target_node or node)
         try:
-            client.wait_for_task(node, upid, timeout=600)
+            _wait_clone_with_progress(client, task_id, node, upid, timeout=600)
         except Exception:
             pass
+
+        # Register the cloned instance locally so it gets an owner and is visible
+        # to limited users (live list also picks it up from PVE, but without owner).
+        try:
+            save_vm_instance(
+                db=db, server_id=server_id, vmid=new_vmid,
+                node=target_node or node, vm_type=vm_type, name=new_name,
+                description=description, owner_id=owner_id or user_id,
+            )
+        except Exception as reg_err:
+            logger.warning(f"[CLONE #{task_id}] failed to register instance: {reg_err}")
 
         LoggingService.log_proxmox_action(
             db=db, action='clone',
