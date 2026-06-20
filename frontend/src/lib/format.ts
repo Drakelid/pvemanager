@@ -27,3 +27,21 @@ export function formatCPU(cpuFraction: number, maxcpu: number): string {
 export function vmTypeLabel(type: string): string {
   return type === 'qemu' ? 'VM' : type === 'lxc' ? 'LXC' : type.toUpperCase();
 }
+
+/**
+ * Formats a VM/LXC hardware configuration as "N vCPU / X GB RAM / Y GB".
+ * `memory` is expected in MB; disk in GB (falls back to `maxdisk` in bytes).
+ */
+export function formatVmConfig(vm: {
+  cores?: number;
+  memory?: number;
+  disk_size?: number;
+  maxdisk?: number;
+}): string {
+  const parts: string[] = [];
+  if (vm.cores) parts.push(`${vm.cores} vCPU`);
+  if (vm.memory) parts.push(`${Math.round(vm.memory / 1024)} GB RAM`);
+  const diskGb = vm.disk_size ?? (vm.maxdisk ? Math.round(vm.maxdisk / 1024 ** 3) : 0);
+  if (diskGb) parts.push(`${diskGb} GB`);
+  return parts.join(' / ');
+}
