@@ -7,6 +7,26 @@ function getActiveWorkspaceId(): number | null {
   return stored ? Number(stored) : null;
 }
 
+// FastAPI returns `detail` as a string for HTTPException, but as an array of
+// objects ({loc, msg, type}) for 422 validation errors. Coercing the latter
+// straight into `new Error()` yields the useless "[object Object]" message.
+function formatApiError(detail: unknown, status: number): string {
+  if (typeof detail === 'string' && detail) return detail;
+  if (Array.isArray(detail)) {
+    const msg = detail
+      .map((e) => (e && typeof e === 'object' && 'msg' in e ? String((e as { msg: unknown }).msg) : String(e)))
+      .filter(Boolean)
+      .join('; ');
+    if (msg) return msg;
+  }
+  if (detail && typeof detail === 'object') {
+    const obj = detail as { msg?: unknown; detail?: unknown };
+    if (typeof obj.msg === 'string') return obj.msg;
+    if (typeof obj.detail === 'string') return obj.detail;
+  }
+  return `HTTP ${status}`;
+}
+
 class ApiClient {
   private token: string | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -114,7 +134,7 @@ class ApiClient {
       const error: ApiError = await res.json().catch(() => ({
         detail: `HTTP ${res.status}: ${res.statusText}`,
       }));
-      throw new Error(error.detail || `HTTP ${res.status}`);
+      throw new Error(formatApiError(error.detail, res.status));
     }
 
     if (res.status === 204) return undefined as T;

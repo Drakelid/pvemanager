@@ -521,6 +521,8 @@ export interface PaginatedResponse<T> {
 }
 
 export interface ApiError {
-  detail: string;
+  // Usually a string (HTTPException), but FastAPI 422 validation errors return
+  // an array of { loc, msg, type } objects.
+  detail: string | unknown[] | Record<string, unknown>;
   status_code?: number;
 }
