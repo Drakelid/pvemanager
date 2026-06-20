@@ -192,7 +192,8 @@ export default function InstanceDetailPage() {
               <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
                 <MoreHorizontal className="h-4 w-4" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-56">
+
                 <DropdownMenuItem onClick={() => setDialog('clone')}>
                   <Copy className="mr-2 h-4 w-4" /> {t('common.clone', 'Клонировать')}
                 </DropdownMenuItem>
