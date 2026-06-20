@@ -2,6 +2,7 @@
 Update Service - Check for updates and perform system updates
 """
 import os
+import re
 import subprocess
 import asyncio
 import logging
@@ -182,11 +183,14 @@ def parse_repo_url(url: str) -> tuple:
 
 
 def _parse_version(v: str) -> tuple:
-    """Parse version string into a tuple of ints for comparison, e.g. '1.0.3' -> (1, 0, 3)"""
-    try:
-        return tuple(int(x) for x in v.strip().split("."))
-    except Exception:
-        return (0,)
+    """Parse version string into a tuple of ints for comparison.
+
+    Handles a build suffix after '-': '1.5.2-1' -> (1, 5, 2, 1), '1.0.3' -> (1, 0, 3).
+    Splitting on '.' alone breaks on '2-1' (int() raises), collapsing the whole
+    version to (0,); extracting every numeric run keeps build bumps comparable.
+    """
+    nums = re.findall(r"\d+", v.strip())
+    return tuple(int(x) for x in nums) if nums else (0,)
 
 
 def _is_newer(remote: str, local: str) -> bool:
