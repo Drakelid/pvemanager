@@ -74,7 +74,7 @@ cp backend/.env.example backend/.env
 docker compose up -d
 
 # 4. Open
-# http://localhost:8000
+# http://localhost:3001
 # Default login: admin / admin123
 ```
 

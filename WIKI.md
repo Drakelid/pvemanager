@@ -60,7 +60,7 @@ cp backend/.env.example backend/.env
 docker compose up -d
 
 # Open in browser
-open http://localhost:8000
+open http://localhost:3001
 ```
 
 **Default credentials:**
@@ -80,8 +80,8 @@ open http://localhost:8000
 ```bash
 docker compose up -d
 ```
-- Port: 8000
-- Without NGINX
+- UI port: 3001 (frontend), API port: 8000 (backend)
+- Without NGINX reverse proxy
 - Suitable for local development
 
 #### 2. With NGINX (HTTP)

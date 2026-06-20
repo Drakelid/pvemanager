@@ -70,7 +70,7 @@ cp backend/.env.example backend/.env
 docker compose up -d
 
 # 4. Открываем
-# http://localhost:8000
+# http://localhost:3001
 # Вход по умолчанию: admin / admin123
 ```
 
