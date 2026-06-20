@@ -62,6 +62,7 @@ class UpdateProfileRequest(BaseModel):
     full_name: Optional[str] = Field(None, max_length=100)
     email: Optional[EmailStr] = None
     ssh_public_key: Optional[str] = Field(None, max_length=10000, description="SSH public key for VM/LXC deployment")
+    language: Optional[str] = Field(None, pattern='^(ru|en)$')
 
 
 class ChangePasswordRequest(BaseModel):
@@ -77,6 +78,7 @@ class PanelSettingsResponse(BaseModel):
 
 
 class UpdatePanelSettingsRequest(BaseModel):
+    panel_name: Optional[str] = Field(None, min_length=1, max_length=100)
     log_retention_days: Optional[int] = Field(None, ge=1, le=365)
     language: Optional[str] = Field(None, pattern='^(ru|en)$')
 
@@ -115,6 +117,7 @@ async def get_profile(
         "is_admin": current_user.is_admin,
         "is_active": current_user.is_active,
         "ssh_public_key": current_user.ssh_public_key,
+        "language": current_user.language or 'ru',
         "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
         "last_login": current_user.last_login.isoformat() if current_user.last_login else None
     }
@@ -157,6 +160,10 @@ async def update_profile(
             )
         current_user.ssh_public_key = ssh_key if ssh_key else None
         updated_fields.append("ssh_public_key")
+
+    if data.language is not None:
+        current_user.language = data.language
+        updated_fields.append("language")
     
     if updated_fields:
         db.commit()
@@ -241,11 +248,12 @@ async def get_panel_settings(
     from ..config import settings
     
     # Get settings from database or use defaults
+    panel_name = get_setting(db, "panel_name", settings.PANEL_NAME)
     log_retention_days = get_setting(db, "log_retention_days", "30")
     language = get_setting(db, "language", "ru")
-    
+
     return {
-        "panel_name": settings.PANEL_NAME,
+        "panel_name": panel_name,
         "log_retention_days": int(log_retention_days),
         "language": language
     }
@@ -261,6 +269,10 @@ async def update_panel_settings(
     updated_fields = []
     
     # Save settings to database
+    if data.panel_name is not None:
+        set_setting(db, "panel_name", data.panel_name, "Название панели")
+        updated_fields.append(f"panel_name={data.panel_name}")
+
     if data.log_retention_days is not None:
         set_setting(db, "log_retention_days", str(data.log_retention_days), "Срок хранения логов (дни)")
         updated_fields.append(f"log_retention_days={data.log_retention_days}")

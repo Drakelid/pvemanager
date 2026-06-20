@@ -1366,6 +1366,14 @@ def migrate_proxmox_task_progress(conn):
         logger.info("✓ proxmox_tasks.progress already exists")
 
 
+def migrate_user_language(conn):
+    """Migration 26: Add 'language' column to users table (per-user UI language)."""
+    if add_column_if_not_exists(conn, 'users', 'language', "VARCHAR(10) DEFAULT 'ru'"):
+        logger.info("✓ Added language column to users")
+    else:
+        logger.info("✓ users.language already exists")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1578,6 +1586,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Proxmox task progress migration: {e}")
+                conn.rollback()
+
+            # Migration 26: users.language column
+            try:
+                migrate_user_language(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"User language migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

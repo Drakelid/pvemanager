@@ -53,6 +53,9 @@ class User(Base):
     
     # SSH Public Key for VM/LXC deployment
     ssh_public_key = Column(Text, nullable=True)
+
+    # UI language preference (ru/en)
+    language = Column(String(10), nullable=False, server_default='ru')
     
     # Security fields
     failed_login_attempts = Column(Integer, default=0, nullable=False)

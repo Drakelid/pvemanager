@@ -681,6 +681,8 @@
     "session_timeout": "Session Timeout",
     "seconds": "seconds",
     "minutes": "minutes",
+    "days": "days",
+    "log_retention_days": "Log Retention",
     "security_saved": "Security settings saved",
     "version": "Version",
     "check_updates": "Check for Updates",

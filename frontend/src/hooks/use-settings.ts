@@ -41,6 +41,7 @@ interface ProfileResponse {
   is_admin: boolean;
   is_active: boolean;
   ssh_public_key?: string;
+  language: string;
   created_at: string;
   last_login?: string;
 }

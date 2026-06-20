@@ -681,6 +681,8 @@
     "session_timeout": "Таймаут сессии",
     "seconds": "секунд",
     "minutes": "минут",
+    "days": "дней",
+    "log_retention_days": "Хранение логов",
     "security_saved": "Настройки безопасности сохранены",
     "version": "Версия",
     "check_updates": "Проверить обновления",
