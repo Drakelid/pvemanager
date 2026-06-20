@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import i18n from '@/lib/i18n';
 import { useTranslation } from 'react-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +15,7 @@ import {
   useNotificationChannels, useUpdateSMTP, useUpdateTelegram,
   useAppVersion, useCheckUpdates,
   useUpdateRepository, useSetUpdateRepository, useUpdateStatus, usePerformUpdate, useResetUpdate,
-  useTestSMTP, useTestTelegram,
+  useTestSMTP,
 } from '@/hooks/use-settings';
 import {
   useNotificationPreferences, useUpdateNotificationPreferences,
@@ -60,15 +61,16 @@ function ProfileTab() {
   const changePassword = useChangePassword();
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
+  const [lang, setLang] = useState('ru');
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
 
-  // Init from profile
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.full_name || '');
       setEmail(profile.email || '');
+      setLang(profile.language || 'ru');
     }
   }, [profile]);
 
@@ -80,8 +82,15 @@ function ProfileTab() {
           <div><Label>{t('settings.username')}</Label><Input value={profile?.username || ''} disabled className="mt-1" /></div>
           <div><Label>{t('settings.display_name')}</Label><Input value={displayName} onChange={e => setDisplayName(e.target.value)} className="mt-1" /></div>
           <div><Label>Email</Label><Input value={email} onChange={e => setEmail(e.target.value)} className="mt-1" /></div>
-          <Button size="sm" onClick={() => updateProfile.mutate({ full_name: displayName, email }, {
-            onSuccess: (r) => toast.success(r.message),
+          <div>
+            <Label>{t('settings.language')}</Label>
+            <select value={lang} onChange={e => setLang(e.target.value)} className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm">
+              <option value="ru">Русский</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <Button size="sm" onClick={() => updateProfile.mutate({ full_name: displayName, email, language: lang }, {
+            onSuccess: (r) => { i18n.changeLanguage(lang); toast.success(r.message); },
             onError: (e: Error) => toast.error(e.message),
           })}>{t('common.save')}</Button>
         </CardContent>
@@ -109,13 +118,11 @@ function PanelTab() {
   const { t } = useTranslation();
   const { data: settings } = usePanelSettings();
   const updatePanel = useUpdatePanelSettings();
-  const [panelName, setPanelName] = useState('');
-  const [lang, setLang] = useState('');
+  const [logRetention, setLogRetention] = useState('30');
 
   useEffect(() => {
     if (settings) {
-      setPanelName(settings.panel_name || '');
-      setLang(settings.language || 'ru');
+      setLogRetention(String(settings.log_retention_days || 30));
     }
   }, [settings]);
 
@@ -123,15 +130,16 @@ function PanelTab() {
     <Card>
       <CardHeader><CardTitle className="text-sm">{t('settings.panel_settings')}</CardTitle></CardHeader>
       <CardContent className="space-y-3">
-        <div><Label>{t('settings.panel_name')}</Label><Input value={panelName} onChange={e => setPanelName(e.target.value)} className="mt-1" /></div>
+        <div><Label>{t('settings.panel_name')}</Label><Input value={settings?.panel_name || ''} disabled className="mt-1" /></div>
         <div>
-          <Label>{t('settings.language')}</Label>
-          <select value={lang} onChange={e => setLang(e.target.value)} className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm">
-            <option value="ru">Русский</option>
-            <option value="en">English</option>
-          </select>
+          <Label>{t('settings.log_retention_days')}</Label>
+          <Input type="number" value={logRetention} onChange={e => setLogRetention(e.target.value)} className="mt-1" min={1} max={365} />
+          <p className="text-xs text-muted-foreground mt-1">{t('settings.days')}</p>
         </div>
-        <Button size="sm" onClick={() => updatePanel.mutate({ panel_name: panelName, language: lang })}>{t('common.save')}</Button>
+        <Button size="sm" onClick={() => updatePanel.mutate({ log_retention_days: Number(logRetention) }, {
+          onSuccess: (r) => toast.success(r.message),
+          onError: (e: Error) => toast.error(e.message),
+        })}>{t('common.save')}</Button>
       </CardContent>
     </Card>
   );
@@ -184,7 +192,6 @@ function NotificationsTab() {
   const [smtpPass, setSmtpPass] = useState('');
   const [smtpFrom, setSmtpFrom] = useState('');
   const [tgToken, setTgToken] = useState('');
-  const [tgChatId, setTgChatId] = useState('');
 
   useEffect(() => {
     if (channels?.smtp) {
@@ -198,25 +205,16 @@ function NotificationsTab() {
   useEffect(() => {
     if (channels?.telegram) {
       setTgToken(String(channels.telegram.telegram_bot_token ?? channels.telegram.bot_token ?? ''));
-      setTgChatId(String(channels.telegram.chat_id ?? ''));
     }
   }, [channels?.telegram]);
 
   const testSmtp = useTestSMTP();
-  const testTg = useTestTelegram();
   const botInfo = useTelegramBotInfo();
   const [testEmail, setTestEmail] = useState('');
 
   const handleTestSmtp = () => {
     if (!testEmail) { toast.error(t('settings.test_email_required')); return; }
     testSmtp.mutate(testEmail, {
-      onSuccess: (r) => toast.success(r.message),
-      onError: (e: Error) => toast.error(e.message),
-    });
-  };
-  const handleTestTg = () => {
-    if (!tgChatId) { toast.error(t('settings.chat_id_required')); return; }
-    testTg.mutate(tgChatId, {
       onSuccess: (r) => toast.success(r.message),
       onError: (e: Error) => toast.error(e.message),
     });
@@ -255,14 +253,10 @@ function NotificationsTab() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div><Label>Bot Token</Label><Input value={tgToken} onChange={e => setTgToken(e.target.value)} className="mt-1" /></div>
-          <div><Label>Chat ID</Label><Input value={tgChatId} onChange={e => setTgChatId(e.target.value)} className="mt-1" /></div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => updateTg.mutate({ telegram_bot_token: tgToken }, {
-              onSuccess: (r) => toast.success(r.message),
-              onError: (e: Error) => toast.error(e.message),
-            })}>{t('common.save')}</Button>
-            <Button size="sm" variant="outline" onClick={handleTestTg} disabled={testTg.isPending}>{t('settings.send_test')}</Button>
-          </div>
+          <Button size="sm" onClick={() => updateTg.mutate({ telegram_bot_token: tgToken }, {
+            onSuccess: (r) => toast.success(r.message),
+            onError: (e: Error) => toast.error(e.message),
+          })}>{t('common.save')}</Button>
         </CardContent>
       </Card>
 
