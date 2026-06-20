@@ -5,8 +5,12 @@
 #
 # Алгоритм:
 #   1. Каждые 3 секунды проверяет наличие файла .update_trigger в PROJECT_DIR
-#   2. При обнаружении: удаляет триггер → git pull → docker compose down →
-#      docker compose build --no-cache app → docker compose up -d → пишет лог
+#   2. При обнаружении: удаляет триггер → git pull → СНАЧАЛА build (стек ещё
+#      работает) → docker compose down → docker compose up -d --wait → пишет лог
+#
+# Важно: build выполняется ДО down. Если сборка упадёт, старый стек продолжает
+# работать, а не остаётся погашенным. up запускается с --wait, чтобы убедиться,
+# что контейнеры реально стали healthy (миграции БД накатываются на старте app).
 
 set -euo pipefail
 
@@ -77,30 +81,37 @@ while true; do
             log "[1/4] git reset --hard OK"
         fi
 
-        # ── Step 2: docker compose down ───────────────────────────────────────
-        log "[2/4] docker compose down..."
-        $COMPOSE_CMD down >> "$LOG_FILE" 2>&1 && log "[2/4] docker compose down OK" \
-            || log "[2/4] WARNING: docker compose down returned non-zero (continuing)"
-
-        # ── Step 3: docker compose build --no-cache app ───────────────────────
-        log "[3/4] docker compose build --no-cache app..."
-        if $COMPOSE_CMD build --no-cache app >> "$LOG_FILE" 2>&1; then
-            log "[3/4] build OK"
+        # ── Step 2: build НОВЫХ образов, пока старый стек ещё работает ─────────
+        # Собираем ДО down: если сборка упадёт (частая беда с --no-cache из-за
+        # сети), старый стек остаётся поднятым, а не лежит выключенным.
+        # Собираем и app, и frontend — иначе изменения фронта не доезжают.
+        log "[2/4] docker compose build --no-cache app frontend..."
+        if $COMPOSE_CMD build --no-cache app frontend >> "$LOG_FILE" 2>&1; then
+            log "[2/4] build OK"
         else
-            log "[3/4] ERROR: build failed — aborting, containers NOT restarted"
+            log "[2/4] ERROR: build failed — стек НЕ трогаем, остаётся на старой версии"
             continue
         fi
 
-        # ── Step 4: docker compose up -d ──────────────────────────────────────
-        log "[4/4] docker compose up -d..."
-        if $COMPOSE_CMD up -d >> "$LOG_FILE" 2>&1; then
-            log "[4/4] docker compose up -d OK"
+        # ── Step 3: docker compose down ───────────────────────────────────────
+        # Быстрый: образы уже готовы, простой минимален.
+        log "[3/4] docker compose down..."
+        $COMPOSE_CMD down >> "$LOG_FILE" 2>&1 && log "[3/4] docker compose down OK" \
+            || log "[3/4] WARNING: docker compose down returned non-zero (continuing)"
+
+        # ── Step 4: docker compose up -d --wait ───────────────────────────────
+        # --wait дожидается healthcheck'ов (app накатывает миграции БД на старте);
+        # без него up возвращает успех, даже если контейнер тут же упал.
+        log "[4/4] docker compose up -d --wait..."
+        if $COMPOSE_CMD up -d --wait --wait-timeout 180 >> "$LOG_FILE" 2>&1; then
+            log "[4/4] docker compose up -d OK (контейнеры healthy)"
+            log "=== Update completed successfully ==="
         else
-            log "[4/4] ERROR: docker compose up -d failed"
+            log "[4/4] ERROR: контейнеры не стали healthy за 180с — состояние стека:"
+            $COMPOSE_CMD ps >> "$LOG_FILE" 2>&1 || true
+            log "[4/4] Проверьте логи app: '$COMPOSE_CMD logs --tail=100 app' (вероятно ошибка миграции/нового кода)"
             continue
         fi
-
-        log "=== Update completed successfully ==="
     fi
 
     sleep "$POLL_INTERVAL"
