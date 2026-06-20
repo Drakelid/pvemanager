@@ -15,12 +15,14 @@ import {
 } from '@/hooks/use-ipam';
 import type { IPAMAllocation } from '@/types';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 const STATUSES = ['allocated', 'reserved', 'available', 'conflict'] as const;
 const RESOURCE_TYPES = ['vm', 'lxc', 'physical', 'service', 'reserved'] as const;
 
 export default function IPAMAllocationsPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [networkId, setNetworkId] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
@@ -48,8 +50,8 @@ export default function IPAMAllocationsPage() {
     return true;
   });
 
-  const handleDelete = (a: IPAMAllocation) => {
-    if (!confirm(t('ipam.delete_allocation_confirm', { ip: a.ip_address }))) return;
+  const handleDelete = async (a: IPAMAllocation) => {
+    if (!await confirm(t('ipam.delete_allocation_confirm', { ip: a.ip_address }))) return;
     deleteAllocation.mutate(a.id, {
       onSuccess: () => toast.success(t('ipam.released')),
       onError: (e: Error) => toast.error(e.message),

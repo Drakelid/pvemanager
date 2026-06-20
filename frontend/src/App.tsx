@@ -5,6 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { router } from '@/router';
 import { useAuthStore } from '@/stores/auth-store';
+import { ConfirmDialogProvider } from '@/components/shared/ConfirmDialog';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,8 +27,10 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delay={200}>
-        <RouterProvider router={router} />
-        <Toaster position="bottom-right" richColors />
+        <ConfirmDialogProvider>
+          <RouterProvider router={router} />
+          <Toaster position="bottom-right" richColors />
+        </ConfirmDialogProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

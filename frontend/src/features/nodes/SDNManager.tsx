@@ -18,6 +18,7 @@ import {
 } from '@/hooks/use-sdn';
 import type { SDNZone, SDNVNet } from '@/types';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 const ZONE_TYPES = ['simple', 'vlan', 'qinq', 'vxlan', 'evpn'];
 
@@ -210,6 +211,7 @@ const emptySubnet: SubnetForm = { subnet: '', gateway: '', snat: false, dnszonep
 
 function SubnetSection({ serverId, vnet }: { serverId: number; vnet: string }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { data, isLoading } = useSDNSubnets(serverId, vnet);
   const createSubnet = useCreateSDNSubnet(serverId);
   const deleteSubnet = useDeleteSDNSubnet(serverId);
@@ -241,8 +243,8 @@ function SubnetSection({ serverId, vnet }: { serverId: number; vnet: string }) {
     });
   };
 
-  const remove = (subnetId: string, cidr: string) => {
-    if (!confirm(`${t('sdn.delete_subnet')} "${cidr}"?`)) return;
+  const remove = async (subnetId: string, cidr: string) => {
+    if (!await confirm(`${t('sdn.delete_subnet')} "${cidr}"?`)) return;
     deleteSubnet.mutate({ vnet, subnetId }, {
       onSuccess: () => toast.success(t('sdn.subnet_deleted')),
       onError: (e: Error) => toast.error(e.message),
@@ -321,6 +323,7 @@ function SubnetSection({ serverId, vnet }: { serverId: number; vnet: string }) {
 
 export default function SDNManager({ serverId }: { serverId: number }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { data: status, isLoading: statusLoading, isFetching, refetch } = useSDNStatus(serverId);
   const available = status?.sdn_available ?? false;
 
@@ -339,20 +342,20 @@ export default function SDNManager({ serverId }: { serverId: number }) {
   const [editVNet, setEditVNet] = useState<SDNVNet | null>(null);
   const [expandedVNet, setExpandedVNet] = useState<string | null>(null);
 
-  const handleApply = () => {
-    if (!confirm(t('sdn.apply_confirm'))) return;
+  const handleApply = async () => {
+    if (!await confirm(t('sdn.apply_confirm'))) return;
     applySDN.mutate(undefined, {
       onSuccess: () => toast.success(t('sdn.applied')),
       onError: (e: Error) => toast.error(e.message),
     });
   };
 
-  const removeZone = (zone: string) => {
-    if (!confirm(`${t('sdn.delete_zone')} "${zone}"?`)) return;
+  const removeZone = async (zone: string) => {
+    if (!await confirm(`${t('sdn.delete_zone')} "${zone}"?`)) return;
     deleteZone.mutate(zone, { onSuccess: () => toast.success(t('sdn.zone_deleted')), onError: (e: Error) => toast.error(e.message) });
   };
-  const removeVNet = (vnet: string) => {
-    if (!confirm(`${t('sdn.delete_vnet')} "${vnet}"?`)) return;
+  const removeVNet = async (vnet: string) => {
+    if (!await confirm(`${t('sdn.delete_vnet')} "${vnet}"?`)) return;
     deleteVNet.mutate(vnet, { onSuccess: () => toast.success(t('sdn.vnet_deleted')), onError: (e: Error) => toast.error(e.message) });
   };
 

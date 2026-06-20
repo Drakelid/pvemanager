@@ -19,6 +19,7 @@ import {
 } from '@/hooks/use-nodes';
 import type { NodeNetworkInterface } from '@/types';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 const IFACE_TYPES = ['bridge', 'bond', 'vlan', 'eth', 'alias', 'OVSBridge', 'OVSBond', 'OVSIntPort'];
 
@@ -91,6 +92,7 @@ function buildPayload(form: FormState): Record<string, unknown> {
 
 export default function NodeNetworks({ serverId, nodeNames }: { serverId: number; nodeNames: string[] }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [node, setNode] = useState(nodeNames[0] || '');
 
   const { data, isLoading, isFetching, refetch } = useNodeNetworks(serverId, node);
@@ -144,24 +146,24 @@ export default function NodeNetworks({ serverId, nodeNames }: { serverId: number
     }
   };
 
-  const handleDelete = (iface: string) => {
-    if (!confirm(`${t('common.confirm_delete')} "${iface}"?`)) return;
+  const handleDelete = async (iface: string) => {
+    if (!await confirm(`${t('common.confirm_delete')} "${iface}"?`)) return;
     deleteNet.mutate(iface, {
       onSuccess: () => toast.success(t('netif.deleted')),
       onError: (err: Error) => toast.error(err.message),
     });
   };
 
-  const handleApply = () => {
-    if (!confirm(t('netif.apply_confirm'))) return;
+  const handleApply = async () => {
+    if (!await confirm(t('netif.apply_confirm'))) return;
     applyNet.mutate(undefined, {
       onSuccess: () => toast.success(t('netif.applied')),
       onError: (err: Error) => toast.error(err.message),
     });
   };
 
-  const handleRevert = () => {
-    if (!confirm(t('netif.revert_confirm'))) return;
+  const handleRevert = async () => {
+    if (!await confirm(t('netif.revert_confirm'))) return;
     revertNet.mutate(undefined, {
       onSuccess: () => toast.success(t('netif.reverted')),
       onError: (err: Error) => toast.error(err.message),

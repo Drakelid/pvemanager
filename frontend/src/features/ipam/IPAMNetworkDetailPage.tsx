@@ -16,6 +16,7 @@ import {
 } from '@/hooks/use-ipam';
 import type { IPAMNetwork, IPAMPool } from '@/types';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 export default function IPAMNetworkDetailPage() {
   const { t } = useTranslation();
@@ -223,6 +224,7 @@ const emptyPool = { name: '', pool_type: 'static', range_start: '', range_end: '
 
 function PoolsCard({ networkId, pools }: { networkId: number; pools: IPAMPool[] }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const createPool = useCreatePool();
   const updatePool = useUpdatePool();
   const deletePool = useDeletePool();
@@ -259,8 +261,8 @@ function PoolsCard({ networkId, pools }: { networkId: number; pools: IPAMPool[] 
     }
   };
 
-  const handleDelete = (p: IPAMPool) => {
-    if (!confirm(t('ipam.delete_pool_confirm', { name: p.name }))) return;
+  const handleDelete = async (p: IPAMPool) => {
+    if (!await confirm(t('ipam.delete_pool_confirm', { name: p.name }))) return;
     deletePool.mutate(p.id, {
       onSuccess: () => toast.success(t('ipam.pool_deleted')),
       onError: (e: Error) => toast.error(e.message),

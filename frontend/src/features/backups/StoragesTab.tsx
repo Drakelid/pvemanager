@@ -16,6 +16,7 @@ import {
 } from '@/hooks/use-backups';
 import { formatBytes } from '@/lib/format';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 const STORAGE_TYPES = ['dir', 'nfs', 'cifs', 'pbs'];
 
@@ -180,6 +181,7 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
 
 export default function StoragesTab() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { data: servers = [] } = useServers();
   const [serverId, setServerId] = useState(0);
 
@@ -197,8 +199,8 @@ export default function StoragesTab() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<StorageRow | null>(null);
 
-  const handleDelete = (s: string) => {
-    if (!confirm(`${t('storages.delete_confirm')} "${s}"?`)) return;
+  const handleDelete = async (s: string) => {
+    if (!await confirm(`${t('storages.delete_confirm')} "${s}"?`)) return;
     deleteStorage.mutate(s, {
       onSuccess: () => toast.success(t('storages.deleted')),
       onError: (e: Error) => toast.error(e.message),

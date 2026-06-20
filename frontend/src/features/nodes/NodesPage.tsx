@@ -12,6 +12,7 @@ import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestS
 import { useVirtualMachines } from '@/hooks/use-instances';
 import type { ProxmoxServerCreate } from '@/types';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 interface ServerFormData {
   name: string;
@@ -198,6 +199,7 @@ function ServerFormDialog({
 
 export default function NodesPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { data: servers = [], isLoading } = useServers();
   const { data: vms = [] } = useVirtualMachines();
   const createServer = useCreateServer();
@@ -228,8 +230,8 @@ export default function NodesPage() {
     });
   };
 
-  const handleDelete = (id: number, name: string) => {
-    if (!confirm(`${t('common.confirm_delete')} "${name}"?`)) return;
+  const handleDelete = async (id: number, name: string) => {
+    if (!await confirm(`${t('common.confirm_delete')} "${name}"?`)) return;
     deleteServer.mutate(id, {
       onError: (err) => toast.error(err.message),
     });

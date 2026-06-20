@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useHAStatus, useAddToHA, useRemoveFromHA } from '@/hooks/use-ha';
 import type { VirtualMachine } from '@/types';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 const HA_STATES = ['started', 'stopped', 'enabled', 'disabled', 'ignored'];
 
@@ -35,6 +36,7 @@ const emptyAddForm: AddForm = {
 
 export default function HAResources({ serverId, vms }: { serverId: number; vms: VirtualMachine[] }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { data, isLoading, isFetching, refetch } = useHAStatus(serverId);
   const addHA = useAddToHA(serverId);
   const removeHA = useRemoveFromHA(serverId);
@@ -74,8 +76,8 @@ export default function HAResources({ serverId, vms }: { serverId: number; vms: 
     );
   };
 
-  const handleRemove = (sid: string) => {
-    if (!confirm(`${t('ha.remove_confirm')} "${sid}"?`)) return;
+  const handleRemove = async (sid: string) => {
+    if (!await confirm(`${t('ha.remove_confirm')} "${sid}"?`)) return;
     const [vmType, vmidStr] = sid.split(':');
     removeHA.mutate(
       { vmType: vmType as 'vm' | 'ct', vmid: Number(vmidStr) },

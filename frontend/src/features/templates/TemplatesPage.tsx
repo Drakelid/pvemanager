@@ -13,9 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useTemplates, useTemplateGroups, useAutoImportTemplates, useDeleteTemplate } from '@/hooks/use-templates';
 import { useServers } from '@/hooks/use-nodes';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 export default function TemplatesPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [search, setSearch] = useState('');
   const [groupFilter, setGroupFilter] = useState<string>('');
   const [serverFilter, setServerFilter] = useState<string>('');
@@ -125,7 +127,7 @@ export default function TemplatesPage() {
                     variant="ghost"
                     size="sm"
                     className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0 text-destructive"
-                    onClick={() => { if (confirm(t('common.confirm_delete'))) deleteTpl.mutate(tpl.id); }}
+                    onClick={async () => { if (await confirm(t('common.confirm_delete'))) deleteTpl.mutate(tpl.id); }}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>

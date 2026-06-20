@@ -15,6 +15,7 @@ import {
   useUserSSHKeys, useAdminCreateUserSSHKey, useAdminUpdateUserSSHKey,
   useAdminDeleteUserSSHKey, useAdminDownloadUserPrivateKey,
 } from '@/hooks/use-ssh-keys';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 interface Props {
   /** When provided + admin=true, manage another user's keys via admin endpoints. */
@@ -29,6 +30,7 @@ function getErrMsg(err: unknown): string {
 
 export function SSHKeysManager({ userId = null, admin = false }: Props) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
 
   const myList = useMySSHKeys();
   const adminList = useUserSSHKeys(admin && userId ? userId : null);
@@ -87,8 +89,8 @@ export function SSHKeysManager({ userId = null, admin = false }: Props) {
     }
   };
 
-  const onDelete = (id: number) => {
-    if (!confirm(t('ssh_keys.confirm_delete'))) return;
+  const onDelete = async (id: number) => {
+    if (!await confirm(t('ssh_keys.confirm_delete'))) return;
     if (isAdminMode && userId) {
       adminDelete.mutate({ userId, keyId: id }, {
         onSuccess: () => toast.success(t('ssh_keys.deleted')),

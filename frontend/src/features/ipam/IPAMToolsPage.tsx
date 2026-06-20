@@ -15,6 +15,7 @@ import {
   useCleanupOrphans, useLinkAllocations, useAutoAllocate, useNextAvailableIP, useIPHistoryLookup,
 } from '@/hooks/use-ipam';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 export default function IPAMToolsPage() {
   const { t } = useTranslation();
@@ -174,12 +175,13 @@ function ConflictsCard() {
 
 function OrphansCard() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { data, isLoading } = useIPAMOrphans();
   const cleanup = useCleanupOrphans();
   const orphans = data?.orphans ?? [];
 
-  const handleCleanup = () => {
-    if (!confirm(t('ipam.cleanup_confirm'))) return;
+  const handleCleanup = async () => {
+    if (!await confirm(t('ipam.cleanup_confirm'))) return;
     cleanup.mutate(undefined, {
       onSuccess: (r) => toast.success(`${t('ipam.released')}: ${r.released_count}`),
       onError: (e: Error) => toast.error(e.message),

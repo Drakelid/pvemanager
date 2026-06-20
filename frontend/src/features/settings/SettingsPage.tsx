@@ -23,6 +23,7 @@ import {
 } from '@/hooks/use-notifications';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SSHKeysManager } from './SSHKeysManager';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 
 export default function SettingsPage() {
   const { t } = useTranslation();
@@ -376,6 +377,7 @@ function NotificationPreferencesCard() {
 
 function AboutTab() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { data: version } = useAppVersion();
   const checkUpdates = useCheckUpdates();
   const { data: repo } = useUpdateRepository();
@@ -402,8 +404,8 @@ function AboutTab() {
     });
   };
 
-  const handlePerform = () => {
-    if (!confirm(t('settings.update_confirm'))) return;
+  const handlePerform = async () => {
+    if (!await confirm(t('settings.update_confirm'))) return;
     performUpdate.mutate(undefined, {
       onSuccess: (r) => r.success ? toast.success(r.message || t('settings.update_started')) : toast.error(r.error || 'Error'),
       onError: (e: Error) => toast.error(e.message),
