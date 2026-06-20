@@ -49,10 +49,10 @@ function OwnerCard({ serverId, vmid }: { serverId: number; vmid: number }) {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-end gap-2">
-          <div className="flex-1">
+          <div className="flex-1 space-y-1.5">
             <Label>{t('instances.owner')}</Label>
             <Select value={value} onValueChange={v => { if (v) setSelected(v); }}>
-              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={OWNER_NONE}>{t('instances.no_owner')}</SelectItem>
                 {(owner?.users ?? []).map(u => (
@@ -107,8 +107,8 @@ function ExecuteScriptCard({ serverId, vmid, node }: { serverId: number; vmid: n
           className="w-full rounded-md border bg-background p-2 font-mono text-xs"
         />
         <div className="grid grid-cols-2 gap-3">
-          <div><Label>{t('instances.interpreter')}</Label><Input value={interpreter} onChange={e => setInterpreter(e.target.value)} className="mt-1 font-mono" /></div>
-          <div><Label>{t('instances.timeout_sec')}</Label><Input type="number" min={1} max={600} value={timeout} onChange={e => setTimeoutVal(e.target.value)} className="mt-1" /></div>
+          <div className="space-y-1.5"><Label>{t('instances.interpreter')}</Label><Input value={interpreter} onChange={e => setInterpreter(e.target.value)} className="font-mono" /></div>
+          <div className="space-y-1.5"><Label>{t('instances.timeout_sec')}</Label><Input type="number" min={1} max={600} value={timeout} onChange={e => setTimeoutVal(e.target.value)} /></div>
         </div>
         <Button size="sm" onClick={run} disabled={exec.isPending}>
           {exec.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -236,13 +236,13 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            Compute Resources
+            {t('instances.compute_resources')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="cores">vCPU Cores</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="cores">{t('instances.vcpu_cores')}</Label>
               <Input
                 id="cores"
                 type="number"
@@ -252,10 +252,10 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
                 value={cores}
                 onChange={(e) => setCores(e.target.value)}
               />
-              <p className="mt-1 text-xs text-muted-foreground">Current: {currentCores} cores</p>
+              <p className="text-xs text-muted-foreground">{t('instances.current_cores', { count: currentCores })}</p>
             </div>
-            <div>
-              <Label htmlFor="memory">Memory (MB)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="memory">{t('instances.memory_mb')}</Label>
               <Input
                 id="memory"
                 type="number"
@@ -265,15 +265,15 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
                 value={memory}
                 onChange={(e) => setMemory(e.target.value)}
               />
-              <p className="mt-1 text-xs text-muted-foreground">Current: {currentMemory} MB</p>
+              <p className="text-xs text-muted-foreground">{t('instances.current_memory', { count: currentMemory })}</p>
             </div>
           </div>
           <Button onClick={handleConfigUpdate} disabled={updateConfig.isPending} size="sm">
             {updateConfig.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Apply Changes
+            {t('instances.apply_changes')}
           </Button>
           <p className="text-xs text-muted-foreground">
-            Note: VM may need to be restarted for changes to take effect.
+            {t('instances.apply_changes_note')}
           </p>
         </CardContent>
       </Card>
@@ -281,12 +281,12 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
       {/* Disk Resize */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold">Disk Resize</CardTitle>
+          <CardTitle className="text-sm font-semibold">{t('instances.disk_resize')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="disk-device">Disk Device</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="disk-device">{t('instances.disk_device')}</Label>
               <Input
                 id="disk-device"
                 value={diskDevice}
@@ -294,8 +294,8 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
                 placeholder={t('common.placeholder_disk')}
               />
             </div>
-            <div>
-              <Label htmlFor="disk-size">New Size (GB)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="disk-size">{t('instances.new_size_gb')}</Label>
               <Input
                 id="disk-size"
                 type="number"
@@ -313,10 +313,10 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
             variant="outline"
           >
             {resizeDisk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Resize Disk
+            {t('instances.resize_disk')}
           </Button>
           <p className="text-xs text-muted-foreground">
-            Disks can only be enlarged. Use the full target size.
+            {t('instances.resize_disk_hint')}
           </p>
         </CardContent>
       </Card>
@@ -327,7 +327,7 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
       {config && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Raw Configuration</CardTitle>
+            <CardTitle className="text-sm font-semibold">{t('instances.raw_configuration')}</CardTitle>
           </CardHeader>
           <CardContent>
             <pre className="overflow-auto rounded-md bg-muted p-3 text-xs font-mono max-h-64">
