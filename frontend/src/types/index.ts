@@ -99,6 +99,21 @@ export interface VMInstance {
   tags?: string;
   template?: boolean;
   description?: string;
+  /** Configured vCPU count */
+  cores?: number;
+  /** Configured RAM in MB */
+  memory?: number;
+  /** Configured disk size in GB */
+  disk_size?: number;
+  /** OS name / template label */
+  os?: string;
+  os_template?: string;
+  /** IPAM allocated_by string (legacy owner) */
+  owner?: string;
+  /** Actual owner user (VMInstance.owner_id → User) */
+  owner_user?: { username: string; email: string; full_name?: string | null } | null;
+  /** PVE lock state (e.g. 'clone', 'create', 'migrate') while an operation runs */
+  lock?: string;
   /** Ghost row marker — present only for in-progress deploy tasks */
   _deployTaskId?: number;
 }

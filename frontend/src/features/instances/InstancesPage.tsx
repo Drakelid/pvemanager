@@ -7,10 +7,13 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   getPaginationRowModel,
+  getFacetedRowModel,
+  getFacetedUniqueValues,
   flexRender,
   type ColumnDef,
   type SortingState,
   type RowSelectionState,
+  type ColumnFiltersState,
 } from '@tanstack/react-table';
 import {
   Plus,
@@ -37,6 +40,7 @@ import {
   ArrowDown,
   ArrowUp,
   HardDrive,
+  Lock,
 } from 'lucide-react';
 import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
 import { Card, CardContent } from '@/components/ui/card';
@@ -68,10 +72,11 @@ import {
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusDot } from '@/components/shared/status-dot';
+import { ColumnFilter, multiSelectFilter } from '@/components/shared/column-filter';
 import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync, useInstancesMetricsSync } from '@/hooks/use-instances';
 import { useServers } from '@/hooks/use-nodes';
 import { useProfile } from '@/hooks/use-settings';
-import { formatBytes, vmTypeLabel, formatUptime } from '@/lib/format';
+import { formatBytes, vmTypeLabel, formatUptime, formatVmConfig } from '@/lib/format';
 import { apiClient } from '@/lib/api-client';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
 import type { VMInstance } from '@/types';
@@ -273,8 +278,31 @@ export default function InstancesPage() {
     return localStorage.getItem('instances-node-filter') ?? 'all';
   });
   const [typeTab, setTypeTab] = useState<string>('all');
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [sorting, setSorting] = useState<SortingState>(() => {
+    try {
+      const raw = localStorage.getItem('instances-sorting');
+      return raw ? (JSON.parse(raw) as SortingState) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(() => {
+    try {
+      const raw = localStorage.getItem('instances-column-filters');
+      return raw ? (JSON.parse(raw) as ColumnFiltersState) : [];
+    } catch {
+      return [];
+    }
+  });
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  // Persist sorting + column filters across reloads
+  useEffect(() => {
+    localStorage.setItem('instances-sorting', JSON.stringify(sorting));
+  }, [sorting]);
+  useEffect(() => {
+    localStorage.setItem('instances-column-filters', JSON.stringify(columnFilters));
+  }, [columnFilters]);
 
   // Filter real VMs
   const filteredVMs = useMemo(() => {
@@ -439,6 +467,8 @@ export default function InstancesPage() {
       },
       {
         accessorKey: 'name',
+        filterFn: 'includesString',
+        meta: { filter: 'text' },
         header: ({ column }) => (
           <Button
             variant="ghost"
@@ -485,6 +515,8 @@ export default function InstancesPage() {
       },
       {
         accessorKey: 'status',
+        filterFn: multiSelectFilter,
+        meta: { filter: 'select' },
         header: t('common.status', 'Status'),
         cell: ({ row }) => {
           const vm = row.original;
@@ -518,18 +550,32 @@ export default function InstancesPage() {
             );
           }
           return (
-            <Badge
-              variant="secondary"
-              className={status === 'running' ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}
-            >
-              {status}
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              <Badge
+                variant="secondary"
+                className={status === 'running' ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}
+              >
+                {status}
+              </Badge>
+              {vm.lock && (
+                <Badge
+                  variant="secondary"
+                  className="bg-amber-500/10 text-amber-600 text-[10px] gap-1"
+                  title={t('instances.locked_hint', 'Заблокировано Proxmox — операция выполняется')}
+                >
+                  <Lock className="h-3 w-3" />
+                  {vm.lock}
+                </Badge>
+              )}
+            </div>
           );
         },
-        size: 140,
+        size: 160,
       },
       {
         accessorKey: 'node',
+        filterFn: multiSelectFilter,
+        meta: { filter: 'select' },
         header: t('common.node', 'Node'),
         cell: ({ getValue }) => (
           <span className="text-muted-foreground">{getValue<string>()}</span>
@@ -538,6 +584,8 @@ export default function InstancesPage() {
       },
       {
         accessorKey: 'type',
+        filterFn: multiSelectFilter,
+        meta: { filter: 'select', formatOption: (v: string) => vmTypeLabel(v) },
         header: t('common.type', 'Type'),
         cell: ({ getValue }) => {
           const type = getValue<string>();
@@ -559,6 +607,8 @@ export default function InstancesPage() {
       {
         id: 'ip',
         accessorKey: 'ip_address',
+        filterFn: 'includesString',
+        meta: { filter: 'text' },
         header: 'IP',
         cell: ({ getValue }) => {
           const ip = getValue<string>();
@@ -569,6 +619,47 @@ export default function InstancesPage() {
           );
         },
         size: 130,
+      },
+      {
+        id: 'owner',
+        accessorFn: (vm) =>
+          vm.owner_user?.email ||
+          vm.owner_user?.full_name ||
+          vm.owner_user?.username ||
+          vm.owner ||
+          '',
+        filterFn: 'includesString',
+        meta: { filter: 'text' },
+        header: t('instances.owner', 'Owner'),
+        cell: ({ getValue }) => {
+          const owner = getValue<string>();
+          return owner ? (
+            <span className="text-xs">{owner}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          );
+        },
+        size: 180,
+      },
+      {
+        id: 'os',
+        accessorFn: (vm) => vm.os || vm.os_template || '',
+        filterFn: multiSelectFilter,
+        meta: { filter: 'select' },
+        header: t('instances.os_config', 'OS / Config'),
+        cell: ({ row }) => {
+          const vm = row.original;
+          if (vm._deployTaskId) return <span className="text-xs text-muted-foreground">—</span>;
+          const os = vm.os || vm.os_template;
+          const config = formatVmConfig(vm);
+          return (
+            <div className="leading-tight">
+              <div className="text-sm">{os || '—'}</div>
+              {config && <div className="text-xs text-muted-foreground">{config}</div>}
+            </div>
+          );
+        },
+        size: 200,
       },
       {
         id: 'cpu',
@@ -689,24 +780,6 @@ export default function InstancesPage() {
         size: 80,
       },
       {
-        id: 'tags',
-        accessorKey: 'tags',
-        header: 'Tags',
-        cell: ({ getValue, row }) => {
-          if (row.original._deployTaskId) return null;
-          const tags = getValue<string>();
-          if (!tags) return null;
-          return (
-            <div className="flex gap-1 flex-wrap">
-              {tags.split(/[;,]/).filter(Boolean).map((tag) => (
-                <Badge key={tag} variant="secondary" className="text-[10px] leading-tight">{tag.trim()}</Badge>
-              ))}
-            </div>
-          );
-        },
-        size: 120,
-      },
-      {
         id: 'actions',
         cell: ({ row }) => {
           if (row.original._deployTaskId) return null;
@@ -724,13 +797,16 @@ export default function InstancesPage() {
   const table = useReactTable({
     data: liveRows,
     columns,
-    state: { sorting, rowSelection },
+    state: { sorting, rowSelection, columnFilters },
     onSortingChange: setSorting,
     onRowSelectionChange: setRowSelection,
+    onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
+    getFacetedUniqueValues: getFacetedUniqueValues(),
     initialState: { pagination: { pageSize: 25 } },
   });
 
@@ -858,11 +934,25 @@ export default function InstancesPage() {
               <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
                   <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id} style={{ width: header.getSize() }}>
-                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                      </TableHead>
-                    ))}
+                    {headerGroup.headers.map((header) => {
+                      const filterVariant = header.column.columnDef.meta?.filter;
+                      return (
+                        <TableHead key={header.id} style={{ width: header.getSize() }}>
+                          {header.isPlaceholder ? null : (
+                            <div className="flex items-center gap-0.5">
+                              {flexRender(header.column.columnDef.header, header.getContext())}
+                              {filterVariant && (
+                                <ColumnFilter
+                                  column={header.column}
+                                  variant={filterVariant}
+                                  formatOption={header.column.columnDef.meta?.formatOption}
+                                />
+                              )}
+                            </div>
+                          )}
+                        </TableHead>
+                      );
+                    })}
                   </TableRow>
                 ))}
               </TableHeader>
