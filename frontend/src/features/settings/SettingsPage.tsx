@@ -80,7 +80,10 @@ function ProfileTab() {
           <div><Label>{t('settings.username')}</Label><Input value={profile?.username || ''} disabled className="mt-1" /></div>
           <div><Label>{t('settings.display_name')}</Label><Input value={displayName} onChange={e => setDisplayName(e.target.value)} className="mt-1" /></div>
           <div><Label>Email</Label><Input value={email} onChange={e => setEmail(e.target.value)} className="mt-1" /></div>
-          <Button size="sm" onClick={() => updateProfile.mutate({ full_name: displayName, email })}>{t('common.save')}</Button>
+          <Button size="sm" onClick={() => updateProfile.mutate({ full_name: displayName, email }, {
+            onSuccess: (r) => toast.success(r.message),
+            onError: (e: Error) => toast.error(e.message),
+          })}>{t('common.save')}</Button>
         </CardContent>
       </Card>
       <Card>
@@ -91,8 +94,10 @@ function ProfileTab() {
           <div><Label>{t('settings.confirm_password')}</Label><Input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} className="mt-1" /></div>
           <Button size="sm" onClick={() => {
             if (newPwd !== confirmPwd) { toast.error(t('settings.password_mismatch')); return; }
-            changePassword.mutate({ current_password: currentPwd, new_password: newPwd, confirm_password: confirmPwd });
-            setCurrentPwd(''); setNewPwd(''); setConfirmPwd('');
+            changePassword.mutate({ current_password: currentPwd, new_password: newPwd, confirm_password: confirmPwd }, {
+              onSuccess: (r) => { toast.success(r.message); setCurrentPwd(''); setNewPwd(''); setConfirmPwd(''); },
+              onError: (e: Error) => toast.error(e.message),
+            });
           }}>{t('settings.change_password')}</Button>
         </CardContent>
       </Card>
@@ -143,8 +148,8 @@ function SecurityTab() {
   useEffect(() => {
     if (security) {
       setMaxAttempts(String(security.max_login_attempts ?? 5));
-      setLockoutDuration(String(security.lockout_duration ?? 300));
-      setSessionTimeout(String(security.session_timeout ?? 3600));
+      setLockoutDuration(String(security.lockout_duration_minutes ?? 30));
+      setSessionTimeout(String(security.session_timeout_minutes ?? 60));
     }
   }, [security]);
 
@@ -153,12 +158,15 @@ function SecurityTab() {
       <CardHeader><CardTitle className="text-sm">{t('settings.security_settings')}</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         <div><Label>{t('settings.max_attempts')}</Label><Input type="number" value={maxAttempts} onChange={e => setMaxAttempts(e.target.value)} className="mt-1" /></div>
-        <div><Label>{t('settings.lockout_duration')}</Label><Input type="number" value={lockoutDuration} onChange={e => setLockoutDuration(e.target.value)} className="mt-1" /><p className="text-xs text-muted-foreground mt-1">{t('settings.seconds')}</p></div>
-        <div><Label>{t('settings.session_timeout')}</Label><Input type="number" value={sessionTimeout} onChange={e => setSessionTimeout(e.target.value)} className="mt-1" /><p className="text-xs text-muted-foreground mt-1">{t('settings.seconds')}</p></div>
+        <div><Label>{t('settings.lockout_duration')}</Label><Input type="number" value={lockoutDuration} onChange={e => setLockoutDuration(e.target.value)} className="mt-1" /><p className="text-xs text-muted-foreground mt-1">{t('settings.minutes')}</p></div>
+        <div><Label>{t('settings.session_timeout')}</Label><Input type="number" value={sessionTimeout} onChange={e => setSessionTimeout(e.target.value)} className="mt-1" /><p className="text-xs text-muted-foreground mt-1">{t('settings.minutes')}</p></div>
         <Button size="sm" onClick={() => updateSecurity.mutate({
           max_login_attempts: Number(maxAttempts),
-          lockout_duration: Number(lockoutDuration),
-          session_timeout: Number(sessionTimeout),
+          lockout_duration_minutes: Number(lockoutDuration),
+          session_timeout_minutes: Number(sessionTimeout),
+        }, {
+          onSuccess: () => toast.success(t('settings.security_saved')),
+          onError: (e: Error) => toast.error(e.message),
         })}>{t('common.save')}</Button>
       </CardContent>
     </Card>
@@ -228,7 +236,10 @@ function NotificationsTab() {
             <div><Label>Password</Label><Input type="password" value={smtpPass} onChange={e => setSmtpPass(e.target.value)} className="mt-1" /></div>
             <div><Label>From Email</Label><Input value={smtpFrom} onChange={e => setSmtpFrom(e.target.value)} className="mt-1" /></div>
           </div>
-          <Button size="sm" onClick={() => updateSmtp.mutate({ host: smtpHost, port: Number(smtpPort), username: smtpUser, password: smtpPass || undefined, from_email: smtpFrom })}>{t('common.save')}</Button>
+          <Button size="sm" onClick={() => updateSmtp.mutate({ host: smtpHost, port: Number(smtpPort), username: smtpUser, password: smtpPass || undefined, from_email: smtpFrom }, {
+            onSuccess: (r) => toast.success(r.message),
+            onError: (e: Error) => toast.error(e.message),
+          })}>{t('common.save')}</Button>
           <div className="flex items-center gap-2 border-t pt-3">
             <Input value={testEmail} onChange={e => setTestEmail(e.target.value)} className="max-w-xs" placeholder={t('settings.test_email_placeholder')} />
             <Button size="sm" variant="outline" onClick={handleTestSmtp} disabled={testSmtp.isPending}>{t('settings.send_test')}</Button>
@@ -246,7 +257,10 @@ function NotificationsTab() {
           <div><Label>Bot Token</Label><Input value={tgToken} onChange={e => setTgToken(e.target.value)} className="mt-1" /></div>
           <div><Label>Chat ID</Label><Input value={tgChatId} onChange={e => setTgChatId(e.target.value)} className="mt-1" /></div>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => updateTg.mutate({ telegram_bot_token: tgToken })}>{t('common.save')}</Button>
+            <Button size="sm" onClick={() => updateTg.mutate({ telegram_bot_token: tgToken }, {
+              onSuccess: (r) => toast.success(r.message),
+              onError: (e: Error) => toast.error(e.message),
+            })}>{t('common.save')}</Button>
             <Button size="sm" variant="outline" onClick={handleTestTg} disabled={testTg.isPending}>{t('settings.send_test')}</Button>
           </div>
         </CardContent>

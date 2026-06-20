@@ -680,6 +680,8 @@
     "lockout_duration": "Lockout Duration",
     "session_timeout": "Session Timeout",
     "seconds": "seconds",
+    "minutes": "minutes",
+    "security_saved": "Security settings saved",
     "version": "Version",
     "check_updates": "Check for Updates",
     "update_available": "Update available",

@@ -90,18 +90,31 @@ export function useUpdatePanelSettings() {
   });
 }
 
+export interface SecuritySettings {
+  max_login_attempts: number;
+  lockout_duration_minutes: number;
+  session_timeout_minutes: number;
+  ip_block_threshold: number;
+  ip_block_duration_minutes: number;
+  password_min_length: number;
+  password_require_uppercase: boolean;
+  password_require_lowercase: boolean;
+  password_require_numbers: boolean;
+  password_require_special: boolean;
+}
+
 export function useSecuritySettings() {
   return useQuery({
     queryKey: settingsKeys.security,
-    queryFn: () => apiClient.get<{ single_session_enabled: boolean; max_login_attempts?: number; lockout_duration?: number; session_timeout?: number }>('/settings/api/security-settings'),
+    queryFn: () => apiClient.get<SecuritySettings>('/admin/api/security/settings'),
   });
 }
 
 export function useUpdateSecuritySettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { single_session_enabled?: boolean; max_login_attempts?: number; lockout_duration?: number; session_timeout?: number }) =>
-      apiClient.put<{ message: string }>('/settings/api/security-settings', data),
+    mutationFn: (data: Partial<SecuritySettings>) =>
+      apiClient.put<{ message: string }>('/admin/api/security/settings', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.security }),
   });
 }

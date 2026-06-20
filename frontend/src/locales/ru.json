@@ -680,6 +680,8 @@
     "lockout_duration": "Время блокировки",
     "session_timeout": "Таймаут сессии",
     "seconds": "секунд",
+    "minutes": "минут",
+    "security_saved": "Настройки безопасности сохранены",
     "version": "Версия",
     "check_updates": "Проверить обновления",
     "update_available": "Доступно обновление",

@@ -406,12 +406,12 @@ async def update_security_settings(
 # ==================== Notification Channel Settings API ====================
 
 class SMTPSettingsRequest(BaseModel):
-    smtp_host: Optional[str] = Field(None, max_length=255)
-    smtp_port: Optional[int] = Field(None, ge=1, le=65535)
-    smtp_user: Optional[str] = Field(None, max_length=255)
-    smtp_password: Optional[str] = Field(None, max_length=255)
-    smtp_from: Optional[str] = Field(None, max_length=255)
-    smtp_tls: Optional[bool] = None
+    host: Optional[str] = Field(None, max_length=255)
+    port: Optional[int] = Field(None, ge=1, le=65535)
+    username: Optional[str] = Field(None, max_length=255)
+    password: Optional[str] = Field(None, max_length=255)
+    from_email: Optional[str] = Field(None, max_length=255)
+    tls: Optional[bool] = None
 
 
 class TelegramSettingsRequest(BaseModel):
@@ -435,9 +435,9 @@ async def get_notification_channel_settings(
         "smtp": {
             "host": get_setting(db, "smtp_host", ""),
             "port": int(get_setting(db, "smtp_port", "587") or "587"),
-            "user": get_setting(db, "smtp_user", ""),
+            "username": get_setting(db, "smtp_user", ""),
             "password": "***" if get_setting(db, "smtp_password") else "",
-            "from": get_setting(db, "smtp_from", ""),
+            "from_email": get_setting(db, "smtp_from", ""),
             "tls": get_setting(db, "smtp_tls", "true").lower() == "true"
         },
         "telegram": {
@@ -462,29 +462,29 @@ async def update_smtp_settings(
         )
     
     updated_fields = []
-    
-    if data.smtp_host is not None:
-        set_setting(db, "smtp_host", data.smtp_host, "SMTP сервер")
+
+    if data.host is not None:
+        set_setting(db, "smtp_host", data.host, "SMTP сервер")
         updated_fields.append("smtp_host")
-    
-    if data.smtp_port is not None:
-        set_setting(db, "smtp_port", str(data.smtp_port), "SMTP порт")
+
+    if data.port is not None:
+        set_setting(db, "smtp_port", str(data.port), "SMTP порт")
         updated_fields.append("smtp_port")
-    
-    if data.smtp_user is not None:
-        set_setting(db, "smtp_user", data.smtp_user, "SMTP пользователь")
+
+    if data.username is not None:
+        set_setting(db, "smtp_user", data.username, "SMTP пользователь")
         updated_fields.append("smtp_user")
-    
-    if data.smtp_password is not None:
-        set_setting(db, "smtp_password", data.smtp_password, "SMTP пароль")
+
+    if data.password is not None:
+        set_setting(db, "smtp_password", data.password, "SMTP пароль")
         updated_fields.append("smtp_password")
-    
-    if data.smtp_from is not None:
-        set_setting(db, "smtp_from", data.smtp_from, "Email отправителя")
+
+    if data.from_email is not None:
+        set_setting(db, "smtp_from", data.from_email, "Email отправителя")
         updated_fields.append("smtp_from")
-    
-    if data.smtp_tls is not None:
-        set_setting(db, "smtp_tls", str(data.smtp_tls).lower(), "Использовать TLS")
+
+    if data.tls is not None:
+        set_setting(db, "smtp_tls", str(data.tls).lower(), "Использовать TLS")
         updated_fields.append("smtp_tls")
     
     if updated_fields:
