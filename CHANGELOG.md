@@ -4,6 +4,14 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.5.2-1] - 2026-06-20
+
+### 🖥️ UI
+
+- **Styled confirmation dialogs** — all native browser `confirm()` popups replaced with a consistent themed modal (`ConfirmDialog`). Added global `ConfirmDialogProvider` + `useConfirm` hook (Promise-based API). Affected: update panel, delete template/server/storage/SSH key/HA resource/SDN zone/VNet/subnet/IPAM pool/allocation, apply/revert network changes, IPAM orphan cleanup (16 call-sites across 11 files).
+
+---
+
 ## [v1.5.2] - 2026-06-20
 
 ### 📊 Metrics
