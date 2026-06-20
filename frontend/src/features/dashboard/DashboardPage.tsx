@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { useTranslation } from 'react-i18next';
 import { getTasksWebSocket } from '@/lib/websocket';
+import { useInstancesMetricsSync } from '@/hooks/use-instances';
 
 // ==================== Stat Card ====================
 interface StatCardProps {
@@ -145,6 +146,8 @@ function formatBytes(bytes: number): string {
 export default function DashboardPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  // Live per-VM metrics (realtime ~2 s) — overlaid onto the top-loaded list below
+  const liveMetrics = useInstancesMetricsSync();
 
   // Fetch all resources
   const { data: resources } = useQuery({
@@ -185,7 +188,11 @@ export default function DashboardPage() {
   const allVMs = serverList.flatMap((s) => [
     ...((s.vms as Array<Record<string, unknown>>) ?? []),
     ...((s.containers as Array<Record<string, unknown>>) ?? []),
-  ]);
+  ].map((v) => {
+    // Overlay realtime cpu/mem from the live instances channel (falls back to WS snapshot)
+    const live = liveMetrics.get(`${s.id}:${v.vmid}`);
+    return live ? { ...v, cpu: live.cpu ?? v.cpu, mem: live.mem ?? v.mem, status: live.status ?? v.status } : v;
+  }));
 
   const nodesOnline = serverList.filter((s) => !s.error).length;
   const qemuVMs = allVMs.filter((v) => v.type === 'qemu');

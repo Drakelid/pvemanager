@@ -63,6 +63,13 @@ export interface ProxmoxServerCreate {
 
 // ==================== VM / Container Types ====================
 
+export interface DiskInfo {
+  name: string;
+  mountpoint: string;
+  used: number;
+  total: number;
+}
+
 export type VMType = 'qemu' | 'lxc';
 export type VMStatus = 'running' | 'stopped' | 'paused' | 'suspended' | 'unknown' | 'creating';
 
@@ -82,6 +89,12 @@ export interface VMInstance {
   uptime?: number;
   netin?: number;
   netout?: number;
+  diskread?: number;
+  diskwrite?: number;
+  diskread_rate?: number;
+  diskwrite_rate?: number;
+  netin_rate?: number;
+  netout_rate?: number;
   ip_address?: string;
   tags?: string;
   template?: boolean;

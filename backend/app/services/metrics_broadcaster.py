@@ -34,6 +34,16 @@ _metrics_cache: Dict[str, Any] = {}
 _rrd_cache: Dict[str, Tuple[float, list]] = {}
 _RRD_TTL = 30.0  # seconds between actual RRD fetches from Proxmox
 
+# I/O rate tracking for per-instance detail channel
+_io_prev: Dict[str, Tuple[float, Dict[str, float]]] = {}
+
+# Per-disk info cache: channel → (monotonic_ts, disks_list); refreshed every 30 s
+_disk_cache: Dict[str, Tuple[float, list]] = {}
+_DISK_CACHE_TTL = 30.0
+
+# I/O rate tracking for instances-list channel: key = "server_id:vmid"
+_list_io_prev: Dict[str, Tuple[float, Dict[str, float]]] = {}
+
 
 def get_cached_metrics(channel: str) -> Optional[Any]:
     """Return the last cached payload for a channel, or None."""
@@ -195,8 +205,30 @@ def _fetch_instance_status(db_factory, server_id: int, vmid: int, inst_type: str
     if not client.is_connected():
         return None
     if inst_type == "qemu":
-        return client.get_vm_status(node, vmid)
-    return client.get_container_status(node, vmid)
+        status = client.get_vm_status(node, vmid)
+    else:
+        status = client.get_container_status(node, vmid)
+    if status is None:
+        return None
+
+    # Attach per-disk filesystem info
+    channel = f"instance_metrics:{server_id}_{vmid}_{inst_type}_{node}"
+    now = time.monotonic()
+    cached = _disk_cache.get(channel)
+    if cached and (now - cached[0]) < _DISK_CACHE_TTL:
+        status["disks"] = cached[1]
+    else:
+        if inst_type == "qemu":
+            disks = client.get_vm_fsinfo(node, vmid)
+        else:
+            # LXC: rootfs usage is in status itself
+            disk_used = status.get("disk", 0) or 0
+            disk_total = status.get("maxdisk", 0) or 0
+            disks = [{"name": "rootfs", "mountpoint": "/", "used": disk_used, "total": disk_total}] if disk_total else []
+        _disk_cache[channel] = (now, disks)
+        status["disks"] = disks
+
+    return status
 
 
 def _fetch_rrd(db_factory, server_id: int, action: str, params: dict):
@@ -316,12 +348,13 @@ async def server_metrics_loop(db_factory) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 async def instance_metrics_loop(db_factory) -> None:
-    """Push VM/LXC status to 'instance_metrics:{server_id}_{vmid}_{type}_{node}'."""
+    """Push VM/LXC status to 'instance_metrics:{server_id}_{vmid}_{type}_{node}' (~1 s)."""
     wsman = _get_ws_manager()
     while True:
-        await asyncio.sleep(2)
+        cycle_start = time.monotonic()
         channels = wsman.get_channels_matching("instance_metrics:")
         if not channels:
+            await asyncio.sleep(1)
             continue
 
         async def _push_instance(channel: str) -> None:
@@ -340,6 +373,21 @@ async def instance_metrics_loop(db_factory) -> None:
                 )
                 if not status:
                     return
+
+                # Compute I/O rates (bytes/sec) from cumulative counters
+                now = time.monotonic()
+                prev = _io_prev.get(channel)
+                if prev is not None:
+                    dt = now - prev[0]
+                    if dt > 0:
+                        for key in ("diskread", "diskwrite", "netin", "netout"):
+                            cur_val = float(status.get(key) or 0)
+                            prv_val = float(prev[1].get(key) or 0)
+                            delta = cur_val - prv_val
+                            # Guard against resets (VM restart resets counters to 0)
+                            status[f"{key}_rate"] = max(0.0, delta / dt)
+                _io_prev[channel] = (now, {k: float(status.get(k) or 0) for k in ("diskread", "diskwrite", "netin", "netout")})
+
                 payload = {
                     "type": "metrics_update",
                     "channel": channel,
@@ -353,36 +401,56 @@ async def instance_metrics_loop(db_factory) -> None:
                 logger.debug(f"[metrics_broadcaster] instance metrics error on '{channel}': {exc}")
 
         await asyncio.gather(*[_push_instance(ch) for ch in channels], return_exceptions=True)
+        # Pace to a 1 s cadence (sleep only the remainder after the work)
+        await asyncio.sleep(max(0.0, 1.0 - (time.monotonic() - cycle_start)))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Instances list metrics loop  (push every 5 s)
-# Pushes a slim list of live VM/LXC metrics from cluster/resources for the
-# instances table page. One channel for all clients: 'instances_list_metrics'.
+# Instances list metrics loop  (push ~every 2 s)
+# Pushes a list of live VM/LXC metrics for the instances table page. One channel
+# for all clients: 'instances_list_metrics'.
+#
+# Data source strategy:
+#   • cluster/resources is cheap (one call per server) but pvestatd-backed, so its
+#     counters only refresh every ~10 s — too coarse for live I/O rates.
+#   • status/current (per VM) refreshes every ~1 s — true real-time.
+# So we enumerate VMs via cluster/resources, then refresh every RUNNING VM with
+# status/current (bounded concurrency) to get live cpu/mem/net/disk counters.
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _fetch_all_instances_metrics(db_factory) -> list:
-    """Pull live metrics for all VMs/LXC across all online servers via cluster/resources."""
+# Max concurrent status/current calls per cycle (avoids hammering Proxmox API).
+# Higher concurrency keeps the per-cycle work under the 1 s cadence target even
+# with dozens of running VMs.
+_LIST_LIVE_CONCURRENCY = 16
+
+
+def _enumerate_instances_for_list(db_factory):
+    """Enumerate VMs/LXC across online servers via cluster/resources (one call per
+    server). Returns (items, clients) where `clients` maps server_id → ProxmoxClient
+    so the loop can refresh running VMs with live status/current."""
     from ..models import ProxmoxServer
     from ..api.proxmox._helpers import _get_proxmox_client
     db = db_factory()
     try:
         servers = db.query(ProxmoxServer).filter(ProxmoxServer.is_online == True).all()
+        # Build clients while the session is open (from_server reads server attrs)
+        server_clients = [(s.id, _get_proxmox_client(s)) for s in servers]
     finally:
         db.close()
 
-    out: list = []
-    for server in servers:
+    items: list = []
+    clients: dict = {}
+    for server_id, client in server_clients:
+        clients[server_id] = client
         try:
-            client = _get_proxmox_client(server)
-            # Skip is_connected() check (makes extra HTTP call); just try and catch
             for res in client.get_cluster_resources(type_='vm'):
                 vmid = res.get('vmid')
                 if vmid is None:
                     continue
-                out.append({
-                    "server_id": server.id,
+                items.append({
+                    "server_id": server_id,
                     "vmid": vmid,
+                    "type": res.get('type'),
                     "node": res.get('node'),
                     "status": res.get('status'),
                     "cpu": res.get('cpu'),
@@ -393,24 +461,82 @@ def _fetch_all_instances_metrics(db_factory) -> list:
                     "uptime": res.get('uptime'),
                     "netin": res.get('netin'),
                     "netout": res.get('netout'),
+                    "diskread": res.get('diskread'),
+                    "diskwrite": res.get('diskwrite'),
                 })
         except Exception as exc:
-            logger.debug(f"[metrics_broadcaster] instances list metrics error for server {server.id}: {exc}")
-    return out
+            logger.debug(f"[metrics_broadcaster] instances list enumerate error for server {server_id}: {exc}")
+    return items, clients
+
+
+def _live_instance_status(client, node: str, vmid: int, inst_type: str):
+    """Fetch live status/current for one VM/LXC. Returns dict or None on error."""
+    try:
+        if inst_type == "lxc":
+            return client.get_container_status(node, vmid)
+        return client.get_vm_status(node, vmid)
+    except Exception:
+        return None
+
+
+# Fields refreshed from the live status/current call (override stale cluster/resources)
+_LIVE_FIELDS = ("cpu", "mem", "maxmem", "disk", "maxdisk", "uptime",
+                "netin", "netout", "diskread", "diskwrite")
 
 
 async def instances_list_metrics_loop(db_factory) -> None:
-    """Push live VM/LXC metrics list to 'instances_list_metrics' subscribers (~1 s)."""
+    """Push live VM/LXC metrics list to 'instances_list_metrics' subscribers (~2 s)."""
     wsman = _get_ws_manager()
     channel = "instances_list_metrics"
+    sem = asyncio.Semaphore(_LIST_LIVE_CONCURRENCY)
+
+    async def _refresh_running(item: dict, clients: dict) -> None:
+        if item.get("status") != "running":
+            return
+        client = clients.get(item["server_id"])
+        if client is None or not item.get("node"):
+            return
+        async with sem:
+            live = await asyncio.to_thread(
+                _live_instance_status, client, item["node"], item["vmid"], item.get("type") or "qemu"
+            )
+        if live:
+            for field in _LIVE_FIELDS:
+                val = live.get(field)
+                if val is not None:
+                    item[field] = val
+
     while True:
-        await asyncio.sleep(1)
+        cycle_start = time.monotonic()
         if not wsman.has_channel_subscribers(channel):
+            await asyncio.sleep(1)
             continue
         try:
-            items = await asyncio.to_thread(_fetch_all_instances_metrics, db_factory)
+            items, clients = await asyncio.to_thread(_enumerate_instances_for_list, db_factory)
             if not items:
+                await asyncio.sleep(1)
                 continue
+
+            # Refresh every running VM with live status/current (1 s-granular counters)
+            await asyncio.gather(
+                *[_refresh_running(it, clients) for it in items],
+                return_exceptions=True,
+            )
+
+            # Compute per-item I/O rates from the (now live) cumulative counters
+            now = time.monotonic()
+            for item in items:
+                key = f"{item['server_id']}:{item['vmid']}"
+                prev = _list_io_prev.get(key)
+                if prev is not None:
+                    dt = now - prev[0]
+                    if dt > 0:
+                        for field in ("diskread", "diskwrite", "netin", "netout"):
+                            cur = float(item.get(field) or 0)
+                            prv = float(prev[1].get(field) or 0)
+                            item[f"{field}_rate"] = max(0.0, (cur - prv) / dt)
+                _list_io_prev[key] = (now, {f: float(item.get(f) or 0) for f in ("diskread", "diskwrite", "netin", "netout")})
+
             payload = {
                 "type": "metrics_update",
                 "channel": channel,
@@ -422,6 +548,8 @@ async def instances_list_metrics_loop(db_factory) -> None:
             break
         except Exception as exc:
             logger.warning(f"[metrics_broadcaster] instances list loop error: {exc}")
+        # Pace to a 1 s cadence (sleep only the remainder after the work)
+        await asyncio.sleep(max(0.0, 1.0 - (time.monotonic() - cycle_start)))
 
 
 

@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { getTasksWebSocket } from '@/lib/websocket';
-import type { VMInstance, Snapshot, VMConfig } from '@/types';
+import type { VMInstance, Snapshot, VMConfig, DiskInfo } from '@/types';
 
 // ==================== Query Keys ====================
 export const vmKeys = {
@@ -68,9 +68,12 @@ export function useVMStatusSync() {
 }
 
 export type LiveInstanceMetrics = {
-  server_id: number; vmid: number; node?: string; status?: string;
+  server_id: number; vmid: number; node?: string; status?: string; type?: string;
   cpu?: number; mem?: number; maxmem?: number; disk?: number; maxdisk?: number;
   uptime?: number; netin?: number; netout?: number;
+  diskread?: number; diskwrite?: number;
+  diskread_rate?: number; diskwrite_rate?: number;
+  netin_rate?: number; netout_rate?: number;
 };
 
 /**
@@ -120,6 +123,14 @@ interface VMStatusResponse {
   [key: string]: unknown;
 }
 
+export interface VMLiveStatus extends VMStatusResponse {
+  diskread_rate?: number;
+  diskwrite_rate?: number;
+  netin_rate?: number;
+  netout_rate?: number;
+  disks?: DiskInfo[];
+}
+
 export function useVMStatus(serverId: number, vmid: number, type: string, node: string, enabled = true) {
   const prefix = type === 'lxc' ? 'container' : 'vm';
   return useQuery<VMStatusResponse>({
@@ -128,6 +139,34 @@ export function useVMStatus(serverId: number, vmid: number, type: string, node: 
     refetchInterval: 10000,
     enabled,
   });
+}
+
+/**
+ * Subscribes to the live per-instance WebSocket channel and returns real-time
+ * VM/LXC metrics including I/O rates and per-disk info.
+ * Falls back to the HTTP-polled status until the first WS message arrives.
+ */
+export function useVMLiveMetrics(
+  serverId: number,
+  vmid: number,
+  type: string,
+  node: string,
+): VMLiveStatus | null {
+  const [live, setLive] = useState<VMLiveStatus | null>(null);
+  const { data: http } = useVMStatus(serverId, vmid, type, node);
+
+  useEffect(() => {
+    const ws = getTasksWebSocket();
+    ws.connect();
+    const channel = `instance_metrics:${serverId}_${vmid}_${type}_${node}`;
+    const unsub = ws.subscribe(channel, (msg: unknown) => {
+      const payload = msg as { data?: VMLiveStatus };
+      if (payload?.data) setLive(payload.data);
+    });
+    return () => unsub();
+  }, [serverId, vmid, type, node]);
+
+  return live ?? (http as VMLiveStatus) ?? null;
 }
 
 export function useVMConfig(serverId: number, vmid: number, type: string, node: string, enabled = true) {

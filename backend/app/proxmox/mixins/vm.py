@@ -168,6 +168,37 @@ class VmMixin:
             """Получить статистику VM (CPU, память, диск)"""
             return self.get_vm_status(node, vmid)
 
+        def get_vm_fsinfo(self, node: str, vmid: int) -> list:
+            """Return per-filesystem info via QEMU guest agent (get-fsinfo).
+            Returns [] if agent is not installed or unreachable."""
+            if not self.proxmox:
+                return []
+            try:
+                result = self.proxmox.nodes(node).qemu(vmid).agent('get-fsinfo').get()
+                fslist = result if isinstance(result, list) else result.get('result', [])
+                disks = []
+                seen_disks: set = set()
+                for fs in fslist:
+                    if not isinstance(fs, dict):
+                        continue
+                    total = fs.get('total-bytes', 0) or 0
+                    if total == 0:
+                        continue
+                    # Deduplicate by disk+partition key to avoid pseudo-filesystems
+                    disk_key = fs.get('name', '') or fs.get('mountpoint', '')
+                    if disk_key in seen_disks:
+                        continue
+                    seen_disks.add(disk_key)
+                    disks.append({
+                        'name': fs.get('name', ''),
+                        'mountpoint': fs.get('mountpoint', '/'),
+                        'used': fs.get('used-bytes', 0) or 0,
+                        'total': total,
+                    })
+                return disks
+            except Exception:
+                return []
+
         def get_vm_rrddata(self, node: str, vmid: int, timeframe: str = "hour") -> Dict:
             """
             Получить исторические данные VM для графиков (CPU, Memory, Network, Disk IO)

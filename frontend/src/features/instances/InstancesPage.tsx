@@ -34,6 +34,9 @@ import {
   KeyRound,
   FileText,
   Disc,
+  ArrowDown,
+  ArrowUp,
+  HardDrive,
 } from 'lucide-react';
 import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
 import { Card, CardContent } from '@/components/ui/card';
@@ -349,6 +352,12 @@ export default function InstancesPage() {
         uptime: live.uptime ?? vm.uptime,
         netin: live.netin ?? vm.netin,
         netout: live.netout ?? vm.netout,
+        diskread: live.diskread ?? vm.diskread,
+        diskwrite: live.diskwrite ?? vm.diskwrite,
+        diskread_rate: live.diskread_rate,
+        diskwrite_rate: live.diskwrite_rate,
+        netin_rate: live.netin_rate,
+        netout_rate: live.netout_rate,
       };
     });
   }, [allRows, metricsMap]);
@@ -594,7 +603,9 @@ export default function InstancesPage() {
         header: 'Disk',
         cell: ({ row }) => {
           const vm = row.original;
-          if (vm._deployTaskId || (!vm.disk && !vm.maxdisk)) return <span className="text-xs text-muted-foreground">—</span>;
+          if (vm._deployTaskId) return <span className="text-xs text-muted-foreground">—</span>;
+          // For QEMU, cluster/resources 'disk' = disk I/O bytes (not usage) → not meaningful as %
+          if (vm.type !== 'lxc' || (!vm.disk && !vm.maxdisk)) return <span className="text-xs text-muted-foreground">—</span>;
           return (
             <Tooltip>
               <TooltipTrigger>
@@ -605,6 +616,67 @@ export default function InstancesPage() {
           );
         },
         size: 120,
+      },
+      {
+        id: 'net_io',
+        header: () => (
+          <span className="flex items-center gap-1">
+            <ArrowDown className="h-3 w-3 text-blue-500" />
+            <ArrowUp className="h-3 w-3 text-violet-500" />
+            Net
+          </span>
+        ),
+        cell: ({ row }) => {
+          const vm = row.original;
+          if (vm._deployTaskId || vm.status !== 'running') return <span className="text-xs text-muted-foreground">—</span>;
+          const inRate = vm.netin_rate;
+          const outRate = vm.netout_rate;
+          if (inRate == null && outRate == null) return <span className="text-xs text-muted-foreground">—</span>;
+          const fmt = (v?: number) => v != null ? `${formatBytes(v)}/s` : '—';
+          return (
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1">
+                <ArrowDown className="h-3 w-3 shrink-0 text-blue-500" />
+                <span className="text-xs tabular-nums">{fmt(inRate)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <ArrowUp className="h-3 w-3 shrink-0 text-violet-500" />
+                <span className="text-xs tabular-nums">{fmt(outRate)}</span>
+              </div>
+            </div>
+          );
+        },
+        size: 110,
+      },
+      {
+        id: 'disk_io',
+        header: () => (
+          <span className="flex items-center gap-1">
+            <HardDrive className="h-3 w-3 text-muted-foreground" />
+            Disk I/O
+          </span>
+        ),
+        cell: ({ row }) => {
+          const vm = row.original;
+          if (vm._deployTaskId || vm.status !== 'running') return <span className="text-xs text-muted-foreground">—</span>;
+          const readRate = vm.diskread_rate;
+          const writeRate = vm.diskwrite_rate;
+          if (readRate == null && writeRate == null) return <span className="text-xs text-muted-foreground">—</span>;
+          const fmt = (v?: number) => v != null ? `${formatBytes(v)}/s` : '—';
+          return (
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-cyan-500 font-medium w-3">R</span>
+                <span className="text-xs tabular-nums">{fmt(readRate)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-orange-500 font-medium w-3">W</span>
+                <span className="text-xs tabular-nums">{fmt(writeRate)}</span>
+              </div>
+            </div>
+          );
+        },
+        size: 110,
       },
       {
         id: 'uptime',
