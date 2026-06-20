@@ -506,6 +506,7 @@ interface CloneRequest {
   target_node?: string;
   target_storage?: string;
   description?: string;
+  owner_id?: number;
 }
 
 export interface AsyncTaskResponse {

@@ -30,6 +30,10 @@ import {
   useDetachIso,
   useVMConfig,
 } from '@/hooks/use-instances';
+import { useNodes } from '@/hooks/use-nodes';
+import { useLXCStorages } from '@/hooks/use-lxc-templates';
+import { useUsers } from '@/hooks/use-users';
+import { useProfile } from '@/hooks/use-settings';
 import { toast } from 'sonner';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
 
@@ -74,16 +78,49 @@ export default function InstanceActionDialogs(props: Props) {
 
 // ==================== Clone ====================
 
+const CLONE_AUTO = '__auto__';
+
 function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
   const [newName, setNewName] = useState('');
   const [full, setFull] = useState(true);
+  const [targetNode, setTargetNode] = useState('');
+  const [targetStorage, setTargetStorage] = useState('');
+  const [description, setDescription] = useState('');
+  const [ownerId, setOwnerId] = useState<number | null>(null);
   const clone = useCloneInstance(serverId, vmid, type, node);
   const addDeployTask = useDeployTasksStore((s) => s.addTask);
+
+  const { data: profile } = useProfile();
+  const isAdmin = !!profile?.is_admin;
+  const { data: allUsers = [] } = useUsers();
+  const { data: nodesResp } = useNodes(serverId);
+  const nodes = nodesResp?.nodes ?? [];
+  const effectiveNode = targetNode || node;
+  const { data: storages = [] } = useLXCStorages(serverId, effectiveNode);
+
+  // Reset form whenever the dialog is opened for a fresh instance.
+  useEffect(() => {
+    if (open) {
+      setNewName('');
+      setFull(true);
+      setTargetNode('');
+      setTargetStorage('');
+      setDescription('');
+      setOwnerId(null);
+    }
+  }, [open]);
 
   const submit = () => {
     if (!newName.trim()) return;
     clone.mutate(
-      { new_name: newName.trim(), full },
+      {
+        new_name: newName.trim(),
+        full,
+        target_node: targetNode || undefined,
+        target_storage: targetStorage || undefined,
+        description: description.trim() || undefined,
+        owner_id: isAdmin && ownerId ? ownerId : undefined,
+      },
       {
         onSuccess: (data) => {
           addDeployTask({
@@ -93,13 +130,12 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
             step: 'В очереди...',
             progress: 0,
             vmid: null,
-            node,
+            node: targetNode || node,
             error_message: null,
             kind: 'clone',
             server_id: serverId,
           });
           toast.success('Клонирование запущено в фоне');
-          setNewName('');
           onClose();
         },
         onError: (e) => toast.error(e.message),
@@ -114,11 +150,62 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
           <DialogTitle className="flex items-center gap-2"><Copy className="h-4 w-4" /> Клонировать</DialogTitle>
           <DialogDescription>Создать копию <strong>{name ?? `#${vmid}`}</strong></DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          <div>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
             <Label htmlFor="clone-name">Имя новой инстанции</Label>
             <Input id="clone-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={`${name || 'instance'}-clone`} />
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Целевой узел</Label>
+              <Select value={targetNode || CLONE_AUTO} onValueChange={(v) => { setTargetNode(v === CLONE_AUTO ? '' : v); setTargetStorage(''); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={CLONE_AUTO}>Тот же узел ({node})</SelectItem>
+                  {nodes.filter((n) => n.node !== node).map((n) => (
+                    <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Хранилище</Label>
+              <Select value={targetStorage || CLONE_AUTO} onValueChange={(v) => setTargetStorage(v === CLONE_AUTO ? '' : v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={CLONE_AUTO}>Как у источника</SelectItem>
+                  {storages.map((s) => (
+                    <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {isAdmin && (
+            <div className="space-y-1.5">
+              <Label>Владелец</Label>
+              <Select value={ownerId ? String(ownerId) : CLONE_AUTO} onValueChange={(v) => setOwnerId(v === CLONE_AUTO ? null : Number(v))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={CLONE_AUTO}>Я ({profile?.username})</SelectItem>
+                  {allUsers.map((u) => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                      {u.username}{u.full_name ? ` (${u.full_name})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="clone-desc">Описание <span className="text-muted-foreground">(необязательно)</span></Label>
+            <Input id="clone-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Заметка для новой инстанции" />
+          </div>
+
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} />
             <span>Полный клон (full clone)</span>
