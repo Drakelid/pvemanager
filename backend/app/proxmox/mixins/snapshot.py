@@ -52,6 +52,11 @@ class SnapshotMixin:
                 
                 upid = self.proxmox.nodes(node).qemu(vmid).snapshot.post(**params)
                 logger.info(f"Creating snapshot {snapname} for VM {vmid}")
+                # Wait for the async Proxmox task so we report the real outcome,
+                # not just that the task was accepted.
+                if not self.wait_for_task(node, upid, timeout=300):
+                    reason = self.get_task_status(node, upid).get('exitstatus') or 'task failed or timed out'
+                    return {"success": False, "error": f"Snapshot task failed: {reason}", "upid": upid}
                 return {"success": True, "upid": upid, "snapname": snapname}
             except Exception as e:
                 logger.error(f"Error creating VM {vmid} snapshot: {e}")
@@ -158,6 +163,11 @@ class SnapshotMixin:
                 
                 upid = self.proxmox.nodes(node).lxc(vmid).snapshot.post(**params)
                 logger.info(f"Creating snapshot {snapname} for container {vmid}")
+                # Wait for the async Proxmox task so we report the real outcome,
+                # not just that the task was accepted.
+                if not self.wait_for_task(node, upid, timeout=300):
+                    reason = self.get_task_status(node, upid).get('exitstatus') or 'task failed or timed out'
+                    return {"success": False, "error": f"Snapshot task failed: {reason}", "upid": upid}
                 return {"success": True, "upid": upid, "snapname": snapname}
             except Exception as e:
                 logger.error(f"Error creating container {vmid} snapshot: {e}")
