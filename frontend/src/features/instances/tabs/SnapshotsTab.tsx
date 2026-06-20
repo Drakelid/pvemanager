@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, RotateCcw, Loader2, Camera } from 'lucide-react';
+import { Plus, Trash2, RotateCcw, Loader2, Camera, Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,7 +39,7 @@ interface Props {
 export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
   const { t } = useTranslation();
   const { data, isLoading } = useSnapshots(serverId, vmid, type, node);
-  const createSnap = useCreateSnapshot(serverId, vmid, type);
+  const createSnap = useCreateSnapshot(serverId, vmid, type, node);
   const deleteSnap = useDeleteSnapshot(serverId, vmid, type, node);
   const rollbackSnap = useRollbackSnapshot(serverId, vmid, type, node);
 
@@ -64,7 +64,15 @@ export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
           setSnapDesc('');
           setIncludeRAM(false);
         },
-        onError: (err) => toast.error(err.message),
+        onError: (err) => {
+          // Proxmox returns this when the VM's storage can't do snapshots
+          // (raw disks, plain LVM, iSCSI). Surface a clear explanation.
+          if (/feature is not available|not available/i.test(err.message)) {
+            toast.error(t('instances.snapshot_unsupported_storage'));
+          } else {
+            toast.error(err.message);
+          }
+        },
       }
     );
   };
@@ -211,6 +219,10 @@ export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
                 <Label htmlFor="snap-ram" className="text-sm">Include VM memory (RAM state)</Label>
               </div>
             )}
+            <div className="flex gap-2 rounded-md bg-muted/50 p-2.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{t('instances.snapshot_storage_hint')}</span>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>

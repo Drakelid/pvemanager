@@ -215,12 +215,12 @@ export function useSnapshots(serverId: number, vmid: number, type: string, node:
   });
 }
 
-export function useCreateSnapshot(serverId: number, vmid: number, type: string) {
+export function useCreateSnapshot(serverId: number, vmid: number, type: string, node: string) {
   const qc = useQueryClient();
   const prefix = type === 'lxc' ? 'container' : 'vm';
   return useMutation({
     mutationFn: (body: { snapname: string; description?: string; vmstate?: boolean }) =>
-      apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/snapshots`, body),
+      apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/snapshots?node=${node}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: vmKeys.snapshots(serverId, vmid) });
     },
