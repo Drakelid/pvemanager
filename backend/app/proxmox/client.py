@@ -1309,6 +1309,29 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.debug(f"Не удалось получить сетевые интерфейсы VM {vmid} (guest agent может быть не установлен): {e}")
                 return []
 
+        def get_vm_blockstats(self, node: str, vmid: int) -> str:
+            """Raw HMP 'info blockstats' text via the QEMU monitor (VM only).
+            Returns '' if unavailable."""
+            if not self.proxmox:
+                return ""
+            try:
+                res = self.proxmox.nodes(node).qemu(vmid).monitor.post(command="info blockstats")
+                return res if isinstance(res, str) else str(res or "")
+            except Exception as e:
+                logger.debug(f"blockstats unavailable for VM {vmid} on {node}: {e}")
+                return ""
+
+        def get_node_netstat(self, node: str) -> list:
+            """Per-tap/veth interface counters for the node ([] on failure)."""
+            if not self.proxmox:
+                return []
+            try:
+                res = self.proxmox.nodes(node).netstat.get()
+                return res if isinstance(res, list) else []
+            except Exception as e:
+                logger.debug(f"netstat unavailable for node {node}: {e}")
+                return []
+
         def get_container_interfaces(self, node: str, vmid: int) -> List[Dict]:
             """
             Получить сетевые интерфейсы контейнера
