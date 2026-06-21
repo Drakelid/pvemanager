@@ -473,12 +473,12 @@ export function useBulkOperation() {
 }
 
 // ==================== Disk Resize ====================
-export function useResizeDisk(serverId: number, vmid: number, type: string) {
+export function useResizeDisk(serverId: number, vmid: number, type: string, node: string) {
   const qc = useQueryClient();
   const prefix = type === 'lxc' ? 'container' : 'vm';
   return useMutation({
     mutationFn: (body: { disk: string; size: string }) =>
-      apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/disk/resize`, body),
+      apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/disk/resize?node=${node}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
       qc.invalidateQueries({ queryKey: vmKeys.status(serverId, vmid) });
@@ -487,12 +487,12 @@ export function useResizeDisk(serverId: number, vmid: number, type: string) {
 }
 
 // ==================== Config Update ====================
-export function useUpdateConfig(serverId: number, vmid: number, type: string) {
+export function useUpdateConfig(serverId: number, vmid: number, type: string, node: string) {
   const qc = useQueryClient();
   const prefix = type === 'lxc' ? 'container' : 'vm';
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      apiClient.put(`/proxmox/api/${serverId}/${prefix}/${vmid}/config`, body),
+      apiClient.put(`/proxmox/api/${serverId}/${prefix}/${vmid}/config?node=${node}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
     },
