@@ -201,6 +201,39 @@ export function useVMRrddata(serverId: number, vmid: number, type: string, node:
   });
 }
 
+export interface MetricPoint {
+  time: number;
+  cpu: number | null; mem: number | null; maxmem: number | null;
+  netin: number | null; netout: number | null;
+  diskread: number | null; diskwrite: number | null;
+  diskpct: number | null; iops_read: number | null; iops_write: number | null;
+}
+export interface MetricsResponse {
+  data: MetricPoint[]; from: number; to: number; meta: { nics: string[] };
+}
+
+export function useVMMetrics(
+  serverId: number, vmid: number, type: string, node: string,
+  opts: { timeframe?: string; from?: number; to?: number; nic?: string },
+) {
+  const prefix = type === 'lxc' ? 'container' : 'vm';
+  const { timeframe = 'hour', from, to, nic = 'all' } = opts;
+  return useQuery<MetricsResponse>({
+    queryKey: ['vm', serverId, vmid, 'metrics', { timeframe, from, to, nic }],
+    queryFn: () => {
+      const qs = new URLSearchParams({ node, nic });
+      if (from != null && to != null) {
+        qs.set('from_ts', String(from));
+        qs.set('to_ts', String(to));
+      } else {
+        qs.set('timeframe', timeframe);
+      }
+      return apiClient.get(`/proxmox/api/${serverId}/${prefix}/${vmid}/metrics?${qs}`);
+    },
+    refetchInterval: 30000,
+  });
+}
+
 interface InterfaceInfo {
   name: string;
   mac?: string;
