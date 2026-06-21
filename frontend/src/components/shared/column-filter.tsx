@@ -21,7 +21,8 @@ declare module '@tanstack/react-table' {
  * of the selected values. Built-in arrIncludesSome expects array cells, so we
  * provide our own. Empty selection passes everything.
  */
-export const multiSelectFilter: FilterFn<unknown> = (row, columnId, value: string[]) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const multiSelectFilter: FilterFn<any> = (row, columnId, value: string[]) => {
   if (!value?.length) return true;
   return value.includes(String(row.getValue(columnId)));
 };
