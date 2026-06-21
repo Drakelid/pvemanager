@@ -1845,6 +1845,58 @@ def get_container_rrddata(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== Metrics History (DB-only) ====================
+
+def _resolve_metrics_window(timeframe, from_ts, to_ts):
+    from ...services.metrics_history import timeframe_to_range
+    from ...config import settings
+    now = int(time_lib.time())
+    if from_ts is not None and to_ts is not None:
+        f, t = int(from_ts), int(to_ts)
+    else:
+        f, t = timeframe_to_range(timeframe, now)
+    max_span = getattr(settings, "METRICS_RETENTION_DAYS", 30) * 86400
+    if t - f > max_span:
+        f = t - max_span
+    return f, t
+
+
+@router.get("/api/{server_id}/vm/{vmid}/metrics")
+def get_vm_metrics(
+    server_id: int,
+    vmid: int,
+    node: str = Query(None),
+    timeframe: str = Query("hour", regex="^(hour|day|week|month)$"),
+    from_ts: int = Query(None),
+    to_ts: int = Query(None),
+    nic: str = Query("all"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vm:view")),
+):
+    """Retrieve VM metrics time-series from the local DB (no Proxmox call)."""
+    from ...services.metrics_history import query_instance_metrics
+    f, t = _resolve_metrics_window(timeframe, from_ts, to_ts)
+    return query_instance_metrics(db, server_id, vmid, f, t, nic)
+
+
+@router.get("/api/{server_id}/container/{vmid}/metrics")
+def get_container_metrics(
+    server_id: int,
+    vmid: int,
+    node: str = Query(None),
+    timeframe: str = Query("hour", regex="^(hour|day|week|month)$"),
+    from_ts: int = Query(None),
+    to_ts: int = Query(None),
+    nic: str = Query("all"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vm:view")),
+):
+    """Retrieve container metrics time-series from the local DB (no Proxmox call)."""
+    from ...services.metrics_history import query_instance_metrics
+    f, t = _resolve_metrics_window(timeframe, from_ts, to_ts)
+    return query_instance_metrics(db, server_id, vmid, f, t, nic)
+
+
 # ==================== VNC Console ====================
 
 @router.get("/api/{server_id}/vm/{vmid}/vnc")
@@ -2827,6 +2879,7 @@ def set_vm_owner(
     if not instance:
         raise HTTPException(status_code=404, detail="VM not found in cache")
 
+    target_user = None
     if body.user_id is not None:
         target_user = db.query(User).filter(User.id == body.user_id, User.is_active == True).first()
         if not target_user:
@@ -2835,6 +2888,29 @@ def set_vm_owner(
     instance.owner_id = body.user_id
     db.commit()
     logger.info(f"Admin {current_user.username} set owner of VM {vmid} (server {server_id}) to user_id={body.user_id}")
+
+    # Push a real-time event so every connected client refreshes the owner
+    # column without a manual page reload.
+    try:
+        from ...websocket_manager import broadcast_event
+        owner_user = (
+            {
+                "username": target_user.username,
+                "email": target_user.email,
+                "full_name": target_user.full_name,
+            }
+            if target_user else None
+        )
+        broadcast_event(
+            "vm_owner_changed",
+            server_id=server_id,
+            vmid=vmid,
+            owner_id=body.user_id,
+            owner_user=owner_user,
+        )
+    except Exception as e:
+        logger.debug(f"Failed to broadcast vm_owner_changed: {e}")
+
     return {"ok": True, "owner_id": body.user_id}
 
 
