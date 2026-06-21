@@ -1390,9 +1390,32 @@ async def resize_vm_disk(
                 logger.info(f"Updated disk size in database: VM {vmid} -> {size_gb}GB")
             
             logger.info(f"User {current_user.username} resized disk {disk} of VM {vmid} to {size}")
+
+            # Автоматически расширяем раздел и ФС внутри гостя (best-effort).
+            # Требует qemu-guest-agent и growpart в гостевой ОС; при их
+            # отсутствии ресайз диска всё равно считается успешным.
+            grow = client.grow_vm_filesystem(node, vmid)
+            grew = bool(grow.get('changed'))
+            # Включаем и error: если вызов guest agent упал с исключением,
+            # stdout/stderr пустые, и без error пользователь видел пустой блок.
+            grow_output = (
+                (grow.get('stdout', '') or '')
+                + (grow.get('stderr', '') or '')
+                + (grow.get('error', '') or '')
+            ).strip() or 'growpart не вернул вывода (qemu-guest-agent не отвечает?)'
+            if grew:
+                message = f"Размер диска {disk} изменен на {size}. Файловая система автоматически расширена."
+            else:
+                message = (
+                    f"Размер диска {disk} изменен на {size}, но файловую систему "
+                    f"расширить не удалось — см. вывод growpart."
+                )
+
             return JSONResponse(content={
-                "status": "success", 
-                "message": f"Размер диска {disk} изменен на {size}. Для применения изменений внутри ОС выполните resize файловой системы."
+                "status": "success",
+                "message": message,
+                "filesystem_grown": grew,
+                "grow_output": grow_output,
             })
         else:
             raise HTTPException(status_code=500, detail="Не удалось изменить размер диска")

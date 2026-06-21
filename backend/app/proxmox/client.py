@@ -1248,16 +1248,17 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             if not self.proxmox:
                 return False
             
-            try:
-                resize_upid = self.proxmox.nodes(node).lxc(vmid).resize.put(disk=disk, size=size)
-                # Wait for resize task to complete to avoid lock conflicts
-                if isinstance(resize_upid, str):
-                    self.wait_for_task(node, resize_upid, timeout=120)
-                logger.info(f"Диск {disk} LXC {vmid} изменен на {size}")
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка изменения размера диска LXC {vmid}: {e}")
-                return False
+            resize_upid = self.proxmox.nodes(node).lxc(vmid).resize.put(disk=disk, size=size)
+            # Проверяем результат задачи: упавший ресайз не должен считаться
+            # успешным (см. resize_vm_disk).
+            if isinstance(resize_upid, str):
+                if not self.wait_for_task(node, resize_upid, timeout=120):
+                    status = self.get_task_status(node, resize_upid) or {}
+                    reason = status.get('exitstatus') or 'resize task failed'
+                    logger.error(f"Ресайз диска {disk} LXC {vmid} провалился: {reason}")
+                    raise RuntimeError(f"Proxmox: {reason}")
+            logger.info(f"Диск {disk} LXC {vmid} изменен на {size}")
+            return True
 
         def get_vm_interfaces(self, node: str, vmid: int) -> List[Dict]:
             """
@@ -1476,7 +1477,12 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                     'stderr': '',
                     'exit_code': -1
                 }
-            
+
+            # Нормализуем переводы строк CRLF/CR -> LF. Скрипты из браузерного
+            # textarea часто приходят с \r, и тогда каждая команда ломается
+            # ("$'cmd\\r': command not found", "growpart 1\\r" и т.п.).
+            script_content = script_content.replace('\r\n', '\n').replace('\r', '\n')
+
             try:
                 # Передаем скрипт напрямую интерпретатору через stdin (input-data).
                 # Интерпретатор запускается без -c, читая тело скрипта со stdin,

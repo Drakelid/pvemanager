@@ -259,14 +259,97 @@ class VmMixin:
             if not self.proxmox:
                 return False
             
+            resize_upid = self.proxmox.nodes(node).qemu(vmid).resize.put(disk=disk, size=size)
+            # Дожидаемся завершения задачи и ПРОВЕРЯЕМ её результат: Proxmox
+            # создаёт задачу даже на несуществующий диск, и она падает с
+            # exitstatus вроде "disk 'scsi0' does not exist". Без этой проверки
+            # упавший ресайз ошибочно считался успешным.
+            if isinstance(resize_upid, str):
+                if not self.wait_for_task(node, resize_upid, timeout=120):
+                    status = self.get_task_status(node, resize_upid) or {}
+                    reason = status.get('exitstatus') or 'resize task failed'
+                    logger.error(f"Ресайз диска {disk} VM {vmid} провалился: {reason}")
+                    raise RuntimeError(f"Proxmox: {reason}")
+            logger.info(f"Размер диска {disk} VM {vmid} изменен на {size}")
+            return True
+
+        def grow_vm_filesystem(self, node: str, vmid: int, mountpoint: str = "/") -> Dict:
+            """
+            Расширить раздел и файловую систему внутри гостя после ресайза диска.
+
+            Выполняется через QEMU guest agent (требуется qemu-guest-agent и
+            cloud-guest-utils/growpart в гостевой ОС). Best-effort: возвращает
+            результат, но не бросает исключений.
+
+            Args:
+                node: Имя ноды
+                vmid: ID виртуальной машины
+                mountpoint: Точка монтирования для расширения (по умолчанию корень)
+
+            Returns:
+                Dict с ключами success, stdout, stderr, exit_code (как execute_script)
+            """
+            # Скрипт находит блочное устройство, отвечающее за mountpoint,
+            # расширяет его раздел через growpart и затем растягивает ФС под
+            # её тип (ext*/xfs/btrfs).
+            script = f"""#!/bin/bash
+set -u
+MP="{mountpoint}"
+SRC="$(findmnt -nro SOURCE "$MP" 2>/dev/null)"
+[ -z "$SRC" ] && SRC="$(awk -v m="$MP" '$2==m{{print $1}}' /proc/mounts | head -n1)"
+# Для btrfs убираем суффикс подтома вида [/@]
+SRC="${{SRC%%[*}}"
+DEV="$(readlink -f "$SRC" 2>/dev/null || echo "$SRC")"
+BASE="$(basename "$DEV")"
+PK="$(lsblk -nro PKNAME "$DEV" 2>/dev/null | head -n1)"
+PARTNUM="$(cat "/sys/class/block/$BASE/partition" 2>/dev/null)"
+echo "target mount=$MP dev=$DEV disk=${{PK:-?}} part=${{PARTNUM:-?}}"
+if [ -z "$PK" ] || [ -z "$PARTNUM" ]; then
+  echo "ERROR: cannot resolve disk/partition for $MP" >&2
+  exit 1
+fi
+DISK="/dev/$PK"
+SIZE_BEFORE="$(blockdev --getsize64 "$DISK" 2>/dev/null || echo 0)"
+echo "disk bytes before rescan: $SIZE_BEFORE"
+# Заставляем ядро перечитать новую ёмкость диска. Критично для SATA/SCSI:
+# capacity не обновляется на лету. Повторяем, т.к. rescan асинхронный.
+for i in 1 2 3 4 5; do
+  echo 1 > "/sys/class/block/$PK/device/rescan" 2>/dev/null || true
+  partprobe "$DISK" 2>/dev/null || true
+  SIZE_NOW="$(blockdev --getsize64 "$DISK" 2>/dev/null || echo 0)"
+  [ "$SIZE_NOW" != "$SIZE_BEFORE" ] && break
+  sleep 1
+done
+echo "disk bytes after rescan: $(blockdev --getsize64 "$DISK" 2>/dev/null)"
+if ! command -v growpart >/dev/null 2>&1; then
+  echo "ERROR: growpart not installed (apt install cloud-guest-utils)" >&2
+  exit 2
+fi
+growpart "$DISK" "$PARTNUM"; GP=$?
+echo "growpart rc=$GP"
+partx -u "$DISK" 2>/dev/null || true
+FSTYPE="$(findmnt -nro FSTYPE "$MP" 2>/dev/null)"
+echo "fstype=$FSTYPE"
+case "$FSTYPE" in
+  ext2|ext3|ext4) resize2fs "$DEV" ;;
+  xfs) xfs_growfs "$MP" ;;
+  btrfs) btrfs filesystem resize max "$MP" ;;
+  *) echo "WARN: unknown fstype '$FSTYPE', skipping fs grow" >&2 ;;
+esac
+echo "new fs size: $(findmnt -nro SIZE "$MP" 2>/dev/null)"
+echo "grow done"
+"""
             try:
-                resize_upid = self.proxmox.nodes(node).qemu(vmid).resize.put(disk=disk, size=size)
-                # Wait for resize task to complete to avoid lock conflicts
-                if isinstance(resize_upid, str):
-                    self.wait_for_task(node, resize_upid, timeout=120)
-                logger.info(f"Размер диска {disk} VM {vmid} изменен на {size}")
-                return True
+                result = self.execute_script(node, vmid, script, timeout=120)
+                out = (result.get('stdout', '') or '') + (result.get('stderr', '') or '')
+                # growpart печатает "CHANGED:" когда раздел реально вырос
+                result['changed'] = 'CHANGED' in out
+                logger.info(
+                    f"growpart VM {vmid}: exit={result.get('exit_code')} "
+                    f"changed={result['changed']}\n{out.strip()}"
+                )
+                return result
             except Exception as e:
-                logger.error(f"Ошибка изменения размера диска VM {vmid}: {e}")
-                return False
+                logger.warning(f"Не удалось выполнить growpart в VM {vmid}: {e}")
+                return {'success': False, 'error': str(e), 'stdout': '', 'stderr': '', 'exit_code': -1}
 
