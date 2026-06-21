@@ -18,6 +18,20 @@ from ..config import utcnow
 _PROGRESS_RE = re.compile(r"(?:progress\s+)?(\d{1,3})\s*%")
 
 
+def _bytes_to_mb(value: Optional[int]) -> Optional[int]:
+    """Перевести байты Proxmox (maxmem) в мегабайты для хранения в БД."""
+    if not value:
+        return None
+    return round(value / (1024 * 1024))
+
+
+def _bytes_to_gb(value: Optional[int]) -> Optional[int]:
+    """Перевести байты Proxmox (maxdisk) в гигабайты для хранения в БД."""
+    if not value:
+        return None
+    return round(value / (1024 * 1024 * 1024))
+
+
 def parse_task_progress(log_text: Optional[str]) -> Optional[int]:
     """Extract the latest restore/backup progress percentage from a task log.
 
@@ -774,8 +788,12 @@ class MonitoringWorker:
                         existing.node = node_name
                         existing.status = new_status
                         existing.cores = vm_data.get('cpus', vm_data.get('maxcpu'))
-                        existing.memory = vm_data.get('maxmem')
-                        existing.disk_size = vm_data.get('maxdisk')
+                        # maxmem/maxdisk приходят из Proxmox в БАЙТАХ, а колонки
+                        # memory/disk_size по соглашению хранятся в MB/GB
+                        # (так пишут create/resize). Конвертируем, иначе синк
+                        # затирает корректные значения сырыми байтами.
+                        existing.memory = _bytes_to_mb(vm_data.get('maxmem'))
+                        existing.disk_size = _bytes_to_gb(vm_data.get('maxdisk'))
                         existing.os_type = os_type
                         existing.vm_type = vm_type
                         existing.is_template = bool(vm_data.get('template'))
@@ -795,8 +813,9 @@ class MonitoringWorker:
                             name=vm_name,
                             status=new_status,
                             cores=vm_data.get('cpus', vm_data.get('maxcpu')),
-                            memory=vm_data.get('maxmem'),
-                            disk_size=vm_data.get('maxdisk'),
+                            # см. комментарий выше: Proxmox отдаёт байты, храним MB/GB
+                            memory=_bytes_to_mb(vm_data.get('maxmem')),
+                            disk_size=_bytes_to_gb(vm_data.get('maxdisk')),
                             os_type=os_type,
                             is_template=bool(vm_data.get('template')),
                             ip_address=ip_address,
