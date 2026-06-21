@@ -278,14 +278,6 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             headerRight={nicSelector}
           />
           <ChartCard
-            title="Заполненность диска"
-            data={points}
-            dataKey="diskpct"
-            color="hsl(45, 93%, 47%)"
-            formatValue={(v) => `${v.toFixed(1)}%`}
-            unit="%"
-          />
-          <ChartCard
             title="IOPS чтение"
             data={points}
             dataKey="iops_read"
@@ -300,6 +292,14 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             color="hsl(300, 60%, 50%)"
             formatValue={(v) => `${v.toFixed(0)} ops/s`}
             unit=" ops/s"
+          />
+          <ChartCard
+            title="Заполненность диска"
+            data={points}
+            dataKey="diskpct"
+            color="hsl(45, 93%, 47%)"
+            formatValue={(v) => `${v.toFixed(1)}%`}
+            unit="%"
           />
         </div>
       )}
