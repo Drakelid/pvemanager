@@ -38,3 +38,34 @@ def test_aggregate_fsinfo_sums():
 
 def test_aggregate_fsinfo_empty():
     assert mh.aggregate_fsinfo([]) == (0, 0)
+
+
+def test_timeframe_to_range_hour():
+    assert mh.timeframe_to_range("hour", 10_000) == (10_000 - 3600, 10_000)
+
+def test_timeframe_to_range_month():
+    assert mh.timeframe_to_range("month", 10_000_000) == (10_000_000 - 30 * 86400, 10_000_000)
+
+def test_timeframe_to_range_unknown_defaults_hour():
+    assert mh.timeframe_to_range("nonsense", 10_000) == (10_000 - 3600, 10_000)
+
+def test_pick_bucket_respects_floor():
+    # 1h window, target 150 -> 24s ideal, but floor 15 keeps >=15
+    assert mh.pick_bucket_seconds(0, 3600, target_points=150, floor=15) == 24
+
+def test_pick_bucket_floor_applied():
+    assert mh.pick_bucket_seconds(0, 300, target_points=150, floor=15) == 15
+
+def test_aggregate_series_averages_buckets():
+    rows = [
+        {"time": 0, "cpu": 10.0, "mem": 100},
+        {"time": 5, "cpu": 20.0, "mem": 200},
+        {"time": 20, "cpu": 40.0, "mem": None},
+    ]
+    out = mh.aggregate_series(rows, from_ts=0, bucket=10, fields=["cpu", "mem"])
+    # bucket 0: times 0,5 -> cpu 15, mem 150 ; bucket 20: time 20 -> cpu 40, mem None
+    assert out[0] == {"time": 0, "cpu": 15.0, "mem": 150.0}
+    assert out[-1] == {"time": 20, "cpu": 40.0, "mem": None}
+
+def test_aggregate_series_empty():
+    assert mh.aggregate_series([], 0, 10, ["cpu"]) == []
