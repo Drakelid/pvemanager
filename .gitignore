@@ -74,3 +74,6 @@ graphify-out/
 
 # Claude Code local preview config
 .claude/launch.json
+# Local-only Superpowers artifacts (specs, plans, SDD scratch) — never pushed
+docs/superpowers/
+.superpowers/
