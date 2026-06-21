@@ -235,7 +235,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             data={points}
             dataKey="cpu"
             color="hsl(217, 91%, 60%)"
-            formatValue={(v) => `${(v * 100).toFixed(1)}%`}
+            formatValue={(v) => `${v.toFixed(1)}%`}
             unit="%"
           />
           <ChartCard
@@ -280,7 +280,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             data={points}
             dataKey="diskpct"
             color="hsl(45, 93%, 47%)"
-            formatValue={(v) => `${(v * 100).toFixed(1)}%`}
+            formatValue={(v) => `${v.toFixed(1)}%`}
             unit="%"
           />
           <ChartCard

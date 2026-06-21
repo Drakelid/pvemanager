@@ -21,6 +21,7 @@ from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         get_next_vmid, archive_and_delete_snapshots,
                         save_vm_instance, get_vm_instance, soft_delete_vm_instance)
+from ...services.metrics_history import query_instance_metrics, timeframe_to_range
 
 router = APIRouter()
 
@@ -1848,7 +1849,6 @@ def get_container_rrddata(
 # ==================== Metrics History (DB-only) ====================
 
 def _resolve_metrics_window(timeframe, from_ts, to_ts):
-    from ...services.metrics_history import timeframe_to_range
     from ...config import settings
     now = int(time_lib.time())
     if from_ts is not None and to_ts is not None:
@@ -1874,7 +1874,6 @@ def get_vm_metrics(
     current_user: User = Depends(PermissionChecker("vm:view")),
 ):
     """Retrieve VM metrics time-series from the local DB (no Proxmox call)."""
-    from ...services.metrics_history import query_instance_metrics
     f, t = _resolve_metrics_window(timeframe, from_ts, to_ts)
     return query_instance_metrics(db, server_id, vmid, f, t, nic)
 
@@ -1892,7 +1891,6 @@ def get_container_metrics(
     current_user: User = Depends(PermissionChecker("vm:view")),
 ):
     """Retrieve container metrics time-series from the local DB (no Proxmox call)."""
-    from ...services.metrics_history import query_instance_metrics
     f, t = _resolve_metrics_window(timeframe, from_ts, to_ts)
     return query_instance_metrics(db, server_id, vmid, f, t, nic)
 

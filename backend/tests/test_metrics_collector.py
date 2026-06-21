@@ -49,3 +49,35 @@ def test_collect_once_second_tick_computes_rates(db_session):
     assert rows[1].iops_read == 5.0       # (110-100)/2
     nic = db_session.query(InstanceNicMetric).order_by(InstanceNicMetric.id).all()[-1]
     assert nic.in_rate == 10.0            # (1020-1000)/2
+
+
+def test_collect_once_evicts_stale_prev(db_session):
+    """Keys for VMs absent from the current tick must be pruned from prev."""
+    def _client_for(vmid_str):
+        c = MagicMock()
+        c.get_vm_status.return_value = {
+            "cpu": 0.1, "mem": 50, "maxmem": 100,
+            "netin": 0, "netout": 0, "diskread": 0, "diskwrite": 0,
+        }
+        c.get_vm_fsinfo.return_value = [{"used": 5, "total": 20}]
+        c.get_vm_blockstats.return_value = ""
+        c.get_node_netstat.return_value = [
+            {"dev": f"tap{vmid_str}i0", "vmid": vmid_str, "in": "0", "out": "0"}
+        ]
+        return c
+
+    prev = {}
+    # Tick 1: only vmid 114 running
+    items_114 = [{"server_id": 1, "vmid": 114, "type": "qemu", "node": "prod", "status": "running"}]
+    clients_114 = {1: _client_for("114")}
+    collect_once(db_session, items_114, clients_114, prev, _now=100.0)
+    # After tick 1, prev must contain 114 keys
+    assert any("114" in k for k in prev), "Expected 114 keys in prev after tick 1"
+
+    # Tick 2: only vmid 115 running (114 is gone)
+    items_115 = [{"server_id": 1, "vmid": 115, "type": "qemu", "node": "prod", "status": "running"}]
+    clients_115 = {1: _client_for("115")}
+    collect_once(db_session, items_115, clients_115, prev, _now=102.0)
+    # 114 keys must be evicted; 115 keys must be present
+    assert not any("114" in k for k in prev), "Expected 114 keys evicted from prev after tick 2"
+    assert any("115" in k for k in prev), "Expected 115 keys in prev after tick 2"

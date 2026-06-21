@@ -26,6 +26,8 @@ def collect_once(db, items, clients, prev, _now=None):
 
     # netstat is one call per (server_id, node); cache per tick.
     netstat_cache: dict[tuple, list] = {}
+    # Track which prev keys are touched this tick so stale entries can be evicted.
+    seen: set = set()
 
     for it in items:
         if it.get("status") != "running":
@@ -76,6 +78,7 @@ def collect_once(db, items, clients, prev, _now=None):
                 iops_write=rate("wr_ops") if inst_type == "qemu" else None,
             ))
             prev[key] = (now, cur)
+            seen.add(key)
 
             # per-NIC
             ck = (sid, node)
@@ -93,8 +96,14 @@ def collect_once(db, items, clients, prev, _now=None):
                     out_rate=compute_rate(npc.get("out"), float(dout), ndt),
                 ))
                 prev[nkey] = (now, {"in": float(din), "out": float(dout)})
+                seen.add(nkey)
         except Exception as e:
             logger.debug(f"[metrics_collector] {sid}:{vmid} error: {e}")
+
+    # Evict stale keys from prev (VMs/NICs not seen this tick).
+    for k in list(prev):
+        if k not in seen:
+            del prev[k]
 
 
 async def metrics_collector_loop(db_factory) -> None:

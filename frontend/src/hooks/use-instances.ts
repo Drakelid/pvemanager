@@ -12,7 +12,6 @@ export const vmKeys = {
   detail: (serverId: number, vmid: number) => ['vm', serverId, vmid] as const,
   config: (serverId: number, vmid: number) => ['vm', serverId, vmid, 'config'] as const,
   status: (serverId: number, vmid: number) => ['vm', serverId, vmid, 'status'] as const,
-  rrddata: (serverId: number, vmid: number, tf: string) => ['vm', serverId, vmid, 'rrddata', tf] as const,
   snapshots: (serverId: number, vmid: number) => ['vm', serverId, vmid, 'snapshots'] as const,
   interfaces: (serverId: number, vmid: number) => ['vm', serverId, vmid, 'interfaces'] as const,
 };
@@ -178,28 +177,6 @@ export function useVMConfig(serverId: number, vmid: number, type: string, node: 
   });
 }
 
-// RRD refresh cadence per timeframe — matches Proxmox's native RRA resolution,
-// so the chart advances as new samples land instead of staying frozen.
-const RRD_REFETCH_MS: Record<string, number> = {
-  hour: 60_000,      // 1-min resolution
-  day: 300_000,      // ~5-min
-  week: 1_800_000,   // ~30-min
-  month: 3_600_000,  // ~hourly
-  year: 3_600_000,
-};
-
-export function useVMRrddata(serverId: number, vmid: number, type: string, node: string, timeframe = 'hour', enabled = true) {
-  const prefix = type === 'lxc' ? 'container' : 'vm';
-  return useQuery({
-    queryKey: vmKeys.rrddata(serverId, vmid, timeframe),
-    queryFn: async () => {
-      const res = await apiClient.get<{ data: unknown[]; timeframe: string }>(`/proxmox/api/${serverId}/${prefix}/${vmid}/rrddata?node=${node}&timeframe=${timeframe}`);
-      return res.data ?? [];
-    },
-    enabled,
-    refetchInterval: enabled ? (RRD_REFETCH_MS[timeframe] ?? 60_000) : false,
-  });
-}
 
 export interface MetricPoint {
   time: number;
@@ -230,7 +207,6 @@ export function useVMMetrics(
       }
       return apiClient.get(`/proxmox/api/${serverId}/${prefix}/${vmid}/metrics?${qs}`);
     },
-    refetchInterval: 30000,
   });
 }
 
