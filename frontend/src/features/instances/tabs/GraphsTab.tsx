@@ -29,7 +29,6 @@ const PRESETS = [
   { tf: 'month', label: '30d' },
 ];
 
-const SYNC_ID = 'vm-graphs';
 const MAX_SPAN = 30 * 86400;
 
 function fmtTime(ts: number): string {
@@ -71,7 +70,7 @@ function ChartCard({ title, data, dataKey, color, formatValue, unit, headerRight
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={200}>
-          <AreaChart syncId={SYNC_ID} data={data} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+          <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={color} stopOpacity={0.3} />
@@ -93,11 +92,14 @@ function ChartCard({ title, data, dataKey, color, formatValue, unit, headerRight
             />
             <Tooltip
               contentStyle={{
-                backgroundColor: 'hsl(var(--popover))',
-                border: '1px solid hsl(var(--border))',
+                backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                border: '1px solid rgba(255, 255, 255, 0.25)',
                 borderRadius: '6px',
                 fontSize: 12,
+                color: '#fff',
               }}
+              labelStyle={{ color: '#fff' }}
+              itemStyle={{ color: '#fff' }}
               formatter={(val: unknown) => [
                 val != null && typeof val === 'number' && formatValue
                   ? formatValue(val)
@@ -246,12 +248,18 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             formatValue={(v) => formatBytes(v)}
           />
           <ChartCard
-            title="Заполненность диска"
+            title={t('graphs.disk_write')}
             data={points}
-            dataKey="diskpct"
-            color="hsl(45, 93%, 47%)"
-            formatValue={(v) => `${v.toFixed(1)}%`}
-            unit="%"
+            dataKey="diskwrite"
+            color="hsl(0, 84%, 60%)"
+            formatValue={(v) => `${formatBytes(v)}/s`}
+          />
+          <ChartCard
+            title={t('graphs.disk_read')}
+            data={points}
+            dataKey="diskread"
+            color="hsl(199, 89%, 48%)"
+            formatValue={(v) => `${formatBytes(v)}/s`}
           />
           <ChartCard
             title={t('graphs.network_in')}
@@ -270,18 +278,12 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             headerRight={nicSelector}
           />
           <ChartCard
-            title={t('graphs.disk_read')}
+            title="Заполненность диска"
             data={points}
-            dataKey="diskread"
-            color="hsl(199, 89%, 48%)"
-            formatValue={(v) => `${formatBytes(v)}/s`}
-          />
-          <ChartCard
-            title={t('graphs.disk_write')}
-            data={points}
-            dataKey="diskwrite"
-            color="hsl(0, 84%, 60%)"
-            formatValue={(v) => `${formatBytes(v)}/s`}
+            dataKey="diskpct"
+            color="hsl(45, 93%, 47%)"
+            formatValue={(v) => `${v.toFixed(1)}%`}
+            unit="%"
           />
           <ChartCard
             title="IOPS чтение"
