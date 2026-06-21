@@ -91,3 +91,66 @@ def aggregate_series(rows, from_ts, bucket, fields):
             point[f] = (sum(vals) / len(vals)) if vals else None
         out.append(point)
     return out
+
+
+from datetime import timezone as _tz
+
+_AGG_FIELDS = ["cpu", "mem", "maxmem", "netin", "netout",
+               "diskread", "diskwrite", "diskpct", "iops_read", "iops_write"]
+
+
+def _to_ts(dt):
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_tz.utc)
+    return int(dt.timestamp())
+
+
+def query_instance_metrics(db, server_id, vmid, from_ts, to_ts, nic="all"):
+    from ..models import InstanceMetric, InstanceNicMetric
+    from datetime import datetime
+
+    start = datetime.fromtimestamp(from_ts, tz=_tz.utc)
+    end = datetime.fromtimestamp(to_ts, tz=_tz.utc)
+
+    base = (db.query(InstanceMetric)
+              .filter(InstanceMetric.server_id == server_id,
+                      InstanceMetric.vmid == vmid,
+                      InstanceMetric.ts >= start, InstanceMetric.ts <= end)
+              .order_by(InstanceMetric.ts.asc()).all())
+
+    # Distinct NICs seen in the window (for the selector).
+    nic_rows = (db.query(InstanceNicMetric)
+                  .filter(InstanceNicMetric.server_id == server_id,
+                          InstanceNicMetric.vmid == vmid,
+                          InstanceNicMetric.ts >= start, InstanceNicMetric.ts <= end)
+                  .order_by(InstanceNicMetric.ts.asc()).all())
+    nics = sorted({r.dev for r in nic_rows})
+
+    # Optional per-NIC override of net rates, keyed by exact timestamp.
+    nic_by_ts: dict[int, tuple] = {}
+    if nic != "all":
+        for r in nic_rows:
+            if r.dev == nic:
+                nic_by_ts[_to_ts(r.ts)] = (r.in_rate, r.out_rate)
+
+    rows = []
+    for m in base:
+        ts = _to_ts(m.ts)
+        netin, netout = m.netin_rate, m.netout_rate
+        if nic != "all":
+            ov = nic_by_ts.get(ts)
+            netin, netout = (ov if ov else (None, None))
+        diskpct = (m.disk_used / m.disk_total * 100.0) if (m.disk_total or 0) > 0 else None
+        rows.append({
+            "time": ts,
+            "cpu": (m.cpu * 100.0) if m.cpu is not None else None,
+            "mem": m.mem, "maxmem": m.maxmem,
+            "netin": netin, "netout": netout,
+            "diskread": m.diskread_rate, "diskwrite": m.diskwrite_rate,
+            "diskpct": diskpct,
+            "iops_read": m.iops_read, "iops_write": m.iops_write,
+        })
+
+    bucket = pick_bucket_seconds(from_ts, to_ts)
+    data = aggregate_series(rows, from_ts, bucket, _AGG_FIELDS)
+    return {"data": data, "from": from_ts, "to": to_ts, "meta": {"nics": nics}}
