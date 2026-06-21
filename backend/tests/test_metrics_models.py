@@ -13,6 +13,8 @@ def test_instance_metric_roundtrip(db_session):
         server_id=1, vmid=114, ts=ts, dev="tap114i0", in_rate=5.0, out_rate=6.0))
     db_session.commit()
     m = db_session.query(InstanceMetric).one()
-    assert m.vmid == 114 and m.iops_read == 12.0
+    assert m.vmid == 114
+    assert m.iops_read == 12.0
     n = db_session.query(InstanceNicMetric).one()
-    assert n.dev == "tap114i0" and n.out_rate == 6.0
+    assert n.dev == "tap114i0"
+    assert n.out_rate == 6.0

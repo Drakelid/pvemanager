@@ -5,7 +5,7 @@ from .base import Base, Column, Integer, BigInteger, String, DateTime, Index, fu
 class InstanceMetric(Base):
     __tablename__ = "instance_metric"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     server_id = Column(Integer, nullable=False)
     vmid = Column(Integer, nullable=False)
     vm_type = Column(String(10), nullable=True)
@@ -28,7 +28,7 @@ class InstanceMetric(Base):
 class InstanceNicMetric(Base):
     __tablename__ = "instance_nic_metric"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     server_id = Column(Integer, nullable=False)
     vmid = Column(Integer, nullable=False)
     ts = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
