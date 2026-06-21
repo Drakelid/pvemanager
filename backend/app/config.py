@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # once your servers' host keys are in known_hosts.
     SSH_REJECT_UNKNOWN_HOSTS: bool = Field(default=False, env="SSH_REJECT_UNKNOWN_HOSTS")
     
+    # Metrics history
+    METRICS_COLLECT_INTERVAL: int = Field(default=15, env="METRICS_COLLECT_INTERVAL")
+    METRICS_RETENTION_DAYS: int = Field(default=30, env="METRICS_RETENTION_DAYS")
+
     # CORS — comma-separated list of allowed origins; "*" is insecure in production
     CORS_ORIGINS: str = Field(default="*", env="CORS_ORIGINS")
 

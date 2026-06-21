@@ -606,4 +606,8 @@ def start_metrics_broadcaster(db_factory) -> None:
     asyncio.create_task(server_metrics_loop(db_factory), name="metrics:servers")
     asyncio.create_task(instance_metrics_loop(db_factory), name="metrics:instances")
     asyncio.create_task(instances_list_metrics_loop(db_factory), name="metrics:instances_list")
+    # Import inside function to avoid circular imports
+    from .metrics_collector import metrics_collector_loop, metrics_retention_loop
+    asyncio.create_task(metrics_collector_loop(db_factory), name="metrics:collector")
+    asyncio.create_task(metrics_retention_loop(db_factory), name="metrics:retention")
     logger.info("[metrics_broadcaster] Metrics broadcasting tasks started")
