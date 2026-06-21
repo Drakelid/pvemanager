@@ -178,7 +178,17 @@ export function useVMConfig(serverId: number, vmid: number, type: string, node: 
   });
 }
 
-export function useVMRrddata(serverId: number, vmid: number, type: string, node: string, timeframe = 'hour') {
+// RRD refresh cadence per timeframe — matches Proxmox's native RRA resolution,
+// so the chart advances as new samples land instead of staying frozen.
+const RRD_REFETCH_MS: Record<string, number> = {
+  hour: 60_000,      // 1-min resolution
+  day: 300_000,      // ~5-min
+  week: 1_800_000,   // ~30-min
+  month: 3_600_000,  // ~hourly
+  year: 3_600_000,
+};
+
+export function useVMRrddata(serverId: number, vmid: number, type: string, node: string, timeframe = 'hour', enabled = true) {
   const prefix = type === 'lxc' ? 'container' : 'vm';
   return useQuery({
     queryKey: vmKeys.rrddata(serverId, vmid, timeframe),
@@ -186,6 +196,8 @@ export function useVMRrddata(serverId: number, vmid: number, type: string, node:
       const res = await apiClient.get<{ data: unknown[]; timeframe: string }>(`/proxmox/api/${serverId}/${prefix}/${vmid}/rrddata?node=${node}&timeframe=${timeframe}`);
       return res.data ?? [];
     },
+    enabled,
+    refetchInterval: enabled ? (RRD_REFETCH_MS[timeframe] ?? 60_000) : false,
   });
 }
 
@@ -274,7 +286,11 @@ export function useSetVMOwner(serverId: number, vmid: number) {
   return useMutation({
     mutationFn: (user_id: number | null) =>
       apiClient.put(`/proxmox/api/${serverId}/vm/${vmid}/owner`, { user_id }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vm-owner', serverId, vmid] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vm-owner', serverId, vmid] });
+      // Refresh the instances list so the owner column updates without a manual reload.
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+    },
   });
 }
 

@@ -1,7 +1,7 @@
 import { Cpu, MemoryStick, HardDrive, Clock, Wifi, Globe, Server, ArrowDown, ArrowUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useVMLiveMetrics, useVMConfig, useVMInterfaces } from '@/hooks/use-instances';
-import { formatBytes, formatUptime, formatPercent } from '@/lib/format';
+import { formatBytes, formatUptime, formatPercent, vmVcpuCount } from '@/lib/format';
 import { useTranslation } from 'react-i18next';
 import type { DiskInfo } from '@/types';
 
@@ -165,7 +165,7 @@ export default function OverviewTab({ serverId, vmid, type, node }: Props) {
         <MetricCard
           label={t('common.cpu')}
           value={formatPercent(cpuPercent)}
-          subtitle={config?.cores ? `${config.cores} ${t('common.cores')}` : undefined}
+          subtitle={vmVcpuCount(config) ? `${vmVcpuCount(config)} ${t('common.cores')}` : undefined}
           percent={cpuPercent}
           icon={Cpu}
         />
@@ -258,7 +258,7 @@ export default function OverviewTab({ serverId, vmid, type, node }: Props) {
             <InfoRow label={t('common.vmid')} value={vmid} />
             <InfoRow label={t('common.node')} value={node} />
             <InfoRow label={t('common.type')} value={type === 'qemu' ? t('common.qemu_virtual_machine') : t('common.lxc_container')} />
-            <InfoRow label={t('common.vcpu')} value={config?.cores} />
+            <InfoRow label={t('common.vcpu')} value={vmVcpuCount(config)} />
             <InfoRow label={t('common.memory')} value={config?.memory ? `${config.memory} MB` : undefined} />
             <InfoRow label={t('common.os_type')} value={config?.ostype as string} />
             <InfoRow label={t('common.boot_order')} value={config?.boot as string} />
