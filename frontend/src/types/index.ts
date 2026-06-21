@@ -120,6 +120,10 @@ export interface VMInstance {
 
 export interface VMConfig {
   cores?: number;
+  /** QEMU socket count; total vCPU = sockets * cores (defaults to 1) */
+  sockets?: number;
+  /** QEMU hotplugged vCPU count, when fewer than sockets * cores are online */
+  vcpus?: number;
   memory?: number;
   disk?: string;
   name?: string;

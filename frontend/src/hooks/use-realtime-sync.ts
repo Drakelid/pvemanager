@@ -48,6 +48,24 @@ export function useGlobalRealtimeSync() {
       qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
     });
 
+    const unsubVmOwnerChanged = ws.onType('vm_owner_changed', (data: unknown) => {
+      const msg = data as {
+        vmid: number;
+        server_id: number;
+        owner_id: number | null;
+        owner_user: { username: string; email?: string; full_name?: string } | null;
+      };
+      qc.setQueryData<Array<Record<string, unknown>>>(vmKeys.all, (old) =>
+        old?.map((vm) =>
+          vm.server_id === msg.server_id && vm.vmid === msg.vmid
+            ? { ...vm, owner_id: msg.owner_id, owner_user: msg.owner_user }
+            : vm
+        )
+      );
+      // Keep the admin owner panel (settings tab) in sync as well.
+      qc.invalidateQueries({ queryKey: ['vm-owner', msg.server_id, msg.vmid] });
+    });
+
     // ── Server events ──────────────────────────────────────────────────────
     const invalidateServerCaches = () => {
       qc.invalidateQueries({ queryKey: nodeKeys.servers });
@@ -74,6 +92,7 @@ export function useGlobalRealtimeSync() {
       unsubVmStatus();
       unsubVmDeleted();
       unsubVmCreated();
+      unsubVmOwnerChanged();
       unsubServerAdded();
       unsubServerUpdated();
       unsubServerDeleted();

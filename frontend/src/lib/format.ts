@@ -29,18 +29,31 @@ export function vmTypeLabel(type: string): string {
 }
 
 /**
+ * Total vCPU count from a live Proxmox config.
+ * QEMU reports `cores` *per socket*, so the real total is `sockets * cores`
+ * (LXC has no sockets and reports the total in `cores`).
+ */
+export function vmVcpuCount(config?: { cores?: number; sockets?: number } | null): number | undefined {
+  if (!config?.cores) return undefined;
+  return config.cores * (config.sockets ?? 1);
+}
+
+/**
  * Formats a VM/LXC hardware configuration as "N vCPU / X GB RAM / Y GB".
- * `memory` is expected in MB; disk in GB (falls back to `maxdisk` in bytes).
+ * `memory` and `maxdisk` come from the cached instances list in bytes;
+ * `disk_size` (when present) is already in GB.
  */
 export function formatVmConfig(vm: {
   cores?: number;
   memory?: number;
+  maxmem?: number;
   disk_size?: number;
   maxdisk?: number;
 }): string {
   const parts: string[] = [];
   if (vm.cores) parts.push(`${vm.cores} vCPU`);
-  if (vm.memory) parts.push(`${Math.round(vm.memory / 1024)} GB RAM`);
+  const memBytes = vm.memory || vm.maxmem;
+  if (memBytes) parts.push(`${formatBytes(memBytes, 0)} RAM`);
   const diskGb = vm.disk_size ?? (vm.maxdisk ? Math.round(vm.maxdisk / 1024 ** 3) : 0);
   if (diskGb) parts.push(`${diskGb} GB`);
   return parts.join(' / ');

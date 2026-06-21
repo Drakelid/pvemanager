@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { getTasksWebSocket } from '@/lib/websocket';
@@ -12,7 +12,6 @@ export const vmKeys = {
   detail: (serverId: number, vmid: number) => ['vm', serverId, vmid] as const,
   config: (serverId: number, vmid: number) => ['vm', serverId, vmid, 'config'] as const,
   status: (serverId: number, vmid: number) => ['vm', serverId, vmid, 'status'] as const,
-  rrddata: (serverId: number, vmid: number, tf: string) => ['vm', serverId, vmid, 'rrddata', tf] as const,
   snapshots: (serverId: number, vmid: number) => ['vm', serverId, vmid, 'snapshots'] as const,
   interfaces: (serverId: number, vmid: number) => ['vm', serverId, vmid, 'interfaces'] as const,
 };
@@ -178,14 +177,39 @@ export function useVMConfig(serverId: number, vmid: number, type: string, node: 
   });
 }
 
-export function useVMRrddata(serverId: number, vmid: number, type: string, node: string, timeframe = 'hour') {
+
+export interface MetricPoint {
+  time: number;
+  cpu: number | null; mem: number | null; maxmem: number | null;
+  netin: number | null; netout: number | null;
+  diskread: number | null; diskwrite: number | null;
+  diskpct: number | null; iops_read: number | null; iops_write: number | null;
+}
+export interface MetricsResponse {
+  data: MetricPoint[]; from: number; to: number; meta: { nics: string[] };
+}
+
+export function useVMMetrics(
+  serverId: number, vmid: number, type: string, node: string,
+  opts: { timeframe?: string; from?: number; to?: number; nic?: string },
+) {
   const prefix = type === 'lxc' ? 'container' : 'vm';
-  return useQuery({
-    queryKey: vmKeys.rrddata(serverId, vmid, timeframe),
-    queryFn: async () => {
-      const res = await apiClient.get<{ data: unknown[]; timeframe: string }>(`/proxmox/api/${serverId}/${prefix}/${vmid}/rrddata?node=${node}&timeframe=${timeframe}`);
-      return res.data ?? [];
+  const { timeframe = 'hour', from, to, nic = 'all' } = opts;
+  return useQuery<MetricsResponse>({
+    queryKey: ['vm', serverId, vmid, 'metrics', { timeframe, from, to, nic }],
+    queryFn: () => {
+      const qs = new URLSearchParams({ node, nic });
+      if (from != null && to != null) {
+        qs.set('from_ts', String(from));
+        qs.set('to_ts', String(to));
+      } else {
+        qs.set('timeframe', timeframe);
+      }
+      return apiClient.get(`/proxmox/api/${serverId}/${prefix}/${vmid}/metrics?${qs}`);
     },
+    // Keep showing the previous series while a new range/NIC loads, so switching
+    // the interface selector doesn't blank the whole grid into a spinner.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -274,7 +298,11 @@ export function useSetVMOwner(serverId: number, vmid: number) {
   return useMutation({
     mutationFn: (user_id: number | null) =>
       apiClient.put(`/proxmox/api/${serverId}/vm/${vmid}/owner`, { user_id }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vm-owner', serverId, vmid] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vm-owner', serverId, vmid] });
+      // Refresh the instances list so the owner column updates without a manual reload.
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+    },
   });
 }
 
