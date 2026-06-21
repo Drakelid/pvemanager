@@ -297,7 +297,7 @@ set -u
 MP="{mountpoint}"
 SRC="$(findmnt -nro SOURCE "$MP" 2>/dev/null)"
 [ -z "$SRC" ] && SRC="$(awk -v m="$MP" '$2==m{{print $1}}' /proc/mounts | head -n1)"
-# Для btrfs убираем суффикс подтома вида [/@]
+# strip btrfs subvolume suffix like [/@]
 SRC="${{SRC%%[*}}"
 DEV="$(readlink -f "$SRC" 2>/dev/null || echo "$SRC")"
 BASE="$(basename "$DEV")"
@@ -311,8 +311,8 @@ fi
 DISK="/dev/$PK"
 SIZE_BEFORE="$(blockdev --getsize64 "$DISK" 2>/dev/null || echo 0)"
 echo "disk bytes before rescan: $SIZE_BEFORE"
-# Заставляем ядро перечитать новую ёмкость диска. Критично для SATA/SCSI:
-# capacity не обновляется на лету. Повторяем, т.к. rescan асинхронный.
+# Force kernel to re-read disk capacity. Critical for SATA/SCSI where it
+# is not updated live. Retry because rescan is asynchronous.
 for i in 1 2 3 4 5; do
   echo 1 > "/sys/class/block/$PK/device/rescan" 2>/dev/null || true
   partprobe "$DISK" 2>/dev/null || true
