@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { getTasksWebSocket } from '@/lib/websocket';
@@ -207,6 +207,9 @@ export function useVMMetrics(
       }
       return apiClient.get(`/proxmox/api/${serverId}/${prefix}/${vmid}/metrics?${qs}`);
     },
+    // Keep showing the previous series while a new range/NIC loads, so switching
+    // the interface selector doesn't blank the whole grid into a spinner.
+    placeholderData: keepPreviousData,
   });
 }
 
