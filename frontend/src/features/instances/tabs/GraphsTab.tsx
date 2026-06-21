@@ -246,6 +246,14 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             formatValue={(v) => formatBytes(v)}
           />
           <ChartCard
+            title="Заполненность диска"
+            data={points}
+            dataKey="diskpct"
+            color="hsl(45, 93%, 47%)"
+            formatValue={(v) => `${v.toFixed(1)}%`}
+            unit="%"
+          />
+          <ChartCard
             title={t('graphs.network_in')}
             data={points}
             dataKey="netin"
@@ -274,14 +282,6 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             dataKey="diskwrite"
             color="hsl(0, 84%, 60%)"
             formatValue={(v) => `${formatBytes(v)}/s`}
-          />
-          <ChartCard
-            title="Заполненность диска"
-            data={points}
-            dataKey="diskpct"
-            color="hsl(45, 93%, 47%)"
-            formatValue={(v) => `${v.toFixed(1)}%`}
-            unit="%"
           />
           <ChartCard
             title="IOPS чтение"
