@@ -194,6 +194,32 @@ def get_lxc_repo_templates(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/{server_id}/images/node-arch")
+def get_node_arch(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("template:view")),
+):
+    """Архитектура ноды (amd64|arm64) по current-kernel.machine из статуса ноды."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+    client = _get_proxmox_client(server)
+    if not client.is_connected():
+        # Нода недоступна — пусть фронт сам решит (дефолт amd64)
+        return {"arch": None, "machine": None}
+    status = client.get_node_status(node) or {}
+    ck = status.get('current-kernel') or {}
+    machine = (ck.get('machine') or status.get('machine') or '').lower()
+    arch = None
+    if machine in ('x86_64', 'amd64'):
+        arch = 'amd64'
+    elif machine in ('aarch64', 'arm64'):
+        arch = 'arm64'
+    return {"arch": arch, "machine": machine or None}
+
+
 @router.get("/api/{server_id}/images/storages")
 def get_image_target_storages(
     server_id: int,
