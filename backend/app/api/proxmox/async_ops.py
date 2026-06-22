@@ -521,6 +521,24 @@ def _do_clone_sync(task_id: int, server_id: int, src_vmid: int, node: str, vm_ty
 
 # ==================== Image download ====================
 
+# Расширения, которые Proxmox принимает для content=import (диск-образы).
+_IMPORT_OK_EXT = ('.qcow2', '.raw', '.vmdk')
+
+
+def _normalize_import_filename(filename: str) -> str:
+    """Привести имя файла к допустимому для content=import расширению.
+
+    Proxmox валидирует расширение для импорта и отвергает, напр., Ubuntu cloud
+    `*.img` («invalid filename or wrong extension»), хотя формат внутри — qcow2.
+    Переименовываем такие файлы в `.qcow2` (import-from определит формат сам).
+    """
+    low = filename.lower()
+    if any(low.endswith(ext) for ext in _IMPORT_OK_EXT):
+        return filename
+    base = filename.rsplit('.', 1)[0] if '.' in filename else filename
+    return base + '.qcow2'
+
+
 def _wait_download_with_progress(client, task_id: int, node: str, upid: str,
                                  lo: int = 15, hi: int = 100,
                                  timeout: int = 3600) -> bool:
@@ -598,8 +616,9 @@ def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: st
                 upid = client.download_lxc_template(node, storage, template)
             else:
                 content = 'vztmpl' if kind == 'vztmpl' else 'import'
+                dl_filename = _normalize_import_filename(filename) if content == 'import' else filename
                 upid = client.download_url(
-                    node, storage, url, content, filename,
+                    node, storage, url, content, dl_filename,
                     checksum=checksum, checksum_algorithm=checksum_algorithm,
                 )
         except Exception as e:
@@ -683,7 +702,8 @@ def _do_image_template_sync(task_id: int, server_id: int, node: str,
                                 error='Не удалось подключиться к Proxmox серверу')
             return
 
-        # 1) Загрузка образа в import-хранилище
+        # 1) Загрузка образа в import-хранилище (имя — с допустимым для импорта расширением)
+        filename = _normalize_import_filename(filename)
         _update_deploy_task(task_id, 'running', f'Загрузка образа {filename}...', 10, node=node)
         try:
             dl_upid = client.download_url(node, import_storage, url, 'import', filename,
