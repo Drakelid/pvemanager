@@ -738,6 +738,55 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.error(f"Ошибка преобразования VM {vmid} в шаблон: {e}")
                 return False
 
+        def create_vm_with_import(self, node: str, vmid: int, name: str,
+                                  memory: int, cores: int,
+                                  disk_storage: str, import_volid: str,
+                                  bridge: str = 'vmbr0', ostype: str = 'l26') -> Optional[str]:
+            """
+            Создать ВМ, импортируя готовый диск из скачанного образа (PVE 8.2+).
+
+            Использует синтаксис диска `<storage>:0,import-from=<volid>`, при котором
+            Proxmox сам аллоцирует диск нужного размера и конвертирует образ —
+            аналог `qm importdisk` без SSH. Добавляет cloud-init drive и serial-консоль.
+
+            Args:
+                node: имя ноды
+                vmid: VMID новой ВМ
+                name: имя ВМ
+                memory: память в MB
+                cores: число ядер
+                disk_storage: хранилище для диска ВМ (content=images)
+                import_volid: volid скачанного образа, напр. 'local:import/img.qcow2'
+                bridge: сетевой мост
+                ostype: тип ОС (l26 — Linux 2.6+/3.x/4.x/5.x/6.x)
+
+            Returns:
+                UPID задачи создания/импорта или None
+            """
+            if not self.proxmox:
+                return None
+            params = {
+                'vmid': vmid,
+                'name': name,
+                'memory': memory,
+                'cores': cores,
+                'sockets': 1,
+                'cpu': 'host',
+                'scsihw': 'virtio-scsi-single',
+                'ostype': ostype,
+                'scsi0': f'{disk_storage}:0,import-from={import_volid}',
+                'ide2': f'{disk_storage}:cloudinit',
+                'boot': 'order=scsi0',
+                'serial0': 'socket',
+                'vga': 'serial0',
+                'agent': 'enabled=1',
+                'net0': f'virtio,bridge={bridge}',
+            }
+            # Исключение пробрасываем наверх — воркер отличит «импорт не поддержан»
+            result = self.proxmox.nodes(node).qemu.post(**params)
+            logger.info(f"Создание ВМ {vmid} ({name}) с импортом {import_volid} на {node}, UPID: {result}")
+            return result
+
         def find_template_on_nodes(self, template_vmid: int, nodes: List[str] = None) -> Optional[Dict]:
             """
             Найти шаблон по VMID на всех нодах кластера

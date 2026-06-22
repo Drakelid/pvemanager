@@ -45,6 +45,16 @@ class ImageDownloadRequest(BaseModel):
     checksum: Optional[str] = None
     checksum_algorithm: Optional[str] = None
 
+    # Авто-конвертация qcow2 → VM-шаблон (Phase 2)
+    to_template: bool = False
+    disk_storage: Optional[str] = None   # хранилище диска ВМ (content=images); по умолч. = storage
+    cores: Optional[int] = None
+    memory: Optional[int] = None         # MB
+    bridge: Optional[str] = None
+    ciuser: Optional[str] = None
+    cipassword: Optional[str] = None
+    ssh_keys: Optional[str] = None
+
     @model_validator(mode='after')
     def _check(self):
         if not self.source_id and not (self.url or self.template):
@@ -123,7 +133,7 @@ def _resolve_source(db: Session, req: ImageDownloadRequest) -> dict:
                 'filename': item.get('filename') or (item.get('url') or '').rsplit('/', 1)[-1],
                 'checksum': item.get('checksum'),
                 'checksum_algorithm': item.get('checksum_algorithm'),
-                'name': item['name'],
+                'name': item['name'], 'os': item.get('os'), 'version': item.get('version'),
             }
         # Кастомное зеркало: source_id вида "mirror-<id>"
         if req.source_id.startswith('mirror-'):
@@ -139,7 +149,7 @@ def _resolve_source(db: Session, req: ImageDownloadRequest) -> dict:
                     'filename': fname,
                     'checksum': mirror.checksum,
                     'checksum_algorithm': mirror.checksum_algorithm,
-                    'name': mirror.name,
+                    'name': mirror.name, 'os': mirror.os, 'version': mirror.version,
                 }
         raise HTTPException(status_code=404, detail="Источник образа не найден")
 
@@ -151,7 +161,7 @@ def _resolve_source(db: Session, req: ImageDownloadRequest) -> dict:
     return {
         'kind': kind, 'url': req.url, 'template': req.template, 'filename': filename,
         'checksum': req.checksum, 'checksum_algorithm': req.checksum_algorithm,
-        'name': filename,
+        'name': filename, 'os': None, 'version': None,
     }
 
 
@@ -162,10 +172,10 @@ async def download_image(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("template:manage")),
 ):
-    """Запустить фоновую загрузку образа в хранилище ноды."""
+    """Запустить фоновую загрузку образа (и опц. конвертацию qcow2 → VM-шаблон)."""
     # Ленивый импорт во избежание циклической зависимости templates <-> api.proxmox
     from ..templates import _deploy_executor
-    from .async_ops import _do_image_download_sync
+    from .async_ops import _do_image_download_sync, _do_image_template_sync
 
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
@@ -177,9 +187,12 @@ async def download_image(
     if src['kind'] != 'vztmpl' and not src['url']:
         raise HTTPException(status_code=400, detail="Для qcow2 нужен url")
 
+    to_template = req.to_template and src['kind'] == 'qcow2'
+    kind = 'image_template' if to_template else 'image_download'
+
     task = DeployTask(
         status='pending', step='В очереди...', progress=0,
-        kind='image_download', name=src['name'],
+        kind=kind, name=src['name'],
         server_id=server_id, user_id=current_user.id, node=req.node,
     )
     db.add(task)
@@ -188,14 +201,25 @@ async def download_image(
     task_id = task.id
 
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(
-        _deploy_executor,
-        _do_image_download_sync,
-        task_id, server_id, req.node, req.storage,
-        src['kind'], src['filename'], src['url'], src['template'],
-        src['checksum'], src['checksum_algorithm'],
-        current_user.id, current_user.username,
-    )
+    if to_template:
+        loop.run_in_executor(
+            _deploy_executor,
+            _do_image_template_sync,
+            task_id, server_id, req.node, req.storage, req.disk_storage or req.storage,
+            src['url'], src['filename'], src['checksum'], src['checksum_algorithm'],
+            src['name'], req.cores or 2, req.memory or 2048, req.bridge or 'vmbr0',
+            req.ciuser, req.cipassword, req.ssh_keys, src.get('os'), src.get('version'),
+            current_user.id, current_user.username,
+        )
+    else:
+        loop.run_in_executor(
+            _deploy_executor,
+            _do_image_download_sync,
+            task_id, server_id, req.node, req.storage,
+            src['kind'], src['filename'], src['url'], src['template'],
+            src['checksum'], src['checksum_algorithm'],
+            current_user.id, current_user.username,
+        )
 
-    logger.info(f"[IMG DL] Task #{task_id} queued: {src['filename']} by {current_user.username}")
+    logger.info(f"[IMG DL] Task #{task_id} ({kind}) queued: {src['filename']} by {current_user.username}")
     return ImageDownloadResponse(task_id=task_id, status='pending', name=src['name'])

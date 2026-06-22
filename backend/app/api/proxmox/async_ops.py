@@ -14,7 +14,7 @@ from typing import Optional
 from loguru import logger
 
 from ...db import SessionLocal
-from ...models import ProxmoxServer, VMInstance, OSTemplate, DeployTask, User
+from ...models import ProxmoxServer, VMInstance, OSTemplate, OSTemplateGroup, DeployTask, User
 from ...proxmox import ProxmoxClient
 from ...logging_service import LoggingService
 from ._helpers import _get_proxmox_client, get_next_vmid, save_vm_instance, save_vm_instance
@@ -638,6 +638,145 @@ def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: st
         err = str(e)
         logger.error(f"[IMG DL #{task_id}] failed: {err}")
         _update_deploy_task(task_id, 'failed', f'Ошибка: {err[:150]}', 0, error=err)
+    finally:
+        db.close()
+
+
+def _get_or_create_cloud_group(db) -> int:
+    """Найти/создать группу шаблонов «Cloud Images» для импортированных образов."""
+    grp = db.query(OSTemplateGroup).filter(OSTemplateGroup.name == 'Cloud Images').first()
+    if not grp:
+        grp = OSTemplateGroup(name='Cloud Images', icon='cloud',
+                              description='Импортированные cloud-образы', sort_order=50)
+        db.add(grp)
+        db.commit()
+        db.refresh(grp)
+    return grp.id
+
+
+def _do_image_template_sync(task_id: int, server_id: int, node: str,
+                            import_storage: str, disk_storage: str,
+                            url: str, filename: str,
+                            checksum: Optional[str], checksum_algorithm: Optional[str],
+                            name: str, cores: int, memory: int, bridge: str,
+                            ciuser: Optional[str], cipassword: Optional[str],
+                            ssh_keys: Optional[str], os_name: Optional[str],
+                            version: Optional[str], user_id: int, username: str):
+    """Скачать qcow2 cloud-образ и автоматически конвертировать в Proxmox VM-шаблон.
+
+    Пайплайн (без SSH, только API PVE 8.2+):
+      download-url(content=import) -> qemu.post(scsi0 import-from) -> cloud-init
+      -> convert_to_template -> регистрация OSTemplate.
+    """
+    db = SessionLocal()
+    server = None
+    new_vmid: Optional[int] = None
+    try:
+        _update_deploy_task(task_id, 'running', 'Подключение к Proxmox...', 5, node=node)
+        server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+        if not server:
+            _update_deploy_task(task_id, 'failed', 'Сервер не найден', 0, error='Proxmox сервер не найден')
+            return
+        client = _connect(server)
+        if not client:
+            _update_deploy_task(task_id, 'failed', 'Ошибка подключения к Proxmox', 5,
+                                error='Не удалось подключиться к Proxmox серверу')
+            return
+
+        # 1) Загрузка образа в import-хранилище
+        _update_deploy_task(task_id, 'running', f'Загрузка образа {filename}...', 10, node=node)
+        try:
+            dl_upid = client.download_url(node, import_storage, url, 'import', filename,
+                                          checksum=checksum, checksum_algorithm=checksum_algorithm)
+        except Exception as e:
+            _update_deploy_task(task_id, 'failed', 'Ошибка запуска загрузки', 10,
+                                error=f'Download start failed: {e}')
+            return
+        if not dl_upid or not _wait_download_with_progress(client, task_id, node, dl_upid, lo=10, hi=40):
+            _update_deploy_task(task_id, 'failed', 'Загрузка образа не удалась', 10,
+                                error='Не удалось скачать образ')
+            return
+
+        import_volid = f'{import_storage}:import/{filename}'
+
+        # 2) Аллокация VMID и создание ВМ с импортом диска
+        _update_deploy_task(task_id, 'running', 'Аллокация VMID...', 42, node=node)
+        new_vmid = client.get_next_vmid() or get_next_vmid(db, server_id)
+        if not new_vmid:
+            _update_deploy_task(task_id, 'failed', 'Не удалось выделить VMID', 42, error='Failed to allocate VMID')
+            return
+
+        _update_deploy_task(task_id, 'running', f'Создание ВМ {new_vmid} и импорт диска...', 45,
+                            vmid=new_vmid, node=node)
+        try:
+            cr_upid = client.create_vm_with_import(
+                node, new_vmid, name, memory, cores, disk_storage, import_volid, bridge=bridge,
+            )
+        except Exception as e:
+            # Чаще всего — хранилище не поддерживает import-from (старый PVE / нет import-storage).
+            _update_deploy_task(
+                task_id, 'failed', 'Импорт диска не поддержан', 45,
+                vmid=new_vmid, node=node,
+                error=("Хранилище ноды не поддерживает импорт диска "
+                       "(нужен PVE 8.2+ с import-capable dir/NFS storage). "
+                       f"qcow2 скачан в {import_storage}, авто-конвертация пропущена. {str(e)[:120]}"),
+            )
+            return
+        if cr_upid:
+            _wait_download_with_progress(client, task_id, node, cr_upid, lo=45, hi=85)
+
+        # 3) Cloud-init + базовая настройка
+        _update_deploy_task(task_id, 'running', 'Настройка cloud-init...', 90, vmid=new_vmid, node=node)
+        try:
+            client.configure_vm(
+                node, new_vmid,
+                cloud_init_user=ciuser or None,
+                cloud_init_password=cipassword or None,
+                ssh_keys=ssh_keys or None,
+                ip_config='ip=dhcp',
+            )
+        except Exception as _ce:
+            logger.warning(f"[IMG TPL #{task_id}] cloud-init config failed: {_ce}")
+
+        # 4) Преобразование в шаблон
+        _update_deploy_task(task_id, 'running', 'Преобразование в шаблон...', 95, vmid=new_vmid, node=node)
+        if not client.convert_to_template(node, new_vmid):
+            _update_deploy_task(task_id, 'failed', 'Не удалось пометить шаблоном', 95,
+                                vmid=new_vmid, node=node,
+                                error='convert_to_template вернул ошибку')
+            return
+
+        # 5) Регистрация OSTemplate (становится доступен в деплое)
+        _update_deploy_task(task_id, 'running', 'Регистрация шаблона...', 98, vmid=new_vmid, node=node)
+        try:
+            group_id = _get_or_create_cloud_group(db)
+            tpl = OSTemplate(
+                group_id=group_id, server_id=server_id, name=name,
+                vmid=new_vmid, vm_type='qemu', node=node, source_node=node,
+                default_cores=cores, default_memory=memory, default_disk=10,
+                description=f'Импортирован из {filename}'
+                + (f' ({os_name} {version})' if os_name else ''),
+            )
+            db.add(tpl)
+            db.commit()
+        except Exception as reg_err:
+            logger.warning(f"[IMG TPL #{task_id}] OSTemplate register failed: {reg_err}")
+
+        LoggingService.log_proxmox_action(
+            db=db, action='image_template',
+            resource_type='vm', resource_id=new_vmid,
+            username=username, resource_name=name,
+            server_id=server_id, server_name=server.name, node_name=node,
+            details={'filename': filename, 'disk_storage': disk_storage}, success=True,
+        )
+
+        _update_deploy_task(task_id, 'completed', f'Шаблон готов (VMID {new_vmid})', 100,
+                            vmid=new_vmid, node=node)
+        logger.info(f"[IMG TPL #{task_id}] {filename} -> template VMID {new_vmid} by {username}")
+    except Exception as e:
+        err = str(e)
+        logger.error(f"[IMG TPL #{task_id}] failed: {err}")
+        _update_deploy_task(task_id, 'failed', f'Ошибка: {err[:150]}', 0, vmid=new_vmid, error=err)
     finally:
         db.close()
 
