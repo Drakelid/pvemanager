@@ -77,6 +77,102 @@ def get_image_catalog(
     }
 
 
+# ── Custom mirrors CRUD (admin) ──────────────────────────────────────────────
+
+class ImageMirrorBase(BaseModel):
+    name: str
+    kind: str = 'qcow2'              # 'qcow2' | 'vztmpl'
+    os: Optional[str] = None
+    version: Optional[str] = None
+    arch: str = 'amd64'
+    url: Optional[str] = None
+    template: Optional[str] = None
+    checksum: Optional[str] = None
+    checksum_algorithm: Optional[str] = None
+    description: Optional[str] = None
+    enabled: bool = True
+
+    @model_validator(mode='after')
+    def _check(self):
+        if self.kind not in ('qcow2', 'vztmpl'):
+            raise ValueError("kind должен быть 'qcow2' или 'vztmpl'")
+        if not self.url and not self.template:
+            raise ValueError('Нужен url или template')
+        if self.kind == 'qcow2' and not self.url:
+            raise ValueError('Для qcow2 нужен url')
+        return self
+
+
+class ImageMirrorUpdate(BaseModel):
+    name: Optional[str] = None
+    kind: Optional[str] = None
+    os: Optional[str] = None
+    version: Optional[str] = None
+    arch: Optional[str] = None
+    url: Optional[str] = None
+    template: Optional[str] = None
+    checksum: Optional[str] = None
+    checksum_algorithm: Optional[str] = None
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+@router.get("/api/images/mirrors")
+def list_image_mirrors(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("template:manage")),
+):
+    """Список всех кастомных зеркал (включая выключенные) — для управления."""
+    mirrors = db.query(ImageMirror).order_by(ImageMirror.created_at.desc()).all()
+    return [m.to_dict() for m in mirrors]
+
+
+@router.post("/api/images/mirrors", status_code=201)
+def create_image_mirror(
+    data: ImageMirrorBase,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("template:manage")),
+):
+    mirror = ImageMirror(**data.model_dump(), created_by=current_user.id)
+    db.add(mirror)
+    db.commit()
+    db.refresh(mirror)
+    logger.info(f"User {current_user.username} created image mirror: {mirror.name}")
+    return mirror.to_dict()
+
+
+@router.put("/api/images/mirrors/{mirror_id}")
+def update_image_mirror(
+    mirror_id: int,
+    data: ImageMirrorUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("template:manage")),
+):
+    mirror = db.query(ImageMirror).filter(ImageMirror.id == mirror_id).first()
+    if not mirror:
+        raise HTTPException(status_code=404, detail="Зеркало не найдено")
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(mirror, k, v)
+    db.commit()
+    db.refresh(mirror)
+    return mirror.to_dict()
+
+
+@router.delete("/api/images/mirrors/{mirror_id}")
+def delete_image_mirror(
+    mirror_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("template:manage")),
+):
+    mirror = db.query(ImageMirror).filter(ImageMirror.id == mirror_id).first()
+    if not mirror:
+        raise HTTPException(status_code=404, detail="Зеркало не найдено")
+    db.delete(mirror)
+    db.commit()
+    logger.info(f"User {current_user.username} deleted image mirror #{mirror_id}")
+    return {"deleted": True}
+
+
 @router.get("/api/{server_id}/images/lxc-templates")
 def get_lxc_repo_templates(
     server_id: int,
