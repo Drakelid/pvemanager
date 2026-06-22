@@ -119,6 +119,17 @@ class StorageMixin:
                 logger.error(f"Ошибка загрузки {url} на {node}:{storage}: {e}")
                 raise
 
+        def volume_exists(self, node: str, storage: str, volid: str) -> bool:
+            """Проверить, есть ли уже том volid в хранилище (для идемпотентной загрузки)."""
+            if not self.proxmox:
+                return False
+            try:
+                items = self.proxmox.nodes(node).storage(storage).content.get()
+                return any(it.get('volid') == volid for it in (items or []))
+            except Exception as e:
+                logger.debug(f"volume_exists check failed {storage}/{volid}: {e}")
+                return False
+
         def get_download_target_storages(self, node: str, content: str) -> List[Dict]:
             """
             Получить активные хранилища ноды, поддерживающие указанный тип контента

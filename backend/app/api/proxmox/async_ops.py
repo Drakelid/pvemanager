@@ -539,6 +539,15 @@ def _pve_vm_name(display: str, fallback: str = 'cloud-template') -> str:
     return name[:60].rstrip('-')
 
 
+def _task_log_tail(client, node: str, upid: str, lines: int = 5) -> str:
+    """Последние строки лога задачи Proxmox — для понятной причины сбоя."""
+    try:
+        rows = client.get_task_log(node, upid, start=0, limit=50) or []
+        return ' | '.join((r.get('t') or '') for r in rows[-lines:])
+    except Exception:
+        return ''
+
+
 def _normalize_import_filename(filename: str) -> str:
     """Привести имя файла к допустимому для content=import расширению.
 
@@ -623,14 +632,22 @@ def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: st
                                 error='Не удалось подключиться к Proxmox серверу')
             return
 
-        _update_deploy_task(task_id, 'running', f'Старт загрузки {filename}...', 15, node=node)
+        content = 'vztmpl' if kind == 'vztmpl' else 'import'
+        dl_filename = _normalize_import_filename(filename) if content == 'import' else filename
+
+        # Идемпотентность: если файл уже есть в хранилище — не качаем повторно
+        existing_volid = f'{storage}:{content}/{dl_filename}'
+        if client.volume_exists(node, storage, existing_volid):
+            _update_deploy_task(task_id, 'completed', f'Образ {dl_filename} уже в хранилище', 100, node=node)
+            logger.info(f"[IMG DL #{task_id}] {dl_filename} already present on {node}:{storage}")
+            return
+
+        _update_deploy_task(task_id, 'running', f'Старт загрузки {dl_filename}...', 15, node=node)
         try:
             if kind == 'vztmpl' and template and not url:
                 # Шаблон из репозитория Proxmox (aplinfo)
                 upid = client.download_lxc_template(node, storage, template)
             else:
-                content = 'vztmpl' if kind == 'vztmpl' else 'import'
-                dl_filename = _normalize_import_filename(filename) if content == 'import' else filename
                 upid = client.download_url(
                     node, storage, url, content, dl_filename,
                     checksum=checksum, checksum_algorithm=checksum_algorithm,
@@ -646,15 +663,8 @@ def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: st
 
         ok = _wait_download_with_progress(client, task_id, node, upid, lo=15, hi=100)
         if not ok:
-            # Подтянуть хвост лога с причиной
-            tail = ''
-            try:
-                tail_lines = client.get_task_log(node, upid, start=0, limit=20) or []
-                tail = ' | '.join((l.get('t') or '') for l in tail_lines[-5:])
-            except Exception:
-                pass
             _update_deploy_task(task_id, 'failed', 'Загрузка не удалась', 15,
-                                error=f'Загрузка завершилась с ошибкой. {tail}'[:300])
+                                error=f'Загрузка завершилась с ошибкой. {_task_log_tail(client, node, upid)}'[:300])
             return
 
         LoggingService.log_proxmox_action(
@@ -718,20 +728,25 @@ def _do_image_template_sync(task_id: int, server_id: int, node: str,
 
         # 1) Загрузка образа в import-хранилище (имя — с допустимым для импорта расширением)
         filename = _normalize_import_filename(filename)
-        _update_deploy_task(task_id, 'running', f'Загрузка образа {filename}...', 10, node=node)
-        try:
-            dl_upid = client.download_url(node, import_storage, url, 'import', filename,
-                                          checksum=checksum, checksum_algorithm=checksum_algorithm)
-        except Exception as e:
-            _update_deploy_task(task_id, 'failed', 'Ошибка запуска загрузки', 10,
-                                error=f'Download start failed: {e}')
-            return
-        if not dl_upid or not _wait_download_with_progress(client, task_id, node, dl_upid, lo=10, hi=40):
-            _update_deploy_task(task_id, 'failed', 'Загрузка образа не удалась', 10,
-                                error='Не удалось скачать образ')
-            return
-
         import_volid = f'{import_storage}:import/{filename}'
+
+        if client.volume_exists(node, import_storage, import_volid):
+            # Образ уже скачан прошлой попыткой — пропускаем загрузку (идемпотентность)
+            _update_deploy_task(task_id, 'running', 'Образ уже загружен, пропуск...', 40, node=node)
+        else:
+            _update_deploy_task(task_id, 'running', f'Загрузка образа {filename}...', 10, node=node)
+            try:
+                dl_upid = client.download_url(node, import_storage, url, 'import', filename,
+                                              checksum=checksum, checksum_algorithm=checksum_algorithm)
+            except Exception as e:
+                _update_deploy_task(task_id, 'failed', 'Ошибка запуска загрузки', 10,
+                                    error=f'Download start failed: {e}')
+                return
+            if not dl_upid or not _wait_download_with_progress(client, task_id, node, dl_upid, lo=10, hi=40):
+                tail = _task_log_tail(client, node, dl_upid) if dl_upid else ''
+                _update_deploy_task(task_id, 'failed', 'Загрузка образа не удалась', 10,
+                                    error=f'Не удалось скачать образ. {tail}'[:300])
+                return
 
         # 2) Аллокация VMID и создание ВМ с импортом диска
         _update_deploy_task(task_id, 'running', 'Аллокация VMID...', 42, node=node)
