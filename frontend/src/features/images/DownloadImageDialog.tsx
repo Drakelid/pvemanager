@@ -9,6 +9,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -44,14 +45,29 @@ function fmtSize(bytes?: number): string {
 }
 
 export default function DownloadImageDialog({ open, onClose, serverId, node, image }: Props) {
-  const [storage, setStorage] = useState('');
+  const isQcow2 = image?.kind === 'qcow2';
+
+  const [storage, setStorage] = useState('');        // download storage (import / vztmpl)
+  const [toTemplate, setToTemplate] = useState(true);
+  const [diskStorage, setDiskStorage] = useState(''); // VM disk storage (images)
+  const [cores, setCores] = useState(2);
+  const [memory, setMemory] = useState(2048);
+  const [bridge, setBridge] = useState('vmbr0');
+  const [ciuser, setCiuser] = useState('');
+  const [cipassword, setCipassword] = useState('');
 
   // qcow2 кладём как образ для импорта (PVE 8.2+ content=import), vztmpl — как шаблон CT
-  const content = image?.kind === 'vztmpl' ? 'vztmpl' : 'import';
+  const content = isQcow2 ? 'import' : 'vztmpl';
   const { data: storages = [], isLoading: storagesLoading } = useImageStorages(
     open ? serverId : undefined,
     open ? node : undefined,
     open ? content : undefined,
+  );
+  // Хранилища для диска ВМ (только при конвертации в шаблон)
+  const { data: diskStorages = [] } = useImageStorages(
+    open && isQcow2 && toTemplate ? serverId : undefined,
+    open && isQcow2 && toTemplate ? node : undefined,
+    open && isQcow2 && toTemplate ? 'images' : undefined,
   );
 
   const download = useDownloadImage(serverId);
@@ -59,15 +75,23 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
 
   useEffect(() => {
     if (open) {
-      // Авто-выбор единственного хранилища
       setStorage(storages.length === 1 ? storages[0].storage : '');
+      setToTemplate(true);
     }
   }, [open, storages]);
 
+  useEffect(() => {
+    if (open) setDiskStorage(diskStorages.length === 1 ? diskStorages[0].storage : '');
+  }, [open, diskStorages]);
+
   if (!image) return null;
 
+  const makeTemplate = isQcow2 && toTemplate;
+  const submitDisabled =
+    !storage || download.isPending || (makeTemplate && !diskStorage);
+
   const submit = () => {
-    if (!storage) return;
+    if (submitDisabled) return;
     download.mutate(
       {
         node,
@@ -75,6 +99,13 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
         source_id: image.source_id,
         kind: image.kind,
         template: image.source_id ? undefined : image.template || undefined,
+        to_template: makeTemplate,
+        disk_storage: makeTemplate ? diskStorage : undefined,
+        cores: makeTemplate ? cores : undefined,
+        memory: makeTemplate ? memory : undefined,
+        bridge: makeTemplate ? bridge : undefined,
+        ciuser: makeTemplate && ciuser ? ciuser : undefined,
+        cipassword: makeTemplate && cipassword ? cipassword : undefined,
       },
       {
         onSuccess: (data) => {
@@ -87,10 +118,10 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
             vmid: null,
             node,
             error_message: null,
-            kind: 'image_download',
+            kind: makeTemplate ? 'image_template' : 'image_download',
             server_id: serverId,
           });
-          toast.success('Загрузка образа запущена в фоне');
+          toast.success(makeTemplate ? 'Создание шаблона запущено в фоне' : 'Загрузка образа запущена в фоне');
           onClose();
         },
         onError: (e: Error) => toast.error(e.message),
@@ -102,7 +133,7 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Скачать образ</DialogTitle>
+          <DialogTitle>{makeTemplate ? 'Создать шаблон из образа' : 'Скачать образ'}</DialogTitle>
           <DialogDescription>{image.name}</DialogDescription>
         </DialogHeader>
 
@@ -113,7 +144,7 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
           </div>
 
           <div>
-            <Label>Хранилище ({content})</Label>
+            <Label>{isQcow2 ? 'Хранилище загрузки (import)' : 'Хранилище (vztmpl)'}</Label>
             <Select value={storage || '__none__'} onValueChange={(v) => { if (v !== null) setStorage(v === '__none__' ? '' : v); }}>
               <SelectTrigger>
                 <SelectValue placeholder={storagesLoading ? 'Загрузка...' : 'Выберите хранилище'} />
@@ -134,13 +165,67 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
               </p>
             )}
           </div>
+
+          {isQcow2 && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={toTemplate} onChange={(e) => setToTemplate(e.target.checked)} />
+              <span>Сделать VM-шаблоном после загрузки (импорт диска + cloud-init)</span>
+            </label>
+          )}
+
+          {makeTemplate && (
+            <div className="space-y-4 rounded-md border p-3">
+              <div>
+                <Label>Хранилище диска ВМ (images)</Label>
+                <Select value={diskStorage || '__none__'} onValueChange={(v) => { if (v !== null) setDiskStorage(v === '__none__' ? '' : v); }}>
+                  <SelectTrigger><SelectValue placeholder="Выберите хранилище" /></SelectTrigger>
+                  <SelectContent>
+                    {diskStorages.map((s) => (
+                      <SelectItem key={s.storage} value={s.storage}>
+                        {s.storage} ({s.type}){s.avail ? ` · ${fmtSize(s.avail)} свободно` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {diskStorages.length === 0 && (
+                  <p className="mt-2 text-sm text-amber-600 dark:text-amber-500">
+                    Нет хранилища для дисков ВМ (content=images).
+                  </p>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label htmlFor="img-cores">Ядра</Label>
+                  <Input id="img-cores" type="number" min={1} value={cores} onChange={(e) => setCores(Number(e.target.value) || 1)} />
+                </div>
+                <div>
+                  <Label htmlFor="img-mem">Память (MB)</Label>
+                  <Input id="img-mem" type="number" min={256} step={256} value={memory} onChange={(e) => setMemory(Number(e.target.value) || 512)} />
+                </div>
+                <div>
+                  <Label htmlFor="img-bridge">Мост</Label>
+                  <Input id="img-bridge" value={bridge} onChange={(e) => setBridge(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="img-ciuser">cloud-init пользователь</Label>
+                  <Input id="img-ciuser" placeholder="напр. ubuntu" value={ciuser} onChange={(e) => setCiuser(e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="img-cipass">cloud-init пароль</Label>
+                  <Input id="img-cipass" type="password" value={cipassword} onChange={(e) => setCipassword(e.target.value)} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Отмена</Button>
-          <Button onClick={submit} disabled={!storage || download.isPending}>
+          <Button onClick={submit} disabled={submitDisabled}>
             {download.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            Скачать
+            {makeTemplate ? 'Создать шаблон' : 'Скачать'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -58,6 +58,15 @@ export interface ImageDownloadRequest {
   filename?: string;
   checksum?: string;
   checksum_algorithm?: string;
+  // Авто-конвертация qcow2 → VM-шаблон
+  to_template?: boolean;
+  disk_storage?: string;
+  cores?: number;
+  memory?: number;
+  bridge?: string;
+  ciuser?: string;
+  cipassword?: string;
+  ssh_keys?: string;
 }
 
 export function useDownloadImage(serverId: number) {
