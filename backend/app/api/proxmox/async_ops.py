@@ -525,6 +525,20 @@ def _do_clone_sync(task_id: int, server_id: int, src_vmid: int, node: str, vm_ty
 _IMPORT_OK_EXT = ('.qcow2', '.raw', '.vmdk')
 
 
+def _pve_vm_name(display: str, fallback: str = 'cloud-template') -> str:
+    """Привести произвольную строку к валидному имени ВМ Proxmox.
+
+    Proxmox требует DNS-подобное имя (буквы/цифры/дефис), поэтому отображаемое
+    «Ubuntu 22.04 LTS (Jammy) Cloud» отвергается с Parameter verification failed
+    на поле name. Переводим в нижний регистр и заменяем недопустимые символы дефисом.
+    """
+    name = re.sub(r'[^a-zA-Z0-9-]+', '-', (display or '')).strip('-').lower()
+    name = re.sub(r'-{2,}', '-', name)
+    if not name:
+        name = fallback
+    return name[:60].rstrip('-')
+
+
 def _normalize_import_filename(filename: str) -> str:
     """Привести имя файла к допустимому для content=import расширению.
 
@@ -726,20 +740,26 @@ def _do_image_template_sync(task_id: int, server_id: int, node: str,
             _update_deploy_task(task_id, 'failed', 'Не удалось выделить VMID', 42, error='Failed to allocate VMID')
             return
 
+        vm_name = _pve_vm_name(name)
         _update_deploy_task(task_id, 'running', f'Создание ВМ {new_vmid} и импорт диска...', 45,
                             vmid=new_vmid, node=node)
         try:
             cr_upid = client.create_vm_with_import(
-                node, new_vmid, name, memory, cores, disk_storage, import_volid, bridge=bridge,
+                node, new_vmid, vm_name, memory, cores, disk_storage, import_volid, bridge=bridge,
             )
         except Exception as e:
-            # Чаще всего — хранилище не поддерживает import-from (старый PVE / нет import-storage).
+            emsg = str(e)
+            low = emsg.lower()
+            if 'import' in low or 'import-from' in low:
+                step, detail = 'Импорт диска не поддержан', (
+                    "Хранилище ноды не поддерживает импорт диска "
+                    "(нужен PVE 8.2+ с import-capable dir/NFS storage). "
+                    f"qcow2 скачан в {import_storage}, авто-конвертация пропущена.")
+            else:
+                step, detail = 'Ошибка создания ВМ', 'Не удалось создать ВМ с импортом диска.'
             _update_deploy_task(
-                task_id, 'failed', 'Импорт диска не поддержан', 45,
-                vmid=new_vmid, node=node,
-                error=("Хранилище ноды не поддерживает импорт диска "
-                       "(нужен PVE 8.2+ с import-capable dir/NFS storage). "
-                       f"qcow2 скачан в {import_storage}, авто-конвертация пропущена. {str(e)[:120]}"),
+                task_id, 'failed', step, 45, vmid=new_vmid, node=node,
+                error=f'{detail} {emsg[:160]}',
             )
             return
         if cr_upid:
