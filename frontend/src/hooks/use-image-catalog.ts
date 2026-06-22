@@ -3,6 +3,8 @@ import { apiClient } from '@/lib/api-client';
 import type {
   ImageCatalogResponse,
   ImageTargetStorage,
+  ImageMirrorItem,
+  ImageMirrorInput,
 } from '@/types';
 import type { AvailableLXCTemplate } from '@/hooks/use-lxc-templates';
 
@@ -80,5 +82,47 @@ export function useDownloadImage(serverId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['all-tasks'] });
     },
+  });
+}
+
+// ── Custom mirrors (admin) ───────────────────────────────────────────────────
+
+export function useImageMirrors(enabled = true) {
+  return useQuery({
+    queryKey: ['image-mirrors'],
+    queryFn: () => apiClient.get<ImageMirrorItem[]>('/proxmox/api/images/mirrors'),
+    enabled,
+  });
+}
+
+function invalidateMirrors(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['image-mirrors'] });
+  qc.invalidateQueries({ queryKey: imageKeys.catalog });
+}
+
+export function useCreateMirror() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ImageMirrorInput) =>
+      apiClient.post<ImageMirrorItem>('/proxmox/api/images/mirrors', data),
+    onSuccess: () => invalidateMirrors(qc),
+  });
+}
+
+export function useUpdateMirror() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<ImageMirrorInput> }) =>
+      apiClient.put<ImageMirrorItem>(`/proxmox/api/images/mirrors/${id}`, data),
+    onSuccess: () => invalidateMirrors(qc),
+  });
+}
+
+export function useDeleteMirror() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      apiClient.delete<{ deleted: boolean }>(`/proxmox/api/images/mirrors/${id}`),
+    onSuccess: () => invalidateMirrors(qc),
   });
 }

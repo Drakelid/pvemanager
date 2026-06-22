@@ -441,6 +441,37 @@ export interface ImageCatalogResponse {
   mirrors: CatalogImage[];
 }
 
+export interface ImageMirrorItem {
+  id: string;          // "mirror-<n>"
+  mirror_id: number;
+  source: 'mirror';
+  kind: ImageKind;
+  os?: string | null;
+  version?: string | null;
+  arch: string;
+  name: string;
+  url?: string | null;
+  template?: string | null;
+  checksum?: string | null;
+  checksum_algorithm?: string | null;
+  description?: string | null;
+  enabled: boolean;
+}
+
+export interface ImageMirrorInput {
+  name: string;
+  kind: ImageKind;
+  os?: string;
+  version?: string;
+  arch: string;
+  url?: string;
+  template?: string;
+  checksum?: string;
+  checksum_algorithm?: string;
+  description?: string;
+  enabled: boolean;
+}
+
 export interface ImageTargetStorage {
   storage: string;
   type: string;

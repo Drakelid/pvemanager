@@ -14,7 +14,9 @@ import {
 } from '@/components/ui/select';
 import { useServers, useNodes } from '@/hooks/use-nodes';
 import { useImageCatalog, useImageLXCTemplates } from '@/hooks/use-image-catalog';
+import { useProfile } from '@/hooks/use-settings';
 import DownloadImageDialog, { type SelectedImage } from './DownloadImageDialog';
+import MirrorsManager from './MirrorsManager';
 import type { CatalogImage } from '@/types';
 
 export default function ImagesPage() {
@@ -26,6 +28,8 @@ export default function ImagesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const { data: servers = [] } = useServers();
+  const { data: profile } = useProfile();
+  const isAdmin = !!profile?.is_admin;
   const { data: nodesResp } = useNodes(serverId ?? 0);
   const nodes = nodesResp?.nodes ?? [];
 
@@ -155,6 +159,8 @@ export default function ImagesPage() {
           ))}
         </div>
       </section>
+
+      {isAdmin && <MirrorsManager />}
 
       <DownloadImageDialog
         open={dialogOpen}
