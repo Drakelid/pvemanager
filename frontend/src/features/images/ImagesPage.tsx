@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useServers, useNodes } from '@/hooks/use-nodes';
-import { useImageCatalog, useImageLXCTemplates } from '@/hooks/use-image-catalog';
+import { useImageCatalog, useImageLXCTemplates, useNodeArch } from '@/hooks/use-image-catalog';
 import { useProfile } from '@/hooks/use-settings';
 import DownloadImageDialog, { type SelectedImage } from './DownloadImageDialog';
 import MirrorsManager from './MirrorsManager';
@@ -23,7 +23,8 @@ export default function ImagesPage() {
   const [serverId, setServerId] = useState<number | null>(null);
   const [node, setNode] = useState<string>('');
   const [search, setSearch] = useState('');
-  const [archFilter, setArchFilter] = useState<string>('');
+  // По умолчанию показываем amd64 (доминирующая платформа PVE); уточняется по арх ноды
+  const [archFilter, setArchFilter] = useState<string>('amd64');
   const [selected, setSelected] = useState<SelectedImage | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -35,6 +36,7 @@ export default function ImagesPage() {
 
   const { data: catalog } = useImageCatalog();
   const { data: lxcRepo = [] } = useImageLXCTemplates(serverId ?? undefined, node || undefined);
+  const { data: nodeArch } = useNodeArch(serverId ?? undefined, node || undefined);
 
   // Авто-выбор первого сервера и ноды
   useEffect(() => {
@@ -43,6 +45,10 @@ export default function ImagesPage() {
   useEffect(() => {
     if (!node && nodes.length > 0) setNode(nodes[0].node);
   }, [nodes, node]);
+  // Подстроить фильтр архитектуры под выбранную ноду (если арх определилась)
+  useEffect(() => {
+    if (nodeArch?.arch) setArchFilter(nodeArch.arch);
+  }, [nodeArch?.arch, node]);
 
   const cloudImages = useMemo<CatalogImage[]>(() => {
     const all = [...(catalog?.builtin ?? []), ...(catalog?.mirrors ?? [])];
@@ -83,9 +89,10 @@ export default function ImagesPage() {
             {servers.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={node || '__none__'} onValueChange={(v) => { if (v !== null) setNode(v === '__none__' ? '' : v); }}>
+        <Select value={node} onValueChange={(v) => { if (v) setNode(v); }}>
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Нода" /></SelectTrigger>
           <SelectContent>
+            {nodes.length === 0 && <SelectItem value="__empty__" disabled>Нет доступных нод</SelectItem>}
             {nodes.map((n) => <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>)}
           </SelectContent>
         </Select>

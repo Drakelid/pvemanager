@@ -37,6 +37,19 @@ export function useImageLXCTemplates(serverId?: number, node?: string) {
   });
 }
 
+// Архитектура ноды (amd64|arm64) — для дефолтного фильтра образов.
+export function useNodeArch(serverId?: number, node?: string) {
+  return useQuery({
+    queryKey: ['image-node-arch', serverId, node],
+    queryFn: () =>
+      apiClient.get<{ arch: string | null; machine: string | null }>(
+        `/proxmox/api/${serverId}/images/node-arch?node=${encodeURIComponent(node!)}`,
+      ),
+    enabled: !!serverId && !!node,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
 // Целевые хранилища ноды по типу контента (import|vztmpl|iso).
 export function useImageStorages(serverId?: number, node?: string, content?: string) {
   return useQuery({
