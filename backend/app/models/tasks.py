@@ -143,6 +143,8 @@ class DeployTask(Base):
             'reinstall': f"Переустановка {self.name}",
             'clone': f"Клонирование {self.name}",
             'change_password': f"Смена пароля: {self.name}",
+            'image_download': f"Загрузка образа: {self.name}",
+            'image_template': f"Шаблон из образа: {self.name}",
         }
         return {
             'id': self.id,

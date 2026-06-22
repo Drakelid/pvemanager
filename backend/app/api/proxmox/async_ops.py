@@ -519,6 +519,129 @@ def _do_clone_sync(task_id: int, server_id: int, src_vmid: int, node: str, vm_ty
         db.close()
 
 
+# ==================== Image download ====================
+
+def _wait_download_with_progress(client, task_id: int, node: str, upid: str,
+                                 lo: int = 15, hi: int = 100,
+                                 timeout: int = 3600) -> bool:
+    """Дождаться задачи загрузки образа (download-url/aplinfo), маппя % из лога
+    в прогресс DeployTask диапазона lo..hi.
+
+    aria2 пишет прогресс в лог задачи строками вида "...(60%)...", что ловится
+    тем же регэкспом, что и копирование диска при клонировании.
+    """
+    start = time.time()
+    log_pos = 0
+    last_reported = -1
+    span = max(1, hi - lo)
+    while time.time() - start < timeout:
+        try:
+            lines = client.get_task_log(node, upid, start=log_pos, limit=500) or []
+        except Exception:
+            lines = []
+        pct = None
+        for line in lines:
+            log_pos = max(log_pos, line.get('n', log_pos) or log_pos)
+            m = _PCT_RE.search(line.get('t', '') or '')
+            if m:
+                try:
+                    pct = float(m.group(1))
+                except ValueError:
+                    pass
+        if pct is not None:
+            progress = lo + int(min(pct, 100) * span / 100)
+            if progress != last_reported:
+                last_reported = progress
+                _update_deploy_task(task_id, 'running', f'Загрузка... {pct:.0f}%', progress)
+
+        status = client.get_task_status(node, upid)
+        if status and status.get('status') == 'stopped':
+            exit_status = status.get('exitstatus')
+            return exit_status == 'OK' or (
+                isinstance(exit_status, str) and exit_status.startswith('WARNINGS:'))
+        time.sleep(2)
+
+    logger.warning(f"Таймаут ожидания задачи загрузки {upid}")
+    return False
+
+
+def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: str,
+                            kind: str, filename: str,
+                            url: Optional[str], template: Optional[str],
+                            checksum: Optional[str], checksum_algorithm: Optional[str],
+                            user_id: int, username: str):
+    """Скачать образ (qcow2 или vztmpl) в хранилище ноды с прогрессом.
+
+    kind:
+        'qcow2'  — cloud-образ ВМ, content=import (url обязателен)
+        'vztmpl' — LXC-шаблон: либо template (репозиторий Proxmox, aplinfo),
+                   либо url (произвольное зеркало, content=vztmpl)
+    """
+    db = SessionLocal()
+    server = None
+    try:
+        _update_deploy_task(task_id, 'running', 'Подключение к Proxmox...', 5, node=node)
+        server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+        if not server:
+            _update_deploy_task(task_id, 'failed', 'Сервер не найден', 0, error='Proxmox сервер не найден')
+            return
+        client = _connect(server)
+        if not client:
+            _update_deploy_task(task_id, 'failed', 'Ошибка подключения к Proxmox', 5,
+                                error='Не удалось подключиться к Proxmox серверу')
+            return
+
+        _update_deploy_task(task_id, 'running', f'Старт загрузки {filename}...', 15, node=node)
+        try:
+            if kind == 'vztmpl' and template and not url:
+                # Шаблон из репозитория Proxmox (aplinfo)
+                upid = client.download_lxc_template(node, storage, template)
+            else:
+                content = 'vztmpl' if kind == 'vztmpl' else 'import'
+                upid = client.download_url(
+                    node, storage, url, content, filename,
+                    checksum=checksum, checksum_algorithm=checksum_algorithm,
+                )
+        except Exception as e:
+            _update_deploy_task(task_id, 'failed', 'Ошибка запуска загрузки', 15,
+                                error=f'Download start failed: {e}')
+            return
+        if not upid:
+            _update_deploy_task(task_id, 'failed', 'Ошибка запуска загрузки', 15,
+                                error='Proxmox не вернул UPID задачи загрузки')
+            return
+
+        ok = _wait_download_with_progress(client, task_id, node, upid, lo=15, hi=100)
+        if not ok:
+            # Подтянуть хвост лога с причиной
+            tail = ''
+            try:
+                tail_lines = client.get_task_log(node, upid, start=0, limit=20) or []
+                tail = ' | '.join((l.get('t') or '') for l in tail_lines[-5:])
+            except Exception:
+                pass
+            _update_deploy_task(task_id, 'failed', 'Загрузка не удалась', 15,
+                                error=f'Загрузка завершилась с ошибкой. {tail}'[:300])
+            return
+
+        LoggingService.log_proxmox_action(
+            db=db, action='download_image',
+            resource_type='storage', resource_id=0,
+            username=username, resource_name=filename,
+            server_id=server_id, server_name=server.name, node_name=node,
+            details={'kind': kind, 'storage': storage, 'filename': filename}, success=True,
+        )
+
+        _update_deploy_task(task_id, 'completed', f'Образ {filename} загружен', 100, node=node)
+        logger.info(f"[IMG DL #{task_id}] {filename} -> {node}:{storage} by {username}")
+    except Exception as e:
+        err = str(e)
+        logger.error(f"[IMG DL #{task_id}] failed: {err}")
+        _update_deploy_task(task_id, 'failed', f'Ошибка: {err[:150]}', 0, error=err)
+    finally:
+        db.close()
+
+
 # ==================== Change Password ====================
 
 def _do_change_password_sync(task_id: int, server_id: int, vmid: int, node: str, vm_type: str,

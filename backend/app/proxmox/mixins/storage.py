@@ -80,6 +80,67 @@ class StorageMixin:
                 logger.error(f"Ошибка получения CT-шаблонов {self.host}: {e}")
             return result
 
+        def download_url(self, node: str, storage: str, url: str, content: str,
+                         filename: str, checksum: Optional[str] = None,
+                         checksum_algorithm: Optional[str] = None) -> Optional[str]:
+            """
+            Скачать файл (ISO / vztmpl / образ для импорта) по URL прямо на ноду
+            средствами Proxmox (aria2). Использует endpoint
+            POST /nodes/{node}/storage/{storage}/download-url.
+
+            Args:
+                node: имя ноды
+                storage: целевое хранилище
+                url: прямой URL к образу (.img/.qcow2/.iso/.tar.zst ...)
+                content: тип контента ('iso', 'vztmpl', 'import')
+                filename: имя файла в хранилище
+                checksum: контрольная сумма (опционально)
+                checksum_algorithm: алгоритм (md5/sha1/sha224/sha256/sha384/sha512)
+
+            Returns:
+                UPID задачи или None
+            """
+            if not self.proxmox:
+                return None
+            try:
+                params = {
+                    'url': url,
+                    'content': content,
+                    'filename': filename,
+                }
+                if checksum and checksum_algorithm:
+                    params['checksum'] = checksum
+                    params['checksum-algorithm'] = checksum_algorithm
+                # 'download-url' содержит дефис — обращаемся через call-форму proxmoxer
+                result = self.proxmox.nodes(node).storage(storage)('download-url').post(**params)
+                logger.info(f"Запущена загрузка {filename} ({content}) на {node}:{storage}, UPID: {result}")
+                return result
+            except Exception as e:
+                logger.error(f"Ошибка загрузки {url} на {node}:{storage}: {e}")
+                raise
+
+        def get_download_target_storages(self, node: str, content: str) -> List[Dict]:
+            """
+            Получить активные хранилища ноды, поддерживающие указанный тип контента
+            (для выбора цели загрузки образов).
+
+            Args:
+                node: имя ноды
+                content: 'iso' | 'vztmpl' | 'images' | 'import'
+            """
+            if not self.proxmox:
+                return []
+            result: List[Dict] = []
+            try:
+                for s in self.proxmox.nodes(node).storage.get():
+                    if s.get('active', 1) == 0 or s.get('enabled', 1) == 0:
+                        continue
+                    if content in (s.get('content', '') or '').split(','):
+                        result.append(s)
+            except Exception as e:
+                logger.error(f"Ошибка получения хранилищ ({content}) ноды {node}: {e}")
+            return result
+
         def get_node_storages(self, node: str, content: str = None) -> List[Dict]:
             """Get storages available on a specific node, optionally filtered by content type"""
             if not self.proxmox:

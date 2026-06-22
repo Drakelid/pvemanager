@@ -6,6 +6,7 @@ from .tasks import TaskQueue, ProxmoxTask, DeployTask
 from .metrics import InstanceMetric, InstanceNicMetric
 from .settings import PanelSettings, SecuritySetting, Workspace, WorkspaceServer, WorkspaceUser
 from .misc import Notification, NotificationPreference, BackupJob, AuditLog
+from .catalog import ImageMirror
 
 __all__ = [
     'Base', 'utcnow',
@@ -15,5 +16,6 @@ __all__ = [
     'TaskQueue', 'ProxmoxTask', 'DeployTask',
     'InstanceMetric', 'InstanceNicMetric',
     'PanelSettings', 'SecuritySetting', 'Workspace', 'WorkspaceServer', 'WorkspaceUser',
-    'Notification', 'NotificationPreference', 'BackupJob', 'AuditLog'
+    'Notification', 'NotificationPreference', 'BackupJob', 'AuditLog',
+    'ImageMirror'
 ]
