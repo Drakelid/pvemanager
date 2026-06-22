@@ -414,6 +414,42 @@ export interface OSTemplate {
   server_name?: string;
 }
 
+// ==================== Image Catalog Types ====================
+
+export type ImageKind = 'qcow2' | 'vztmpl';
+export type ImageArch = 'amd64' | 'arm64';
+
+export interface CatalogImage {
+  id: string;
+  source: 'builtin' | 'mirror';
+  kind: ImageKind;
+  os?: string;
+  version?: string;
+  arch: ImageArch | string;
+  name: string;
+  url?: string | null;
+  template?: string | null;
+  filename?: string;
+  checksum?: string | null;
+  checksum_algorithm?: string | null;
+  icon?: string;
+  description?: string;
+}
+
+export interface ImageCatalogResponse {
+  builtin: CatalogImage[];
+  mirrors: CatalogImage[];
+}
+
+export interface ImageTargetStorage {
+  storage: string;
+  type: string;
+  content: string;
+  avail?: number;
+  total?: number;
+  active?: number;
+}
+
 // ==================== Workspace Types ====================
 
 export interface Workspace {

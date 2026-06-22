@@ -19,6 +19,7 @@ const NodesPage = lazy(() => import('./features/nodes/NodesPage.tsx'));
 const NodeDetailPage = lazy(() => import('./features/nodes/NodeDetailPage.tsx'));
 const ClusterPage = lazy(() => import('./features/cluster/ClusterPage.tsx'));
 const TemplatesPage = lazy(() => import('./features/templates/TemplatesPage.tsx'));
+const ImagesPage = lazy(() => import('./features/images/ImagesPage.tsx'));
 const BackupsPage = lazy(() => import('./features/backups/BackupsPage.tsx'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage.tsx'));
 const IPAMDashboardPage = lazy(() => import('./features/ipam/IPAMDashboardPage.tsx'));
@@ -74,6 +75,7 @@ export const router = createBrowserRouter([
           { path: '/nodes/:serverId', element: <SuspenseWrap><NodeDetailPage /></SuspenseWrap> },
           { path: '/cluster', element: <SuspenseWrap><ClusterPage /></SuspenseWrap> },
           { path: '/templates', element: <SuspenseWrap><TemplatesPage /></SuspenseWrap> },
+          { path: '/images', element: <SuspenseWrap><ImagesPage /></SuspenseWrap> },
           { path: '/backups', element: <SuspenseWrap><BackupsPage /></SuspenseWrap> },
           { path: '/tasks', element: <SuspenseWrap><TasksPage /></SuspenseWrap> },
           { path: '/ipam', element: <SuspenseWrap><IPAMDashboardPage /></SuspenseWrap> },
