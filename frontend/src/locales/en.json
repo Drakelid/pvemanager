@@ -66,6 +66,9 @@
     "password_placeholder": "Enter password",
     "sign_in": "Sign in",
     "signing_in": "Signing in...",
+    "forgot_password": "Forgot password",
+    "show_password": "Show password",
+    "hide_password": "Hide password",
     "logout": "Logout"
   },
   "dashboard": {

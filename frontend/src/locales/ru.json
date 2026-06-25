@@ -66,6 +66,9 @@
     "password_placeholder": "Введите пароль",
     "sign_in": "Войти",
     "signing_in": "Входим...",
+    "forgot_password": "Я не помню пароль",
+    "show_password": "Показать пароль",
+    "hide_password": "Скрыть пароль",
     "logout": "Выход"
   },
   "dashboard": {
