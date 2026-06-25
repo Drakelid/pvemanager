@@ -304,6 +304,16 @@ export default function InstancesPage() {
     localStorage.setItem('instances-column-filters', JSON.stringify(columnFilters));
   }, [columnFilters]);
 
+  // Drop a stale persisted server filter when its server is not in the active
+  // workspace anymore (otherwise the list silently empties and the Select shows
+  // the raw server id instead of a name).
+  useEffect(() => {
+    if (serverFilter !== 'all' && servers.length > 0 && !servers.some((s) => String(s.id) === serverFilter)) {
+      setServerFilter('all');
+      localStorage.setItem('instances-server-filter', 'all');
+    }
+  }, [servers, serverFilter]);
+
   // Filter real VMs
   const filteredVMs = useMemo(() => {
     if (!vms) return [];
@@ -398,6 +408,15 @@ export default function InstancesPage() {
       : vms;
     return [...new Set(source.map((v) => v.node))].sort();
   }, [vms, serverFilter]);
+
+  // Drop a stale persisted node filter when that node is gone from the active
+  // workspace / selected server (same failure mode as the server filter above).
+  useEffect(() => {
+    if (nodeFilter !== 'all' && vms && vms.length > 0 && !uniqueNodes.includes(nodeFilter)) {
+      setNodeFilter('all');
+      localStorage.setItem('instances-node-filter', 'all');
+    }
+  }, [uniqueNodes, nodeFilter, vms]);
 
   // Counts (ghosts not counted in tabs)
   const counts = useMemo(() => {
