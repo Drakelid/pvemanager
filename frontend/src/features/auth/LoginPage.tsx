@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,12 +91,12 @@ export default function LoginPage() {
               t('login.sign_in', 'Sign in')
             )}
           </Button>
-          <button
-            type="button"
+          <Link
+            to="/forgot-password"
             className="text-sm font-medium text-primary transition-opacity hover:opacity-80"
           >
             {t('login.forgot_password', 'Forgot password')}
-          </button>
+          </Link>
         </div>
       </form>
     </div>

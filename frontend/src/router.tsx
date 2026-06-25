@@ -5,6 +5,8 @@ import AuthLayout from '@/layouts/AuthLayout';
 import ConsoleLayout from '@/layouts/ConsoleLayout';
 import { ProtectedRoute, PublicRoute } from '@/components/shared/route-guards';
 import LoginPage from '@/features/auth/LoginPage';
+const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage.tsx'));
+const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage.tsx'));
 import DashboardPage from '@/features/dashboard/DashboardPage';
 import InstancesPage from '@/features/instances/InstancesPage';
 import InstanceDetailPage from '@/features/instances/InstanceDetailPage';
@@ -43,12 +45,15 @@ function SuspenseWrap({ children }: { children: React.ReactNode }) {
 
 export const router = createBrowserRouter([
   {
-    path: '/login',
     element: <PublicRoute />,
     children: [
       {
         element: <AuthLayout />,
-        children: [{ index: true, element: <LoginPage /> }],
+        children: [
+          { path: '/login', element: <LoginPage /> },
+          { path: '/forgot-password', element: <SuspenseWrap><ForgotPasswordPage /></SuspenseWrap> },
+          { path: '/reset-password', element: <SuspenseWrap><ResetPasswordPage /></SuspenseWrap> },
+        ],
       },
     ],
   },
