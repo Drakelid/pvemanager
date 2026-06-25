@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Download, HardDriveDownload, Package } from 'lucide-react';
+import { Search, Download, HardDriveDownload, Package, ChevronDown } from 'lucide-react';
 import { OsLogo } from '@/features/templates/OsLogo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,11 @@ export default function ImagesPage() {
   const [archFilter, setArchFilter] = useState<string>('amd64');
   const [selected, setSelected] = useState<SelectedImage | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [cloudOpen, setCloudOpen] = useState(() => localStorage.getItem('images-cloud-open') !== '0');
+  const [lxcOpen, setLxcOpen] = useState(() => localStorage.getItem('images-lxc-open') !== '0');
+
+  const toggleCloud = () => setCloudOpen((v) => { localStorage.setItem('images-cloud-open', v ? '0' : '1'); return !v; });
+  const toggleLxc = () => setLxcOpen((v) => { localStorage.setItem('images-lxc-open', v ? '0' : '1'); return !v; });
 
   const { data: servers = [] } = useServers();
   const { data: profile } = useProfile();
@@ -112,9 +117,12 @@ export default function ImagesPage() {
 
       {/* Cloud-образы (qcow2 → шаблон ВМ) */}
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
+        <button type="button" onClick={toggleCloud}
+          className="flex w-full items-center gap-2 text-lg font-semibold">
+          <ChevronDown className={`h-5 w-5 transition-transform ${cloudOpen ? '' : '-rotate-90'}`} />
           <Package className="h-5 w-5" /> Cloud-образы ВМ
-        </h2>
+        </button>
+        {cloudOpen && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {cloudImages.map((img) => (
             <Card key={img.id}>
@@ -138,13 +146,17 @@ export default function ImagesPage() {
             <div className="text-sm text-muted-foreground col-span-full">Нет образов по фильтру.</div>
           )}
         </div>
+        )}
       </section>
 
       {/* LXC-шаблоны (репозиторий Proxmox) */}
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
+        <button type="button" onClick={toggleLxc}
+          className="flex w-full items-center gap-2 text-lg font-semibold">
+          <ChevronDown className={`h-5 w-5 transition-transform ${lxcOpen ? '' : '-rotate-90'}`} />
           <Package className="h-5 w-5" /> LXC-шаблоны (репозиторий Proxmox)
-        </h2>
+        </button>
+        {lxcOpen && (<>
         {!canDownload && (
           <div className="text-sm text-muted-foreground">Выберите сервер и ноду, чтобы увидеть список.</div>
         )}
@@ -165,6 +177,7 @@ export default function ImagesPage() {
             </Card>
           ))}
         </div>
+        </>)}
       </section>
 
       {isAdmin && <MirrorsManager />}
