@@ -1,12 +1,17 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Form, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from loguru import logger
 
 from ..db import get_db
-from ..models import User
-from ..schemas import UserCreate, UserResponse, LoginRequest, Token
+from ..models import User, PasswordResetToken
+from ..schemas import (
+    UserCreate, UserResponse, LoginRequest, Token,
+    ForgotPasswordRequest, ResetPasswordRequest,
+)
 from ..auth import (
     get_password_hash, 
     verify_password, 
@@ -480,5 +485,247 @@ def change_password(
     )
     
     logger.info(f"User {current_user.username} changed password")
-    
+
     return {"message": "Password changed successfully"}
+
+
+# ==================== Forgot / Reset Password (self-service) ====================
+
+# Generic response returned by /forgot-password regardless of whether the email
+# exists — prevents account enumeration.
+_FORGOT_PASSWORD_GENERIC = {
+    "message": "If an account with that email exists, a password reset link has been sent."
+}
+
+
+def _hash_reset_token(raw_token: str) -> str:
+    """Hash a raw reset token for storage/lookup (only the hash is persisted)."""
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+async def _send_reset_email(to_email: str, display_name: str, lang: str, link: str, expire_minutes: int) -> None:
+    """Send the password-reset email via the configured SMTP channel.
+
+    Runs as a FastAPI background task so the HTTP response time does not leak
+    whether the address exists.
+    """
+    try:
+        from ..services.notification_channels import get_email_channel, get_panel_name
+        panel = get_panel_name()
+        name = display_name or to_email
+
+        if (lang or "").startswith("ru"):
+            subject = f"{panel}: восстановление пароля"
+            body = (
+                f"Здравствуйте, {name}!\n\n"
+                f"Поступил запрос на сброс пароля для вашего аккаунта в {panel}.\n"
+                f"Чтобы задать новый пароль, перейдите по ссылке (действует {expire_minutes} мин.):\n{link}\n\n"
+                f"Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо — "
+                f"ваш текущий пароль останется без изменений."
+            )
+            btn = "Сбросить пароль"
+            note = f"Ссылка действительна {expire_minutes} минут. Если вы не запрашивали сброс — проигнорируйте письмо."
+        else:
+            subject = f"{panel}: password reset"
+            body = (
+                f"Hello, {name}!\n\n"
+                f"We received a request to reset the password for your {panel} account.\n"
+                f"To set a new password, open this link (valid for {expire_minutes} min):\n{link}\n\n"
+                f"If you did not request a password reset, you can safely ignore this email — "
+                f"your current password will remain unchanged."
+            )
+            btn = "Reset password"
+            note = f"This link is valid for {expire_minutes} minutes. If you didn't request a reset, ignore this email."
+
+        html_body = f"""
+        <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
+          <h2 style="font-size:20px;margin:0 0 16px">{panel}</h2>
+          <p style="font-size:15px;line-height:1.5;margin:0 0 20px">{body.splitlines()[0]}</p>
+          <p style="margin:0 0 24px">
+            <a href="{link}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;
+               padding:10px 20px;border-radius:8px;font-size:15px;font-weight:600">{btn}</a>
+          </p>
+          <p style="font-size:13px;color:#666;line-height:1.5;margin:0 0 8px">{note}</p>
+          <p style="font-size:12px;color:#999;word-break:break-all;margin:0">{link}</p>
+        </div>
+        """
+
+        channel = get_email_channel()
+        ok = await channel.send(to_email, subject, body, html_body)
+        if ok:
+            logger.info(f"Password reset email sent to {to_email}")
+        else:
+            logger.warning(f"Password reset email NOT sent to {to_email} (SMTP not configured or send failed)")
+    except Exception as e:
+        logger.error(f"Failed to send password reset email to {to_email}: {e}")
+
+
+@router.post("/api/auth/forgot-password")
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Start the self-service password reset flow.
+
+    Always returns a generic message (no account enumeration). When the email
+    belongs to an active user, a one-time reset link is emailed via SMTP.
+    """
+    client_ip = get_client_ip(request)
+    email = payload.email.strip()
+
+    user = db.query(User).filter(User.email.ilike(email)).first()
+
+    if not user or not user.is_active:
+        LoggingService.log_auth(
+            db=db,
+            action="password_reset_requested",
+            username=email,
+            ip_address=client_ip,
+            success=False,
+            error_message="Unknown or inactive email",
+        )
+        return _FORGOT_PASSWORD_GENERIC
+
+    # Throttle: ignore repeat requests within 60s to avoid email spam
+    recent = (
+        db.query(PasswordResetToken)
+        .filter(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.created_at >= utcnow() - timedelta(seconds=60),
+        )
+        .first()
+    )
+    if recent:
+        return _FORGOT_PASSWORD_GENERIC
+
+    # Invalidate any previously issued (unused) tokens for this user
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used_at.is_(None),
+    ).update({PasswordResetToken.used_at: utcnow()}, synchronize_session=False)
+
+    raw_token = secrets.token_urlsafe(32)
+    expire_minutes = settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES
+    reset = PasswordResetToken(
+        user_id=user.id,
+        token_hash=_hash_reset_token(raw_token),
+        expires_at=utcnow() + timedelta(minutes=expire_minutes),
+        ip_address=client_ip,
+    )
+    db.add(reset)
+    db.commit()
+
+    # Build the reset link from the request origin (SPA and API share an origin)
+    origin = request.headers.get("origin") or str(request.base_url).rstrip("/")
+    link = f"{origin}/reset-password?token={raw_token}"
+
+    background.add_task(
+        _send_reset_email,
+        user.email,
+        user.full_name or user.username,
+        user.language or "ru",
+        link,
+        expire_minutes,
+    )
+
+    LoggingService.log_auth(
+        db=db,
+        action="password_reset_requested",
+        username=user.username,
+        ip_address=client_ip,
+        success=True,
+        user_id=user.id,
+    )
+    logger.info(f"Password reset requested for {user.username} from {client_ip}")
+
+    return _FORGOT_PASSWORD_GENERIC
+
+
+@router.get("/api/auth/reset-password/validate")
+def validate_reset_token(token: str, db: Session = Depends(get_db)):
+    """Check whether a reset token is still valid (for the reset form to gate UI)."""
+    reset = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.token_hash == _hash_reset_token(token))
+        .first()
+    )
+    return {"valid": bool(reset and reset.is_valid())}
+
+
+@router.post("/api/auth/reset-password")
+def reset_password(
+    payload: ResetPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Complete the reset flow: validate the one-time token and set a new password."""
+    client_ip = get_client_ip(request)
+
+    reset = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.token_hash == _hash_reset_token(payload.token))
+        .first()
+    )
+
+    if not reset or not reset.is_valid():
+        LoggingService.log_auth(
+            db=db,
+            action="password_reset_failed",
+            username="unknown",
+            ip_address=client_ip,
+            success=False,
+            error_message="Invalid or expired reset token",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link is invalid or has expired",
+        )
+
+    user = db.query(User).filter(User.id == reset.user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link is invalid or has expired",
+        )
+
+    # Validate the new password against the panel's password policy
+    lang = user.language or "en"
+    is_valid, errors = SecurityService.validate_password(db, payload.new_password, lang)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="; ".join(errors),
+        )
+
+    # Apply the new password and clear any lock state
+    user.hashed_password = get_password_hash(payload.new_password)
+    user.last_password_change = utcnow()
+    user.require_password_change = False
+    user.failed_login_attempts = 0
+    user.locked_until = None
+
+    # Consume this token and invalidate any other outstanding ones
+    reset.used_at = utcnow()
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used_at.is_(None),
+    ).update({PasswordResetToken.used_at: utcnow()}, synchronize_session=False)
+    db.commit()
+
+    # Force re-login everywhere
+    SecurityService.terminate_all_user_sessions(db, user.id)
+
+    LoggingService.log_auth(
+        db=db,
+        action="password_reset",
+        username=user.username,
+        ip_address=client_ip,
+        success=True,
+        user_id=user.id,
+    )
+    logger.info(f"Password reset completed for {user.username} from {client_ip}")
+
+    return {"message": "Password has been reset successfully"}

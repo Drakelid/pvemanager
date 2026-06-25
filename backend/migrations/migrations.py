@@ -1374,6 +1374,33 @@ def migrate_user_language(conn):
         logger.info("✓ users.language already exists")
 
 
+def migrate_password_reset_tokens(conn):
+    """Migration 27: Create password_reset_tokens table for self-service password reset."""
+    if table_exists(conn, 'password_reset_tokens'):
+        logger.info("✓ password_reset_tokens table already exists")
+        return
+
+    logger.info("Creating password_reset_tokens table...")
+    conn.execute(text("""
+        CREATE TABLE password_reset_tokens (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token_hash VARCHAR(64) NOT NULL UNIQUE,
+            expires_at TIMESTAMPTZ NOT NULL,
+            used_at TIMESTAMPTZ,
+            ip_address VARCHAR(45),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("""
+        CREATE INDEX idx_password_reset_tokens_user ON password_reset_tokens(user_id)
+    """))
+    conn.execute(text("""
+        CREATE INDEX idx_password_reset_tokens_hash ON password_reset_tokens(token_hash)
+    """))
+    logger.info("✓ password_reset_tokens table created")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1594,6 +1621,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"User language migration: {e}")
+                conn.rollback()
+
+            # Migration 27: password_reset_tokens table
+            try:
+                migrate_password_reset_tokens(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Password reset tokens migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

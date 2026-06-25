@@ -53,6 +53,15 @@ class LoginRequest(BaseModel):
     password: str = Field(..., description="Password")
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr = Field(..., description="Account email to send the reset link to")
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=8, max_length=128, description="One-time reset token from the emailed link")
+    new_password: str = Field(..., description="New password")
+
+
 # ==================== Proxmox Server Schemas ====================
 
 class ProxmoxServerBase(BaseModel):

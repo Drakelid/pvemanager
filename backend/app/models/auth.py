@@ -116,6 +116,36 @@ class User(Base):
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', is_admin={self.is_admin})>"
 
+class PasswordResetToken(Base):
+    """One-time tokens for the self-service 'forgot password' flow.
+
+    Only a SHA-256 hash of the token is stored; the raw token lives solely in
+    the emailed link. A token is single-use (``used_at``) and time-limited
+    (``expires_at``).
+    """
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User")
+
+    def is_valid(self) -> bool:
+        """Token is unused and not expired."""
+        if self.used_at is not None:
+            return False
+        if self.expires_at is None or make_tz_aware(self.expires_at) <= utcnow():
+            return False
+        return True
+
+    def __repr__(self):
+        return f"<PasswordResetToken(id={self.id}, user_id={self.user_id}, used={self.used_at is not None})>"
+
 class ActiveSession(Base):
     """Active user sessions for single-session enforcement"""
     __tablename__ = "active_sessions"

@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(default="your-secret-key-here", env="SECRET_KEY")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=480, env="ACCESS_TOKEN_EXPIRE_MINUTES")  # 8 hours
+    # Lifetime of self-service password-reset links (forgot-password flow)
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = Field(default=30, env="PASSWORD_RESET_TOKEN_EXPIRE_MINUTES")
 
     # Logging settings
     LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL")
