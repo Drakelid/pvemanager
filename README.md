@@ -27,6 +27,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **Bulk operations** — mass start / stop / restart / delete with queue and progress tracking
 - **Snapshot management** — create, rollback, delete snapshots with an async queue system
 - **OS templates** — deploy VMs from templates; cross-node replication handled automatically
+- **Cloud image catalog** — browse, download, and convert OS images from cloud repositories (default Proxmox mirrors and custom sources); auto-convert to VM templates with architecture-aware filtering
 - **CT template deployment** — create LXC containers directly from Proxmox CT template files (`.tar.zst`, `.tar.gz`) with full IPAM and SSH key integration
 - **Unified Create Instance Wizard** — multi-step wizard supporting both QEMU VM templates and LXC CT templates in a single flow
 - **SDN support** — manage Software-Defined Networking zones, VNets, and subnets; edit zones and VNets; auto-create IPAM networks for subnets

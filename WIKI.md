@@ -13,27 +13,28 @@
 5. [VM and Container Management](#-vm-and-container-management)
 6. [Bulk Operations](#-bulk-operations)
 7. [OS Templates](#-os-templates)
-8. [LXC CT Template Deployment](#-lxc-ct-template-deployment)
-9. [Proxmox Clusters](#-proxmox-clusters)
-10. [Snapshots](#-snapshots)
-11. [Backups](#-backups)
-12. [IPAM](#-ipam)
-13. [Remote Command Execution](#-remote-command-execution)
-14. [Monitoring](#-monitoring)
-15. [Security (RBAC v2)](#-security)
-16. [Localization](#-localization)
-17. [Settings](#-settings)
-18. [SSH Keys Management](#-ssh-keys-management)
-19. [Networks (SDN & Node Interfaces)](#node-network-interfaces)
-20. [pve CLI Tool](#-pve-cli-tool)
-21. [API Reference](#-api-reference)
-22. [Workspaces](#-workspaces)
-23. [User → Server Assignment](#-user--server-assignment)
-24. [VM / LXC Ownership](#-vm--lxc-ownership)
-25. [Logs & Audit](#-logs--audit)
-26. [Deployment Guide](#-installation-and-deployment)
-27. [Troubleshooting](#-troubleshooting)
-28. [FAQ](#-faq)
+8. [Images — Cloud Image Catalog](#-images--cloud-image-catalog)
+9. [LXC CT Template Deployment](#-lxc-ct-template-deployment)
+10. [Proxmox Clusters](#-proxmox-clusters)
+11. [Snapshots](#-snapshots)
+12. [Backups](#-backups)
+13. [IPAM](#-ipam)
+14. [Remote Command Execution](#-remote-command-execution)
+15. [Monitoring](#-monitoring)
+16. [Security (RBAC v2)](#-security)
+17. [Localization](#-localization)
+18. [Settings](#-settings)
+19. [SSH Keys Management](#-ssh-keys-management)
+20. [Networks (SDN & Node Interfaces)](#node-network-interfaces)
+21. [pve CLI Tool](#-pve-cli-tool)
+22. [API Reference](#-api-reference)
+23. [Workspaces](#-workspaces)
+24. [User → Server Assignment](#-user--server-assignment)
+25. [VM / LXC Ownership](#-vm--lxc-ownership)
+26. [Logs & Audit](#-logs--audit)
+27. [Deployment Guide](#-installation-and-deployment)
+28. [Troubleshooting](#-troubleshooting)
+29. [FAQ](#-faq)
 
 ---
 
@@ -630,6 +631,69 @@ Next deploy to pve2: Uses replicated template (fast)
 4. VMID preserved
 
 ---
+
+## 📥 Images — Cloud Image Catalog
+
+### Overview
+
+The **Images** module allows you to browse, download, and manage OS images from cloud repositories. Images can be downloaded directly to Proxmox storage and optionally converted to VM templates automatically.
+
+### Features
+
+- **Browse cloud images** — discover OS images from the default Proxmox repository and custom mirrors
+- **Download images** — download `.qcow2` images to any Proxmox storage with progress tracking
+- **Auto-convert to template** — optional automatic conversion of downloaded images to Proxmox VM templates
+- **Architecture-aware filtering** — images are filtered by node platform (x86-64, aarch64); default architecture matches the selected node
+- **Custom mirrors** — administrators can add, edit, and manage custom mirror sources for image discovery
+
+### Accessing Images
+
+1. Go to **Infrastructure** → **Images** (sidebar)
+2. Select a Proxmox server and node
+3. Browse available images filtered by architecture
+
+### Downloading an Image
+
+1. Click **Download** next to the desired image
+2. Select target storage
+3. Optionally enable **Convert to Template** (creates a VM template on completion)
+4. Click **Download** — progress is tracked in real-time
+5. Once complete, the image is available in storage for VM deployment
+
+### Custom Mirrors (Admin Only)
+
+Administrators can configure custom image repositories:
+
+1. Go to **Settings** → **Images** → **Custom Mirrors**
+2. Click **Add Mirror**
+3. Enter mirror URL (must be a valid Proxmox repository)
+4. Save — mirror appears in the image browser immediately
+
+**Mirror URL Format:**
+
+A valid mirror must serve Proxmox's standard repository structure with an `index.json` file containing image metadata.
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/images` | List available images |
+| `GET` | `/api/images/node-arch/{server_id}/{node}` | Get architecture for a node |
+| `POST` | `/api/images/download` | Start image download (returns task UPID) |
+| `GET` | `/api/images/mirrors` | List configured custom mirrors (admin) |
+| `POST` | `/api/images/mirrors` | Add custom mirror (admin) |
+| `PUT` | `/api/images/mirrors/{id}` | Update mirror (admin) |
+| `DELETE` | `/api/images/mirrors/{id}` | Delete mirror (admin) |
+
+### Image Download Task Tracking
+
+Image downloads are tracked as Proxmox tasks (UPID). Use the standard task endpoint to monitor progress:
+
+```bash
+GET /api/backups/task/{server_id}/{node}/{upid}
+```
+
+
 
 ## � LXC CT Template Deployment
 

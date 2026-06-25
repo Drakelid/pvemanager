@@ -4,6 +4,23 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.6.0] - 2026-06-23
+
+### ✨ Images
+
+- **Cloud image catalog** — browse and download OS images from multiple sources (default Proxmox mirror and custom mirrors); images are downloaded to Proxmox storage
+- **Auto-convert to VM template** — option to automatically convert downloaded `.qcow2` images to Proxmox VM templates on completion
+- **Custom mirrors for admins** — admin-only UI to add, edit, list and delete custom mirror sources for image discovery
+- **Architecture-aware filtering** — images filtered by node platform architecture (x86-64, aarch64); default architecture matches the selected node's platform
+- **Image download with progress** — download dialog with real-time progress tracking and optional template conversion toggle
+
+### 🐛 Bug Fixes
+
+- **Image import filename normalization** — `.img` extension automatically normalized to `.qcow2` during import
+- **VM sanitization on image import** — VM names are sanitized during image import to prevent creation errors; improved error messages for transparent user feedback
+
+---
+
 ## [v1.5.2-1] - 2026-06-20
 
 ### 🖥️ UI
