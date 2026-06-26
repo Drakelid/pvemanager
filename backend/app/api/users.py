@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, EmailStr
 from loguru import logger
 
 from ..db import get_db
-from ..models import User, Role, ProxmoxServer, Workspace, WorkspaceServer, WorkspaceUser
+from ..models import User, Role, ProxmoxServer, Workspace, WorkspaceServer, WorkspaceUser, UserQuota
 from ..auth import (
     get_password_hash,
     get_current_user,
@@ -113,6 +113,27 @@ class SecuritySettingsUpdate(BaseModel):
     password_require_lowercase: Optional[bool] = None
     password_require_numbers: Optional[bool] = None
     password_require_special: Optional[bool] = None
+
+
+class QuotaUpdate(BaseModel):
+    """All fields optional; None / omitted clears the limit (unlimited)."""
+    max_instances: Optional[int] = Field(None, ge=0)
+    max_cores: Optional[int] = Field(None, ge=0)
+    max_memory_mb: Optional[int] = Field(None, ge=0)
+    max_disk_gb: Optional[int] = Field(None, ge=0)
+
+
+class QuotaResponse(BaseModel):
+    user_id: int
+    max_instances: Optional[int] = None
+    max_cores: Optional[int] = None
+    max_memory_mb: Optional[int] = None
+    max_disk_gb: Optional[int] = None
+    # Current usage from the vm_instances cache
+    used_instances: int = 0
+    used_cores: int = 0
+    used_memory_mb: int = 0
+    used_disk_gb: int = 0
 
 
 # ==================== Role API ====================
@@ -715,6 +736,98 @@ async def set_user_servers(
     )
 
     return {"message": "Servers assigned successfully", "server_ids": [s.id for s in servers]}
+
+
+# ==================== User Quota API ====================
+
+@router.get("/api/users/{user_id}/quota", response_model=QuotaResponse)
+async def get_user_quota(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("quota:view"))
+):
+    """Get a user's resource quota plus current usage.
+
+    If the user has no quota row, all limits are returned as null (unlimited).
+    """
+    from ..services.quota_service import get_user_usage
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    quota = db.query(UserQuota).filter(UserQuota.user_id == user_id).first()
+    usage = get_user_usage(db, user_id)
+
+    return QuotaResponse(
+        user_id=user_id,
+        max_instances=quota.max_instances if quota else None,
+        max_cores=quota.max_cores if quota else None,
+        max_memory_mb=quota.max_memory_mb if quota else None,
+        max_disk_gb=quota.max_disk_gb if quota else None,
+        used_instances=usage["instances"],
+        used_cores=usage["cores"],
+        used_memory_mb=usage["memory_mb"],
+        used_disk_gb=usage["disk_gb"],
+    )
+
+
+@router.put("/api/users/{user_id}/quota", response_model=QuotaResponse)
+async def set_user_quota(
+    user_id: int,
+    data: QuotaUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("quota:manage"))
+):
+    """Upsert a user's resource quota. A null/omitted field clears that limit."""
+    from ..services.quota_service import get_user_usage
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    quota = db.query(UserQuota).filter(UserQuota.user_id == user_id).first()
+    if quota is None:
+        quota = UserQuota(user_id=user_id)
+        db.add(quota)
+
+    quota.max_instances = data.max_instances
+    quota.max_cores = data.max_cores
+    quota.max_memory_mb = data.max_memory_mb
+    quota.max_disk_gb = data.max_disk_gb
+    db.commit()
+
+    LoggingService.log(
+        db=db,
+        level=LoggingService.INFO,
+        category=LoggingService.AUTH,
+        action="user_quota_updated",
+        message=(
+            f"Quota set for '{user.username}' by {current_user.username}: "
+            f"instances={data.max_instances}, cores={data.max_cores}, "
+            f"memory_mb={data.max_memory_mb}, disk_gb={data.max_disk_gb}"
+        ),
+        username=current_user.username,
+        user_id=current_user.id,
+        ip_address=get_client_ip(request),
+        resource_type="user",
+        resource_id=str(user.id),
+        resource_name=user.username
+    )
+
+    usage = get_user_usage(db, user_id)
+    return QuotaResponse(
+        user_id=user_id,
+        max_instances=quota.max_instances,
+        max_cores=quota.max_cores,
+        max_memory_mb=quota.max_memory_mb,
+        max_disk_gb=quota.max_disk_gb,
+        used_instances=usage["instances"],
+        used_cores=usage["cores"],
+        used_memory_mb=usage["memory_mb"],
+        used_disk_gb=usage["disk_gb"],
+    )
 
 
 @router.post("/api/users/{user_id}/reset-password")

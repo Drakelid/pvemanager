@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
-import { Server, Cpu, CheckCircle, ChevronLeft, ChevronRight, Loader2, Monitor, Container, HardDrive, KeyRound } from 'lucide-react';
+import { Server, Cpu, CheckCircle, ChevronLeft, ChevronRight, Loader2, Monitor, Container, HardDrive, KeyRound, Gauge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +14,7 @@ import { useTemplates, useTemplateGroups } from '@/hooks/use-templates';
 import { useIPAMNetworks } from '@/hooks/use-ipam';
 import { useLXCTemplates, useLXCStorages, useDeployLXC } from '@/hooks/use-lxc-templates';
 import { useMySSHKeys, useUserSSHKeys } from '@/hooks/use-ssh-keys';
-import { useProfile } from '@/hooks/use-settings';
+import { useProfile, useMyQuota } from '@/hooks/use-settings';
 import { useUsers } from '@/hooks/use-users';
 import { apiClient } from '@/lib/api-client';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
@@ -418,6 +418,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       {step === 'config' && kind === 'vm' && (
         <div className="space-y-6">
           <h3 className="text-lg font-semibold">{t('wizard.configure')}</h3>
+          <QuotaHint addCores={config.cores} addMemoryMb={config.memory} addDiskGb={config.disk} />
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Basic */}
             <Card>
@@ -566,6 +567,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       {step === 'config' && kind === 'lxc' && (
         <div className="space-y-6">
           <h3 className="text-lg font-semibold">{t('wizard.configure')}</h3>
+          <QuotaHint addCores={lxcConfig.cores} addMemoryMb={lxcConfig.memory} addDiskGb={lxcConfig.disk} />
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Basic */}
             <Card>
@@ -785,6 +787,48 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className="text-sm font-medium">{value}</span>
     </div>
+  );
+}
+
+/**
+ * Shows the deploying user's remaining quota at the config step, projecting the
+ * currently-entered resources. Hidden when the user has no quota set.
+ * Note: reflects the current user's quota (the common self-deploy case), not an
+ * admin-selected owner's quota.
+ */
+function QuotaHint({ addCores, addMemoryMb, addDiskGb }: { addCores: number; addMemoryMb: number; addDiskGb: number }) {
+  const { t } = useTranslation();
+  const { data: q } = useMyQuota();
+
+  const hasAnyLimit = q && (
+    q.max_instances !== null || q.max_cores !== null ||
+    q.max_memory_mb !== null || q.max_disk_gb !== null
+  );
+  if (!q || !hasAnyLimit) return null;
+
+  const rows: Array<{ label: string; used: number; add: number; limit: number | null }> = [
+    { label: t('users.quota.instances'), used: q.used_instances, add: 1, limit: q.max_instances },
+    { label: t('common.vcpu'), used: q.used_cores, add: addCores, limit: q.max_cores },
+    { label: t('wizard.memory_mb'), used: q.used_memory_mb, add: addMemoryMb, limit: q.max_memory_mb },
+    { label: t('wizard.disk_gb'), used: q.used_disk_gb, add: addDiskGb, limit: q.max_disk_gb },
+  ];
+
+  return (
+    <Card className="border-amber-500/40">
+      <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Gauge className="h-4 w-4" />{t('users.quota.manage')}</CardTitle></CardHeader>
+      <CardContent className="grid gap-2 sm:grid-cols-2">
+        {rows.filter(r => r.limit !== null).map(r => {
+          const projected = r.used + r.add;
+          const over = projected > (r.limit as number);
+          return (
+            <div key={r.label} className="flex items-center justify-between text-xs rounded-md border px-2.5 py-1.5">
+              <span className="text-muted-foreground">{r.label}</span>
+              <span className={over ? 'text-destructive font-medium' : ''}>{projected} / {r.limit}</span>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 

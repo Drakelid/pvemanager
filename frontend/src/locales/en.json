@@ -849,7 +849,18 @@
     "event_type": "Event Type",
     "workspaces": "Workspaces",
     "no_workspaces": "No workspaces",
-    "workspace_required": "User must belong to the server's workspace"
+    "workspace_required": "User must belong to the server's workspace",
+    "quota": {
+      "manage": "Quotas (limits)",
+      "hint": "Leave a field empty for no limit on that metric.",
+      "instances": "Max instances (VM + LXC)",
+      "cores": "Max vCPU (cores)",
+      "memory_mb": "Max RAM (MB)",
+      "disk_gb": "Max disk (GB)",
+      "used": "Used",
+      "unlimited": "unlimited",
+      "saved": "Quota saved"
+    }
   },
   "workspaces": {
     "create": "Create Workspace",

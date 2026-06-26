@@ -61,6 +61,8 @@ DEFAULT_ROLES = [
             "users.create": True,
             "users.edit": True,
             "users.delete": True,
+            "quota:view": True,
+            "quota:manage": True,
             "roles.view": True,
             "roles.manage": True,
             "notifications.manage": True,
@@ -1401,6 +1403,33 @@ def migrate_password_reset_tokens(conn):
     logger.info("✓ password_reset_tokens table created")
 
 
+def migrate_user_quotas(conn):
+    """Migration 28: Create user_quotas table for per-user resource limits.
+
+    No default rows are inserted — absence of a row (or a NULL column) means
+    unlimited for that metric.
+    """
+    if table_exists(conn, 'user_quotas'):
+        logger.info("✓ user_quotas table already exists")
+        return
+
+    logger.info("Creating user_quotas table...")
+    conn.execute(text("""
+        CREATE TABLE user_quotas (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+            max_instances INTEGER,
+            max_cores INTEGER,
+            max_memory_mb INTEGER,
+            max_disk_gb INTEGER,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("CREATE INDEX idx_user_quotas_user ON user_quotas(user_id)"))
+    logger.info("✓ user_quotas table created")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1629,6 +1658,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Password reset tokens migration: {e}")
+                conn.rollback()
+
+            # Migration 28: user_quotas table
+            try:
+                migrate_user_quotas(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"User quotas migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

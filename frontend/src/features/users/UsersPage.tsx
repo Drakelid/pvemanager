@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
-  Search, Plus, Shield, Trash2, RotateCcw, Unlock, Pencil, Server, LogOut, Ban, KeyRound,
+  Search, Plus, Shield, Trash2, RotateCcw, Unlock, Pencil, Server, LogOut, Ban, KeyRound, Gauge,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +24,7 @@ import {
   useRoles, useCreateRole, useUpdateRole, useDeleteRole, usePermissions,
   useSessions, useTerminateSession, useTerminateAllSessions,
   useUserServerAssignments, useSetUserServers,
+  useUserQuota, useSetUserQuota,
   useSecuritySettings, useUpdateSecuritySettings,
   useBlockedIps, useBlockIp, useUnblockIp, useSecurityEvents,
   type Role, type SecuritySettings,
@@ -86,6 +87,7 @@ function UsersTab() {
   const [editUser, setEditUser] = useState<User | null>(null);
   const [resetUser, setResetUser] = useState<User | null>(null);
   const [serversUser, setServersUser] = useState<User | null>(null);
+  const [quotaUser, setQuotaUser] = useState<User | null>(null);
   const [sshUser, setSshUser] = useState<User | null>(null);
 
   const { data: users = [] } = useUsers();
@@ -177,6 +179,13 @@ function UsersTab() {
                       </Button>
                       <Button
                         variant="ghost" size="icon" className="h-7 w-7"
+                        title={t('users.quota.manage')}
+                        onClick={() => setQuotaUser(u)}
+                      >
+                        <Gauge className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost" size="icon" className="h-7 w-7"
                         title={t('ssh_keys.manage_for_user')}
                         onClick={() => setSshUser(u)}
                       >
@@ -256,6 +265,13 @@ function UsersTab() {
           user={serversUser}
           open={!!serversUser}
           onOpenChange={o => !o && setServersUser(null)}
+        />
+      )}
+      {quotaUser && (
+        <UserQuotaDialog
+          user={quotaUser}
+          open={!!quotaUser}
+          onOpenChange={o => !o && setQuotaUser(null)}
         />
       )}
       {sshUser && (
@@ -602,6 +618,123 @@ function UserServersForm({
       <DialogFooter>
         <DialogClose render={<Button variant="outline" />}>{t('common.cancel')}</DialogClose>
         <Button onClick={submit} disabled={setServers.isPending}>{t('common.save')}</Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+// ==================== User Quota Dialog ====================
+
+function UserQuotaDialog({
+  user, open, onOpenChange,
+}: { user: User; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { t } = useTranslation();
+  const { data, isLoading } = useUserQuota(user.id);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('users.quota.manage')}: {user.username}</DialogTitle>
+        </DialogHeader>
+        {isLoading || !data ? (
+          <p className="text-sm text-muted-foreground py-4">{t('common.loading')}</p>
+        ) : (
+          <UserQuotaForm user={user} data={data} onClose={() => onOpenChange(false)} />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UserQuotaForm({
+  user, data, onClose,
+}: {
+  user: User;
+  data: NonNullable<ReturnType<typeof useUserQuota>['data']>;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const setQuota = useSetUserQuota();
+
+  // Empty string = unlimited
+  const toField = (v: number | null) => (v === null || v === undefined ? '' : String(v));
+  const [instances, setInstances] = useState(toField(data.max_instances));
+  const [cores, setCores] = useState(toField(data.max_cores));
+  const [memory, setMemory] = useState(toField(data.max_memory_mb));
+  const [disk, setDisk] = useState(toField(data.max_disk_gb));
+
+  const parse = (v: string): number | null => {
+    const trimmed = v.trim();
+    if (trimmed === '') return null;
+    const n = Number(trimmed);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+  };
+
+  const submit = () => {
+    setQuota.mutate(
+      {
+        userId: user.id,
+        max_instances: parse(instances),
+        max_cores: parse(cores),
+        max_memory_mb: parse(memory),
+        max_disk_gb: parse(disk),
+      },
+      {
+        onSuccess: () => { onClose(); toast.success(t('users.quota.saved')); },
+        onError: e => toast.error(getErrMsg(e)),
+      }
+    );
+  };
+
+  const fields: Array<{
+    label: string; value: string; set: (v: string) => void; used: number; limit: number | null;
+  }> = [
+    { label: t('users.quota.instances'), value: instances, set: setInstances, used: data.used_instances, limit: parse(instances) },
+    { label: t('users.quota.cores'), value: cores, set: setCores, used: data.used_cores, limit: parse(cores) },
+    { label: t('users.quota.memory_mb'), value: memory, set: setMemory, used: data.used_memory_mb, limit: parse(memory) },
+    { label: t('users.quota.disk_gb'), value: disk, set: setDisk, used: data.used_disk_gb, limit: parse(disk) },
+  ];
+
+  return (
+    <>
+      <div className="space-y-4">
+        <p className="text-xs text-muted-foreground">{t('users.quota.hint')}</p>
+        {fields.map(f => {
+          const pct = f.limit && f.limit > 0 ? Math.min(100, (f.used / f.limit) * 100) : 0;
+          const over = f.limit !== null && f.used > f.limit;
+          return (
+            <div key={f.label} className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">{f.label}</Label>
+                <span className={`text-xs ${over ? 'text-destructive' : 'text-muted-foreground'}`}>
+                  {t('users.quota.used')}: {f.used}
+                  {f.limit !== null ? ` / ${f.limit}` : ` / ${t('users.quota.unlimited')}`}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min={0}
+                  value={f.value}
+                  onChange={e => f.set(e.target.value)}
+                  placeholder={t('users.quota.unlimited')}
+                  className="w-40"
+                />
+                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={`h-full ${over ? 'bg-destructive' : 'bg-primary'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <DialogFooter>
+        <DialogClose render={<Button variant="outline" />}>{t('common.cancel')}</DialogClose>
+        <Button onClick={submit} disabled={setQuota.isPending}>{t('common.save')}</Button>
       </DialogFooter>
     </>
   );

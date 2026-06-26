@@ -1,4 +1,5 @@
 from .base import *
+from sqlalchemy.orm import backref
 
 # Association table: User <-> ProxmoxServer (assigned servers)
 user_servers = Table(
@@ -115,6 +116,30 @@ class User(Base):
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', is_admin={self.is_admin})>"
+
+class UserQuota(Base):
+    """Per-user resource quota (limits).
+
+    A row is created only when an admin sets at least one limit. Absence of a
+    row — or a ``NULL`` value in any column — means *unlimited* for that metric.
+    Memory is stored in MB and disk in GB, matching the units used by the
+    ``vm_instances`` cache (see monitoring worker conversions).
+    """
+    __tablename__ = "user_quotas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    max_instances = Column(Integer, nullable=True)   # NULL = unlimited
+    max_cores = Column(Integer, nullable=True)        # sum of vCPUs
+    max_memory_mb = Column(Integer, nullable=True)    # sum of RAM in MB
+    max_disk_gb = Column(Integer, nullable=True)      # sum of disk in GB
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", backref=backref("quota", uselist=False, cascade="all, delete-orphan"))
+
+    def __repr__(self):
+        return f"<UserQuota(user_id={self.user_id})>"
 
 class PasswordResetToken(Base):
     """One-time tokens for the self-service 'forgot password' flow.

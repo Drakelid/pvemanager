@@ -15,7 +15,8 @@ export interface User {
   failed_login_attempts?: number;
   locked_until?: string | null;
   require_password_change?: boolean;
-  permissions?: string[];
+  // Map of "resource:action" -> granted. Admins receive every permission.
+  permissions?: Record<string, boolean>;
 }
 
 export interface LoginRequest {

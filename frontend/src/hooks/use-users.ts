@@ -6,6 +6,7 @@ export const userKeys = {
   users: ['users'] as const,
   user: (id: number) => ['user', id] as const,
   userServers: (id: number) => ['user-server-assignments', id] as const,
+  userQuota: (id: number) => ['user-quota', id] as const,
   roles: ['roles'] as const,
   permissions: ['permissions-v2'] as const,
   sessions: ['sessions'] as const,
@@ -203,6 +204,47 @@ export function useSetUserServers() {
       ),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: userKeys.userServers(vars.userId) });
+      qc.invalidateQueries({ queryKey: userKeys.users });
+    },
+  });
+}
+
+// ==================== User → Quota ====================
+
+export interface UserQuota {
+  user_id: number;
+  max_instances: number | null;
+  max_cores: number | null;
+  max_memory_mb: number | null;
+  max_disk_gb: number | null;
+  used_instances: number;
+  used_cores: number;
+  used_memory_mb: number;
+  used_disk_gb: number;
+}
+
+export interface SetUserQuotaPayload {
+  max_instances?: number | null;
+  max_cores?: number | null;
+  max_memory_mb?: number | null;
+  max_disk_gb?: number | null;
+}
+
+export function useUserQuota(userId: number) {
+  return useQuery({
+    queryKey: userKeys.userQuota(userId),
+    queryFn: () => apiClient.get<UserQuota>(`/admin/api/users/${userId}/quota`),
+    enabled: userId > 0,
+  });
+}
+
+export function useSetUserQuota() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, ...data }: { userId: number } & SetUserQuotaPayload) =>
+      apiClient.put<UserQuota>(`/admin/api/users/${userId}/quota`, data),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: userKeys.userQuota(vars.userId) });
       qc.invalidateQueries({ queryKey: userKeys.users });
     },
   });

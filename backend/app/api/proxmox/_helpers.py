@@ -20,43 +20,46 @@ from ...ipam_service import IPAMService
 
 # ==================== Helper Functions for User Isolation ====================
 
+def can_view_all_instances(current_user: User) -> bool:
+    """
+    Whether the user may see/manage *every* instance, not just their own.
+
+    Only administrators — or roles that explicitly grant ``vm:manage`` — get the
+    global view. Every other authenticated user (including users with no role,
+    custom roles, or the stock ``user`` role) is scoped to instances they own.
+
+    Note: ``vm:view`` is deliberately NOT treated as a global view permission.
+    The stock ``user`` role carries ``vm:view`` simply so the instances feature
+    is usable at all; granting it would let any tenant see every VM.
+    """
+    if getattr(current_user, 'is_admin', False):
+        return True
+    role = current_user.role
+    if role and role.name == 'admin':
+        return True
+    perms = (role.permissions if role else None) or {}
+    return bool(perms.get('vm:manage', False))
+
+
 def check_vm_access(db: Session, current_user: User, server_id: int, vmid: int) -> bool:
     """
     Check if user has access to a specific VM instance.
 
-    Admins and users with 'vms:view' permission can access all VMs.
-    Users with 'user' role can only access VMs where they are the owner.
+    Admins (and roles granting ``vm:manage``) can access all VMs. Everyone else
+    can only access VMs where they are the owner.
 
     Returns True if access is allowed, False otherwise.
     """
-    # Admin role has full access
-    if current_user.role and current_user.role.name == 'admin':
+    if can_view_all_instances(current_user):
         return True
 
-    # Check permissions
-    if current_user.role and current_user.role.permissions:
-        perms = current_user.role.permissions
-        # If user has full vms:view, they can access all VMs
-        has_full_view = perms.get('vm:view', False) or perms.get('vms:view', False)
-        has_own_only = perms.get('vms:view:own', False) or perms.get('vms.view.own', False)
+    instance = db.query(VMInstance).filter(
+        VMInstance.server_id == server_id,
+        VMInstance.vmid == vmid,
+        VMInstance.deleted_at.is_(None)
+    ).first()
 
-        if has_full_view and not has_own_only:
-            return True
-
-    # For limited users, check ownership
-    if current_user.role and current_user.role.name == 'user':
-        instance = db.query(VMInstance).filter(
-            VMInstance.server_id == server_id,
-            VMInstance.vmid == vmid,
-            VMInstance.deleted_at.is_(None)
-        ).first()
-
-        if instance and instance.owner_id == current_user.id:
-            return True
-        return False
-
-    # Default: allow access (for backwards compatibility)
-    return True
+    return bool(instance and instance.owner_id == current_user.id)
 
 
 def require_vm_access(db: Session, current_user: User, server_id: int, vmid: int):

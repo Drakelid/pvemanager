@@ -1,5 +1,5 @@
 from .base import *
-from .auth import Role, user_servers, User, ActiveSession, LoginAttempt, BlockedIP, UserSSHKey, PasswordResetToken
+from .auth import Role, user_servers, User, ActiveSession, LoginAttempt, BlockedIP, UserSSHKey, PasswordResetToken, UserQuota
 from .proxmox import OSTemplateGroup, OSTemplate, ProxmoxServer, VMInstance, VMSnapshotArchive
 from .ipam import IPAMNetwork, IPAMPool, IPAMAllocation, IPAMHistory
 from .tasks import TaskQueue, ProxmoxTask, DeployTask
@@ -10,7 +10,7 @@ from .catalog import ImageMirror
 
 __all__ = [
     'Base', 'utcnow',
-    'Role', 'user_servers', 'User', 'ActiveSession', 'LoginAttempt', 'BlockedIP', 'UserSSHKey', 'PasswordResetToken',
+    'Role', 'user_servers', 'User', 'ActiveSession', 'LoginAttempt', 'BlockedIP', 'UserSSHKey', 'PasswordResetToken', 'UserQuota',
     'OSTemplateGroup', 'OSTemplate', 'ProxmoxServer', 'VMInstance', 'VMSnapshotArchive',
     'IPAMNetwork', 'IPAMPool', 'IPAMAllocation', 'IPAMHistory',
     'TaskQueue', 'ProxmoxTask', 'DeployTask',

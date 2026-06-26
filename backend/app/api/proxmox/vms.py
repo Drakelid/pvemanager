@@ -20,7 +20,8 @@ from ...logging_service import LoggingService
 from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         get_next_vmid, archive_and_delete_snapshots,
-                        save_vm_instance, get_vm_instance, soft_delete_vm_instance)
+                        save_vm_instance, get_vm_instance, soft_delete_vm_instance,
+                        can_view_all_instances)
 from ...services.metrics_history import query_instance_metrics, timeframe_to_range
 
 router = APIRouter()
@@ -146,21 +147,11 @@ def get_all_virtual_machines(
     if workspace_server_ids is not None:
         query = query.filter(VMInstance.server_id.in_(workspace_server_ids))
     
-    # VPS-style user isolation: users with 'user' role see only their own instances
-    # Check if user has 'vm:view' but not 'vms.view:all' (or is user role)
-    user_role = current_user.role.name if current_user.role else None
-    is_limited_user = user_role == 'user'
-    
-    # Also check permission-based isolation
-    if hasattr(current_user, 'role') and current_user.role:
-        perms = current_user.role.permissions or {}
-        # If user has vms:view:own but not vms:view (full), filter by owner
-        has_view_own = perms.get('vms:view:own', False) or perms.get('vms.view.own', False)
-        has_view_all = perms.get('vms:view', False) or perms.get('vm:view', False)
-        
-        # Limited users can only see their own VMs
-        if is_limited_user or (has_view_own and not has_view_all):
-            query = query.filter(VMInstance.owner_id == current_user.id)
+    # VPS-style user isolation: only admins (or roles granting vm:manage) see
+    # every instance. Everyone else — including users with no role or a custom
+    # role — is restricted to instances they own. See can_view_all_instances.
+    if not can_view_all_instances(current_user):
+        query = query.filter(VMInstance.owner_id == current_user.id)
     
     cached_vms = query.order_by(VMInstance.name).all()
 

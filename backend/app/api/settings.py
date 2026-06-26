@@ -123,6 +123,30 @@ async def get_profile(
     }
 
 
+@router.get("/api/quota")
+async def get_my_quota(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get the current user's own resource quota and usage (self-service)."""
+    from ..models import UserQuota
+    from ..services.quota_service import get_user_usage
+
+    quota = db.query(UserQuota).filter(UserQuota.user_id == current_user.id).first()
+    usage = get_user_usage(db, current_user.id)
+    return {
+        "user_id": current_user.id,
+        "max_instances": quota.max_instances if quota else None,
+        "max_cores": quota.max_cores if quota else None,
+        "max_memory_mb": quota.max_memory_mb if quota else None,
+        "max_disk_gb": quota.max_disk_gb if quota else None,
+        "used_instances": usage["instances"],
+        "used_cores": usage["cores"],
+        "used_memory_mb": usage["memory_mb"],
+        "used_disk_gb": usage["disk_gb"],
+    }
+
+
 @router.put("/api/profile")
 async def update_profile(
     data: UpdateProfileRequest,

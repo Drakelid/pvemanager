@@ -528,6 +528,22 @@ def _create_permissions() -> PermissionRegistry:
         requires=["user:view"]
     ))
 
+    # Quota permissions
+    registry.register(Permission(
+        resource="quota", action="view",
+        display_name="View Quotas",
+        description="View user resource quotas",
+        category="User Management",
+        requires=["user:view"]
+    ))
+    registry.register(Permission(
+        resource="quota", action="manage",
+        display_name="Manage Quotas",
+        description="Set user resource quotas",
+        category="User Management",
+        requires=["user:view"]
+    ))
+
     # Role management permissions
     registry.register(Permission(
         resource="role", action="view",

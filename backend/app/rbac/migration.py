@@ -71,6 +71,9 @@ NEW_DEFAULT_ROLES = [
             "user:update": True,
             "user:delete": True,
             "user:manage": True,
+            # Quotas
+            "quota:view": True,
+            "quota:manage": True,
             # Roles
             "role:view": True,
             "role:create": True,

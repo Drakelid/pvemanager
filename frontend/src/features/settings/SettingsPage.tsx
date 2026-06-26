@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
   useProfile, useUpdateProfile, useChangePassword,
+  useMyQuota,
   usePanelSettings, useUpdatePanelSettings,
   useSecuritySettings, useUpdateSecuritySettings,
   useNotificationChannels, useUpdateSMTP, useUpdateTelegram,
@@ -111,7 +112,54 @@ function ProfileTab() {
           }}>{t('settings.change_password')}</Button>
         </CardContent>
       </Card>
+      <QuotaCard />
     </div>
+  );
+}
+
+function QuotaCard() {
+  const { t } = useTranslation();
+  const { data: quota, isLoading } = useMyQuota();
+
+  // Hide the card entirely if the user has no limits set (all unlimited)
+  const hasAnyLimit = quota && (
+    quota.max_instances !== null || quota.max_cores !== null ||
+    quota.max_memory_mb !== null || quota.max_disk_gb !== null
+  );
+  if (isLoading || !quota || !hasAnyLimit) return null;
+
+  const rows: Array<{ label: string; used: number; limit: number | null }> = [
+    { label: t('users.quota.instances'), used: quota.used_instances, limit: quota.max_instances },
+    { label: t('users.quota.cores'), used: quota.used_cores, limit: quota.max_cores },
+    { label: t('users.quota.memory_mb'), used: quota.used_memory_mb, limit: quota.max_memory_mb },
+    { label: t('users.quota.disk_gb'), used: quota.used_disk_gb, limit: quota.max_disk_gb },
+  ];
+
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-sm">{t('users.quota.manage')}</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        {rows.map(r => {
+          const pct = r.limit && r.limit > 0 ? Math.min(100, (r.used / r.limit) * 100) : 0;
+          const over = r.limit !== null && r.used > r.limit;
+          return (
+            <div key={r.label} className="space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <span>{r.label}</span>
+                <span className={over ? 'text-destructive' : 'text-muted-foreground'}>
+                  {r.used}{r.limit !== null ? ` / ${r.limit}` : ` / ${t('users.quota.unlimited')}`}
+                </span>
+              </div>
+              {r.limit !== null && (
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className={`h-full ${over ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${pct}%` }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 

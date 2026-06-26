@@ -46,6 +46,10 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   path: string;
+  // Permission ("resource:action") the destination page requires. When set, the
+  // item is hidden unless the user is an admin or has that permission granted.
+  // When omitted, the item is admin-only.
+  permission?: string;
 }
 
 interface NavGroup {
@@ -53,41 +57,65 @@ interface NavGroup {
   items: NavItem[];
 }
 
+// Each item is gated by the permission its page's API actually requires, so a
+// menu only appears when the user can use the page behind it. Admins bypass all
+// checks. Items without a `permission` are admin-only (no user-facing API).
 const navGroups: NavGroup[] = [
   {
     title: 'Infrastructure',
     items: [
-      { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-      { label: 'Instances', icon: Monitor, path: '/instances' },
-      { label: 'Nodes', icon: Server, path: '/nodes' },
-      { label: 'Cluster', icon: Network, path: '/cluster' },
-      { label: 'Templates', icon: HardDrive, path: '/templates' },
-      { label: 'Images', icon: HardDriveDownload, path: '/images' },
-      { label: 'Backups', icon: Archive, path: '/backups' },
-      { label: 'Tasks', icon: ClipboardList, path: '/tasks' },
+      { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: 'dashboard:view' },
+      { label: 'Instances', icon: Monitor, path: '/instances', permission: 'vm:view' },
+      { label: 'Nodes', icon: Server, path: '/nodes', permission: 'server:view' },
+      { label: 'Cluster', icon: Network, path: '/cluster', permission: 'cluster:manage' },
+      { label: 'Templates', icon: HardDrive, path: '/templates', permission: 'template:view' },
+      { label: 'Images', icon: HardDriveDownload, path: '/images', permission: 'template:manage' },
+      { label: 'Backups', icon: Archive, path: '/backups', permission: 'backup:view' },
+      { label: 'Tasks', icon: ClipboardList, path: '/tasks', permission: 'vm:view' },
     ],
   },
   {
     title: 'Network',
     items: [
-      { label: 'IPAM', icon: Globe, path: '/ipam' },
-      { label: 'Networks', icon: Network, path: '/networks' },
+      { label: 'IPAM', icon: Globe, path: '/ipam', permission: 'ipam:view' },
+      { label: 'Networks', icon: Network, path: '/networks', permission: 'server:manage' },
     ],
   },
   {
     title: 'Management',
     items: [
-      { label: 'Users', icon: Users, path: '/users' },
-      { label: 'Workspaces', icon: FolderKanban, path: '/workspaces' },
-      { label: 'Logs', icon: FileText, path: '/logs' },
-      { label: 'Settings', icon: Settings, path: '/settings' },
+      { label: 'Users', icon: Users, path: '/users', permission: 'user:view' },
+      { label: 'Workspaces', icon: FolderKanban, path: '/workspaces' }, // admin-only
+      { label: 'Logs', icon: FileText, path: '/logs', permission: 'log:view' },
+      { label: 'Settings', icon: Settings, path: '/settings', permission: 'setting:view' },
     ],
   },
 ];
 
+/** Whether the current user may see a given nav item. Admins see everything. */
+function canSeeNavItem(
+  item: NavItem,
+  isAdmin: boolean,
+  permissions: Record<string, boolean> | undefined,
+): boolean {
+  if (isAdmin) return true;
+  if (!item.permission) return false; // admin-only item
+  return !!permissions?.[item.permission];
+}
+
 function SidebarContent() {
   const location = useLocation();
   const { t } = useTranslation();
+  const { user } = useAuthStore();
+  const isAdmin = !!user?.is_admin;
+  const permissions = user?.permissions;
+
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canSeeNavItem(item, isAdmin, permissions)),
+    }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <div className="flex h-full flex-col">
@@ -100,7 +128,7 @@ function SidebarContent() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
-        {navGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.title}>
             <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t(`nav.${group.title.toLowerCase()}`, group.title)}

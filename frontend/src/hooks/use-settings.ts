@@ -3,6 +3,7 @@ import { apiClient } from '@/lib/api-client';
 
 export const settingsKeys = {
   profile: ['settings-profile'] as const,
+  quota: ['settings-quota'] as const,
   panel: ['settings-panel'] as const,
   security: ['settings-security'] as const,
   channels: ['notification-channels'] as const,
@@ -56,6 +57,25 @@ export function useProfile() {
   return useQuery({
     queryKey: settingsKeys.profile,
     queryFn: () => apiClient.get<ProfileResponse>('/settings/api/profile'),
+  });
+}
+
+export interface MyQuota {
+  user_id: number;
+  max_instances: number | null;
+  max_cores: number | null;
+  max_memory_mb: number | null;
+  max_disk_gb: number | null;
+  used_instances: number;
+  used_cores: number;
+  used_memory_mb: number;
+  used_disk_gb: number;
+}
+
+export function useMyQuota() {
+  return useQuery({
+    queryKey: settingsKeys.quota,
+    queryFn: () => apiClient.get<MyQuota>('/settings/api/quota'),
   });
 }
 
