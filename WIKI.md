@@ -31,10 +31,11 @@
 23. [Workspaces](#-workspaces)
 24. [User → Server Assignment](#-user--server-assignment)
 25. [VM / LXC Ownership](#-vm--lxc-ownership)
-26. [Logs & Audit](#-logs--audit)
-27. [Deployment Guide](#-installation-and-deployment)
-28. [Troubleshooting](#-troubleshooting)
-29. [FAQ](#-faq)
+26. [Quotas](#-quotas)
+27. [Logs & Audit](#-logs--audit)
+28. [Deployment Guide](#-installation-and-deployment)
+29. [Troubleshooting](#-troubleshooting)
+30. [FAQ](#-faq)
 
 ---
 
@@ -226,6 +227,12 @@ This section summarizes key API endpoints. All require JWT authentication.
 - `PUT /api/roles/{id}` — update role (admin)
 - `DELETE /api/roles/{id}` — delete role (admin)
 
+### Quotas
+
+- `GET /api/users/{id}/quota` — get a user's quota plus current usage (requires `quota:view`)
+- `PUT /api/users/{id}/quota` — set a user's quota; `null` per metric = unlimited (requires `quota:manage`)
+- `GET /api/quota` — get the current user's own quota and usage (self-service)
+
 ### Settings
 
 - `GET /settings/api/panel` — get panel settings
@@ -371,6 +378,17 @@ This section summarizes key API endpoints. All require JWT authentication.
 - Session management
 - Login protection (lockout, rate limiting)
 - Audit logs
+
+### Quotas
+
+Per-user resource limits enforced when deploying VMs/LXC:
+
+- **Limited metrics** — number of instances, total vCPU (cores), total RAM (MB) and total disk (GB), summed across the user's non-deleted, non-template instances
+- **Unlimited by default** — a user with no quota row, or a metric left blank (`NULL`), is unrestricted for that metric; admins are never blocked
+- **Enforcement** — deploying an instance that would exceed any limit is rejected with **HTTP 429** and a bilingual message showing the projected value vs. the limit
+- **Admin management** — set limits per user on the **Users** page (quota dialog with live usage bars); requires the `quota:manage` permission (`quota:view` to read)
+- **Self-service** — each user can see their own limits and current usage on the **Settings** page, and the remaining quota is shown as a hint in the Create Instance wizard
+- Current usage is derived from the `vm_instances` cache (`owner_id`), where RAM is stored in MB and disk in GB
 
 ### Monitoring
 
@@ -1872,6 +1890,39 @@ Open the VM detail page → **Owner** button → select user → Save.
 |---|---|---|
 | `GET` | `/api/{server_id}/vm/{vmid}/owner` | Current owner + list of users |
 | `PUT` | `/api/{server_id}/vm/{vmid}/owner` | Set or clear owner (`{"user_id": null}` to clear) |
+
+---
+
+## 🎯 Quotas
+
+Per-user resource quotas cap how much a user can provision. Four metrics are limited, each summed across the user's **non-deleted, non-template** instances:
+
+| Metric | Unit | Quota field |
+|---|---|---|
+| Instances | count | `max_instances` |
+| vCPU | cores | `max_cores` |
+| RAM | MB | `max_memory_mb` |
+| Disk | GB | `max_disk_gb` |
+
+- **Unlimited by default** — a user with no quota row, or any metric left blank (`NULL`), is unrestricted for that metric. Admins and unconfigured users are never blocked.
+- **Enforcement** — deploying a VM/LXC that would push any metric over its limit is rejected with **HTTP 429** and a bilingual message (`Превышена квота … / Quota exceeded …`) showing the projected value vs. the limit.
+- **Usage source** — current usage is computed from the `vm_instances` cache (`owner_id`), where RAM is stored in MB and disk in GB (no conversion needed).
+
+### Managing quotas (Admin)
+
+**Users** page → quota dialog. Live usage bars show current consumption against each limit. Leave a field empty for *unlimited*. Requires the `quota:manage` permission (`quota:view` to read).
+
+### Self-service
+
+Each user sees their own limits and current usage on the **Settings** page. The **Create Instance** wizard shows the remaining quota as a hint on the configuration step.
+
+### REST API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/users/{id}/quota` | A user's limits + current usage (requires `quota:view`) |
+| `PUT` | `/api/users/{id}/quota` | Set a user's limits; `null` per metric = unlimited (requires `quota:manage`) |
+| `GET` | `/api/quota` | Current user's own limits + usage (self-service) |
 
 ---
 

@@ -4,6 +4,19 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.7.0] - 2026-06-26
+
+### 🎯 Quotas
+
+- **Per-user resource quotas** — limit each user's number of instances and the summed vCPU, RAM and disk across their VMs/LXC. A missing quota row or a `NULL` column means *unlimited* for that metric, so admins and unrestricted users are never blocked
+  - Backend: new `UserQuota` model (`user_quotas` table) and `quota_service` (`get_user_usage` / `check_quota`); usage is computed from the `vm_instances` cache (`owner_id`) — non-deleted, non-template instances only; enforcement raises **HTTP 429** on VM/LXC deploy when a limit would be exceeded
+  - Permissions: new `quota:view` and `quota:manage` RBAC permissions (category *User Management*, both require `user:view`)
+  - API: `GET/PUT /api/users/{id}/quota` (admin) returns limits plus current usage; `GET /api/quota` (self-service) returns the current user's own limits and usage
+  - Frontend: admin quota dialog with usage bars on the Users page; own-limits card on the Settings page; remaining-quota hint in the Create Instance wizard config step; `useUserQuota` / `useSetUserQuota` / `useMyQuota` hooks; RU/EN locales
+  - Migration: `user_quotas` table added via `backend/migrations/migrations.py`
+
+---
+
 ## [v1.6.0] - 2026-06-23
 
 ### ✨ Images
