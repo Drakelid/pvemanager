@@ -40,8 +40,9 @@ export function vmVcpuCount(config?: { cores?: number; sockets?: number } | null
 
 /**
  * Formats a VM/LXC hardware configuration as "N vCPU / X GB RAM / Y GB".
- * `memory` and `maxdisk` come from the cached instances list in bytes;
- * `disk_size` (when present) is already in GB.
+ * `memory` comes from the Proxmox config in MiB; `maxmem` comes from the
+ * cluster/resources list in bytes. `maxdisk` is in bytes and `disk_size`
+ * (when present) is already in GB.
  */
 export function formatVmConfig(vm: {
   cores?: number;
@@ -52,7 +53,7 @@ export function formatVmConfig(vm: {
 }): string {
   const parts: string[] = [];
   if (vm.cores) parts.push(`${vm.cores} vCPU`);
-  const memBytes = vm.memory || vm.maxmem;
+  const memBytes = vm.memory ? vm.memory * 1024 ** 2 : vm.maxmem;
   if (memBytes) parts.push(`${formatBytes(memBytes, 0)} RAM`);
   const diskGb = vm.disk_size ?? (vm.maxdisk ? Math.round(vm.maxdisk / 1024 ** 3) : 0);
   if (diskGb) parts.push(`${diskGb} GB`);
