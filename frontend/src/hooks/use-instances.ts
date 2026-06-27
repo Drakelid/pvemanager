@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { getTasksWebSocket } from '@/lib/websocket';
+import { useBulkTasksStore, type BulkTask, type BulkTaskResult } from '@/stores/bulk-tasks-store';
 import type { VMInstance, Snapshot, VMConfig, DiskInfo } from '@/types';
 
 // ==================== Query Keys ====================
@@ -488,16 +489,61 @@ interface BulkItem {
   node: string;
 }
 
+interface BulkOperationResponse {
+  success: boolean;
+  task_id: number;
+  message: string;
+}
+
 export function useBulkOperation() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: { action: string; items: BulkItem[] }) =>
+  return useMutation<BulkOperationResponse, Error, { action: string; items: BulkItem[] }>({
+    mutationFn: (body) =>
       apiClient.post('/proxmox/api/bulk-operation', body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: vmKeys.all });
       qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
     },
   });
+}
+
+/**
+ * Subscribes to WebSocket `task_update` events for bulk operations and patches
+ * the bulk-tasks store with live progress (completed/failed/results), so the
+ * instances list can show per-row status overlays and a progress bar — the same
+ * way deploy tasks surface instance creation. Only tasks started in this session
+ * (registered via the store's addTask) are tracked. When a task finishes it
+ * refetches the VM list and auto-clears after a short delay.
+ */
+export function useBulkTasksSync() {
+  const qc = useQueryClient();
+  const updateTask = useBulkTasksStore((s) => s.updateTask);
+  const removeTask = useBulkTasksStore((s) => s.removeTask);
+  useEffect(() => {
+    const ws = getTasksWebSocket();
+    ws.connect();
+    const unsub = ws.onType('task_update', (data: unknown) => {
+      const task = (data as { task?: {
+        kind?: string; id: number; status: string;
+        total_items: number; completed_items: number; failed_items: number;
+        results?: BulkTaskResult[];
+      } }).task;
+      if (!task || task.kind !== 'bulk') return;
+      updateTask(task.id, {
+        status: task.status as BulkTask['status'],
+        total: task.total_items,
+        completed: task.completed_items,
+        failed: task.failed_items,
+        results: task.results ?? [],
+      });
+      if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+        qc.invalidateQueries({ queryKey: vmKeys.all });
+        qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+        setTimeout(() => removeTask(task.id), 4000);
+      }
+    });
+    return () => unsub();
+  }, [qc, updateTask, removeTask]);
 }
 
 // ==================== Disk Resize ====================

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -73,12 +73,13 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusDot } from '@/components/shared/status-dot';
 import { ColumnFilter, multiSelectFilter } from '@/components/shared/column-filter';
-import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync, useInstancesMetricsSync } from '@/hooks/use-instances';
+import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync, useInstancesMetricsSync, useBulkTasksSync } from '@/hooks/use-instances';
 import { useServers } from '@/hooks/use-nodes';
 import { useProfile } from '@/hooks/use-settings';
 import { formatBytes, vmTypeLabel, formatUptime, formatVmConfig } from '@/lib/format';
 import { apiClient } from '@/lib/api-client';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
+import { useBulkTasksStore } from '@/stores/bulk-tasks-store';
 import type { VMInstance } from '@/types';
 import { toast } from 'sonner';
 
@@ -230,8 +231,23 @@ export default function InstancesPage() {
   const { t } = useTranslation();
   const { data: vms, isLoading } = useVirtualMachines();
   useVMStatusSync();
+  useBulkTasksSync();
   const metricsMap = useInstancesMetricsSync();
   const bulkOp = useBulkOperation();
+  const bulkTasks = useBulkTasksStore((s) => s.tasks);
+  const addBulkTask = useBulkTasksStore((s) => s.addTask);
+
+  // Human-readable label for an in-flight bulk action (status overlay / progress).
+  const bulkActionLabel = useCallback((action: string) => {
+    switch (action) {
+      case 'start': return t('instances.status_starting', 'Запуск');
+      case 'stop': return t('instances.status_stopping', 'Остановка');
+      case 'restart': return t('instances.status_restarting', 'Перезагрузка');
+      case 'shutdown': return t('instances.status_shutting_down', 'Выключение');
+      case 'delete': return t('instances.status_deleting', 'Удаление');
+      default: return action;
+    }
+  }, [t]);
 
   // ── Deploy task polling ──────────────────────────────────────────
   const { tasks: deployTasks, updateTask, removeTask } = useDeployTasksStore();
@@ -371,6 +387,22 @@ export default function InstancesPage() {
     return m;
   }, [deployTasks]);
 
+  // Map (server_id:vmid) -> in-flight bulk action for rows being processed by an
+  // active bulk task (start/stop/restart/...). An item drops out of the overlay
+  // once it shows up in the task's results (then the row reflects the live status).
+  const bulkOverlayByVm = useMemo(() => {
+    const m = new Map<string, { action: string }>();
+    for (const task of bulkTasks) {
+      if (task.status !== 'pending' && task.status !== 'running') continue;
+      const done = new Set(task.results.map((r) => `${r.server_id}:${r.vmid}`));
+      for (const it of task.items) {
+        const k = `${it.server_id}:${it.vmid}`;
+        if (!done.has(k)) m.set(k, { action: task.action });
+      }
+    }
+    return m;
+  }, [bulkTasks]);
+
   const allRows = useMemo<VMInstance[]>(() => [...ghostRows, ...filteredVMs], [ghostRows, filteredVMs]);
 
   // Merge live WS metrics into rows for real-time rendering
@@ -409,6 +441,27 @@ export default function InstancesPage() {
     return [...new Set(source.map((v) => v.node))].sort();
   }, [vms, serverFilter]);
 
+  // The "node" column shows the panel-side server name (the name entered in the
+  // add-server form), not the Proxmox node hostname. server_id → server.name is
+  // the exact mapping; nodeName → server.name is a best-effort fallback used by
+  // the filter UI (assumes one node per server, which holds for option-2 setups).
+  const serverNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const s of servers) m.set(s.id, s.name);
+    return m;
+  }, [servers]);
+
+  const nodeLabel = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const v of vms ?? []) {
+      if (v.node && v.server_id != null) {
+        const sn = serverNameById.get(v.server_id);
+        if (sn) m.set(v.node, sn);
+      }
+    }
+    return m;
+  }, [vms, serverNameById]);
+
   // Drop a stale persisted node filter when that node is gone from the active
   // workspace / selected server (same failure mode as the server filter above).
   useEffect(() => {
@@ -438,19 +491,34 @@ export default function InstancesPage() {
 
   const handleBulk = (action: string) => {
     if (!selectedVMs.length) return;
+    const items = selectedVMs.map((vm) => ({
+      server_id: vm.server_id!,
+      vmid: vm.vmid,
+      vm_type: vm.type,
+      name: vm.name || String(vm.vmid),
+      node: vm.node,
+    }));
     bulkOp.mutate(
+      { action, items },
       {
-        action,
-        items: selectedVMs.map((vm) => ({
-          server_id: vm.server_id!,
-          vmid: vm.vmid,
-          vm_type: vm.type,
-          name: vm.name || String(vm.vmid),
-          node: vm.node,
-        })),
-      },
-      {
-        onSuccess: () => { toast.success(`Bulk ${action}: ${selectedVMs.length} items queued`); setRowSelection({}); },
+        onSuccess: (data) => {
+          // Register the task so the list can track its progress via WS
+          // (useBulkTasksSync), the same way instance creation is tracked.
+          if (data?.task_id) {
+            addBulkTask({
+              id: data.task_id,
+              action,
+              items: items.map((i) => ({ server_id: i.server_id, vmid: i.vmid, name: i.name })),
+              status: 'pending',
+              total: items.length,
+              completed: 0,
+              failed: 0,
+              results: [],
+            });
+          }
+          toast.success(`${bulkActionLabel(action)}: ${items.length}`);
+          setRowSelection({});
+        },
         onError: (err) => toast.error(err.message),
       }
     );
@@ -554,6 +622,17 @@ export default function InstancesPage() {
             );
           }
           const status = vm.status;
+          const bulkOv = vm.server_id != null ? bulkOverlayByVm.get(`${vm.server_id}:${vm.vmid}`) : undefined;
+          if (bulkOv) {
+            return (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500 shrink-0" />
+                <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 text-[10px]">
+                  {bulkActionLabel(bulkOv.action)}
+                </Badge>
+              </div>
+            );
+          }
           const overlay = vm.server_id != null ? overlayByVm.get(`${vm.server_id}:${vm.vmid}`) : undefined;
           if (overlay) {
             const label = overlay.kind === 'reinstall'
@@ -594,11 +673,14 @@ export default function InstancesPage() {
       {
         accessorKey: 'node',
         filterFn: multiSelectFilter,
-        meta: { filter: 'select' },
+        meta: { filter: 'select', formatOption: (v: string) => nodeLabel.get(v) ?? v },
         header: t('common.node', 'Node'),
-        cell: ({ getValue }) => (
-          <span className="text-muted-foreground">{getValue<string>()}</span>
-        ),
+        cell: ({ row }) => {
+          const vm = row.original;
+          const label =
+            (vm.server_id != null ? serverNameById.get(vm.server_id) : undefined) ?? vm.node;
+          return <span className="text-muted-foreground">{label}</span>;
+        },
         size: 100,
       },
       {
@@ -809,7 +891,7 @@ export default function InstancesPage() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, deployTasks]
+    [t, deployTasks, overlayByVm, bulkOverlayByVm, bulkActionLabel, serverNameById, nodeLabel]
   );
 
   // ==================== TanStack Table ====================
@@ -910,7 +992,7 @@ export default function InstancesPage() {
           <SelectContent>
             <SelectItem value="all">{t('instances.all_nodes', 'All nodes')}</SelectItem>
             {uniqueNodes.map((n) => (
-              <SelectItem key={n} value={n}>{n}</SelectItem>
+              <SelectItem key={n} value={n}>{nodeLabel.get(n) ?? n}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -923,6 +1005,9 @@ export default function InstancesPage() {
           <Button variant="outline" size="sm" onClick={() => handleBulk('start')} disabled={bulkOp.isPending}>
             <Play className="mr-1 h-3 w-3" /> Start
           </Button>
+          <Button variant="outline" size="sm" onClick={() => handleBulk('restart')} disabled={bulkOp.isPending}>
+            <RotateCcw className="mr-1 h-3 w-3" /> {t('common.restart', 'Перезагрузка')}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => handleBulk('stop')} disabled={bulkOp.isPending}>
             <Square className="mr-1 h-3 w-3" /> Stop
           </Button>
@@ -934,6 +1019,31 @@ export default function InstancesPage() {
           </Button>
         </div>
       )}
+
+      {/* Bulk operation progress (tracked like instance creation) */}
+      {bulkTasks.map((task) => {
+        const processed = task.completed + task.failed;
+        const isDone = task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled';
+        return (
+          <div key={task.id} className="flex items-center gap-3 rounded-lg border bg-muted/50 p-2">
+            {isDone ? (
+              <Power className={`h-4 w-4 ${task.failed > 0 ? 'text-amber-500' : 'text-green-500'}`} />
+            ) : (
+              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+            )}
+            <span className="text-sm font-medium">{bulkActionLabel(task.action)}</span>
+            <InlineProgress value={processed} max={task.total} />
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {processed}/{task.total}
+            </span>
+            {task.failed > 0 && (
+              <span className="text-xs text-red-500">
+                {task.failed} {t('instances.bulk_failed', 'с ошибкой')}
+              </span>
+            )}
+          </div>
+        );
+      })}
 
       {/* Table */}
       <Card>
