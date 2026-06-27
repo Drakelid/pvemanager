@@ -257,6 +257,7 @@
     "destroy": "Уничтожить",
     "task_activity": "Активность задач",
     "status_creating": "Создание",
+    "selected_count": "{{count}} выбрано",
     "status_starting": "Запуск",
     "status_stopping": "Остановка",
     "status_restarting": "Перезагрузка",

@@ -257,6 +257,7 @@
     "destroy": "Destroy",
     "task_activity": "Task Activity",
     "status_creating": "Creating",
+    "selected_count": "{{count}} selected",
     "status_starting": "Starting",
     "status_stopping": "Stopping",
     "status_restarting": "Restarting",

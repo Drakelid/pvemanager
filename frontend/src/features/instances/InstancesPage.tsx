@@ -1001,21 +1001,21 @@ export default function InstancesPage() {
       {/* Bulk actions toolbar */}
       {selectedVMs.length > 0 && (
         <div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-2">
-          <span className="text-sm font-medium">{selectedVMs.length} selected</span>
+          <span className="text-sm font-medium">{t('instances.selected_count', '{{count}} выбрано', { count: selectedVMs.length })}</span>
           <Button variant="outline" size="sm" onClick={() => handleBulk('start')} disabled={bulkOp.isPending}>
-            <Play className="mr-1 h-3 w-3" /> Start
+            <Play className="mr-1 h-3 w-3" /> {t('common.start', 'Запустить')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => handleBulk('restart')} disabled={bulkOp.isPending}>
-            <RotateCcw className="mr-1 h-3 w-3" /> {t('common.restart', 'Перезагрузка')}
+            <RotateCcw className="mr-1 h-3 w-3" /> {t('common.restart', 'Перезагрузить')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => handleBulk('stop')} disabled={bulkOp.isPending}>
-            <Square className="mr-1 h-3 w-3" /> Stop
+            <Square className="mr-1 h-3 w-3" /> {t('common.stop', 'Остановить')}
           </Button>
           <Button variant="destructive" size="sm" onClick={() => handleBulk('delete')} disabled={bulkOp.isPending}>
-            <Trash2 className="mr-1 h-3 w-3" /> Delete
+            <Trash2 className="mr-1 h-3 w-3" /> {t('common.delete', 'Удалить')}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setRowSelection({})}>
-            Clear
+            {t('common.clear', 'Очистить')}
           </Button>
         </div>
       )}
