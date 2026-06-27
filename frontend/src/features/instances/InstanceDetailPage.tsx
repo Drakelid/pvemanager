@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { StatusDot } from '@/components/shared/status-dot';
 import { useVirtualMachines, usePowerAction, useVMInterfaces } from '@/hooks/use-instances';
+import { useServers } from '@/hooks/use-nodes';
 import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
 import { vmTypeLabel } from '@/lib/format';
 import { toast } from 'sonner';
@@ -56,6 +57,12 @@ export default function InstanceDetailPage() {
   // Find VM from cached list for basic info
   const { data: allVMs, isLoading } = useVirtualMachines();
   const vm = allVMs?.find((v) => v.server_id === sid && v.vmid === vid);
+
+  // Show the panel-side server name (from the add-server form) instead of the
+  // Proxmox node hostname, matching the instances list. `node` is still used for
+  // all API calls below — only the displayed label changes.
+  const { data: servers = [] } = useServers();
+  const nodeLabel = servers.find((s) => s.id === sid)?.name || node;
 
   const power = usePowerAction(sid, vid, type, node);
   const isRunning = vm?.status === 'running';
@@ -131,7 +138,7 @@ export default function InstanceDetailPage() {
                   <StatusDot status={vm?.status || 'unknown'} pulse />
                   {vm?.status || 'unknown'}
                 </span>
-                <span>Node: {node}</span>
+                <span>{t('common.node', 'Node')}: {nodeLabel}</span>
                 {displayIP && <span className="font-mono">{displayIP}</span>}
               </div>
             </div>

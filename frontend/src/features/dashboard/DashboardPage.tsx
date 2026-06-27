@@ -226,16 +226,24 @@ function ClusterNodesSection({ serverList, nodeStats }: { serverList: Rec[]; nod
     .sort((a, b) => (Number(b.disk_pct) || 0) - (Number(a.disk_pct) || 0))
     .slice(0, 5)
 
-  // Fetch RRD for each of those nodes in parallel
+  // Fetch RRD for each of those nodes in parallel.
+  // Node name comes from the `dashboard_metrics` WS payload, where the field is
+  // `name` (not `node`); fall back to `node` for the REST `resources/all` shape.
   const rrdResults = useQueries({
-    queries: chartNodes.map(n => ({
-      queryKey: ['node-rrd', Number(n.server_id) || 0, String(n.node || ''), timeframe],
-      queryFn: () =>
-        apiClient.get<Rec[]>(
-          `/proxmox/api/${n.server_id}/node/rrddata?node=${n.node}&timeframe=${timeframe}`
-        ),
-      enabled: !!n.server_id && !!n.node,
-    })),
+    queries: chartNodes.map(n => {
+      const nodeName = String(n.node || n.name || '')
+      return {
+        queryKey: ['node-rrd', Number(n.server_id) || 0, nodeName, timeframe],
+        queryFn: () =>
+          apiClient
+            .get<{ data?: Rec[] } | Rec[]>(
+              `/proxmox/api/${n.server_id}/node/rrddata?node=${encodeURIComponent(nodeName)}&timeframe=${timeframe}`
+            )
+            // Endpoint wraps the series in `{ data: [...] }`; tolerate both shapes.
+            .then(r => (Array.isArray(r) ? r : (r?.data ?? []))),
+        enabled: !!n.server_id && !!nodeName,
+      }
+    }),
   })
 
   // Align series by index (all PVE nodes produce same-length RRD arrays)
