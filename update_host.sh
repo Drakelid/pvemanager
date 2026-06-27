@@ -82,11 +82,18 @@ while true; do
         fi
 
         # ── Step 2: build НОВЫХ образов, пока старый стек ещё работает ─────────
-        # Собираем ДО down: если сборка упадёт (частая беда с --no-cache из-за
-        # сети), старый стек остаётся поднятым, а не лежит выключенным.
+        # Собираем ДО down: если сборка упадёт, старый стек остаётся поднятым,
+        # а не лежит выключенным.
         # Собираем и app, и frontend — иначе изменения фронта не доезжают.
-        log "[2/4] docker compose build --no-cache app frontend..."
-        if $COMPOSE_CMD build --no-cache app frontend >> "$LOG_FILE" 2>&1; then
+        #
+        # Сборка КЭШИРУЕМАЯ (без --no-cache): Dockerfile'ы устроены так, что
+        # тяжёлые слои (apt/pip/npm) кэшируются отдельно от исходников, а
+        # COPY кода стоит в конце — поэтому изменения app/frontend всё равно
+        # пересобираются, но без повторного apt/pip/npm на каждый деплой.
+        # --pull обновляет базовые образы. --no-cache НЕ используем: он молотил
+        # сборку с нуля каждый пуш и за пару недель раздул build cache до десятков ГБ.
+        log "[2/4] docker compose build --pull app frontend..."
+        if $COMPOSE_CMD build --pull app frontend >> "$LOG_FILE" 2>&1; then
             log "[2/4] build OK"
         else
             log "[2/4] ERROR: build failed — стек НЕ трогаем, остаётся на старой версии"
@@ -105,6 +112,17 @@ while true; do
         log "[4/4] docker compose up -d --wait..."
         if $COMPOSE_CMD up -d --wait --wait-timeout 180 >> "$LOG_FILE" 2>&1; then
             log "[4/4] docker compose up -d OK (контейнеры healthy)"
+
+            # ── Уборка: не даём диску забиться старыми образами и build-кэшем ──
+            # Запускается ТОЛЬКО после успешного деплоя (стек уже на новой версии).
+            # image prune -f      — удаляет dangling-образы (предыдущие сборки).
+            # builder prune until=24h — чистит build cache старше суток, оставляя
+            #                       свежие слои для быстрых повторных сборок.
+            log "[cleanup] docker image/builder prune..."
+            docker image prune -f >> "$LOG_FILE" 2>&1 || true
+            docker builder prune -f --filter 'until=24h' >> "$LOG_FILE" 2>&1 || true
+            log "[cleanup] done"
+
             log "=== Update completed successfully ==="
         else
             log "[4/4] ERROR: контейнеры не стали healthy за 180с — состояние стека:"
