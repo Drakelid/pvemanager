@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink, ChevronDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { apiClient } from '@/lib/api-client'
 import { getTasksWebSocket } from '@/lib/websocket'
@@ -217,51 +217,20 @@ function NodeStatsCard({ cpuPercent, memPercent, serverName, serverCount }: {
 }
 
 // ==================== Cluster Nodes Section ====================
-function ClusterNodesSection({ serverList, nodeStats }: { serverList: Rec[]; nodeStats: Rec[] }) {
+function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
   const [tab, setTab] = useState<'now' | 'day'>('now')
-  const timeframe = tab === 'now' ? 'hour' : 'day'
 
-  // Top-5 nodes by disk% for chart data
-  const chartNodes = [...nodeStats]
-    .sort((a, b) => (Number(b.disk_pct) || 0) - (Number(a.disk_pct) || 0))
-    .slice(0, 5)
-
-  // Fetch RRD for each of those nodes in parallel.
-  // Node name comes from the `dashboard_metrics` WS payload, where the field is
-  // `name` (not `node`); fall back to `node` for the REST `resources/all` shape.
-  const rrdResults = useQueries({
-    queries: chartNodes.map(n => {
-      const nodeName = String(n.node || n.name || '')
-      return {
-        queryKey: ['node-rrd', Number(n.server_id) || 0, nodeName, timeframe],
-        queryFn: () =>
-          apiClient
-            .get<{ data?: Rec[] } | Rec[]>(
-              `/proxmox/api/${n.server_id}/node/rrddata?node=${encodeURIComponent(nodeName)}&timeframe=${timeframe}`
-            )
-            // Endpoint wraps the series in `{ data: [...] }`; tolerate both shapes.
-            .then(r => (Array.isArray(r) ? r : (r?.data ?? []))),
-        enabled: !!n.server_id && !!nodeName,
-      }
-    }),
-  })
-
-  // Align series by index (all PVE nodes produce same-length RRD arrays)
-  const baseData = (rrdResults[0]?.data as Rec[]) ?? []
-  const chartData = baseData.map((d, i) => {
-    const point: Rec = {
-      t: new Date((Number(d.time) || 0) * 1000).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }),
-    }
-    chartNodes.forEach((n, j) => {
-      const row = ((rrdResults[j]?.data as Rec[]) ?? [])[i]
-      if (row) {
-        point[`n${j}`] = +(
-          ((Number(row.diskread) || 0) + (Number(row.diskwrite) || 0)) / 1_048_576
-        ).toFixed(2)
-      }
-    })
-    return point
-  })
+  // Top-10 nodes by disk usage % — one donut slice per node.
+  // Node name lives in `name` (dashboard_metrics WS payload) or `node`
+  // (REST resources/all); fall back gracefully.
+  const pieData = [...nodeStats]
+    .map(n => ({
+      name: String(n.node || n.name || ''),
+      value: Number(n.disk_pct) || 0,
+    }))
+    .filter(d => d.name && d.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10)
 
   const sorted = [...nodeStats]
     .sort((a, b) =>
@@ -338,39 +307,34 @@ function ClusterNodesSection({ serverList, nodeStats }: { serverList: Rec[]; nod
         </CardContent>
       </Card>
 
-      {/* Disk stats chart — Grafana style, one line per node */}
+      {/* Disk stats — donut, one slice per node by disk usage % */}
       <Card>
         <CardHeader className="pb-2 pt-4 px-5">
           <CardTitle className="text-sm font-semibold">ТОП статистика по диску</CardTitle>
         </CardHeader>
         <CardContent className="px-3 pb-4">
-          {chartData.length === 0 ? (
+          {pieData.length === 0 ? (
             <div className="h-52 flex items-center justify-center text-sm text-muted-foreground">
-              {chartNodes.length > 0 ? 'Загрузка...' : 'Нет данных'}
+              Нет данных
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                <defs>
-                  {chartNodes.map((_, j) => (
-                    <linearGradient key={j} id={`g${j}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={CHART_COLORS[j % CHART_COLORS.length]} stopOpacity={0.2} />
-                      <stop offset="95%" stopColor={CHART_COLORS[j % CHART_COLORS.length]} stopOpacity={0} />
-                    </linearGradient>
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={90}
+                  paddingAngle={2}
+                  strokeWidth={0}
+                >
+                  {pieData.map((_, j) => (
+                    <Cell key={j} fill={CHART_COLORS[j % CHART_COLORS.length]} />
                   ))}
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis
-                  dataKey="t"
-                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                  tickLine={false} axisLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                  tickLine={false} axisLine={false}
-                  unit=" MB"
-                />
+                </Pie>
                 <Tooltip
                   contentStyle={{
                     background: 'hsl(var(--card))',
@@ -378,33 +342,14 @@ function ClusterNodesSection({ serverList, nodeStats }: { serverList: Rec[]; nod
                     borderRadius: 8,
                     fontSize: 11,
                   }}
-                  formatter={(v: number, _: string, props: { dataKey?: string }) => {
-                    const idx = Number(String(props.dataKey ?? '').replace('n', ''))
-                    const name = String(chartNodes[idx]?.node ?? `node-${idx}`)
-                    return [`${v} MB/s`, name]
-                  }}
+                  formatter={(v: number, name: string) => [`${v}%`, name]}
                 />
                 <Legend
-                  formatter={(_, entry) => {
-                    const idx = Number(String((entry as { dataKey?: string }).dataKey ?? '').replace('n', ''))
-                    return <span style={{ fontSize: 11 }}>{String(chartNodes[idx]?.node ?? `node-${idx}`)}</span>
-                  }}
-                  iconType="line"
-                  iconSize={10}
+                  formatter={(value) => <span style={{ fontSize: 11 }}>{value}</span>}
+                  iconType="circle"
+                  iconSize={8}
                 />
-                {chartNodes.map((_, j) => (
-                  <Area
-                    key={j}
-                    type="monotone"
-                    dataKey={`n${j}`}
-                    stroke={CHART_COLORS[j % CHART_COLORS.length]}
-                    fill={`url(#g${j})`}
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls
-                  />
-                ))}
-              </AreaChart>
+              </PieChart>
             </ResponsiveContainer>
           )}
         </CardContent>
@@ -499,7 +444,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Bottom row: nodes table + disk chart */}
-      <ClusterNodesSection serverList={serverList} nodeStats={nodeStats} />
+      <ClusterNodesSection nodeStats={nodeStats} />
     </div>
   )
 }
