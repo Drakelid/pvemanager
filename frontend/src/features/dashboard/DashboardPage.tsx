@@ -336,12 +336,16 @@ function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
                   ))}
                 </Pie>
                 <Tooltip
+                  // Theme vars are oklch(); wrapping them in hsl() yields an
+                  // invalid (transparent) colour, so reference them directly.
                   contentStyle={{
-                    background: 'hsl(var(--card))',
-                    border: '1px solid hsl(var(--border))',
+                    background: 'var(--popover)',
+                    border: '1px solid var(--border)',
                     borderRadius: 8,
                     fontSize: 11,
+                    color: 'var(--popover-foreground)',
                   }}
+                  itemStyle={{ color: 'var(--popover-foreground)' }}
                   formatter={(v: number, name: string) => [`${v}%`, name]}
                 />
                 <Legend
