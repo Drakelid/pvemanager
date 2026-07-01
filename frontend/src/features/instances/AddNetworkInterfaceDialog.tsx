@@ -54,9 +54,10 @@ export default function AddNetworkInterfaceDialog({ open, onClose, serverId, vmi
   const { data: networks } = useNodeNetworks(serverId, node, open);
   const bridges = useMemo(
     () =>
-      (networks?.interfaces ?? [])
-        .filter((i) => i.type === 'bridge')
-        .sort((a, b) => (a.iface || a.name || '').localeCompare(b.iface || b.name || '')),
+      [
+        ...(networks?.interfaces ?? []).filter((i) => i.type === 'bridge'),
+        ...(networks?.sdn_vnets ?? []),
+      ].sort((a, b) => (a.iface || a.name || '').localeCompare(b.iface || b.name || '')),
     [networks],
   );
 

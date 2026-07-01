@@ -656,10 +656,11 @@ export interface NodeNetworkIface {
   ipam_network_id?: number;
   ipam_cidr?: string;
   ipam_name?: string;
+  zone?: string;
 }
 
 export function useNodeNetworks(serverId: number, node: string, enabled = true) {
-  return useQuery<{ node: string; interfaces: NodeNetworkIface[] }>({
+  return useQuery<{ node: string; interfaces: NodeNetworkIface[]; sdn_vnets?: NodeNetworkIface[] }>({
     queryKey: ['node-networks', serverId, node],
     queryFn: () => apiClient.get(`/proxmox/api/servers/${serverId}/nodes/${node}/networks`),
     enabled: enabled && !!node,
