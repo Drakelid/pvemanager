@@ -93,7 +93,7 @@ function ZoneDialog({ serverId, open, onOpenChange, editing }: {
             <div>
               <Label>{t('sdn.type')}</Label>
               <Select value={form.type} onValueChange={v => { if (v) set('type', v); }} disabled={!!editing}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>{ZONE_TYPES.map(z => <SelectItem key={z} value={z}>{z}</SelectItem>)}</SelectContent>
               </Select>
             </div>
@@ -113,14 +113,14 @@ function ZoneDialog({ serverId, open, onOpenChange, editing }: {
           <div className="grid grid-cols-3 gap-3">
             <div><Label>MTU</Label><Input type="number" value={form.mtu} onChange={e => set('mtu', e.target.value)} className="mt-1" /></div>
             <div><Label>{t('sdn.nodes')}</Label><Input value={form.nodes} onChange={e => set('nodes', e.target.value)} className="mt-1" placeholder="node1,node2" /></div>
-            <div>
+            <div className="min-w-0">
               <Label>DNS</Label>
               <Select
                 value={form.dns}
                 onValueChange={v => set('dns', v === '__none__' ? '' : v)}
                 disabled={dnsEntries.length === 0}
               >
-                <SelectTrigger className="mt-1">
+                <SelectTrigger className="mt-1 w-full">
                   <SelectValue placeholder={dnsEntries.length ? '—' : t('sdn.no_dns_entries')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -197,7 +197,7 @@ function VNetDialog({ serverId, open, onOpenChange, editing, zones }: {
             <div>
               <Label>{t('sdn.zone')}</Label>
               <Select value={form.zone} onValueChange={v => { if (v) set('zone', v); }} disabled={!!editing}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder={t('sdn.zone')} /></SelectTrigger>
+                <SelectTrigger className="mt-1 w-full"><SelectValue placeholder={t('sdn.zone')} /></SelectTrigger>
                 <SelectContent>{zones.map(z => <SelectItem key={z.zone} value={z.zone}>{z.zone} ({z.type})</SelectItem>)}</SelectContent>
               </Select>
             </div>
