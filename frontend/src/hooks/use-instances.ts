@@ -652,6 +652,7 @@ export interface NodeNetworkIface {
   type?: string;
   active?: number;
   cidr?: string;
+  comments?: string;
   ipam_network_id?: number;
   ipam_cidr?: string;
   ipam_name?: string;

@@ -53,7 +53,10 @@ export default function AddNetworkInterfaceDialog({ open, onClose, serverId, vmi
 
   const { data: networks } = useNodeNetworks(serverId, node, open);
   const bridges = useMemo(
-    () => (networks?.interfaces ?? []).filter((i) => i.type === 'bridge'),
+    () =>
+      (networks?.interfaces ?? [])
+        .filter((i) => i.type === 'bridge')
+        .sort((a, b) => (a.iface || a.name || '').localeCompare(b.iface || b.name || '')),
     [networks],
   );
 
@@ -190,9 +193,13 @@ export default function AddNetworkInterfaceDialog({ open, onClose, serverId, vmi
                 <SelectContent>
                   {bridges.map((b) => {
                     const name = b.iface || b.name || '';
+                    const hint = b.comments?.trim() || b.ipam_cidr || b.cidr || '';
                     return (
                       <SelectItem key={name} value={name}>
-                        {name}{b.ipam_cidr ? ` (${b.ipam_cidr})` : b.cidr ? ` (${b.cidr})` : ''}
+                        <span className="flex items-center gap-2">
+                          {name}
+                          {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+                        </span>
                       </SelectItem>
                     );
                   })}
