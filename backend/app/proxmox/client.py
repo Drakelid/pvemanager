@@ -1290,32 +1290,38 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             if not self.proxmox:
                 return False
             
+            import re
+
+            # Фильтруем разрешенные параметры
+            allowed_params = {
+                'cores', 'sockets', 'memory', 'balloon', 'name', 'description',
+                'cpu', 'cpulimit', 'cpuunits', 'onboot', 'boot', 'bootdisk',
+                'agent', 'ostype', 'tablet', 'hotplug',
+                'ciuser', 'cipassword', 'sshkeys',
+            }
+            indexed_re = re.compile(r'^(net|scsi|virtio|ide|sata|ipconfig)\d+$')
+            delete_re = re.compile(r'^net\d+(,net\d+)*$')
+
+            filtered_config = {
+                k: v for k, v in config.items()
+                if k in allowed_params or indexed_re.match(k)
+            }
+            # Удаление интерфейсов: delete='net1' (или 'net1,net2')
+            delete_value = config.get('delete')
+            if isinstance(delete_value, str) and delete_re.match(delete_value):
+                filtered_config['delete'] = delete_value
+
+            if not filtered_config:
+                logger.warning(f"Нет разрешенных параметров для обновления VM {vmid}")
+                return False
+
             try:
-                # Фильтруем разрешенные параметры
-                allowed_params = {
-                    'cores', 'sockets', 'memory', 'balloon', 'name', 'description',
-                    'cpu', 'cpulimit', 'cpuunits', 'onboot', 'boot', 'bootdisk',
-                    'net0', 'net1', 'net2', 'net3',
-                    'scsi0', 'scsi1', 'scsi2', 'scsi3',
-                    'virtio0', 'virtio1', 'virtio2', 'virtio3',
-                    'ide0', 'ide1', 'ide2', 'ide3',
-                    'sata0', 'sata1', 'sata2', 'sata3',
-                    'agent', 'ostype', 'tablet', 'hotplug',
-                    'ciuser', 'cipassword', 'sshkeys', 'ipconfig0', 'ipconfig1',
-                }
-                
-                filtered_config = {k: v for k, v in config.items() if k in allowed_params}
-                
-                if filtered_config:
-                    self.proxmox.nodes(node).qemu(vmid).config.put(**filtered_config)
-                    logger.info(f"Конфигурация VM {vmid} обновлена: {list(filtered_config.keys())}")
-                    return True
-                else:
-                    logger.warning(f"Нет разрешенных параметров для обновления VM {vmid}")
-                    return False
+                self.proxmox.nodes(node).qemu(vmid).config.put(**filtered_config)
+                logger.info(f"Конфигурация VM {vmid} обновлена: {list(filtered_config.keys())}")
+                return True
             except Exception as e:
                 logger.error(f"Ошибка обновления конфигурации VM {vmid}: {e}")
-                return False
+                raise RuntimeError(f"Proxmox: {e}") from e
 
         def get_container_config(self, node: str, vmid: int) -> Optional[Dict]:
             """
@@ -1338,68 +1344,51 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.error(f"Ошибка получения конфигурации LXC {vmid}: {e}")
                 return None
 
-        def update_container_config(
-            self,
-            node: str,
-            vmid: int,
-            hostname: str = None,
-            memory: int = None,
-            swap: int = None,
-            cores: int = None,
-            cpulimit: float = None,
-            onboot: bool = None,
-            description: str = None,
-            net0: str = None
-        ) -> bool:
+        def update_container_config(self, node: str, vmid: int, config: Dict) -> bool:
             """
             Обновить конфигурацию LXC контейнера
-            
+
             Args:
                 node: Имя ноды
                 vmid: ID контейнера
-                hostname: Новое имя хоста
-                memory: Память в MB
-                swap: Swap в MB
-                cores: Количество ядер
-                cpulimit: Лимит CPU (0.0-128.0)
-                onboot: Автозапуск
-                description: Описание
-                net0: Конфигурация сети
-            
+                config: Словарь с параметрами для обновления
+
             Returns:
                 True при успехе
             """
             if not self.proxmox:
                 return False
-            
-            try:
-                params = {}
-                
-                if hostname:
-                    params['hostname'] = hostname
-                if memory is not None:
-                    params['memory'] = memory
-                if swap is not None:
-                    params['swap'] = swap
-                if cores is not None:
-                    params['cores'] = cores
-                if cpulimit is not None:
-                    params['cpulimit'] = cpulimit
-                if onboot is not None:
-                    params['onboot'] = 1 if onboot else 0
-                if description is not None:
-                    params['description'] = description
-                if net0:
-                    params['net0'] = net0
-                
-                if params:
-                    self.proxmox.nodes(node).lxc(vmid).config.put(**params)
-                    logger.info(f"Конфигурация LXC {vmid} обновлена: {list(params.keys())}")
-                    return True
+
+            import re
+
+            allowed_params = {
+                'hostname', 'memory', 'swap', 'cores', 'cpulimit', 'cpuunits',
+                'onboot', 'description', 'nameserver', 'searchdomain', 'tags',
+            }
+            net_re = re.compile(r'^net\d+$')
+            delete_re = re.compile(r'^net\d+(,net\d+)*$')
+
+            filtered_config = {}
+            for k, v in config.items():
+                if k == 'onboot':
+                    filtered_config['onboot'] = 1 if v in (True, 1, '1') else 0
+                elif k in allowed_params or net_re.match(k):
+                    filtered_config[k] = v
+            delete_value = config.get('delete')
+            if isinstance(delete_value, str) and delete_re.match(delete_value):
+                filtered_config['delete'] = delete_value
+
+            if not filtered_config:
+                logger.warning(f"Нет разрешенных параметров для обновления LXC {vmid}")
                 return False
+
+            try:
+                self.proxmox.nodes(node).lxc(vmid).config.put(**filtered_config)
+                logger.info(f"Конфигурация LXC {vmid} обновлена: {list(filtered_config.keys())}")
+                return True
             except Exception as e:
                 logger.error(f"Ошибка обновления конфигурации LXC {vmid}: {e}")
-                return False
+                raise RuntimeError(f"Proxmox: {e}") from e
 
         def resize_container_disk(self, node: str, vmid: int, disk: str, size: str) -> bool:
             """
