@@ -645,6 +645,26 @@ export function useExecuteCommand(serverId: number, vmid: number) {
   });
 }
 
+// ==================== Node networks (bridges) ====================
+export interface NodeNetworkIface {
+  iface?: string;
+  name?: string;
+  type?: string;
+  active?: number;
+  cidr?: string;
+  ipam_network_id?: number;
+  ipam_cidr?: string;
+  ipam_name?: string;
+}
+
+export function useNodeNetworks(serverId: number, node: string, enabled = true) {
+  return useQuery<{ node: string; interfaces: NodeNetworkIface[] }>({
+    queryKey: ['node-networks', serverId, node],
+    queryFn: () => apiClient.get(`/proxmox/api/servers/${serverId}/nodes/${node}/networks`),
+    enabled: enabled && !!node,
+  });
+}
+
 // ==================== ISO mount/unmount (KVM only) ====================
 export interface IsoItem {
   volid: string;
