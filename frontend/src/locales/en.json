@@ -493,7 +493,8 @@
     "gateway": "Gateway",
     "snat": "SNAT",
     "dnszoneprefix": "DNS zone prefix",
-    "create_ipam": "Also create a matching IPAM network"
+    "create_ipam": "Also create a matching IPAM network",
+    "no_dns_entries": "No SDN DNS servers"
   },
   "templates": {
     "title": "OS Templates",
@@ -637,7 +638,6 @@
     "vmids_hint": "Comma-separated VMIDs (e.g. 100, 101) or 'all' for every VM/CT.",
     "all_vms": "All VMs/CTs",
     "all_vms_selected": "All VMs/CTs on the node selected",
-    "selected_count": "Selected: {{count}}",
     "select_all_visible": "Select all visible",
     "clear_selection": "Clear",
     "pick_server_node_first": "Select a server and node first",

@@ -41,6 +41,20 @@ export function useSDNSubnets(serverId: number, vnet: string) {
   });
 }
 
+export interface SDNDnsEntry {
+  dns: string;
+  type?: string;
+  url?: string;
+}
+
+export function useSDNDns(serverId: number, enabled = true) {
+  return useQuery({
+    queryKey: ['sdn-dns', serverId] as const,
+    queryFn: () => apiClient.get<{ dns: SDNDnsEntry[] }>(`/proxmox/api/servers/${serverId}/sdn/dns`),
+    enabled: serverId > 0 && enabled,
+  });
+}
+
 // Invalidate the SDN status (pending indicator) alongside the changed entity.
 function useSDNInvalidator(serverId: number) {
   const qc = useQueryClient();

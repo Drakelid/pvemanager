@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  useSDNStatus, useSDNZones, useSDNVNets, useSDNSubnets,
+  useSDNStatus, useSDNZones, useSDNVNets, useSDNSubnets, useSDNDns,
   useCreateSDNZone, useUpdateSDNZone, useDeleteSDNZone,
   useCreateSDNVNet, useUpdateSDNVNet, useDeleteSDNVNet,
   useCreateSDNSubnet, useDeleteSDNSubnet, useApplySDN,
@@ -42,6 +42,9 @@ function ZoneDialog({ serverId, open, onOpenChange, editing }: {
   const { t } = useTranslation();
   const createZone = useCreateSDNZone(serverId);
   const updateZone = useUpdateSDNZone(serverId);
+  // Zone `dns` is the ID of an SDN DNS entry (Datacenter → SDN → Options), not an IP
+  const { data: dnsData } = useSDNDns(serverId, open);
+  const dnsEntries = dnsData?.dns ?? [];
   // Dialog is freshly mounted on each open, so init state lazily from `editing`.
   const [form, setForm] = useState<ZoneForm>(() => editing ? {
     zone: editing.zone,
@@ -110,7 +113,22 @@ function ZoneDialog({ serverId, open, onOpenChange, editing }: {
           <div className="grid grid-cols-3 gap-3">
             <div><Label>MTU</Label><Input type="number" value={form.mtu} onChange={e => set('mtu', e.target.value)} className="mt-1" /></div>
             <div><Label>{t('sdn.nodes')}</Label><Input value={form.nodes} onChange={e => set('nodes', e.target.value)} className="mt-1" placeholder="node1,node2" /></div>
-            <div><Label>DNS</Label><Input value={form.dns} onChange={e => set('dns', e.target.value)} className="mt-1" /></div>
+            <div>
+              <Label>DNS</Label>
+              <Select
+                value={form.dns}
+                onValueChange={v => set('dns', v === '__none__' ? '' : v)}
+                disabled={dnsEntries.length === 0}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder={dnsEntries.length ? '—' : t('sdn.no_dns_entries')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">—</SelectItem>
+                  {dnsEntries.map(d => <SelectItem key={d.dns} value={d.dns}>{d.dns}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
         <DialogFooter>

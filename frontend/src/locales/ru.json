@@ -493,7 +493,8 @@
     "gateway": "Шлюз",
     "snat": "SNAT",
     "dnszoneprefix": "Префикс DNS-зоны",
-    "create_ipam": "Также создать соответствующую IPAM-сеть"
+    "create_ipam": "Также создать соответствующую IPAM-сеть",
+    "no_dns_entries": "Нет DNS-серверов SDN"
   },
   "templates": {
     "title": "Шаблоны ОС",
@@ -637,7 +638,6 @@
     "vmids_hint": "Список VMID через запятую (напр. 100, 101) или слово all для всех VM/CT.",
     "all_vms": "Все VM/CT",
     "all_vms_selected": "Выбраны все VM/CT на узле",
-    "selected_count": "Выбрано: {{count}}",
     "select_all_visible": "Выбрать все видимые",
     "clear_selection": "Очистить",
     "pick_server_node_first": "Сначала выберите сервер и узел",
