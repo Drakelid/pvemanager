@@ -915,7 +915,17 @@ export default function InstancesPage() {
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
     initialState: { pagination: { pageSize: 25 } },
+    // Live WS metrics replace `data` every second; without this the table
+    // would snap back to page 1 on every tick.
+    autoResetPageIndex: false,
   });
+
+  // Filters can shrink the row set below the current page — go back to page 1
+  // only when the user actually changes filtering.
+  useEffect(() => {
+    table.setPageIndex(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnFilters, search, typeTab, statusFilter, serverFilter, nodeFilter]);
 
   // ==================== Render ====================
   return (
