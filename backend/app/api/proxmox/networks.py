@@ -72,7 +72,33 @@ def list_node_networks(
                 record["ipam_name"] = ipam_net.name
             enriched.append(record)
 
-        return JSONResponse(content={"node": node, "interfaces": enriched})
+        # SDN vnets are usable as bridges in VM/LXC NICs but are not returned
+        # by /nodes/{node}/network. They belong to a zone, not a node — include
+        # only vnets whose zone covers this node (empty zone nodes = all nodes).
+        sdn_vnets = []
+        zones = {z.get("zone"): z for z in client.get_sdn_zones()}
+        for vnet in client.get_sdn_vnets():
+            name = vnet.get("vnet", "")
+            if not name:
+                continue
+            zone_name = vnet.get("zone", "")
+            zone_nodes = (zones.get(zone_name, {}).get("nodes") or "").replace(" ", "")
+            if zone_nodes and node not in zone_nodes.split(","):
+                continue
+            record = {
+                "iface": name,
+                "type": "vnet",
+                "zone": zone_name,
+                "comments": vnet.get("alias") or f"SDN ({zone_name})",
+            }
+            ipam_net = bridge_to_ipam.get(name)
+            if ipam_net:
+                record["ipam_network_id"] = ipam_net.id
+                record["ipam_cidr"] = ipam_net.network
+                record["ipam_name"] = ipam_net.name
+            sdn_vnets.append(record)
+
+        return JSONResponse(content={"node": node, "interfaces": enriched, "sdn_vnets": sdn_vnets})
     except Exception as e:
         logger.error(f"Error listing node {node} networks for server {server_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
