@@ -38,6 +38,23 @@ class NetworkMixin:
                 logger.error(f"Error getting SDN zones: {e}")
                 return []
 
+        def get_sdn_dns(self) -> List[Dict]:
+            """
+            Get SDN DNS server entries (Datacenter -> SDN -> Options -> DNS).
+
+            Returns:
+                List of DNS entries with dns (id), type, url, etc.
+            """
+            if not self.proxmox:
+                return []
+
+            try:
+                entries = self.proxmox.cluster.sdn.dns.get()
+                return entries if isinstance(entries, list) else []
+            except Exception as e:
+                logger.error(f"Error getting SDN DNS entries: {e}")
+                return []
+
         def create_sdn_zone(self, zone: str, zone_type: str = "simple", **kwargs) -> Dict:
             """
             Create a new SDN zone.

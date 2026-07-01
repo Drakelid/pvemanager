@@ -69,6 +69,25 @@ def get_sdn_zones(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/servers/{server_id}/sdn/dns")
+def get_sdn_dns(
+    server_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:view"))
+):
+    """Get SDN DNS server entries (zone `dns` option expects one of their IDs)"""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    try:
+        client = _get_proxmox_client(server)
+        return JSONResponse(content={"dns": client.get_sdn_dns()})
+    except Exception as e:
+        logger.error(f"Error getting SDN DNS entries for server {server_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/api/servers/{server_id}/sdn/zones")
 async def create_sdn_zone(
     server_id: int,
