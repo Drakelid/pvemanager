@@ -247,6 +247,7 @@
     "all_nodes": "Все узлы",
     "all_servers": "Все серверы",
     "no_instances": "Инстансы не найдены",
+    "deploy_completed_with_warnings": "ВМ создана, но часть настроек не применилась",
     "try_other_search": "Попробуйте другой поисковый запрос",
     "create_first": "Создайте свой первый инстанс",
     "showing": "Показано",

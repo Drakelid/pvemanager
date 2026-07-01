@@ -891,6 +891,39 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.error(f"Error replicating template to {target_node}: {e}")
                 return None
 
+        def wait_for_vm_unlock(self, node: str, vmid: int, timeout: int = 120) -> bool:
+            """
+            Дождаться снятия блокировки VM (lock: clone/migrate/...)
+
+            После wait_for_task клон может ещё держать блокировку, особенно
+            при cross-node клонировании — config.put в этот момент падает.
+
+            Args:
+                node: Имя ноды
+                vmid: VMID VM
+                timeout: Таймаут в секундах
+
+            Returns:
+                True если блокировка снята
+            """
+            import time as time_module
+
+            start_time = time_module.time()
+            while time_module.time() - start_time < timeout:
+                try:
+                    config = self.proxmox.nodes(node).qemu(vmid).config.get()
+                    if 'lock' not in config:
+                        return True
+                    logger.info(f"VM {vmid} заблокирована ({config.get('lock')}), ожидание разблокировки...")
+                except Exception as e:
+                    # При cross-node клоне VM может ещё не зарегистрироваться на целевой ноде
+                    if time_module.time() - start_time > 15:
+                        logger.warning(f"VM {vmid} недоступна при ожидании разблокировки: {e}")
+                time_module.sleep(2)
+
+            logger.warning(f"Таймаут ожидания разблокировки VM {vmid}")
+            return False
+
         def configure_vm(
             self,
             node: str,
@@ -905,14 +938,17 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             ssh_keys: str = None,
             ip_config: str = None,
             onboot: bool = None
-        ) -> bool:
+        ) -> Dict:
             """
             Настроить параметры VM после клонирования
-            
+
+            Параметры применяются независимыми группами (compute, network,
+            cloudinit, disk), чтобы ошибка одной группы не отменяла остальные.
+
             Args:
                 node: Имя ноды
                 vmid: VMID VM
-                cores: Количество ядер CPU
+                cores: Количество ядер CPU (итоговое число vCPU, sockets=1)
                 memory: Память в MB
                 disk_size: Размер диска в GB
                 disk_storage: Хранилище диска
@@ -922,94 +958,178 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 ssh_keys: SSH ключи (public)
                 ip_config: Конфигурация IP (например, "ip=dhcp" или "ip=192.168.1.100/24,gw=192.168.1.1")
                 onboot: Автозапуск VM при старте хоста
-            
+
             Returns:
-                True если успешно
+                {"ok": bool, "applied": [группы], "errors": {группа: сообщение}}
             """
+            import time as time_module
+
+            result = {"ok": False, "applied": [], "errors": {}}
             if not self.proxmox:
-                return False
-            
+                result["errors"]["connection"] = "Proxmox client not connected"
+                return result
+
             try:
-                params = {}
-                
-                if cores:
-                    params['cores'] = cores
-                
-                if memory:
-                    params['memory'] = memory
-                
-                if onboot is not None:
-                    params['onboot'] = 1 if onboot else 0
-                
-                if network_bridge:
-                    params['net0'] = f'virtio,bridge={network_bridge}'
-                
-                # Cloud-init configuration
-                if cloud_init_user:
-                    params['ciuser'] = cloud_init_user
-                
-                if cloud_init_password:
-                    params['cipassword'] = cloud_init_password
-                
-                if ssh_keys:
-                    # SSH keys need URL encoding
-                    import urllib.parse
-                    params['sshkeys'] = urllib.parse.quote(ssh_keys, safe='')
-                
-                if ip_config:
-                    params['ipconfig0'] = ip_config
-                
-                if params:
-                    self.proxmox.nodes(node).qemu(vmid).config.put(**params)
-                    logger.info(f"VM {vmid} настроена: {params.keys()}")
-                
-                # Resize disk if needed
-                if disk_size:
-                    try:
-                        # Get current disk info
-                        config = self.proxmox.nodes(node).qemu(vmid).config.get()
-                        # Find the main disk (usually scsi0 or virtio0)
-                        # Exclude ide0/ide2 which are often CD-ROM or cloud-init drives
-                        disk_key = None
-                        current_size_gb = 0
-                        for key in ['scsi0', 'virtio0', 'sata0', 'scsi1', 'virtio1']:
-                            if key in config:
-                                disk_config = config[key]
-                                # Skip if it's a cdrom or cloud-init drive
-                                if 'cdrom' in disk_config.lower() or 'cloudinit' in disk_config.lower() or 'media=cdrom' in disk_config.lower():
-                                    continue
-                                disk_key = key
-                                # Parse current size from config (format: "storage:vm-xxx-disk-0,size=32G")
-                                if 'size=' in disk_config:
-                                    size_part = disk_config.split('size=')[1].split(',')[0]
-                                    if size_part.endswith('G'):
-                                        current_size_gb = int(size_part[:-1])
-                                    elif size_part.endswith('M'):
-                                        current_size_gb = int(size_part[:-1]) // 1024
-                                break
-                        
-                        if disk_key:
-                            # Only resize if requested size is larger than current
-                            if disk_size > current_size_gb:
-                                resize_upid = self.proxmox.nodes(node).qemu(vmid).resize.put(
-                                    disk=disk_key,
-                                    size=f'{disk_size}G'
-                                )
-                                # Wait for resize task to complete before proceeding
-                                if isinstance(resize_upid, str):
-                                    self.wait_for_task(node, resize_upid, timeout=120)
-                                logger.info(f"Диск {disk_key} VM {vmid} изменен с {current_size_gb}G до {disk_size}G")
-                            else:
-                                logger.info(f"Диск {disk_key} VM {vmid} уже имеет размер {current_size_gb}G >= запрошенного {disk_size}G")
-                        else:
-                            logger.warning(f"Не найден основной диск для VM {vmid}")
-                    except Exception as e:
-                        logger.warning(f"Не удалось изменить размер диска VM {vmid}: {e}")
-                
-                return True
+                current_config = dict(self.proxmox.nodes(node).qemu(vmid).config.get())
             except Exception as e:
-                logger.error(f"Ошибка настройки VM {vmid}: {e}")
-                return False
+                logger.warning(f"Не удалось прочитать конфигурацию VM {vmid}: {e}")
+                current_config = {}
+
+            def _apply(group: str, params: Dict):
+                for attempt in (1, 2):
+                    try:
+                        self.proxmox.nodes(node).qemu(vmid).config.put(**params)
+                        result["applied"].append(group)
+                        logger.info(f"VM {vmid}: группа '{group}' применена: {list(params.keys())}")
+                        return
+                    except Exception as e:
+                        if attempt == 1 and 'lock' in str(e).lower():
+                            logger.info(f"VM {vmid} заблокирована, повтор группы '{group}' через 5с")
+                            time_module.sleep(5)
+                            continue
+                        result["errors"][group] = str(e)
+                        logger.error(f"VM {vmid}: ошибка применения группы '{group}': {e}")
+                        return
+
+            # CPU / RAM / автозапуск
+            compute_params = {}
+            if cores:
+                compute_params['cores'] = cores
+                # sockets=1 гарантирует, что итоговое число vCPU равно cores
+                # независимо от топологии шаблона
+                compute_params['sockets'] = 1
+            if memory:
+                compute_params['memory'] = memory
+            if onboot is not None:
+                compute_params['onboot'] = 1 if onboot else 0
+            if compute_params:
+                _apply('compute', compute_params)
+
+            # Сеть: сохраняем модель/MAC/опции из шаблона, меняем только bridge
+            if network_bridge:
+                existing_net0 = current_config.get('net0')
+                if existing_net0:
+                    parts = [p for p in str(existing_net0).split(',') if p.strip()]
+                    new_parts = []
+                    replaced = False
+                    for p in parts:
+                        if p.startswith('bridge='):
+                            new_parts.append(f'bridge={network_bridge}')
+                            replaced = True
+                        else:
+                            new_parts.append(p)
+                    if not replaced:
+                        new_parts.append(f'bridge={network_bridge}')
+                    net0_value = ','.join(new_parts)
+                else:
+                    net0_value = f'virtio,bridge={network_bridge}'
+                _apply('network', {'net0': net0_value})
+
+            # Cloud-init
+            ci_params = {}
+            if cloud_init_user:
+                ci_params['ciuser'] = cloud_init_user
+            if cloud_init_password:
+                ci_params['cipassword'] = cloud_init_password
+            if ssh_keys:
+                # SSH keys need URL encoding
+                import urllib.parse
+                ci_params['sshkeys'] = urllib.parse.quote(ssh_keys, safe='')
+            if ip_config:
+                ci_params['ipconfig0'] = ip_config
+            if ci_params:
+                has_ci_drive = any(
+                    isinstance(v, str) and 'cloudinit' in v for v in current_config.values()
+                )
+                # Если конфиг прочитать не удалось — всё равно пробуем применить
+                if has_ci_drive or not current_config:
+                    _apply('cloudinit', ci_params)
+                else:
+                    result["errors"]["cloudinit"] = (
+                        "шаблон без cloud-init диска — пользователь/пароль/SSH/IP не применены"
+                    )
+                    logger.warning(f"VM {vmid}: нет cloud-init диска, параметры cloud-init пропущены")
+
+            # Диск
+            if disk_size:
+                disk_error = self._resize_vm_disk(node, vmid, disk_size)
+                if disk_error:
+                    result["errors"]["disk"] = disk_error
+                    logger.error(f"VM {vmid}: ошибка ресайза диска: {disk_error}")
+                else:
+                    result["applied"].append('disk')
+
+            result["ok"] = not result["errors"]
+            return result
+
+        def _resize_vm_disk(self, node: str, vmid: int, disk_size: int) -> Optional[str]:
+            """
+            Увеличить основной диск VM до disk_size GB.
+
+            Returns:
+                None при успехе (или если ресайз не нужен), иначе текст ошибки
+            """
+            import re
+
+            def _parse_size_gb(value: str) -> int:
+                if 'size=' not in value:
+                    return 0
+                size_part = value.split('size=')[1].split(',')[0]
+                try:
+                    if size_part.endswith('T'):
+                        return int(float(size_part[:-1]) * 1024)
+                    if size_part.endswith('G'):
+                        return int(float(size_part[:-1]))
+                    if size_part.endswith('M'):
+                        return int(float(size_part[:-1])) // 1024
+                    return int(size_part) // (1024 ** 3)
+                except ValueError:
+                    return 0
+
+            try:
+                config = self.proxmox.nodes(node).qemu(vmid).config.get()
+
+                candidates = {}
+                for key, value in config.items():
+                    if not re.match(r'^(scsi|virtio|sata|ide)\d+$', key):
+                        continue
+                    str_value = str(value)
+                    if 'media=cdrom' in str_value.lower() or 'cloudinit' in str_value.lower():
+                        continue
+                    candidates[key] = str_value
+
+                if not candidates:
+                    return f'основной диск VM {vmid} не найден'
+
+                # Предпочитаем загрузочный диск из boot=order=...
+                disk_key = None
+                boot_match = re.search(r'order=([^,;]+(?:;[^,;]+)*)', str(config.get('boot', '')))
+                if boot_match:
+                    for dev in boot_match.group(1).split(';'):
+                        if dev in candidates:
+                            disk_key = dev
+                            break
+                if not disk_key:
+                    disk_key = sorted(candidates)[0]
+
+                current_size_gb = _parse_size_gb(candidates[disk_key])
+                if disk_size <= current_size_gb:
+                    logger.info(f"Диск {disk_key} VM {vmid} уже имеет размер {current_size_gb}G >= запрошенного {disk_size}G")
+                    return None
+
+                resize_upid = self.proxmox.nodes(node).qemu(vmid).resize.put(
+                    disk=disk_key,
+                    size=f'{disk_size}G'
+                )
+                if isinstance(resize_upid, str):
+                    if not self.wait_for_task(node, resize_upid, timeout=120):
+                        status = self.get_task_status(node, resize_upid) or {}
+                        reason = status.get('exitstatus') or 'resize task failed'
+                        return f'ресайз {disk_key} не удался: {reason}'
+                logger.info(f"Диск {disk_key} VM {vmid} изменен с {current_size_gb}G до {disk_size}G")
+                return None
+            except Exception as e:
+                return str(e)
 
         def get_task_status(self, node: str, upid: str) -> Dict:
             """Get status of a Proxmox task by UPID"""

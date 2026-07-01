@@ -271,6 +271,12 @@ export default function InstancesPage() {
             error_message: data.error_message ?? undefined,
           });
           if (data.status === 'completed') {
+            if (data.error_message) {
+              toast.warning(
+                t('instances.deploy_completed_with_warnings', 'ВМ создана, но часть настроек не применилась'),
+                { description: data.error_message, duration: 15000 },
+              );
+            }
             setTimeout(() => removeTask(task.id), 5000);
           }
         } catch { /* ignore */ }

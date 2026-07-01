@@ -824,6 +824,10 @@ def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
         deploy_node = target_node
         _update_deploy_task(task_id, 'running', 'Клонирование завершено', 65, vmid=new_vmid, node=deploy_node)
 
+        # Клон может ещё держать lock (особенно cross-node) — config.put упадёт
+        _update_deploy_task(task_id, 'running', 'Ожидание разблокировки VM...', 66, vmid=new_vmid, node=deploy_node)
+        client.wait_for_vm_unlock(deploy_node, new_vmid, timeout=120)
+
         # IPAM
         allocated_ip = deploy_data.ip_address
         ipam_allocation = None
@@ -903,7 +907,7 @@ def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
                 _uniq_ssh.append(_k)
         ssh_keys = "\n".join(_uniq_ssh)
 
-        config_success = client.configure_vm(
+        config_result = client.configure_vm(
             node=deploy_node,
             vmid=new_vmid,
             cores=cores,
@@ -916,8 +920,12 @@ def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
             ip_config=ip_config,
             onboot=deploy_data.onboot
         )
-        if not config_success:
-            logger.warning(f"VM {new_vmid} created but configuration may be incomplete")
+        config_warnings = None
+        if not config_result.get('ok'):
+            config_warnings = '; '.join(
+                f'{group}: {msg}' for group, msg in config_result.get('errors', {}).items()
+            )
+            logger.warning(f"VM {new_vmid} created but some settings failed: {config_warnings}")
 
         # Start
         if deploy_data.start_after_create:
@@ -972,7 +980,11 @@ def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
             success=True
         )
 
-        _update_deploy_task(task_id, 'completed', 'VM успешно создана!', 100, vmid=new_vmid, node=deploy_node)
+        if config_warnings:
+            _update_deploy_task(task_id, 'completed', 'VM создана с предупреждениями', 100,
+                                vmid=new_vmid, node=deploy_node, error=config_warnings)
+        else:
+            _update_deploy_task(task_id, 'completed', 'VM успешно создана!', 100, vmid=new_vmid, node=deploy_node)
         logger.info(f"[DEPLOY] Task #{task_id}: VM {deploy_data.name} (VMID {new_vmid}) deployed by {username}")
 
     except Exception as e:

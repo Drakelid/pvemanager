@@ -247,6 +247,7 @@
     "all_nodes": "All nodes",
     "all_servers": "All servers",
     "no_instances": "No instances found",
+    "deploy_completed_with_warnings": "VM created, but some settings were not applied",
     "try_other_search": "Try a different search query",
     "create_first": "Create your first instance",
     "showing": "Showing",
