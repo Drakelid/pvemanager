@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Monitor, Search, Download, Trash2, Loader2, Rocket, PackagePlus } from 'lucide-react';
+import { Monitor, Search, Download, Trash2, Loader2, Rocket, PackagePlus, Pencil } from 'lucide-react';
 import { OsLogo } from './OsLogo';
-import { DeployDialog, DownloadCTDialog } from './TemplateDialogs';
+import { DeployDialog, DownloadCTDialog, EditTemplateDialog } from './TemplateDialogs';
 import type { OSTemplate } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ export default function TemplatesPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importServerId, setImportServerId] = useState<string>('');
   const [deployTpl, setDeployTpl] = useState<OSTemplate | null>(null);
+  const [editTpl, setEditTpl] = useState<OSTemplate | null>(null);
   const [downloadOpen, setDownloadOpen] = useState(false);
 
   const { data: groups = [] } = useTemplateGroups();
@@ -123,14 +124,25 @@ export default function TemplatesPage() {
                       <p className="text-xs text-muted-foreground">{tpl.group_name}</p>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0 text-destructive"
-                    onClick={async () => { if (await confirm(t('common.confirm_delete'))) deleteTpl.mutate(tpl.id); }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0"
+                      title={t('templates.edit_group')}
+                      onClick={() => setEditTpl(tpl)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0 text-destructive"
+                      onClick={async () => { if (await confirm(t('common.confirm_delete'))) deleteTpl.mutate(tpl.id); }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant={tpl.vm_type === 'lxc' ? 'secondary' : 'default'} className="text-xs">
@@ -156,6 +168,7 @@ export default function TemplatesPage() {
       )}
 
       <DeployDialog template={deployTpl} onClose={() => setDeployTpl(null)} />
+      <EditTemplateDialog template={editTpl} onClose={() => setEditTpl(null)} />
       <DownloadCTDialog open={downloadOpen} onClose={() => setDownloadOpen(false)} />
 
       {/* Import Dialog */}

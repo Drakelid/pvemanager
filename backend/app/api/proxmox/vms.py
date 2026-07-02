@@ -376,6 +376,12 @@ def _resolve_clone_owner(db: Session, current_user: User, owner_id: Optional[int
     return current_user.id
 
 
+class MigrateRequest(BaseModel):
+    target_node: str
+    target_storage: Optional[str] = None
+    online: bool = False
+
+
 class ChangePasswordRequest(BaseModel):
     username: str = "root"
     password: str
@@ -459,6 +465,76 @@ def clone_container_endpoint(
         current_user.id, current_user.username, owner_id,
     )
     return DeployTaskStartResponse(task_id=task.id, status='pending', name=body.new_name)
+
+
+# -------- Migrate (move VM/LXC to another cluster node) --------
+
+@router.post("/api/{server_id}/vm/{vmid}/migrate", status_code=202)
+def migrate_vm_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: MigrateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vm:migrate"))
+):
+    """Мигрировать VM (qemu) на другую ноду — фоновая задача."""
+    from ...models import DeployTask
+    from ..templates import _deploy_executor, DeployTaskStartResponse
+    from .async_ops import _do_migrate_sync
+
+    require_vm_access(db, current_user, server_id, vmid)
+    _resolve_server(db, server_id)
+    if body.target_node == node:
+        raise HTTPException(status_code=400, detail="Целевая нода совпадает с текущей")
+
+    task = DeployTask(
+        kind='migrate', name=f'migrate {vmid} → {body.target_node}', status='pending',
+        step='В очереди...', progress=0,
+        template_id=None, server_id=server_id, user_id=current_user.id, node=node,
+    )
+    db.add(task); db.commit(); db.refresh(task)
+
+    _deploy_executor.submit(
+        _do_migrate_sync, task.id, server_id, vmid, node, 'qemu',
+        body.target_node, body.target_storage, body.online,
+        current_user.id, current_user.username,
+    )
+    return DeployTaskStartResponse(task_id=task.id, status='pending', name=task.name)
+
+
+@router.post("/api/{server_id}/container/{vmid}/migrate", status_code=202)
+def migrate_container_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: MigrateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("lxc:migrate"))
+):
+    """Мигрировать LXC контейнер на другую ноду — фоновая задача."""
+    from ...models import DeployTask
+    from ..templates import _deploy_executor, DeployTaskStartResponse
+    from .async_ops import _do_migrate_sync
+
+    require_vm_access(db, current_user, server_id, vmid)
+    _resolve_server(db, server_id)
+    if body.target_node == node:
+        raise HTTPException(status_code=400, detail="Целевая нода совпадает с текущей")
+
+    task = DeployTask(
+        kind='migrate', name=f'migrate {vmid} → {body.target_node}', status='pending',
+        step='В очереди...', progress=0,
+        template_id=None, server_id=server_id, user_id=current_user.id, node=node,
+    )
+    db.add(task); db.commit(); db.refresh(task)
+
+    _deploy_executor.submit(
+        _do_migrate_sync, task.id, server_id, vmid, node, 'lxc',
+        body.target_node, body.target_storage, body.online,
+        current_user.id, current_user.username,
+    )
+    return DeployTaskStartResponse(task_id=task.id, status='pending', name=task.name)
 
 
 # -------- Reinstall (re-clone from saved template) --------

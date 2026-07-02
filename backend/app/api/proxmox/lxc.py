@@ -381,11 +381,17 @@ def list_lxc_templates(
 def list_lxc_storages(
     server_id: int,
     node: Optional[str] = None,
+    content: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("vm:view")),
 ):
     """
-    Список хранилищ ноды, пригодных для rootfs LXC контейнера.
+    Список хранилищ ноды для дисков инстансов.
+
+    content:
+        'rootdir' — хранилища для rootfs LXC контейнера
+        'images'  — хранилища для диска ВМ KVM (файлы диска)
+        None      — обратная совместимость: rootdir ИЛИ images
     """
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
@@ -402,19 +408,24 @@ def list_lxc_storages(
     if not target_node:
         raise HTTPException(status_code=400, detail="Не удалось определить ноду")
 
-    storages = client.get_node_storages(target_node)
-    result = []
-    for s in storages:
-        content = s.get("content", "")
-        if "rootdir" in content or "images" in content:
-            result.append({
-                "storage": s.get("storage"),
-                "type": s.get("type"),
-                "avail": s.get("avail"),
-                "total": s.get("total"),
-                "used": s.get("used"),
-                "active": s.get("active", 0),
-            })
+    if content in ("rootdir", "images", "vztmpl", "import", "iso"):
+        # Точная фильтрация по типу контента (активные/включённые хранилища)
+        storages = client.get_download_target_storages(target_node, content)
+    else:
+        # Без параметра — прежнее поведение: rootdir ИЛИ images
+        storages = [
+            s for s in client.get_node_storages(target_node)
+            if "rootdir" in (s.get("content", "") or "") or "images" in (s.get("content", "") or "")
+        ]
+
+    result = [{
+        "storage": s.get("storage"),
+        "type": s.get("type"),
+        "avail": s.get("avail"),
+        "total": s.get("total"),
+        "used": s.get("used"),
+        "active": s.get("active", 0),
+    } for s in storages]
     return JSONResponse(content={"storages": result})
 
 

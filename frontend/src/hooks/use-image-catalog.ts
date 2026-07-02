@@ -75,6 +75,7 @@ export interface ImageDownloadRequest {
   checksum_algorithm?: string;
   // Авто-конвертация qcow2 → VM-шаблон
   to_template?: boolean;
+  vmid?: number;
   disk_storage?: string;
   cores?: number;
   memory?: number;

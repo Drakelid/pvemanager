@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Disc, Eye, EyeOff, Sparkles, Copy, KeyRound, FileText, Terminal as TerminalIcon, Play, Square, RotateCcw, Power, AlertTriangle } from 'lucide-react';
+import { Loader2, Disc, Eye, EyeOff, Sparkles, Copy, KeyRound, FileText, Terminal as TerminalIcon, Play, Square, RotateCcw, Power, AlertTriangle, ArrowRightLeft } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/select';
 import {
   useCloneInstance,
+  useMigrateInstance,
+  useVMStatus,
   useReinstallInstance,
   useChangePassword,
   useUpdateNotes,
@@ -41,6 +43,7 @@ export type PowerAction = 'start' | 'stop' | 'restart' | 'shutdown';
 
 export type InstanceAction =
   | 'clone'
+  | 'migrate'
   | 'reinstall'
   | 'change-password'
   | 'notes'
@@ -67,6 +70,7 @@ export default function InstanceActionDialogs(props: Props) {
   return (
     <>
       <CloneDialog open={open === 'clone'} onClose={close} {...shared} />
+      <MigrateDialog open={open === 'migrate'} onClose={close} {...shared} />
       <ReinstallDialog open={open === 'reinstall'} onClose={close} {...shared} />
       <ChangePasswordDialog open={open === 'change-password'} onClose={close} {...shared} />
       <NotesDialog open={open === 'notes'} onClose={close} {...shared} />
@@ -216,6 +220,119 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
           <Button onClick={submit} disabled={!newName.trim() || clone.isPending}>
             {clone.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Клонировать
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ==================== Migrate ====================
+
+const MIGRATE_SAME_STORAGE = '__same__';
+
+function MigrateDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
+  const [targetNode, setTargetNode] = useState('');
+  const [targetStorage, setTargetStorage] = useState('');
+  const [online, setOnline] = useState(false);
+  const migrate = useMigrateInstance(serverId, vmid, type, node);
+  const addDeployTask = useDeployTasksStore((s) => s.addTask);
+
+  const { data: nodesResp } = useNodes(serverId);
+  const nodes = (nodesResp?.nodes ?? []).filter((n) => n.node !== node);
+  const { data: status } = useVMStatus(serverId, vmid, type, node, open);
+  const isRunning = status?.status === 'running';
+  const { data: storages = [] } = useLXCStorages(serverId, targetNode || node);
+
+  // Сброс формы при открытии; online по умолчанию = инстанс запущен.
+  useEffect(() => {
+    if (open) {
+      setTargetNode('');
+      setTargetStorage('');
+      setOnline(isRunning);
+    }
+  }, [open, isRunning]);
+
+  const submit = () => {
+    if (!targetNode) return;
+    migrate.mutate(
+      {
+        target_node: targetNode,
+        target_storage: targetStorage || undefined,
+        online,
+      },
+      {
+        onSuccess: (data) => {
+          addDeployTask({
+            id: data.task_id,
+            name: data.name,
+            status: 'pending',
+            step: 'В очереди...',
+            progress: 0,
+            vmid,
+            node: targetNode,
+            error_message: null,
+            kind: 'migrate',
+            server_id: serverId,
+          });
+          toast.success(t('instances.migrate_started'));
+          onClose();
+        },
+        onError: (e) => toast.error(e.message),
+      }
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><ArrowRightLeft className="h-4 w-4" /> {t('instances.migrate')}</DialogTitle>
+          <DialogDescription>{t('instances.migrate_desc')} <strong>{name ?? `#${vmid}`}</strong> ({node})</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>{t('instances.migrate_target_node')}</Label>
+            <Select value={targetNode} onValueChange={(v) => { if (v) { setTargetNode(v); setTargetStorage(''); } }}>
+              <SelectTrigger><SelectValue placeholder={t('instances.migrate_select_node')} /></SelectTrigger>
+              <SelectContent>
+                {nodes.map((n) => (
+                  <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {nodes.length === 0 && (
+              <p className="text-xs text-amber-500">{t('instances.migrate_no_targets')}</p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>{t('instances.migrate_target_storage')}</Label>
+            <Select value={targetStorage || MIGRATE_SAME_STORAGE} onValueChange={(v) => setTargetStorage(!v || v === MIGRATE_SAME_STORAGE ? '' : v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={MIGRATE_SAME_STORAGE}>{t('instances.migrate_same_storage')}</SelectItem>
+                {storages.map((s) => (
+                  <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={online} onChange={(e) => setOnline(e.target.checked)} className="h-4 w-4 rounded border-input accent-primary" />
+            <span className="text-sm">{t('instances.migrate_online')}</span>
+          </label>
+          <p className="text-xs text-muted-foreground -mt-2">
+            {isRunning ? t('instances.migrate_online_hint_running') : t('instances.migrate_online_hint_stopped')}
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button onClick={submit} disabled={!targetNode || migrate.isPending}>
+            {migrate.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('instances.migrate')}
           </Button>
         </DialogFooter>
       </DialogContent>

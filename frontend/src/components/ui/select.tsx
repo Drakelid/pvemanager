@@ -109,7 +109,10 @@ function SelectContent({
   sideOffset = 4,
   align = "center",
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  // Открывать список как обычную выпадашку под/над полем, а не выравнивать
+  // выбранный пункт над триггером — иначе длинные списки (напр. в диалогах)
+  // «уезжают» вверх и отрываются от поля.
+  alignItemWithTrigger = false,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<

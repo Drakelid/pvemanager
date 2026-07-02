@@ -4,7 +4,8 @@ import type { LXCTemplate, LXCDeployRequest } from '@/types';
 
 export const lxcKeys = {
   templates: (serverId: number) => ['lxc-templates', serverId] as const,
-  storages: (serverId: number, node?: string) => ['lxc-storages', serverId, node] as const,
+  storages: (serverId: number, node?: string, content?: string) =>
+    ['lxc-storages', serverId, node, content] as const,
 };
 
 // CT templates change rarely — cache for 5 minutes
@@ -20,11 +21,15 @@ export function useLXCTemplates(serverId?: number) {
   });
 }
 
-// Storage list changes rarely — cache for 5 minutes
-export function useLXCStorages(serverId?: number, node?: string) {
-  const params = node ? `?node=${encodeURIComponent(node)}` : '';
+// Storage list changes rarely — cache for 5 minutes.
+// content: 'rootdir' (LXC rootfs) | 'images' (VM disk) | undefined (both)
+export function useLXCStorages(serverId?: number, node?: string, content?: string) {
+  const qs = new URLSearchParams();
+  if (node) qs.set('node', node);
+  if (content) qs.set('content', content);
+  const params = qs.toString() ? `?${qs.toString()}` : '';
   return useQuery({
-    queryKey: lxcKeys.storages(serverId!, node),
+    queryKey: lxcKeys.storages(serverId!, node, content),
     queryFn: () =>
       apiClient
         .get<{ storages: { storage: string; type: string; avail: number; total: number }[] }>(

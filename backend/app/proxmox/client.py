@@ -1295,20 +1295,25 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             # Фильтруем разрешенные параметры
             allowed_params = {
                 'cores', 'sockets', 'memory', 'balloon', 'name', 'description',
-                'cpu', 'cpulimit', 'cpuunits', 'onboot', 'boot', 'bootdisk',
-                'agent', 'ostype', 'tablet', 'hotplug',
+                'cpu', 'cpulimit', 'cpuunits', 'onboot', 'startup', 'boot', 'bootdisk',
+                'agent', 'ostype', 'tablet', 'hotplug', 'protection',
                 'ciuser', 'cipassword', 'sshkeys',
             }
             indexed_re = re.compile(r'^(net|scsi|virtio|ide|sata|ipconfig)\d+$')
-            delete_re = re.compile(r'^net\d+(,net\d+)*$')
+            # Удаляемые ключи: сетевые интерфейсы + опциональные булевы флаги
+            delete_token_re = re.compile(r'^(net\d+|startup|onboot|protection)$')
 
-            filtered_config = {
-                k: v for k, v in config.items()
-                if k in allowed_params or indexed_re.match(k)
-            }
-            # Удаление интерфейсов: delete='net1' (или 'net1,net2')
+            filtered_config = {}
+            for k, v in config.items():
+                if k in ('onboot', 'protection'):
+                    filtered_config[k] = 1 if v in (True, 1, '1') else 0
+                elif k in allowed_params or indexed_re.match(k):
+                    filtered_config[k] = v
+            # Удаление ключей: delete='net1' / 'startup' (или 'net1,startup')
             delete_value = config.get('delete')
-            if isinstance(delete_value, str) and delete_re.match(delete_value):
+            if isinstance(delete_value, str) and delete_value and all(
+                delete_token_re.match(tok) for tok in delete_value.split(',')
+            ):
                 filtered_config['delete'] = delete_value
 
             if not filtered_config:
@@ -1363,19 +1368,22 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
 
             allowed_params = {
                 'hostname', 'memory', 'swap', 'cores', 'cpulimit', 'cpuunits',
-                'onboot', 'description', 'nameserver', 'searchdomain', 'tags',
+                'onboot', 'startup', 'protection', 'description', 'nameserver',
+                'searchdomain', 'tags',
             }
             net_re = re.compile(r'^net\d+$')
-            delete_re = re.compile(r'^net\d+(,net\d+)*$')
+            delete_token_re = re.compile(r'^(net\d+|startup|onboot|protection)$')
 
             filtered_config = {}
             for k, v in config.items():
-                if k == 'onboot':
-                    filtered_config['onboot'] = 1 if v in (True, 1, '1') else 0
+                if k in ('onboot', 'protection'):
+                    filtered_config[k] = 1 if v in (True, 1, '1') else 0
                 elif k in allowed_params or net_re.match(k):
                     filtered_config[k] = v
             delete_value = config.get('delete')
-            if isinstance(delete_value, str) and delete_re.match(delete_value):
+            if isinstance(delete_value, str) and delete_value and all(
+                delete_token_re.match(tok) for tok in delete_value.split(',')
+            ):
                 filtered_config['delete'] = delete_value
 
             if not filtered_config:
@@ -2002,6 +2010,49 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.error(f"Ошибка клонирования LXC {source_vmid} -> {new_vmid}: {e}")
                 return None
 
+        def migrate_vm(
+            self,
+            node: str,
+            vmid: int,
+            target_node: str,
+            target_storage: str = None,
+            online: bool = False,
+            with_local_disks: bool = True,
+        ) -> Optional[str]:
+            """
+            Мигрировать VM (qemu) на другую ноду.
+
+            Args:
+                node: Текущая нода VM
+                vmid: ID виртуальной машины
+                target_node: Целевая нода
+                target_storage: Целевое хранилище (опционально, storage migration)
+                online: Онлайн (live) миграция для запущенной VM
+                with_local_disks: Мигрировать локальные диски (обязательно для live
+                    миграции VM с дисками на local storage)
+
+            Returns:
+                UPID задачи или None
+            """
+            if not self.proxmox:
+                return None
+
+            try:
+                params = {'target': target_node}
+                if online:
+                    params['online'] = 1
+                if with_local_disks:
+                    params['with-local-disks'] = 1
+                if target_storage:
+                    params['targetstorage'] = target_storage
+
+                result = self.proxmox.nodes(node).qemu(vmid).migrate.post(**params)
+                logger.info(f"Миграция VM {vmid} с {node} на {target_node}")
+                return result if isinstance(result, str) else None
+            except Exception as e:
+                logger.error(f"Ошибка миграции VM {vmid}: {e}")
+                raise RuntimeError(f"Proxmox: {e}") from e
+
         def migrate_container(
             self,
             node: str,
@@ -2039,10 +2090,10 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 
                 result = self.proxmox.nodes(node).lxc(vmid).migrate.post(**params)
                 logger.info(f"Миграция LXC {vmid} с {node} на {target_node}")
-                return result
+                return result if isinstance(result, str) else None
             except Exception as e:
                 logger.error(f"Ошибка миграции LXC {vmid}: {e}")
-                return None
+                raise RuntimeError(f"Proxmox: {e}") from e
 
         def get_vm_termproxy(self, node: str, vmid: int) -> Dict:
             """
@@ -2710,4 +2761,44 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             except Exception as e:
                 logger.error(f"Error fetching cluster backup jobs: {e}")
                 return []
+
+        def create_cluster_backup_job(self, props: Dict) -> Dict:
+            """Создать нативное задание бэкапа Proxmox (POST /cluster/backup).
+
+            props — уже подготовленные параметры vzdump (schedule, storage, mode,
+            compress, enabled, all/vmid/pool/node, prune-backups, comment, ...).
+            """
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            try:
+                self.proxmox.cluster.backup.post(**props)
+                logger.info(f"Создано нативное задание бэкапа: {props.get('id') or '(auto id)'}")
+                return {"success": True}
+            except Exception as e:
+                logger.error(f"Ошибка создания задания бэкапа: {e}")
+                return {"success": False, "error": str(e)}
+
+        def update_cluster_backup_job(self, job_id: str, props: Dict) -> Dict:
+            """Обновить нативное задание бэкапа Proxmox (PUT /cluster/backup/{id})."""
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            try:
+                self.proxmox.cluster.backup(job_id).put(**props)
+                logger.info(f"Обновлено нативное задание бэкапа: {job_id}")
+                return {"success": True}
+            except Exception as e:
+                logger.error(f"Ошибка обновления задания бэкапа {job_id}: {e}")
+                return {"success": False, "error": str(e)}
+
+        def delete_cluster_backup_job(self, job_id: str) -> Dict:
+            """Удалить нативное задание бэкапа Proxmox (DELETE /cluster/backup/{id})."""
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            try:
+                self.proxmox.cluster.backup(job_id).delete()
+                logger.info(f"Удалено нативное задание бэкапа: {job_id}")
+                return {"success": True}
+            except Exception as e:
+                logger.error(f"Ошибка удаления задания бэкапа {job_id}: {e}")
+                return {"success": False, "error": str(e)}
 

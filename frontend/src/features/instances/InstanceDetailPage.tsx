@@ -17,6 +17,7 @@ import {
   KeyRound,
   FileText,
   Disc,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -203,6 +204,9 @@ export default function InstanceDetailPage() {
 
                 <DropdownMenuItem onClick={() => setDialog('clone')}>
                   <Copy className="mr-2 h-4 w-4" /> {t('common.clone', 'Клонировать')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setDialog('migrate')}>
+                  <ArrowRightLeft className="mr-2 h-4 w-4" /> {t('instances.migrate', 'Миграция')}
                 </DropdownMenuItem>
                 {isQemu && (
                   <DropdownMenuItem onClick={() => setDialog('iso')}>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Pencil, Trash2, Database, CalendarClock } from 'lucide-react';
+import { Plus, Pencil, Trash2, Database, CalendarClock, Power, PowerOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,8 @@ import { useServers } from '@/hooks/use-nodes';
 import {
   useBackupStorages, useProxmoxBackupJobs,
   useCreateStorage, useUpdateStorage, useDeleteStorage,
+  useCreateProxmoxJob, useUpdateProxmoxJob, useDeleteProxmoxJob,
+  type ProxmoxJobInput,
 } from '@/hooks/use-backups';
 import { formatBytes } from '@/lib/format';
 import { toast } from 'sonner';
@@ -179,6 +181,207 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
   );
 }
 
+// ==================== Native PVE backup job ====================
+
+type NativeJob = Record<string, unknown>;
+
+const BACKUP_MODES = ['snapshot', 'suspend', 'stop'];
+const COMPRESS_OPTS = ['zstd', 'gzip', 'lzo', '0'];
+
+/** Разобрать prune-backups="keep-last=3,keep-daily=7" в отдельные поля. */
+function parsePrune(spec: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (typeof spec !== 'string') return out;
+  for (const part of spec.split(',')) {
+    const [k, v] = part.split('=');
+    const n = Number(v);
+    if (k && !Number.isNaN(n)) out[k.trim()] = n;
+  }
+  return out;
+}
+
+interface NativeJobForm {
+  schedule: string;
+  storage: string;
+  mode: string;
+  compress: string;
+  enabled: boolean;
+  selection_mode: 'all' | 'vmid';
+  vmid: string;
+  keep_last: string;
+  keep_daily: string;
+  keep_weekly: string;
+  keep_monthly: string;
+  comment: string;
+  mailto: string;
+}
+
+function jobToForm(job: NativeJob | null): NativeJobForm {
+  const prune = parsePrune(job?.['prune-backups']);
+  const hasVmid = !!(job && (job.vmid || job.pool) && job.all !== 1 && job.all !== '1');
+  return {
+    schedule: String(job?.schedule ?? ''),
+    storage: String(job?.storage ?? ''),
+    mode: String(job?.mode ?? 'snapshot'),
+    compress: String(job?.compress ?? 'zstd'),
+    enabled: !(job && (job.enabled === 0 || job.enabled === '0')),
+    selection_mode: hasVmid ? 'vmid' : 'all',
+    vmid: String(job?.vmid ?? ''),
+    keep_last: prune['keep-last'] != null ? String(prune['keep-last']) : '',
+    keep_daily: prune['keep-daily'] != null ? String(prune['keep-daily']) : '',
+    keep_weekly: prune['keep-weekly'] != null ? String(prune['keep-weekly']) : '',
+    keep_monthly: prune['keep-monthly'] != null ? String(prune['keep-monthly']) : '',
+    comment: String(job?.comment ?? ''),
+    mailto: String(job?.mailto ?? ''),
+  };
+}
+
+function NativeJobDialog({ serverId, open, onOpenChange, editing, backupStorages }: {
+  serverId: number;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  editing: NativeJob | null;
+  backupStorages: string[];
+}) {
+  const { t } = useTranslation();
+  const [form, setForm] = useState<NativeJobForm>(() => jobToForm(editing));
+  const create = useCreateProxmoxJob(serverId);
+  const update = useUpdateProxmoxJob(serverId);
+  const pending = create.isPending || update.isPending;
+
+  useEffect(() => {
+    if (open) setForm(jobToForm(editing));
+  }, [open, editing]);
+
+  const set = <K extends keyof NativeJobForm>(k: K, v: NativeJobForm[K]) =>
+    setForm(prev => ({ ...prev, [k]: v }));
+
+  const submit = () => {
+    if (!form.schedule.trim() || !form.storage) {
+      toast.error(t('storages.job_schedule_storage_required'));
+      return;
+    }
+    const payload: ProxmoxJobInput = {
+      schedule: form.schedule.trim(),
+      storage: form.storage,
+      mode: form.mode,
+      compress: form.compress,
+      enabled: form.enabled,
+      selection_mode: form.selection_mode,
+      vmid: form.selection_mode === 'vmid' ? form.vmid.trim() : undefined,
+      keep_last: form.keep_last ? Number(form.keep_last) : undefined,
+      keep_daily: form.keep_daily ? Number(form.keep_daily) : undefined,
+      keep_weekly: form.keep_weekly ? Number(form.keep_weekly) : undefined,
+      keep_monthly: form.keep_monthly ? Number(form.keep_monthly) : undefined,
+      comment: form.comment.trim() || undefined,
+      mailto: form.mailto.trim() || undefined,
+    };
+    const opts = {
+      onSuccess: () => { toast.success(editing ? t('storages.job_updated') : t('storages.job_created')); onOpenChange(false); },
+      onError: (e: Error) => toast.error(e.message),
+    };
+    if (editing) update.mutate({ id: String(editing.id), data: payload }, opts);
+    else create.mutate(payload, opts);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarClock className="h-5 w-5" />
+            {editing ? t('storages.edit_native_job') : t('storages.add_native_job')}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>{t('storages.schedule')}</Label>
+              <Input value={form.schedule} onChange={e => set('schedule', e.target.value)} placeholder="sat 03:00" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('storages.id')}</Label>
+              <Select value={form.storage} onValueChange={v => v && set('storage', v)}>
+                <SelectTrigger className="w-full"><SelectValue placeholder={t('backups.select_storage')} /></SelectTrigger>
+                <SelectContent>
+                  {backupStorages.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <p className="-mt-1 text-xs text-muted-foreground">{t('storages.schedule_hint')}</p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>{t('backups.mode')}</Label>
+              <Select value={form.mode} onValueChange={v => v && set('mode', v)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>{BACKUP_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('storages.compress')}</Label>
+              <Select value={form.compress} onValueChange={v => v && set('compress', v)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>{COMPRESS_OPTS.map(c => <SelectItem key={c} value={c}>{c === '0' ? t('storages.no_compress') : c}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>{t('storages.selection')}</Label>
+            <Select value={form.selection_mode} onValueChange={v => v && set('selection_mode', v as 'all' | 'vmid')}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('storages.select_all_guests')}</SelectItem>
+                <SelectItem value="vmid">{t('storages.select_vmids')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {form.selection_mode === 'vmid' && (
+            <div className="space-y-1.5">
+              <Label>{t('backups.vmids')}</Label>
+              <Input value={form.vmid} onChange={e => set('vmid', e.target.value)} placeholder="100,101,102" />
+            </div>
+          )}
+
+          <div>
+            <Label className="text-xs text-muted-foreground">{t('storages.retention')}</Label>
+            <div className="mt-1.5 grid grid-cols-4 gap-2">
+              <div className="space-y-1"><Label className="text-[11px]">{t('backups.keep_last')}</Label><Input type="number" min={0} value={form.keep_last} onChange={e => set('keep_last', e.target.value)} /></div>
+              <div className="space-y-1"><Label className="text-[11px]">{t('backups.keep_daily')}</Label><Input type="number" min={0} value={form.keep_daily} onChange={e => set('keep_daily', e.target.value)} /></div>
+              <div className="space-y-1"><Label className="text-[11px]">{t('backups.keep_weekly')}</Label><Input type="number" min={0} value={form.keep_weekly} onChange={e => set('keep_weekly', e.target.value)} /></div>
+              <div className="space-y-1"><Label className="text-[11px]">{t('backups.keep_monthly')}</Label><Input type="number" min={0} value={form.keep_monthly} onChange={e => set('keep_monthly', e.target.value)} /></div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>{t('storages.comment')}</Label>
+              <Input value={form.comment} onChange={e => set('comment', e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('storages.mailto')}</Label>
+              <Input value={form.mailto} onChange={e => set('mailto', e.target.value)} placeholder="admin@example.com" />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={form.enabled} onChange={e => set('enabled', e.target.checked)} />
+            <span>{t('storages.enabled')}</span>
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+          <Button onClick={submit} disabled={pending}>
+            {editing ? t('common.save') : t('common.create')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function StoragesTab() {
   const { t } = useTranslation();
   const confirm = useConfirm();
@@ -192,12 +395,21 @@ export default function StoragesTab() {
   const { data: storagesData, isLoading } = useBackupStorages(serverId);
   const { data: jobsData } = useProxmoxBackupJobs(serverId);
   const deleteStorage = useDeleteStorage(serverId);
+  const updateJob = useUpdateProxmoxJob(serverId);
+  const deleteJob = useDeleteProxmoxJob(serverId);
 
   const storages = (storagesData?.storages ?? []) as StorageRow[];
   const nativeJobs = (jobsData?.jobs ?? []) as Array<Record<string, unknown>>;
 
+  // Хранилища, поддерживающие бэкапы — для селекта в диалоге задания
+  const backupStorages = storages
+    .filter(s => (s.content ?? '').split(',').map(c => c.trim()).includes('backup'))
+    .map(s => s.storage);
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<StorageRow | null>(null);
+  const [jobDialogOpen, setJobDialogOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<NativeJob | null>(null);
 
   const handleDelete = async (s: string) => {
     if (!await confirm(`${t('storages.delete_confirm')} "${s}"?`)) return;
@@ -205,6 +417,43 @@ export default function StoragesTab() {
       onSuccess: () => toast.success(t('storages.deleted')),
       onError: (e: Error) => toast.error(e.message),
     });
+  };
+
+  const handleDeleteJob = async (job: NativeJob) => {
+    if (!await confirm(`${t('storages.delete_job_confirm')} "${String(job.id)}"?`)) return;
+    deleteJob.mutate(String(job.id), {
+      onSuccess: () => toast.success(t('storages.job_deleted')),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  const handleToggleJob = (job: NativeJob) => {
+    const currentlyEnabled = !(job.enabled === 0 || job.enabled === '0');
+    const form = jobToForm(job);
+    updateJob.mutate(
+      {
+        id: String(job.id),
+        data: {
+          schedule: form.schedule,
+          storage: form.storage,
+          mode: form.mode,
+          compress: form.compress,
+          enabled: !currentlyEnabled,
+          selection_mode: form.selection_mode,
+          vmid: form.selection_mode === 'vmid' ? form.vmid : undefined,
+          keep_last: form.keep_last ? Number(form.keep_last) : undefined,
+          keep_daily: form.keep_daily ? Number(form.keep_daily) : undefined,
+          keep_weekly: form.keep_weekly ? Number(form.keep_weekly) : undefined,
+          keep_monthly: form.keep_monthly ? Number(form.keep_monthly) : undefined,
+          comment: form.comment || undefined,
+          mailto: form.mailto || undefined,
+        },
+      },
+      {
+        onSuccess: () => toast.success(currentlyEnabled ? t('storages.job_disabled') : t('storages.job_enabled')),
+        onError: (e: Error) => toast.error(e.message),
+      }
+    );
   };
 
   return (
@@ -265,9 +514,14 @@ export default function StoragesTab() {
         </CardContent>
       </Card>
 
-      {/* Native PVE backup schedules (read-only) */}
+      {/* Native PVE backup schedules */}
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><CalendarClock className="h-5 w-5" />{t('storages.native_jobs')}</CardTitle></CardHeader>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center gap-2 text-lg"><CalendarClock className="h-5 w-5" />{t('storages.native_jobs')}</CardTitle>
+          <Button size="sm" variant="outline" onClick={() => { setEditingJob(null); setJobDialogOpen(true); }} disabled={!serverId}>
+            <Plus className="mr-1 h-4 w-4" />{t('storages.add_native_job')}
+          </Button>
+        </CardHeader>
         <CardContent>
           {nativeJobs.length === 0 ? (
             <p className="py-4 text-center text-sm text-muted-foreground">{t('storages.no_native_jobs')}</p>
@@ -277,21 +531,38 @@ export default function StoragesTab() {
                 <TableHead>ID</TableHead><TableHead>{t('storages.schedule')}</TableHead>
                 <TableHead>{t('storages.id')}</TableHead><TableHead>{t('backups.mode')}</TableHead>
                 <TableHead>{t('common.status')}</TableHead>
+                <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {nativeJobs.map((j, i) => (
-                  <TableRow key={String(j.id ?? i)}>
-                    <TableCell className="font-mono text-xs">{String(j.id ?? '—')}</TableCell>
-                    <TableCell className="font-mono text-xs">{String(j.schedule ?? j.starttime ?? '—')}</TableCell>
-                    <TableCell className="text-xs">{String(j.storage ?? '—')}</TableCell>
-                    <TableCell className="text-xs">{String(j.mode ?? '—')}</TableCell>
-                    <TableCell>
-                      <Badge variant={j.enabled === 0 || j.enabled === '0' ? 'secondary' : 'default'}>
-                        {j.enabled === 0 || j.enabled === '0' ? t('storages.disabled') : t('storages.enabled')}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {nativeJobs.map((j, i) => {
+                  const enabled = !(j.enabled === 0 || j.enabled === '0');
+                  return (
+                    <TableRow key={String(j.id ?? i)}>
+                      <TableCell className="font-mono text-xs">{String(j.id ?? '—')}</TableCell>
+                      <TableCell className="font-mono text-xs">{String(j.schedule ?? j.starttime ?? '—')}</TableCell>
+                      <TableCell className="text-xs">{String(j.storage ?? '—')}</TableCell>
+                      <TableCell className="text-xs">{String(j.mode ?? '—')}</TableCell>
+                      <TableCell>
+                        <Badge variant={enabled ? 'default' : 'secondary'}>
+                          {enabled ? t('storages.enabled') : t('storages.disabled')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title={enabled ? t('backups.disable') : t('backups.enable')} onClick={() => handleToggleJob(j)}>
+                            {enabled ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title={t('common.edit')} onClick={() => { setEditingJob(j); setJobDialogOpen(true); }}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title={t('common.delete')} onClick={() => handleDeleteJob(j)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -304,6 +575,15 @@ export default function StoragesTab() {
           open={dialogOpen}
           onOpenChange={(v) => { setDialogOpen(v); if (!v) setEditing(null); }}
           editing={editing}
+        />
+      )}
+      {jobDialogOpen && (
+        <NativeJobDialog
+          serverId={serverId}
+          open={jobDialogOpen}
+          onOpenChange={(v) => { setJobDialogOpen(v); if (!v) setEditingJob(null); }}
+          editing={editingJob}
+          backupStorages={backupStorages}
         />
       )}
     </div>

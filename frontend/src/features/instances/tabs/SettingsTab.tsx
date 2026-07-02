@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings, Loader2 } from 'lucide-react';
+import { Settings, Loader2, Power } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -148,6 +148,118 @@ function ExecuteScriptCard({ serverId, vmid, node }: { serverId: number; vmid: n
   );
 }
 
+/** Разобрать строку startup Proxmox ("order=1,up=30,down=60") на поля. */
+function parseStartup(spec: unknown): { order: string; up: string; down: string } {
+  const out = { order: '', up: '', down: '' };
+  if (typeof spec !== 'string') return out;
+  for (const part of spec.split(',')) {
+    const [k, v] = part.split('=');
+    if (k === 'order') out.order = v ?? '';
+    else if (k === 'up') out.up = v ?? '';
+    else if (k === 'down') out.down = v ?? '';
+  }
+  return out;
+}
+
+function AutostartCard({ serverId, vmid, type, node }: { serverId: number; vmid: number; type: string; node: string }) {
+  const { t } = useTranslation();
+  const { data: config } = useVMConfig(serverId, vmid, type, node);
+  const updateConfig = useUpdateConfig(serverId, vmid, type, node);
+
+  const [onboot, setOnboot] = useState(false);
+  const [protection, setProtection] = useState(false);
+  const [order, setOrder] = useState('');
+  const [up, setUp] = useState('');
+  const [down, setDown] = useState('');
+
+  // Инициализация из конфига Proxmox
+  useEffect(() => {
+    if (!config) return;
+    setOnboot(Number(config.onboot) === 1);
+    setProtection(Number(config.protection) === 1);
+    const s = parseStartup(config.startup);
+    setOrder(s.order);
+    setUp(s.up);
+    setDown(s.down);
+  }, [config]);
+
+  const save = () => {
+    const updates: Record<string, unknown> = {
+      onboot: onboot ? 1 : 0,
+      protection: protection ? 1 : 0,
+    };
+    // Собираем startup=order=..,up=..,down.. — либо удаляем, если всё пусто
+    const parts: string[] = [];
+    if (order.trim() !== '') parts.push(`order=${Number(order)}`);
+    if (up.trim() !== '') parts.push(`up=${Number(up)}`);
+    if (down.trim() !== '') parts.push(`down=${Number(down)}`);
+    if (parts.length > 0) updates.startup = parts.join(',');
+    else updates.delete = 'startup';
+
+    updateConfig.mutate(updates, {
+      onSuccess: () => toast.success(t('instances.autostart_saved')),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Power className="h-4 w-4" />{t('instances.autostart')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <label className="flex items-center gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={onboot}
+            onChange={e => setOnboot(e.target.checked)}
+            className="h-4 w-4 rounded border-input accent-primary"
+          />
+          <span className="text-sm">{t('instances.start_on_boot')}</span>
+        </label>
+        <p className="text-xs text-muted-foreground -mt-2">{t('instances.start_on_boot_hint')}</p>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="startup-order">{t('instances.startup_order')}</Label>
+            <Input id="startup-order" type="number" min={0} value={order}
+              onChange={e => setOrder(e.target.value)} placeholder="any" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="startup-up">{t('instances.startup_up_delay')}</Label>
+            <Input id="startup-up" type="number" min={0} value={up}
+              onChange={e => setUp(e.target.value)} placeholder="0" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="startup-down">{t('instances.startup_down_timeout')}</Label>
+            <Input id="startup-down" type="number" min={0} value={down}
+              onChange={e => setDown(e.target.value)} placeholder="0" />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">{t('instances.startup_order_hint')}</p>
+
+        <label className="flex items-center gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={protection}
+            onChange={e => setProtection(e.target.checked)}
+            className="h-4 w-4 rounded border-input accent-primary"
+          />
+          <span className="text-sm">{t('instances.protection')}</span>
+        </label>
+        <p className="text-xs text-muted-foreground -mt-2">{t('instances.protection_hint')}</p>
+
+        <Button size="sm" onClick={save} disabled={updateConfig.isPending}>
+          {updateConfig.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {t('common.save')}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function SavedConfigCard({ serverId, vmid }: { serverId: number; vmid: number }) {
   const { t } = useTranslation();
   const { data } = useSavedConfig(serverId, vmid);
@@ -285,6 +397,8 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
   return (
     <div className="space-y-6 max-w-2xl">
       <OwnerCard serverId={serverId} vmid={vmid} />
+
+      <AutostartCard serverId={serverId} vmid={vmid} type={type} node={node} />
 
       {type !== 'lxc' && <ExecuteScriptCard serverId={serverId} vmid={vmid} node={node} />}
 

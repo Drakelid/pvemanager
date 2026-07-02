@@ -50,6 +50,7 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
   const [storage, setStorage] = useState('');        // download storage (import / vztmpl)
   const [toTemplate, setToTemplate] = useState(true);
   const [diskStorage, setDiskStorage] = useState(''); // VM disk storage (images)
+  const [vmid, setVmid] = useState<string>('');       // желаемый VMID шаблона (пусто = авто)
   const [cores, setCores] = useState(2);
   const [memory, setMemory] = useState(2048);
   const [bridge, setBridge] = useState('vmbr0');
@@ -77,6 +78,7 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
     if (open) {
       setStorage(storages.length === 1 ? storages[0].storage : '');
       setToTemplate(true);
+      setVmid('');
     }
   }, [open, storages]);
 
@@ -100,6 +102,7 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
         kind: image.kind,
         template: image.source_id ? undefined : image.template || undefined,
         to_template: makeTemplate,
+        vmid: makeTemplate && vmid.trim() ? Number(vmid) : undefined,
         disk_storage: makeTemplate ? diskStorage : undefined,
         cores: makeTemplate ? cores : undefined,
         memory: makeTemplate ? memory : undefined,
@@ -192,6 +195,11 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
                     Нет хранилища для дисков ВМ (content=images).
                   </p>
                 )}
+              </div>
+              <div>
+                <Label htmlFor="img-vmid">VMID шаблона (пусто = авто)</Label>
+                <Input id="img-vmid" type="number" min={100} placeholder="напр. 9001"
+                  value={vmid} onChange={(e) => setVmid(e.target.value)} />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>

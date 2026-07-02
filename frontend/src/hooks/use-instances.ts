@@ -604,6 +604,21 @@ export function useReinstallInstance(serverId: number, vmid: number, node: strin
   });
 }
 
+// ==================== Migrate ====================
+export interface MigrateRequest {
+  target_node: string;
+  target_storage?: string;
+  online?: boolean;
+}
+
+export function useMigrateInstance(serverId: number, vmid: number, type: string, node: string) {
+  const prefix = type === 'lxc' ? 'container' : 'vm';
+  return useMutation<AsyncTaskResponse, Error, MigrateRequest>({
+    mutationFn: (body) =>
+      apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/migrate?node=${node}`, body),
+  });
+}
+
 // ==================== Change Password ====================
 export function useChangePassword(serverId: number, vmid: number, type: string, node: string) {
   const prefix = type === 'lxc' ? 'container' : 'vm';

@@ -396,40 +396,64 @@ def discover_proxmox_templates(
 
 # ==================== Auto-Import Templates ====================
 
-# Маппинг ключевых слов на группы
 # Иконки используют CSS классы для адаптации к теме
-OS_GROUP_MAPPING = {
-    'ubuntu': {'name': 'Ubuntu', 'icon': '<i class="fa-brands fa-ubuntu os-icon os-icon-ubuntu"></i>', 'order': 1},
-    'debian': {'name': 'Debian', 'icon': '<i class="fa-brands fa-debian os-icon os-icon-debian"></i>', 'order': 2},
-    'centos': {'name': 'CentOS', 'icon': '<i class="fa-brands fa-centos os-icon os-icon-centos"></i>', 'order': 3},
-    'rocky': {'name': 'Rocky Linux', 'icon': '<span class="os-icon-rocky-svg"></span>', 'order': 4},
-    'alma': {'name': 'AlmaLinux', 'icon': '<span class="os-icon-alma-svg"></span>', 'order': 5},
-    'almalinux': {'name': 'AlmaLinux', 'icon': '<span class="os-icon-alma-svg"></span>', 'order': 5},
-    'fedora': {'name': 'Fedora', 'icon': '<i class="fa-brands fa-fedora os-icon os-icon-fedora"></i>', 'order': 6},
-    'rhel': {'name': 'RHEL', 'icon': '<i class="fa-brands fa-redhat os-icon os-icon-rhel"></i>', 'order': 7},
-    'oracle': {'name': 'Oracle Linux', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-oracle"></i>', 'order': 8},
-    'suse': {'name': 'openSUSE', 'icon': '<i class="fa-brands fa-suse os-icon os-icon-suse"></i>', 'order': 9},
-    'opensuse': {'name': 'openSUSE', 'icon': '<i class="fa-brands fa-suse os-icon os-icon-suse"></i>', 'order': 9},
-    'arch': {'name': 'Arch Linux', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-arch"></i>', 'order': 10},
-    'gentoo': {'name': 'Gentoo', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-gentoo"></i>', 'order': 11},
-    'alpine': {'name': 'Alpine', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-alpine"></i>', 'order': 12},
-    'windows': {'name': 'Windows', 'icon': '<i class="fa-brands fa-windows os-icon os-icon-windows"></i>', 'order': 20},
-    'win': {'name': 'Windows', 'icon': '<i class="fa-brands fa-windows os-icon os-icon-windows"></i>', 'order': 20},
-    'freebsd': {'name': 'FreeBSD', 'icon': '<i class="fa-brands fa-freebsd os-icon os-icon-freebsd"></i>', 'order': 30},
-    'openbsd': {'name': 'OpenBSD', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-openbsd"></i>', 'order': 31},
-    'other': {'name': 'Other', 'icon': '<i class="fa-solid fa-compact-disc os-icon os-icon-other"></i>', 'order': 99},
-}
+_UBUNTU = {'name': 'Ubuntu', 'icon': '<i class="fa-brands fa-ubuntu os-icon os-icon-ubuntu"></i>', 'order': 1}
+_DEBIAN = {'name': 'Debian', 'icon': '<i class="fa-brands fa-debian os-icon os-icon-debian"></i>', 'order': 2}
+_CENTOS = {'name': 'CentOS', 'icon': '<i class="fa-brands fa-centos os-icon os-icon-centos"></i>', 'order': 3}
+_ROCKY = {'name': 'Rocky Linux', 'icon': '<span class="os-icon-rocky-svg"></span>', 'order': 4}
+_ALMA = {'name': 'AlmaLinux', 'icon': '<span class="os-icon-alma-svg"></span>', 'order': 5}
+_FEDORA = {'name': 'Fedora', 'icon': '<i class="fa-brands fa-fedora os-icon os-icon-fedora"></i>', 'order': 6}
+_RHEL = {'name': 'RHEL', 'icon': '<i class="fa-brands fa-redhat os-icon os-icon-rhel"></i>', 'order': 7}
+_ORACLE = {'name': 'Oracle Linux', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-oracle"></i>', 'order': 8}
+_SUSE = {'name': 'openSUSE', 'icon': '<i class="fa-brands fa-suse os-icon os-icon-suse"></i>', 'order': 9}
+_ARCH = {'name': 'Arch Linux', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-arch"></i>', 'order': 10}
+_GENTOO = {'name': 'Gentoo', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-gentoo"></i>', 'order': 11}
+_ALPINE = {'name': 'Alpine', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-alpine"></i>', 'order': 12}
+_KALI = {'name': 'Kali Linux', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-kali"></i>', 'order': 13}
+_MINT = {'name': 'Linux Mint', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-mint"></i>', 'order': 14}
+_WINDOWS = {'name': 'Windows', 'icon': '<i class="fa-brands fa-windows os-icon os-icon-windows"></i>', 'order': 20}
+_FREEBSD = {'name': 'FreeBSD', 'icon': '<i class="fa-brands fa-freebsd os-icon os-icon-freebsd"></i>', 'order': 30}
+_OPENBSD = {'name': 'OpenBSD', 'icon': '<i class="fa-brands fa-linux os-icon os-icon-openbsd"></i>', 'order': 31}
+_OTHER = {'name': 'Other', 'icon': '<i class="fa-solid fa-compact-disc os-icon os-icon-other"></i>', 'order': 99}
+
+# Маппинг ключевых слов на группы. Порядок важен — более специфичные/длинные
+# ключи должны идти раньше (напр. 'oraclelinux' перед 'oracle', 'rockylinux'
+# перед 'rocky'), чтобы не перехватывались более общими. Включены частые
+# опечатки и варианты написания (alama/allma, redhat/red hat, sles/leap/...).
+_OS_KEYWORD_GROUPS: list[tuple[tuple[str, ...], dict]] = [
+    (('ubuntu',), _UBUNTU),
+    (('debian',), _DEBIAN),
+    (('linuxmint', 'mint'), _MINT),
+    (('centos',), _CENTOS),
+    (('rockylinux', 'rocky'), _ROCKY),
+    (('almalinux', 'alma', 'alama', 'allma', 'alamalinux'), _ALMA),
+    (('fedora',), _FEDORA),
+    (('oraclelinux', 'oracle'), _ORACLE),
+    (('rhel', 'redhat', 'red hat', 'red-hat'), _RHEL),
+    (('opensuse', 'sles', 'suse', 'leap', 'tumbleweed'), _SUSE),
+    (('archlinux', 'arch'), _ARCH),
+    (('gentoo',), _GENTOO),
+    (('alpine',), _ALPINE),
+    (('kali',), _KALI),
+    (('windows', 'win2', 'win10', 'win11', 'winserver', 'win7', 'win8'), _WINDOWS),
+    (('freebsd',), _FREEBSD),
+    (('openbsd',), _OPENBSD),
+]
+
+# Обратная совместимость: плоский маппинг keyword → group_info.
+OS_GROUP_MAPPING = {kw: info for keys, info in _OS_KEYWORD_GROUPS for kw in keys}
+OS_GROUP_MAPPING['other'] = _OTHER
 
 
 def detect_os_group(template_name: str) -> dict:
-    """Определить группу ОС по имени шаблона"""
-    name_lower = template_name.lower()
-    
-    for keyword, group_info in OS_GROUP_MAPPING.items():
-        if keyword in name_lower:
+    """Определить группу ОС по имени шаблона (с учётом вариантов и опечаток)."""
+    name_lower = (template_name or '').lower()
+
+    for keys, group_info in _OS_KEYWORD_GROUPS:
+        if any(kw in name_lower for kw in keys):
             return group_info
-    
-    return OS_GROUP_MAPPING['other']
+
+    return _OTHER
 
 
 def _do_auto_import(server_id: int, username: str):

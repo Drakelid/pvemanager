@@ -13,6 +13,14 @@ export function useTemplateGroups() {
   return useQuery({
     queryKey: templateKeys.groups,
     queryFn: () => apiClient.get<OSTemplateGroup[]>('/templates/api/groups'),
+    // Список групп ОС — по алфавиту; «Other» (корзина «прочее») всегда в конце.
+    select: (groups) =>
+      [...groups].sort((a, b) => {
+        const aOther = a.name.toLowerCase() === 'other';
+        const bOther = b.name.toLowerCase() === 'other';
+        if (aOther !== bOther) return aOther ? 1 : -1;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      }),
   });
 }
 
@@ -25,6 +33,11 @@ export function useTemplates(groupId?: number, serverId?: number, vmType?: strin
   return useQuery({
     queryKey: templateKeys.templates(groupId, serverId, vmType),
     queryFn: () => apiClient.get<OSTemplate[]>(`/templates/api/templates${qs ? `?${qs}` : ''}`),
+    // Шаблоны — по имени, по алфавиту (с числовой сортировкой: Debian-9 < Debian-11).
+    select: (templates) =>
+      [...templates].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
+      ),
   });
 }
 

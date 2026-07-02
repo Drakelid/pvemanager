@@ -47,6 +47,7 @@ class ImageDownloadRequest(BaseModel):
 
     # Авто-конвертация qcow2 → VM-шаблон (Phase 2)
     to_template: bool = False
+    vmid: Optional[int] = None            # желаемый VMID шаблона; None → авто-выбор
     disk_storage: Optional[str] = None   # хранилище диска ВМ (content=images); по умолч. = storage
     cores: Optional[int] = None
     memory: Optional[int] = None         # MB
@@ -331,7 +332,7 @@ async def download_image(
             src['url'], src['filename'], src['checksum'], src['checksum_algorithm'],
             src['name'], req.cores or 2, req.memory or 2048, req.bridge or 'vmbr0',
             req.ciuser, req.cipassword, req.ssh_keys, src.get('os'), src.get('version'),
-            current_user.id, current_user.username,
+            current_user.id, current_user.username, req.vmid,
         )
     else:
         loop.run_in_executor(

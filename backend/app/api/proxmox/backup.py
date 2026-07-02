@@ -541,6 +541,162 @@ def list_proxmox_native_jobs(
         return JSONResponse(content={"jobs": [], "error": str(e)})
 
 
+def _build_native_job_props(data: dict, *, for_create: bool) -> dict:
+    """Собрать параметры vzdump для POST/PUT /cluster/backup из тела запроса."""
+    props: dict = {}
+
+    schedule = data.get("schedule")
+    if schedule:
+        props["schedule"] = schedule
+    storage = data.get("storage")
+    if storage:
+        props["storage"] = storage
+    if data.get("mode"):
+        props["mode"] = data["mode"]
+    if data.get("compress") is not None:
+        props["compress"] = data["compress"]
+    props["enabled"] = 1 if data.get("enabled", True) else 0
+    if data.get("comment"):
+        props["comment"] = data["comment"]
+    if data.get("mailto"):
+        props["mailto"] = data["mailto"]
+    if data.get("notes_template"):
+        props["notes-template"] = data["notes_template"]
+    if data.get("node"):
+        props["node"] = data["node"]
+
+    # Выбор гостей: все / список VMID / пул. Взаимоисключающие поля в PVE —
+    # при обновлении чистим неиспользуемые через delete, иначе PVE ругается.
+    selection = data.get("selection_mode", "all")
+    to_delete: list[str] = []
+    if selection == "all":
+        props["all"] = 1
+        to_delete += ["vmid", "pool"]
+    elif selection == "pool" and data.get("pool"):
+        props["pool"] = data["pool"]
+        to_delete += ["vmid", "all"]
+    elif selection == "vmid":
+        vmid = data.get("vmid")
+        if isinstance(vmid, list):
+            vmid = ",".join(str(v) for v in vmid)
+        if vmid:
+            props["vmid"] = vmid
+        to_delete += ["all", "pool"]
+    if not for_create and to_delete:
+        props["delete"] = ",".join(to_delete)
+
+    # Retention → prune-backups="keep-last=N,keep-daily=N,..."
+    keep_parts = []
+    for key, pve_key in (
+        ("keep_last", "keep-last"), ("keep_daily", "keep-daily"),
+        ("keep_weekly", "keep-weekly"), ("keep_monthly", "keep-monthly"),
+    ):
+        val = data.get(key)
+        if val:
+            keep_parts.append(f"{pve_key}={int(val)}")
+    if keep_parts:
+        props["prune-backups"] = ",".join(keep_parts)
+
+    return props
+
+
+@router.post("/api/backups/proxmox-jobs/{server_id}")
+async def create_proxmox_native_job(
+    server_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("backup:manage")),
+):
+    """Создать нативное задание бэкапа Proxmox (cluster/backup)."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    data = await request.json()
+    if not data.get("schedule") or not data.get("storage"):
+        raise HTTPException(status_code=400, detail="schedule and storage are required")
+
+    props = _build_native_job_props(data, for_create=True)
+    try:
+        client = _get_proxmox_client(server)
+        result = await _run_in_executor(client.create_cluster_backup_job, props)
+        if result.get("success"):
+            LoggingService.log_proxmox_action(
+                db=db, action="create", resource_type="backup_job",
+                resource_id=str(props.get("id") or "native"), username=current_user.username,
+                server_id=server_id, server_name=server.name, success=True,
+                details={"native": True, "schedule": props.get("schedule")},
+            )
+            return JSONResponse(content={"success": True})
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/backups/proxmox-jobs/{server_id}/{job_id}")
+async def update_proxmox_native_job(
+    server_id: int,
+    job_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("backup:manage")),
+):
+    """Обновить нативное задание бэкапа Proxmox (cluster/backup/{id})."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    data = await request.json()
+    props = _build_native_job_props(data, for_create=False)
+    try:
+        client = _get_proxmox_client(server)
+        result = await _run_in_executor(client.update_cluster_backup_job, job_id, props)
+        if result.get("success"):
+            LoggingService.log_proxmox_action(
+                db=db, action="update", resource_type="backup_job",
+                resource_id=job_id, username=current_user.username,
+                server_id=server_id, server_name=server.name, success=True,
+                details={"native": True},
+            )
+            return JSONResponse(content={"success": True})
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/backups/proxmox-jobs/{server_id}/{job_id}")
+async def delete_proxmox_native_job(
+    server_id: int,
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("backup:manage")),
+):
+    """Удалить нативное задание бэкапа Proxmox (cluster/backup/{id})."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    try:
+        client = _get_proxmox_client(server)
+        result = await _run_in_executor(client.delete_cluster_backup_job, job_id)
+        if result.get("success"):
+            LoggingService.log_proxmox_action(
+                db=db, action="delete", resource_type="backup_job",
+                resource_id=job_id, username=current_user.username,
+                server_id=server_id, server_name=server.name, success=True,
+                details={"native": True},
+            )
+            return JSONResponse(content={"success": True})
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/api/backups/jobs")
 def list_backup_jobs(
     db: Session = Depends(get_db),

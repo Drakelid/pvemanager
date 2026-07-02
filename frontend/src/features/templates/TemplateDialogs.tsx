@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useServers, useNodes, useStorages } from '@/hooks/use-nodes';
-import { useQuickDeployInfo, useDeployVM } from '@/hooks/use-templates';
+import { useQuickDeployInfo, useDeployVM, useTemplateGroups, useUpdateTemplate } from '@/hooks/use-templates';
 import { useAvailableLXCTemplates, useDownloadLXCTemplate } from '@/hooks/use-lxc-templates';
 import type { OSTemplate } from '@/types';
 import { toast } from 'sonner';
@@ -171,6 +171,57 @@ export function DownloadCTDialog({ open, onClose }: { open: boolean; onClose: ()
           <Button onClick={submit} disabled={download.isPending || !node || !storage || !template}>
             {download.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t('templates.download_btn')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ==================== Edit template group (category) ====================
+
+export function EditTemplateDialog({ template, onClose }: { template: OSTemplate | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  const open = !!template;
+  const { data: groups = [] } = useTemplateGroups();
+  const update = useUpdateTemplate();
+  const [groupId, setGroupId] = useState('');
+
+  useEffect(() => {
+    if (template) setGroupId(String(template.group_id));
+  }, [template]);
+
+  const submit = () => {
+    if (!template || !groupId) return;
+    update.mutate(
+      { id: template.id, group_id: Number(groupId) },
+      {
+        onSuccess: () => { toast.success(t('templates.group_updated')); onClose(); },
+        onError: (e: Error) => toast.error(e.message),
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{t('templates.edit_group')}: {template?.name}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>{t('templates.group')}</Label>
+            <Select value={groupId} onValueChange={v => { if (v) setGroupId(v); }}>
+              <SelectTrigger className="mt-1 w-full"><SelectValue placeholder={t('templates.select_group')} /></SelectTrigger>
+              <SelectContent className="max-h-72">
+                {groups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button onClick={submit} disabled={update.isPending || !groupId || groupId === String(template?.group_id)}>
+            {update.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

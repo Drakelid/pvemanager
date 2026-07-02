@@ -133,6 +133,8 @@ export interface VMConfig {
   boot?: string;
   agent?: number;
   onboot?: number;
+  startup?: string;
+  protection?: number;
   [key: string]: unknown;
 }
 

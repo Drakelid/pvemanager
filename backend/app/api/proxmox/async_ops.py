@@ -21,7 +21,7 @@ from ._helpers import _get_proxmox_client, get_next_vmid, save_vm_instance, save
 
 
 # Re-use deploy executor and update helper
-from ..templates import _deploy_executor, _update_deploy_task  # noqa: F401
+from ..templates import _deploy_executor, _update_deploy_task, detect_os_group  # noqa: F401
 
 
 def _connect(server: ProxmoxServer) -> Optional[ProxmoxClient]:
@@ -519,6 +519,127 @@ def _do_clone_sync(task_id: int, server_id: int, src_vmid: int, node: str, vm_ty
         db.close()
 
 
+# ==================== Migrate ====================
+
+def _do_migrate_sync(task_id: int, server_id: int, vmid: int, node: str, vm_type: str,
+                     target_node: str, target_storage: Optional[str], online: bool,
+                     user_id: int, username: str):
+    """Мигрировать VM/LXC на другую ноду кластера (фоновая задача с прогрессом)."""
+    db = SessionLocal()
+    server = None
+    is_lxc = (vm_type == 'lxc')
+    try:
+        _update_deploy_task(task_id, 'running', 'Подключение к Proxmox...', 10,
+                            vmid=vmid, node=node)
+        server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+        if not server:
+            _update_deploy_task(task_id, 'failed', 'Сервер не найден', 0, error='Proxmox сервер не найден')
+            return
+        client = _connect(server)
+        if not client:
+            _update_deploy_task(task_id, 'failed', 'Ошибка подключения к Proxmox', 10,
+                                error='Не удалось подключиться к Proxmox серверу')
+            return
+
+        _update_deploy_task(task_id, 'running', f'Миграция → {target_node}...', 30,
+                            vmid=vmid, node=node)
+        try:
+            if is_lxc:
+                upid = client.migrate_container(
+                    node, vmid, target_node,
+                    target_storage=target_storage or None, online=online,
+                )
+            else:
+                upid = client.migrate_vm(
+                    node, vmid, target_node,
+                    target_storage=target_storage or None, online=online,
+                )
+        except Exception as e:
+            _update_deploy_task(task_id, 'failed', 'Ошибка миграции', 30, error=f'Migrate failed: {e}')
+            return
+        if not upid:
+            _update_deploy_task(task_id, 'failed', 'Ошибка миграции', 30,
+                                error='Proxmox не вернул UPID задачи миграции')
+            return
+
+        # Прогресс копирования диска (если есть) маппится в 30..95 из лога задачи
+        _update_deploy_task(task_id, 'running', 'Перенос данных...', 50, vmid=vmid, node=node)
+        ok = _wait_migrate_with_progress(client, task_id, node, upid, timeout=3600)
+        if not ok:
+            _update_deploy_task(task_id, 'failed', 'Миграция не удалась', 50,
+                                error=f'Задача миграции завершилась с ошибкой. {_task_log_tail(client, node, upid)}'[:300])
+            return
+
+        # Обновляем ноду в локальной записи инстанса
+        try:
+            cached = db.query(VMInstance).filter(
+                VMInstance.server_id == server_id,
+                VMInstance.vmid == vmid,
+                VMInstance.deleted_at.is_(None),
+            ).first()
+            if cached:
+                cached.node = target_node
+                db.commit()
+        except Exception as reg_err:
+            logger.warning(f"[MIGRATE #{task_id}] failed to update instance node: {reg_err}")
+
+        LoggingService.log_proxmox_action(
+            db=db, action='migrate',
+            resource_type='lxc' if is_lxc else 'vm', resource_id=vmid,
+            username=username, server_id=server_id,
+            server_name=server.name, node_name=node,
+            details={'target_node': target_node, 'target_storage': target_storage, 'online': online},
+            success=True,
+        )
+
+        _update_deploy_task(task_id, 'completed', f'Мигрировано на {target_node}', 100,
+                            vmid=vmid, node=target_node)
+        logger.info(f"[MIGRATE #{task_id}] {vmid} {node} -> {target_node} by {username}")
+    except Exception as e:
+        err = str(e)
+        logger.error(f"[MIGRATE #{task_id}] failed: {err}")
+        _update_deploy_task(task_id, 'failed', f'Ошибка: {err[:150]}', 0, error=err)
+    finally:
+        db.close()
+
+
+def _wait_migrate_with_progress(client, task_id: int, node: str, upid: str,
+                                timeout: int = 3600) -> bool:
+    """Дождаться задачи миграции, маппя % копирования диска из лога в 50..95."""
+    start = time.time()
+    log_pos = 0
+    last_reported = -1
+    while time.time() - start < timeout:
+        try:
+            lines = client.get_task_log(node, upid, start=log_pos, limit=500) or []
+        except Exception:
+            lines = []
+        pct = None
+        for line in lines:
+            log_pos = max(log_pos, line.get('n', log_pos) or log_pos)
+            m = _PCT_RE.search(line.get('t', '') or '')
+            if m:
+                try:
+                    pct = float(m.group(1))
+                except ValueError:
+                    pass
+        if pct is not None:
+            progress = 50 + int(min(pct, 100) * 0.45)  # 50..95
+            if progress != last_reported:
+                last_reported = progress
+                _update_deploy_task(task_id, 'running', f'Перенос данных... {pct:.0f}%', progress)
+
+        status = client.get_task_status(node, upid)
+        if status and status.get('status') == 'stopped':
+            exit_status = status.get('exitstatus')
+            return exit_status == 'OK' or (
+                isinstance(exit_status, str) and exit_status.startswith('WARNINGS:'))
+        time.sleep(2)
+
+    logger.warning(f"Таймаут ожидания задачи миграции {upid}")
+    return False
+
+
 # ==================== Image download ====================
 
 # Расширения, которые Proxmox принимает для content=import (диск-образы).
@@ -685,12 +806,24 @@ def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: st
         db.close()
 
 
-def _get_or_create_cloud_group(db) -> int:
-    """Найти/создать группу шаблонов «Cloud Images» для импортированных образов."""
-    grp = db.query(OSTemplateGroup).filter(OSTemplateGroup.name == 'Cloud Images').first()
+def _get_or_create_os_group(db, hint: Optional[str]) -> int:
+    """Найти/создать группу шаблонов по ОС (Ubuntu, AlmaLinux, ...).
+
+    Определяет группу по имени через detect_os_group(), чтобы импортированный
+    cloud-образ попадал в свою ОС-группу и фильтровался на странице шаблонов
+    (напр. AlmaLinux), а не в общую «Cloud Images».
+    """
+    group_info = detect_os_group(hint or '')
+    group_name = group_info['name']
+    grp = db.query(OSTemplateGroup).filter(OSTemplateGroup.name == group_name).first()
     if not grp:
-        grp = OSTemplateGroup(name='Cloud Images', icon='cloud',
-                              description='Импортированные cloud-образы', sort_order=50)
+        grp = OSTemplateGroup(
+            name=group_name,
+            icon=group_info['icon'],
+            description=f'Шаблоны {group_name}',
+            sort_order=group_info['order'],
+            is_active=True,
+        )
         db.add(grp)
         db.commit()
         db.refresh(grp)
@@ -704,7 +837,8 @@ def _do_image_template_sync(task_id: int, server_id: int, node: str,
                             name: str, cores: int, memory: int, bridge: str,
                             ciuser: Optional[str], cipassword: Optional[str],
                             ssh_keys: Optional[str], os_name: Optional[str],
-                            version: Optional[str], user_id: int, username: str):
+                            version: Optional[str], user_id: int, username: str,
+                            vmid: Optional[int] = None):
     """Скачать qcow2 cloud-образ и автоматически конвертировать в Proxmox VM-шаблон.
 
     Пайплайн (без SSH, только API PVE 8.2+):
@@ -750,7 +884,15 @@ def _do_image_template_sync(task_id: int, server_id: int, node: str,
 
         # 2) Аллокация VMID и создание ВМ с импортом диска
         _update_deploy_task(task_id, 'running', 'Аллокация VMID...', 42, node=node)
-        new_vmid = client.get_next_vmid() or get_next_vmid(db, server_id)
+        if vmid:
+            # Пользователь указал VMID явно — проверяем, что он свободен
+            if client.get_vm_status(node, vmid):
+                _update_deploy_task(task_id, 'failed', 'VMID уже занят', 42,
+                                    error=f'VMID {vmid} уже используется на ноде {node}')
+                return
+            new_vmid = vmid
+        else:
+            new_vmid = client.get_next_vmid() or get_next_vmid(db, server_id)
         if not new_vmid:
             _update_deploy_task(task_id, 'failed', 'Не удалось выделить VMID', 42, error='Failed to allocate VMID')
             return
@@ -804,7 +946,7 @@ def _do_image_template_sync(task_id: int, server_id: int, node: str,
         # 5) Регистрация OSTemplate (становится доступен в деплое)
         _update_deploy_task(task_id, 'running', 'Регистрация шаблона...', 98, vmid=new_vmid, node=node)
         try:
-            group_id = _get_or_create_cloud_group(db)
+            group_id = _get_or_create_os_group(db, os_name or name)
             tpl = OSTemplate(
                 group_id=group_id, server_id=server_id, name=name,
                 vmid=new_vmid, vm_type='qemu', node=node, source_node=node,

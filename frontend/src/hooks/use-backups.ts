@@ -24,6 +24,52 @@ export function useProxmoxBackupJobs(serverId: number) {
   });
 }
 
+export type ProxmoxJobInput = {
+  id?: string;
+  schedule: string;
+  storage: string;
+  mode?: string;
+  compress?: string;
+  enabled?: boolean;
+  selection_mode?: 'all' | 'vmid' | 'pool';
+  vmid?: string;
+  pool?: string;
+  node?: string;
+  keep_last?: number;
+  keep_daily?: number;
+  keep_weekly?: number;
+  keep_monthly?: number;
+  comment?: string;
+  mailto?: string;
+};
+
+export function useCreateProxmoxJob(serverId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ProxmoxJobInput) =>
+      apiClient.post<{ success: boolean }>(`/proxmox/api/backups/proxmox-jobs/${serverId}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: backupKeys.proxmoxJobs(serverId) }),
+  });
+}
+
+export function useUpdateProxmoxJob(serverId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ProxmoxJobInput }) =>
+      apiClient.put<{ success: boolean }>(`/proxmox/api/backups/proxmox-jobs/${serverId}/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: backupKeys.proxmoxJobs(serverId) }),
+  });
+}
+
+export function useDeleteProxmoxJob(serverId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      apiClient.delete<{ success: boolean }>(`/proxmox/api/backups/proxmox-jobs/${serverId}/${jobId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: backupKeys.proxmoxJobs(serverId) }),
+  });
+}
+
 export function useCreateStorage(serverId: number) {
   const qc = useQueryClient();
   return useMutation({
