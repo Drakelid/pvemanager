@@ -260,6 +260,63 @@ function AutostartCard({ serverId, vmid, type, node }: { serverId: number; vmid:
   );
 }
 
+/** Разобрать строку тегов Proxmox ("web;prod") в массив. */
+function parseTags(spec: unknown): string[] {
+  if (typeof spec !== 'string') return [];
+  return spec.split(/[;,\s]+/).map(s => s.trim()).filter(Boolean);
+}
+
+function TagsCard({ serverId, vmid, type, node }: Props) {
+  const { t } = useTranslation();
+  const { data: config } = useVMConfig(serverId, vmid, type, node);
+  const updateConfig = useUpdateConfig(serverId, vmid, type, node);
+
+  const [value, setValue] = useState<string | null>(null);
+  const current = useMemo(() => parseTags(config?.tags).join(', '), [config]);
+  const text = value ?? current;
+
+  const save = () => {
+    // Proxmox хранит теги через ';'; пустая строка удаляет все теги.
+    const tags = parseTags(text.replace(/,/g, ';')).join(';');
+    updateConfig.mutate(
+      tags ? { tags } : { delete: 'tags' },
+      {
+        onSuccess: () => { toast.success(t('instances.tags_saved', 'Теги сохранены')); setValue(null); },
+        onError: (e: Error) => toast.error(e.message),
+      },
+    );
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Settings className="h-4 w-4" />{t('instances.tags', 'Теги')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap gap-1.5 min-h-[1.5rem]">
+          {parseTags(text).length === 0
+            ? <span className="text-xs text-muted-foreground">{t('instances.no_tags', 'Нет тегов')}</span>
+            : parseTags(text).map(tag => (
+              <span key={tag} className="rounded-full bg-secondary px-2 py-0.5 text-xs">{tag}</span>
+            ))}
+        </div>
+        <div className="flex items-end gap-2">
+          <div className="flex-1 space-y-1.5">
+            <Label htmlFor="tags-input">{t('instances.tags_hint', 'Теги через запятую')}</Label>
+            <Input id="tags-input" value={text} onChange={e => setValue(e.target.value)} placeholder="web, prod, db" />
+          </div>
+          <Button size="sm" onClick={save} disabled={updateConfig.isPending || text === current}>
+            {updateConfig.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('common.save', 'Сохранить')}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function SavedConfigCard({ serverId, vmid }: { serverId: number; vmid: number }) {
   const { t } = useTranslation();
   const { data } = useSavedConfig(serverId, vmid);
@@ -399,6 +456,8 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
       <OwnerCard serverId={serverId} vmid={vmid} />
 
       <AutostartCard serverId={serverId} vmid={vmid} type={type} node={node} />
+
+      <TagsCard serverId={serverId} vmid={vmid} type={type} node={node} />
 
       {type !== 'lxc' && <ExecuteScriptCard serverId={serverId} vmid={vmid} node={node} />}
 

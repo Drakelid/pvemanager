@@ -16,6 +16,11 @@ from .mixins.cluster import ClusterMixin
 from .mixins.storage import StorageMixin
 from .mixins.network import NetworkMixin
 from .mixins.snapshot import SnapshotMixin
+from .mixins.firewall import FirewallMixin
+from .mixins.pools import PoolsMixin
+from .mixins.disks import DisksMixin
+from .mixins.access import AccessMixin
+from .mixins.node_admin import NodeAdminMixin
 
 proxmox_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="proxmox_")
 
@@ -82,7 +87,7 @@ def get_cached_client(host: str, user: str, password_hash: str = None,
         token_value=token_value_hash
     )
 
-class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin, SnapshotMixin):
+class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin, SnapshotMixin, FirewallMixin, PoolsMixin, DisksMixin, AccessMixin, NodeAdminMixin):
         @classmethod
         def from_server(cls, server) -> "ProxmoxClient":
             """Single source of truth for building a client from a ProxmoxServer model.
@@ -1297,11 +1302,19 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 'cores', 'sockets', 'memory', 'balloon', 'name', 'description',
                 'cpu', 'cpulimit', 'cpuunits', 'onboot', 'startup', 'boot', 'bootdisk',
                 'agent', 'ostype', 'tablet', 'hotplug', 'protection',
-                'ciuser', 'cipassword', 'sshkeys',
+                'ciuser', 'cipassword', 'sshkeys', 'tags',
+                # Hardware editor: CPU/NUMA, дисплей, контроллер, тип платформы,
+                # efidisk0 — EFI-диск, обязателен для загрузки в режиме OVMF (UEFI).
+                'numa', 'vga', 'scsihw', 'machine', 'bios', 'efidisk0',
             }
-            indexed_re = re.compile(r'^(net|scsi|virtio|ide|sata|ipconfig)\d+$')
-            # Удаляемые ключи: сетевые интерфейсы + опциональные булевы флаги
-            delete_token_re = re.compile(r'^(net\d+|startup|onboot|protection)$')
+            # Индексированные ключи: сеть/диски + passthrough (PCI/USB) + serial
+            indexed_re = re.compile(
+                r'^(net|scsi|virtio|ide|sata|ipconfig|hostpci|usb|serial)\d+$'
+            )
+            # Удаляемые ключи: интерфейсы, passthrough-устройства + опциональные флаги
+            delete_token_re = re.compile(
+                r'^(net\d+|hostpci\d+|usb\d+|serial\d+|startup|onboot|protection|tags)$'
+            )
 
             filtered_config = {}
             for k, v in config.items():
@@ -1372,7 +1385,7 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 'searchdomain', 'tags',
             }
             net_re = re.compile(r'^net\d+$')
-            delete_token_re = re.compile(r'^(net\d+|startup|onboot|protection)$')
+            delete_token_re = re.compile(r'^(net\d+|startup|onboot|protection|tags)$')
 
             filtered_config = {}
             for k, v in config.items():

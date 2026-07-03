@@ -1383,6 +1383,40 @@ def get_vm_config(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/{server_id}/nodes/{node}/hardware/pci")
+def list_node_pci_devices(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vm:view"))
+):
+    """Список PCI-устройств ноды для passthrough (hostpciN)."""
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    try:
+        return JSONResponse(content=client.get_node_pci_devices(node))
+    except Exception as e:
+        logger.error(f"Error listing PCI devices on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/{server_id}/nodes/{node}/hardware/usb")
+def list_node_usb_devices(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vm:view"))
+):
+    """Список USB-устройств ноды для passthrough (usbN)."""
+    server = _resolve_server(db, server_id)
+    client = _get_client_or_503(server)
+    try:
+        return JSONResponse(content=client.get_node_usb_devices(node))
+    except Exception as e:
+        logger.error(f"Error listing USB devices on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.put("/api/{server_id}/vm/{vmid}/config")
 async def update_vm_config(
     server_id: int,

@@ -215,3 +215,43 @@ class StorageMixin:
                 logger.error(f"Ошибка получения backup-хранилищ для {node}: {e}")
                 return []
 
+        def get_node_pci_devices(self, node: str) -> List[Dict]:
+            """
+            Получить список PCI-устройств ноды для passthrough (hostpciN).
+
+            Returns:
+                Список Dict с полями: id (0000:01:00.0), vendor_name, device_name,
+                iommugroup, mdev, subsystem_* и т.д. Отсортирован по id.
+            """
+            if not self.proxmox:
+                return []
+            try:
+                devices = self.proxmox.nodes(node).hardware.pci.get()
+                return sorted(devices, key=lambda d: d.get('id', ''))
+            except Exception as e:
+                logger.error(f"Ошибка получения PCI-устройств ноды {node}: {e}")
+                return []
+
+        def get_node_usb_devices(self, node: str) -> List[Dict]:
+            """
+            Получить список USB-устройств ноды для passthrough (usbN).
+
+            Returns:
+                Список Dict с полями: busnum, devnum, vendid, prodid, port,
+                usbpath, class, speed, prodname/manufacturer. Отсортирован по usbpath.
+            """
+            if not self.proxmox:
+                return []
+            try:
+                # Не все версии PVE отдают hardware/usb; scanusb — исторический fallback.
+                try:
+                    devices = self.proxmox.nodes(node).hardware.usb.get()
+                except Exception:
+                    devices = self.proxmox.nodes(node).scanusb.get()
+                # Отбрасываем корневые хабы без vendor/product id — их нельзя пробросить.
+                cleaned = [d for d in devices if d.get('vendid') and d.get('prodid')]
+                return sorted(cleaned, key=lambda d: str(d.get('usbpath') or d.get('port') or ''))
+            except Exception as e:
+                logger.error(f"Ошибка получения USB-устройств ноды {node}: {e}")
+                return []
+

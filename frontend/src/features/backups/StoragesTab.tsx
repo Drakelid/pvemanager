@@ -20,7 +20,20 @@ import { formatBytes } from '@/lib/format';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
 
-const STORAGE_TYPES = ['dir', 'nfs', 'cifs', 'pbs'];
+const STORAGE_TYPES = ['dir', 'nfs', 'cifs', 'pbs', 'lvm', 'lvmthin', 'zfspool', 'rbd', 'cephfs'];
+
+/** Разумный content по умолчанию для типа хранилища. */
+const DEFAULT_CONTENT: Record<string, string> = {
+  dir: 'images,iso,vztmpl,backup',
+  nfs: 'images,iso,vztmpl,backup',
+  cifs: 'images,iso,vztmpl,backup',
+  pbs: 'backup',
+  lvm: 'images,rootdir',
+  lvmthin: 'images,rootdir',
+  zfspool: 'images,rootdir',
+  rbd: 'images,rootdir',
+  cephfs: 'backup,iso,vztmpl',
+};
 
 interface StorageRow {
   storage: string;
@@ -51,12 +64,19 @@ interface StorageForm {
   username: string;
   password: string;
   fingerprint: string;
+  vgname: string;    // lvm / lvmthin — volume group
+  thinpool: string;  // lvmthin — thin pool
+  pool: string;      // zfspool — пул/датасет; rbd — ceph pool
+  monhost: string;   // rbd / cephfs (внешний ceph)
+  fsname: string;    // cephfs — имя файловой системы
+  sparse: boolean;   // zfspool — тонкое выделение
 }
 
 const emptyForm: StorageForm = {
-  storage: '', type: 'dir', content: 'backup', nodes: '',
+  storage: '', type: 'dir', content: 'images,iso,vztmpl,backup', nodes: '',
   path: '', server: '', export: '', share: '', datastore: '',
   username: '', password: '', fingerprint: '',
+  vgname: '', thinpool: '', pool: '', monhost: '', fsname: '', sparse: false,
 };
 
 function StorageDialog({ serverId, open, onOpenChange, editing }: {
@@ -113,6 +133,19 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
       if (form.password) payload.password = form.password;
       if (form.fingerprint.trim()) payload.fingerprint = form.fingerprint.trim();
     }
+    if (form.type === 'lvm') payload.vgname = form.vgname.trim();
+    if (form.type === 'lvmthin') { payload.vgname = form.vgname.trim(); payload.thinpool = form.thinpool.trim(); }
+    if (form.type === 'zfspool') { payload.pool = form.pool.trim(); if (form.sparse) payload.sparse = 1; }
+    if (form.type === 'rbd') {
+      payload.pool = form.pool.trim();
+      if (form.monhost.trim()) payload.monhost = form.monhost.trim();
+      if (form.username.trim()) payload.username = form.username.trim();
+    }
+    if (form.type === 'cephfs') {
+      if (form.fsname.trim()) payload['fs-name'] = form.fsname.trim();
+      if (form.monhost.trim()) payload.monhost = form.monhost.trim();
+      if (form.username.trim()) payload.username = form.username.trim();
+    }
     createStorage.mutate(payload, {
       onSuccess: () => done(t('storages.created')),
       onError: (e: Error) => toast.error(e.message),
@@ -133,7 +166,11 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
             </div>
             <div>
               <Label>{t('storages.type')}</Label>
-              <Select value={form.type} onValueChange={v => { if (v) set('type', v); }} disabled={!!editing}>
+              <Select
+                value={form.type}
+                onValueChange={v => { if (v) setForm(p => ({ ...p, type: v, content: DEFAULT_CONTENT[v] ?? p.content })); }}
+                disabled={!!editing}
+              >
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>{STORAGE_TYPES.map(ty => <SelectItem key={ty} value={ty}>{ty.toUpperCase()}</SelectItem>)}</SelectContent>
               </Select>
@@ -164,6 +201,38 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
               <div><Label>{t('storages.username')}</Label><Input value={form.username} onChange={e => set('username', e.target.value)} className="mt-1" placeholder="user@pbs" /></div>
               <div><Label>{t('storages.password')}</Label><Input type="password" value={form.password} onChange={e => set('password', e.target.value)} className="mt-1" /></div>
               <div className="col-span-2"><Label>{t('storages.fingerprint')}</Label><Input value={form.fingerprint} onChange={e => set('fingerprint', e.target.value)} className="mt-1 font-mono" /></div>
+            </div>
+          )}
+          {!editing && form.type === 'lvm' && (
+            <div><Label>{t('storages.vgname')}</Label><Input value={form.vgname} onChange={e => set('vgname', e.target.value)} className="mt-1 font-mono" placeholder="pve" /></div>
+          )}
+          {!editing && form.type === 'lvmthin' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>{t('storages.vgname')}</Label><Input value={form.vgname} onChange={e => set('vgname', e.target.value)} className="mt-1 font-mono" placeholder="pve" /></div>
+              <div><Label>{t('storages.thinpool')}</Label><Input value={form.thinpool} onChange={e => set('thinpool', e.target.value)} className="mt-1 font-mono" placeholder="data" /></div>
+            </div>
+          )}
+          {!editing && form.type === 'zfspool' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>{t('storages.zfs_pool')}</Label><Input value={form.pool} onChange={e => set('pool', e.target.value)} className="mt-1 font-mono" placeholder="rpool/data" /></div>
+              <label className="flex items-end gap-2 pb-1.5 text-sm">
+                <input type="checkbox" checked={form.sparse} onChange={e => set('sparse', e.target.checked)} />
+                {t('storages.sparse')}
+              </label>
+            </div>
+          )}
+          {!editing && form.type === 'rbd' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>{t('storages.ceph_pool')}</Label><Input value={form.pool} onChange={e => set('pool', e.target.value)} className="mt-1 font-mono" placeholder="vm-pool" /></div>
+              <div><Label>{t('storages.username')}</Label><Input value={form.username} onChange={e => set('username', e.target.value)} className="mt-1" placeholder="admin" /></div>
+              <div className="col-span-2"><Label>{t('storages.monhost')}</Label><Input value={form.monhost} onChange={e => set('monhost', e.target.value)} className="mt-1 font-mono" placeholder="10.0.0.1 10.0.0.2 (внешний Ceph)" /></div>
+            </div>
+          )}
+          {!editing && form.type === 'cephfs' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>{t('storages.fsname')}</Label><Input value={form.fsname} onChange={e => set('fsname', e.target.value)} className="mt-1 font-mono" placeholder="cephfs" /></div>
+              <div><Label>{t('storages.username')}</Label><Input value={form.username} onChange={e => set('username', e.target.value)} className="mt-1" placeholder="admin" /></div>
+              <div className="col-span-2"><Label>{t('storages.monhost')}</Label><Input value={form.monhost} onChange={e => set('monhost', e.target.value)} className="mt-1 font-mono" placeholder="10.0.0.1 10.0.0.2 (внешний Ceph)" /></div>
             </div>
           )}
 
@@ -395,6 +464,7 @@ export default function StoragesTab() {
   const { data: storagesData, isLoading } = useBackupStorages(serverId);
   const { data: jobsData } = useProxmoxBackupJobs(serverId);
   const deleteStorage = useDeleteStorage(serverId);
+  const updateStorage = useUpdateStorage(serverId);
   const updateJob = useUpdateProxmoxJob(serverId);
   const deleteJob = useDeleteProxmoxJob(serverId);
 
@@ -415,6 +485,14 @@ export default function StoragesTab() {
     if (!await confirm(`${t('storages.delete_confirm')} "${s}"?`)) return;
     deleteStorage.mutate(s, {
       onSuccess: () => toast.success(t('storages.deleted')),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  const handleToggleStorage = (s: StorageRow) => {
+    const disabling = s.disable !== 1;
+    updateStorage.mutate({ storage: s.storage, disable: disabling ? 1 : 0 }, {
+      onSuccess: () => toast.success(disabling ? t('storages.disabled_ok', 'Хранилище отключено') : t('storages.enabled_ok', 'Хранилище включено')),
       onError: (e: Error) => toast.error(e.message),
     });
   };
@@ -498,6 +576,11 @@ export default function StoragesTab() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7"
+                            title={s.disable === 1 ? t('backups.enable') : t('backups.disable')}
+                            onClick={() => handleToggleStorage(s)}>
+                            {s.disable === 1 ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}
+                          </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(s); setDialogOpen(true); }}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>

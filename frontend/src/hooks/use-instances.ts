@@ -682,6 +682,44 @@ export function useNodeNetworks(serverId: number, node: string, enabled = true) 
   });
 }
 
+// ==================== Node hardware (PCI/USB passthrough) ====================
+export interface NodePciDevice {
+  id: string;               // 0000:01:00.0
+  vendor_name?: string;
+  device_name?: string;
+  subsystem_device_name?: string;
+  iommugroup?: number;
+  mdev?: number | boolean;
+}
+
+export interface NodeUsbDevice {
+  busnum?: number | string;
+  devnum?: number | string;
+  vendid?: string;
+  prodid?: string;
+  port?: number | string;
+  usbpath?: string;
+  speed?: string;
+  manufacturer?: string;
+  prodname?: string;
+}
+
+export function useNodePciDevices(serverId: number, node: string, enabled = true) {
+  return useQuery<NodePciDevice[]>({
+    queryKey: ['node-pci', serverId, node],
+    queryFn: () => apiClient.get(`/proxmox/api/${serverId}/nodes/${node}/hardware/pci`),
+    enabled: enabled && !!node,
+  });
+}
+
+export function useNodeUsbDevices(serverId: number, node: string, enabled = true) {
+  return useQuery<NodeUsbDevice[]>({
+    queryKey: ['node-usb', serverId, node],
+    queryFn: () => apiClient.get(`/proxmox/api/${serverId}/nodes/${node}/hardware/usb`),
+    enabled: enabled && !!node,
+  });
+}
+
 // ==================== ISO mount/unmount (KVM only) ====================
 export interface IsoItem {
   volid: string;

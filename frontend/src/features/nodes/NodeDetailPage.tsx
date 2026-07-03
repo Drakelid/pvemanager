@@ -11,6 +11,12 @@ import { formatBytes, formatUptime, formatPercent } from '@/lib/format';
 import NodeNetworks from './NodeNetworks';
 import HAResources from './HAResources';
 import SDNManager from './SDNManager';
+import FirewallManager from './FirewallManager';
+import NodeFirewallManager from './NodeFirewallManager';
+import PoolManager from './PoolManager';
+import DiskManager from './DiskManager';
+import AccessManager from './AccessManager';
+import NodeAdminManager from './NodeAdminManager';
 
 export default function NodeDetailPage() {
   const { t } = useTranslation();
@@ -86,6 +92,39 @@ export default function NodeDetailPage() {
       {/* Software Defined Networking */}
       {nodes.length > 0 && (
         <SDNManager serverId={sid} />
+      )}
+
+      {/* Datacenter Firewall */}
+      {nodes.length > 0 && (
+        <FirewallManager serverId={sid} />
+      )}
+
+      {/* Node Firewall */}
+      {nodes.length > 0 && (
+        <NodeFirewallManager serverId={sid} nodeNames={nodes.map(n => n.node)} />
+      )}
+
+      {/* Resource Pools */}
+      {nodes.length > 0 && (
+        <PoolManager
+          serverId={sid}
+          vms={serverVMs.map(v => ({ vmid: v.vmid, name: v.name, type: v.type, node: v.node }))}
+        />
+      )}
+
+      {/* Disks & ZFS */}
+      {nodes.length > 0 && (
+        <DiskManager serverId={sid} nodeNames={nodes.map(n => n.node)} />
+      )}
+
+      {/* Node administration: services & APT */}
+      {nodes.length > 0 && (
+        <NodeAdminManager serverId={sid} nodeNames={nodes.map(n => n.node)} />
+      )}
+
+      {/* PVE Access: realms & API tokens */}
+      {nodes.length > 0 && (
+        <AccessManager serverId={sid} />
       )}
 
       {/* VMs on this server */}

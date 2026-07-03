@@ -9,6 +9,11 @@ from .cluster import router as cluster_router
 from .networks import router as networks_router
 from .lxc import router as lxc_router
 from .images import router as images_router
+from .firewall import router as firewall_router
+from .pools import router as pools_router
+from .disks import router as disks_router
+from .access import router as access_router
+from .node_admin import router as node_admin_router
 from ._helpers import get_next_vmid, save_vm_instance, get_vm_instance
 
 router = APIRouter()
@@ -22,3 +27,8 @@ router.include_router(cluster_router)
 router.include_router(networks_router)
 router.include_router(lxc_router)
 router.include_router(images_router)
+router.include_router(firewall_router)
+router.include_router(pools_router)
+router.include_router(disks_router)
+router.include_router(access_router)
+router.include_router(node_admin_router)

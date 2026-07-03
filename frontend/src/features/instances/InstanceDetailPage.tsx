@@ -40,6 +40,8 @@ import OverviewTab from './tabs/OverviewTab';
 import GraphsTab from './tabs/GraphsTab';
 import SnapshotsTab from './tabs/SnapshotsTab';
 import NetworkingTab from './tabs/NetworkingTab';
+import HardwareTab from './tabs/HardwareTab';
+import FirewallTab from './tabs/FirewallTab';
 import SettingsTab from './tabs/SettingsTab';
 import DestroyTab from './tabs/DestroyTab';
 
@@ -241,6 +243,10 @@ export default function InstanceDetailPage() {
           <TabsTrigger value="graphs">{t('instances.graphs', 'Graphs')}</TabsTrigger>
           <TabsTrigger value="snapshots">{t('common.snapshots', 'Snapshots')}</TabsTrigger>
           <TabsTrigger value="networking">{t('instances.networking', 'Networking')}</TabsTrigger>
+          {type !== 'lxc' && (
+            <TabsTrigger value="hardware">{t('instances.hardware', 'Hardware')}</TabsTrigger>
+          )}
+          <TabsTrigger value="firewall">{t('instances.firewall', 'Firewall')}</TabsTrigger>
           <TabsTrigger value="settings">{t('nav.settings', 'Settings')}</TabsTrigger>
           <TabsTrigger value="destroy" className="text-destructive data-[state=active]:text-destructive">
             {t('instances.destroy', 'Destroy')}
@@ -258,6 +264,14 @@ export default function InstanceDetailPage() {
         </TabsContent>
         <TabsContent value="networking" className="mt-4">
           <NetworkingTab serverId={sid} vmid={vid} type={type} node={node} />
+        </TabsContent>
+        {type !== 'lxc' && (
+          <TabsContent value="hardware" className="mt-4">
+            <HardwareTab serverId={sid} vmid={vid} type={type} node={node} />
+          </TabsContent>
+        )}
+        <TabsContent value="firewall" className="mt-4">
+          <FirewallTab serverId={sid} vmid={vid} type={type} node={node} />
         </TabsContent>
         <TabsContent value="settings" className="mt-4">
           <SettingsTab serverId={sid} vmid={vid} type={type} node={node} />
