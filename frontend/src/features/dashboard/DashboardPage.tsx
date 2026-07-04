@@ -370,7 +370,22 @@ export default function DashboardPage() {
 
   const { data: resources } = useQuery({
     queryKey: ['resources'],
-    queryFn: () => apiClient.get<Rec>('/proxmox/api/resources/all'),
+    queryFn: async () => {
+      const fresh = await apiClient.get<Rec>('/proxmox/api/resources/all')
+      // The REST endpoint returns VMs/containers but NOT per-node stats — those
+      // arrive only via the dashboard_metrics WebSocket. Graft the last known
+      // nodes so this 15 s refetch doesn't blank the node table each cycle.
+      const prev = qc.getQueryData<Rec>(['resources'])
+      const prevServers = (prev?.servers as Rec[]) ?? []
+      if (prevServers.length) {
+        const nodesById = new Map(prevServers.map(s => [s.id, s.nodes]))
+        const servers = ((fresh.servers as Rec[]) ?? []).map(s =>
+          (s.nodes as Rec[])?.length ? s : { ...s, nodes: nodesById.get(s.id) ?? [] }
+        )
+        return { ...fresh, servers }
+      }
+      return fresh
+    },
     refetchInterval: 15000,
   })
 

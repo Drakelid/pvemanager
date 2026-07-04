@@ -44,10 +44,33 @@ _DISK_CACHE_TTL = 30.0
 # I/O rate tracking for instances-list channel: key = "server_id:vmid"
 _list_io_prev: Dict[str, Tuple[float, Dict[str, float]]] = {}
 
+# Last-good per-server dashboard payload: server_id → {vms, containers, nodes}.
+# Used so a transient Proxmox timeout on one poll cycle does not blank the
+# dashboard (readings would otherwise flash to zero and back every 2 s).
+_server_last_good: Dict[int, dict] = {}
+
 
 def get_cached_metrics(channel: str) -> Optional[Any]:
     """Return the last cached payload for a channel, or None."""
     return _metrics_cache.get(channel)
+
+
+def _merge_server_cache(server_id: int, base: dict) -> dict:
+    """
+    Fill empty vms/containers/nodes from the last successful poll for this
+    server, and remember any non-empty values for future degraded cycles.
+    Keeps the dashboard stable when a single poll returns partial data.
+    """
+    cached = _server_last_good.get(server_id, {})
+    for key in ("vms", "containers", "nodes"):
+        if base.get(key):
+            cached[key] = base[key]
+        elif cached.get(key):
+            base[key] = cached[key]
+    base["vms_count"] = len(base.get("vms") or [])
+    base["containers_count"] = len(base.get("containers") or [])
+    _server_last_good[server_id] = cached
+    return base
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -112,14 +135,15 @@ def _fetch_server_resources_with_nodes(server) -> dict:
         base["vms_count"] = len(vms)
         base["containers_count"] = len(containers)
     except Exception as exc:
+        # VM/container fetch failed — fall through to node fetch and let the
+        # last-good cache backfill vms/containers at the end.
         base["error"] = str(exc)
-        return base
 
     # ── Node status + RRD mini-slices ─────────────────────────────────────
     try:
         client = _get_proxmox_client(server)
         if not client.is_connected():
-            return base
+            return _merge_server_cache(server.id, base)
         nodes_raw = client.get_nodes()
         now = time.monotonic()
         nodes_out = []
@@ -170,7 +194,7 @@ def _fetch_server_resources_with_nodes(server) -> dict:
         base["nodes"] = nodes_out
     except Exception as exc:
         logger.debug(f"[metrics_broadcaster] node stats error for server {server.id}: {exc}")
-    return base
+    return _merge_server_cache(server.id, base)
 
 
 def _fetch_node_status(db_factory, server_id: int, node: str):
