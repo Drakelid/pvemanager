@@ -153,7 +153,7 @@ export default function NodeAdminManager({ serverId, nodeNames }: { serverId: nu
                       <TableRow key={u.Package}>
                         <TableCell className="font-mono text-xs font-medium">{u.Package}</TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground">{u.OldVersion || '—'}</TableCell>
-                        <TableCell className="font-mono text-xs text-green-600 dark:text-green-500">{u.Version || '—'}</TableCell>
+                        <TableCell className="font-mono text-xs text-success">{u.Version || '—'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -174,9 +174,9 @@ export default function NodeAdminManager({ serverId, nodeNames }: { serverId: nu
                       const enabled = r.Enabled === 1 || r.Enabled === true;
                       return (
                         <div key={idx} className="flex items-center gap-2 rounded border px-2 py-1.5 text-xs">
-                          <Badge variant={enabled ? 'default' : 'secondary'} className="text-[10px]">{enabled ? 'on' : 'off'}</Badge>
+                          <Badge variant={enabled ? 'default' : 'secondary'} className="text-2xs">{enabled ? 'on' : 'off'}</Badge>
                           <span className="font-mono truncate">{(r.URIs || []).join(' ')} {(r.Suites || []).join(' ')} {(r.Components || []).join(' ')}</span>
-                          <Button size="sm" variant="outline" className="ml-auto h-6 text-[11px]"
+                          <Button size="sm" variant="outline" className="ml-auto h-6 text-2xs"
                             onClick={() => toggleRepo(f.path, idx, !enabled)} disabled={setRepo.isPending}>
                             {enabled ? t('nodeadm.disable', 'Выключить') : t('nodeadm.enable', 'Включить')}
                           </Button>

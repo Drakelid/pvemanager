@@ -166,7 +166,7 @@ function TokenDialog({ serverId, userid, open, onClose }: { serverId: number; us
 
         {secret ? (
           <div className="space-y-3">
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-600 dark:text-amber-500">
+            <div className="rounded-md border border-warning/40 bg-warning/5 p-3 text-xs text-warning">
               {t('access.secret_warning', 'Секрет показывается только один раз — сохраните его сейчас.')}
             </div>
             <div className="space-y-1.5">

@@ -95,7 +95,7 @@ export default function AddUsbDeviceDialog({ open, onClose, serverId, vmid, node
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>{t('hw.usb_device', 'Устройство')}</Label>
-            <Select value={selected} onValueChange={setSelected}>
+            <Select value={selected} onValueChange={(v) => setSelected(v ?? "")}>
               <SelectTrigger className="w-full">
                 <SelectValue
                   placeholder={

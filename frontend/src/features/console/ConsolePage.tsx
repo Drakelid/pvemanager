@@ -269,7 +269,7 @@ export default function ConsolePage() {
           <span className="text-xs text-muted-foreground">Node: {node}</span>
           <Badge
             variant="secondary"
-            className={`text-[10px] ${
+            className={`text-2xs ${
               status === 'connected'
                 ? 'bg-green-500/10 text-green-500'
                 : status === 'connecting'
@@ -293,7 +293,7 @@ export default function ConsolePage() {
             </Button>
           )}
           {isSerial && (
-            <Badge variant="secondary" className="text-[10px] bg-blue-500/10 text-blue-500">serial</Badge>
+            <Badge variant="secondary" className="text-2xs bg-blue-500/10 text-blue-500">serial</Badge>
           )}
           <Button
             variant="ghost"

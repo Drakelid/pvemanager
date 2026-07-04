@@ -302,7 +302,7 @@ function IPHistoryCard() {
             <div className="rounded-lg border divide-y text-sm">
               {rows.map((h, i) => (
                 <div key={i} className="flex items-center gap-2 px-3 py-2">
-                  <Badge variant="outline" className="text-[10px]">{String(h.action ?? '')}</Badge>
+                  <Badge variant="outline" className="text-2xs">{String(h.action ?? '')}</Badge>
                   <span className="text-muted-foreground">{String(h.resource_name ?? '')}</span>
                   <span className="ml-auto text-xs text-muted-foreground">
                     {String(h.performed_by ?? '')} · {h.performed_at ? new Date(String(h.performed_at)).toLocaleString() : ''}

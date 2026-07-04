@@ -11,15 +11,15 @@ import type { AuditLog } from '@/types';
 function levelClass(level?: string) {
   switch ((level || '').toUpperCase()) {
     case 'ERROR':
-      return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+      return 'bg-danger/10 text-danger';
     case 'WARNING':
     case 'WARN':
-      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
+      return 'bg-warning/10 text-warning';
     case 'SUCCESS':
-      return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+      return 'bg-success/10 text-success';
     case 'INFO':
     default:
-      return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+      return 'bg-primary/10 text-primary';
   }
 }
 
@@ -79,10 +79,10 @@ export default function LogsPage() {
             <CardTitle className="text-sm font-medium">
               {t('logs.errors_24h', 'Errors (24h)')}
             </CardTitle>
-            <AlertCircle className="h-4 w-4 text-red-500" />
+            <AlertCircle className="h-4 w-4 text-danger" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">
+            <div className="text-2xl font-bold text-danger">
               {statsQuery.data?.errors_count ?? '—'}
             </div>
           </CardContent>
@@ -92,10 +92,10 @@ export default function LogsPage() {
             <CardTitle className="text-sm font-medium">
               {t('logs.failed_logins', 'Failed Logins')}
             </CardTitle>
-            <ShieldAlert className="h-4 w-4 text-yellow-500" />
+            <ShieldAlert className="h-4 w-4 text-warning" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">
+            <div className="text-2xl font-bold text-warning">
               {statsQuery.data?.failed_logins ?? '—'}
             </div>
           </CardContent>
@@ -156,7 +156,7 @@ export default function LogsPage() {
               {t('common.loading', 'Loading…')}
             </div>
           ) : logsQuery.error ? (
-            <div className="p-8 text-center text-red-500 text-sm">
+            <div className="p-8 text-center text-danger text-sm">
               {t('logs.load_error', 'Failed to load logs')}
             </div>
           ) : logs.length === 0 ? (

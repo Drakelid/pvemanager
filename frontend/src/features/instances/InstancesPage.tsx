@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -86,7 +87,7 @@ import { toast } from 'sonner';
 // ==================== Inline Progress Bar ====================
 function InlineProgress({ value, max, className }: { value: number; max: number; className?: string }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-  const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary';
+  const color = pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-primary';
   return (
     <div className="flex items-center gap-2">
       <div className={`h-1.5 w-16 overflow-hidden rounded-full bg-muted ${className}`}>
@@ -110,7 +111,7 @@ function CircularProgress({ value }: { value: number }) {
         stroke="currentColor" strokeWidth="3"
         strokeDasharray={circ} strokeDashoffset={offset}
         strokeLinecap="round"
-        className="text-blue-500 transition-all duration-500"
+        className="text-primary transition-all duration-500"
         transform="rotate(-90 14 14)"
       />
     </svg>
@@ -580,7 +581,7 @@ export default function InstancesPage() {
             const task = deployTasks.find((t) => t.id === vm._deployTaskId);
             return (
               <div className="flex items-center gap-2">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500 shrink-0" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
                 <div>
                   <span className="font-medium text-muted-foreground">{vm.name || 'New VM'}</span>
                   <span className="ml-2 text-xs text-muted-foreground">
@@ -620,7 +621,7 @@ export default function InstancesPage() {
             return (
               <div className="flex items-center gap-2">
                 <CircularProgress value={progress} />
-                <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 text-[10px]">
+                <Badge variant="secondary" className="bg-primary/10 text-primary text-2xs">
                   {t('instances.status_creating', 'Creating')}
                   {progress > 0 ? ` ${progress}%` : ''}
                 </Badge>
@@ -632,8 +633,8 @@ export default function InstancesPage() {
           if (bulkOv) {
             return (
               <div className="flex items-center gap-2">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500 shrink-0" />
-                <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 text-[10px]">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                <Badge variant="secondary" className="bg-primary/10 text-primary text-2xs">
                   {bulkActionLabel(bulkOv.action)}
                 </Badge>
               </div>
@@ -647,7 +648,7 @@ export default function InstancesPage() {
             return (
               <div className="flex items-center gap-2">
                 <CircularProgress value={overlay.progress ?? 0} />
-                <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 text-[10px]">
+                <Badge variant="secondary" className="bg-warning/10 text-warning text-2xs">
                   {label}{(overlay.progress ?? 0) > 0 ? ` ${overlay.progress}%` : ''}
                 </Badge>
               </div>
@@ -657,14 +658,14 @@ export default function InstancesPage() {
             <div className="flex items-center gap-1.5">
               <Badge
                 variant="secondary"
-                className={status === 'running' ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}
+                className={status === 'running' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}
               >
                 {status}
               </Badge>
               {vm.lock && (
                 <Badge
                   variant="secondary"
-                  className="bg-amber-500/10 text-amber-600 text-[10px] gap-1"
+                  className="bg-warning/10 text-warning text-2xs gap-1"
                   title={t('instances.locked_hint', 'Заблокировано Proxmox — операция выполняется')}
                 >
                   <Lock className="h-3 w-3" />
@@ -819,7 +820,7 @@ export default function InstancesPage() {
         id: 'net_io',
         header: () => (
           <span className="flex items-center gap-1">
-            <ArrowDown className="h-3 w-3 text-blue-500" />
+            <ArrowDown className="h-3 w-3 text-primary" />
             <ArrowUp className="h-3 w-3 text-violet-500" />
             Net
           </span>
@@ -834,7 +835,7 @@ export default function InstancesPage() {
           return (
             <div className="space-y-0.5">
               <div className="flex items-center gap-1">
-                <ArrowDown className="h-3 w-3 shrink-0 text-blue-500" />
+                <ArrowDown className="h-3 w-3 shrink-0 text-primary" />
                 <span className="text-xs tabular-nums">{fmt(inRate)}</span>
               </div>
               <div className="flex items-center gap-1">
@@ -864,11 +865,11 @@ export default function InstancesPage() {
           return (
             <div className="space-y-0.5">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] text-cyan-500 font-medium w-3">R</span>
+                <span className="text-2xs text-cyan-500 font-medium w-3">R</span>
                 <span className="text-xs tabular-nums">{fmt(readRate)}</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-[10px] text-orange-500 font-medium w-3">W</span>
+                <span className="text-2xs text-orange-500 font-medium w-3">W</span>
                 <span className="text-xs tabular-nums">{fmt(writeRate)}</span>
               </div>
             </div>
@@ -951,15 +952,15 @@ export default function InstancesPage() {
       <Tabs value={typeTab} onValueChange={setTypeTab}>
         <TabsList>
           <TabsTrigger value="all">
-            All <Badge variant="secondary" className="ml-1.5 text-[10px]">{counts.all}</Badge>
+            All <Badge variant="secondary" className="ml-1.5 text-2xs">{counts.all}</Badge>
           </TabsTrigger>
           <TabsTrigger value="vm">
             <Monitor className="mr-1 h-3.5 w-3.5" /> VM
-            <Badge variant="secondary" className="ml-1.5 text-[10px]">{counts.vm}</Badge>
+            <Badge variant="secondary" className="ml-1.5 text-2xs">{counts.vm}</Badge>
           </TabsTrigger>
           <TabsTrigger value="lxc">
             <Container className="mr-1 h-3.5 w-3.5" /> LXC
-            <Badge variant="secondary" className="ml-1.5 text-[10px]">{counts.lxc}</Badge>
+            <Badge variant="secondary" className="ml-1.5 text-2xs">{counts.lxc}</Badge>
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -1043,9 +1044,9 @@ export default function InstancesPage() {
         return (
           <div key={task.id} className="flex items-center gap-3 rounded-lg border bg-muted/50 p-2">
             {isDone ? (
-              <Power className={`h-4 w-4 ${task.failed > 0 ? 'text-amber-500' : 'text-green-500'}`} />
+              <Power className={`h-4 w-4 ${task.failed > 0 ? 'text-warning' : 'text-success'}`} />
             ) : (
-              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
             )}
             <span className="text-sm font-medium">{bulkActionLabel(task.action)}</span>
             <InlineProgress value={processed} max={task.total} />
@@ -1053,7 +1054,7 @@ export default function InstancesPage() {
               {processed}/{task.total}
             </span>
             {task.failed > 0 && (
-              <span className="text-xs text-red-500">
+              <span className="text-xs text-danger">
                 {task.failed} {t('instances.bulk_failed', 'с ошибкой')}
               </span>
             )}
@@ -1065,8 +1066,17 @@ export default function InstancesPage() {
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="space-y-3 p-4" aria-busy="true" aria-label={t('common.loading', 'Loading')}>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <Skeleton className="h-4 w-4 rounded" />
+                  <Skeleton className="h-4 flex-1 max-w-[220px]" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="hidden h-4 w-24 sm:block" />
+                  <Skeleton className="hidden h-4 w-20 md:block" />
+                  <Skeleton className="ml-auto h-4 w-8" />
+                </div>
+              ))}
             </div>
           ) : allRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
@@ -1081,8 +1091,21 @@ export default function InstancesPage() {
                   <TableRow key={headerGroup.id}>
                     {headerGroup.headers.map((header) => {
                       const filterVariant = header.column.columnDef.meta?.filter;
+                      // Expose sort state to assistive tech (WCAG aria-sort).
+                      const sorted = header.column.getIsSorted();
+                      const ariaSort = !header.column.getCanSort()
+                        ? undefined
+                        : sorted === 'asc'
+                          ? 'ascending'
+                          : sorted === 'desc'
+                            ? 'descending'
+                            : 'none';
                       return (
-                        <TableHead key={header.id} style={{ width: header.getSize() }}>
+                        <TableHead
+                          key={header.id}
+                          style={{ width: header.getSize() }}
+                          aria-sort={ariaSort}
+                        >
                           {header.isPlaceholder ? null : (
                             <div className="flex items-center gap-0.5">
                               {flexRender(header.column.columnDef.header, header.getContext())}
@@ -1108,7 +1131,7 @@ export default function InstancesPage() {
                     <TableRow
                       key={row.id}
                       data-state={row.getIsSelected() && 'selected'}
-                      className={isGhost ? 'opacity-70 bg-blue-500/5 border-l-2 border-l-blue-500' : undefined}
+                      className={isGhost ? 'opacity-70 bg-primary/5 border-l-2 border-l-primary' : undefined}
                     >
                       {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id}>

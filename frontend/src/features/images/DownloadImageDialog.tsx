@@ -161,7 +161,7 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
               </SelectContent>
             </Select>
             {!storagesLoading && storages.length === 0 && (
-              <p className="mt-2 text-sm text-amber-600 dark:text-amber-500">
+              <p className="mt-2 text-sm text-warning">
                 {content === 'import'
                   ? 'Нет хранилища с поддержкой импорта (content=import). Нужен dir/NFS storage с типом контента «Import» (PVE 8.2+).'
                   : 'Нет хранилища с поддержкой шаблонов контейнеров (vztmpl).'}
@@ -191,7 +191,7 @@ export default function DownloadImageDialog({ open, onClose, serverId, node, ima
                   </SelectContent>
                 </Select>
                 {diskStorages.length === 0 && (
-                  <p className="mt-2 text-sm text-amber-600 dark:text-amber-500">
+                  <p className="mt-2 text-sm text-warning">
                     Нет хранилища для дисков ВМ (content=images).
                   </p>
                 )}

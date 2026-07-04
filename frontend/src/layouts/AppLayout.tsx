@@ -130,7 +130,7 @@ function SidebarContent() {
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
         {visibleGroups.map((group) => (
           <div key={group.title}>
-            <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1.5 px-2 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t(`nav.${group.title.toLowerCase()}`, group.title)}
             </p>
             <div className="space-y-0.5">
@@ -185,7 +185,7 @@ function UserSection() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-medium">{user?.username ?? 'User'}</p>
-              <p className="truncate text-[11px] text-muted-foreground">
+              <p className="truncate text-2xs text-muted-foreground">
                 {user?.is_admin ? 'Admin' : 'User'}
               </p>
             </div>
@@ -304,7 +304,7 @@ export default function AppLayout() {
   useGlobalRealtimeSync();
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       {/* Desktop sidebar */}
       <aside className="hidden w-[var(--sidebar-width)] shrink-0 border-r bg-card lg:block">
         <SidebarContent />

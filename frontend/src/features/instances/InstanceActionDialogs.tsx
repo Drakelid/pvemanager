@@ -163,7 +163,7 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Целевой узел</Label>
-              <Select value={targetNode || CLONE_AUTO} onValueChange={(v) => { setTargetNode(v === CLONE_AUTO ? '' : v); setTargetStorage(''); }}>
+              <Select value={targetNode || CLONE_AUTO} onValueChange={(v) => { setTargetNode(v && v !== CLONE_AUTO ? v : ''); setTargetStorage(''); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={CLONE_AUTO}>Тот же узел ({node})</SelectItem>
@@ -176,7 +176,7 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
 
             <div className="space-y-1.5">
               <Label>Хранилище</Label>
-              <Select value={targetStorage || CLONE_AUTO} onValueChange={(v) => setTargetStorage(v === CLONE_AUTO ? '' : v)}>
+              <Select value={targetStorage || CLONE_AUTO} onValueChange={(v) => setTargetStorage(v && v !== CLONE_AUTO ? v : '')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={CLONE_AUTO}>Как у источника</SelectItem>
@@ -303,7 +303,7 @@ function MigrateDialog({ open, onClose, serverId, vmid, type, node, name }: Omit
               </SelectContent>
             </Select>
             {nodes.length === 0 && (
-              <p className="text-xs text-amber-500">{t('instances.migrate_no_targets')}</p>
+              <p className="text-xs text-warning">{t('instances.migrate_no_targets')}</p>
             )}
           </div>
 
@@ -381,7 +381,7 @@ function ReinstallDialog({ open, onClose, serverId, vmid, node, name, type }: Om
           <DialogDescription>
             Это пересоздаст инстанс <strong>{expected}</strong> из исходного шаблона. Все данные будут утеряны.
             {type === 'lxc' && (
-              <span className="mt-2 block text-amber-500">Поддержка LXC — экспериментальная.</span>
+              <span className="mt-2 block text-warning">Поддержка LXC — экспериментальная.</span>
             )}
           </DialogDescription>
         </DialogHeader>
@@ -609,7 +609,7 @@ function ExecuteCommandDialog({ open, onClose, serverId, vmid, node, type }: Omi
           {result && (
             <div className="space-y-2">
               <div className="text-xs">
-                exit_code: <span className={result.exit_code === 0 ? 'text-green-500' : 'text-red-500'}>{result.exit_code}</span>
+                exit_code: <span className={result.exit_code === 0 ? 'text-success' : 'text-danger'}>{result.exit_code}</span>
               </div>
               {result.stdout && (
                 <div>
@@ -620,10 +620,10 @@ function ExecuteCommandDialog({ open, onClose, serverId, vmid, node, type }: Omi
               {result.stderr && (
                 <div>
                   <p className="mb-1 text-xs text-muted-foreground">stderr</p>
-                  <pre className="max-h-32 overflow-auto rounded-md bg-red-500/10 p-2 text-xs font-mono text-red-500">{result.stderr}</pre>
+                  <pre className="max-h-32 overflow-auto rounded-md bg-danger/10 p-2 text-xs font-mono text-danger">{result.stderr}</pre>
                 </div>
               )}
-              {result.error && <p className="text-xs text-red-500">{result.error}</p>}
+              {result.error && <p className="text-xs text-danger">{result.error}</p>}
             </div>
           )}
         </div>
@@ -756,20 +756,20 @@ type ActionConfig = {
 
 const POWER_ACTION_CONFIG: Record<PowerAction, ActionConfig> = {
   start: {
-    icon: <Play className="h-4 w-4 text-green-500" />,
+    icon: <Play className="h-4 w-4 text-success" />,
     title: 'Запустить',
     description: 'Запустить инстанс',
     btnLabel: 'Запустить',
     btnVariant: 'default',
-    btnClass: 'bg-green-600 hover:bg-green-700 text-white border-0',
+    btnClass: 'bg-success text-success-foreground hover:bg-success/90 border-0',
   },
   restart: {
-    icon: <RotateCcw className="h-4 w-4 text-amber-500" />,
+    icon: <RotateCcw className="h-4 w-4 text-warning" />,
     title: 'Перезапустить',
     description: 'Перезапустить инстанс',
     btnLabel: 'Перезапустить',
     btnVariant: 'outline',
-    btnClass: 'border-amber-500 text-amber-500 hover:bg-amber-500/10',
+    btnClass: 'border-warning text-warning hover:bg-warning/10',
   },
   shutdown: {
     icon: <Power className="h-4 w-4 text-orange-500" />,

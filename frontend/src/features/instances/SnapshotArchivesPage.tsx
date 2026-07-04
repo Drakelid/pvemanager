@@ -59,7 +59,7 @@ export default function SnapshotArchivesPage() {
                     <TableCell>
                       <span className="text-sm">{a.vm_name || '—'}</span>
                       <span className="ml-1 text-xs text-muted-foreground">#{a.vmid}</span>
-                      {a.vm_type && <Badge variant="outline" className="ml-2 text-[10px]">{a.vm_type === 'qemu' ? 'VM' : 'LXC'}</Badge>}
+                      {a.vm_type && <Badge variant="outline" className="ml-2 text-2xs">{a.vm_type === 'qemu' ? 'VM' : 'LXC'}</Badge>}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{a.server_name || a.server_id}{a.node ? ` / ${a.node}` : ''}</TableCell>
                     <TableCell className="text-xs">{a.deleted_by || '—'}</TableCell>

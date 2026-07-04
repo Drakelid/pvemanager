@@ -81,11 +81,11 @@ function ChartCard({ title, data, dataKey, color, formatValue, unit, headerRight
             <XAxis
               dataKey="time"
               tickFormatter={fmtTime}
-              className="text-[10px] fill-muted-foreground"
+              className="text-2xs fill-muted-foreground"
               tick={{ fontSize: 10 }}
             />
             <YAxis
-              className="text-[10px] fill-muted-foreground"
+              className="text-2xs fill-muted-foreground"
               tick={{ fontSize: 10 }}
               tickFormatter={(v) => (formatValue ? formatValue(v) : String(v))}
               width={55}
@@ -150,7 +150,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
     nic,
   });
 
-  const points = (data?.data ?? []) as Array<Record<string, unknown>>;
+  const points = (data?.data ?? []) as unknown as Array<Record<string, unknown>>;
   const nics = data?.meta?.nics ?? [];
 
   function resetCustom() {

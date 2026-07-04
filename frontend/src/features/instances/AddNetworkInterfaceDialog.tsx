@@ -172,7 +172,7 @@ export default function AddNetworkInterfaceDialog({ open, onClose, serverId, vmi
             ) : (
               <div className="space-y-1.5">
                 <Label>{t('netif.model', 'Модель')}</Label>
-                <Select value={model} onValueChange={setModel}>
+                <Select value={model} onValueChange={(v) => setModel(v ?? "")}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -187,7 +187,7 @@ export default function AddNetworkInterfaceDialog({ open, onClose, serverId, vmi
 
             <div className="space-y-1.5">
               <Label>{t('netif.bridge', 'Мост')}</Label>
-              <Select value={bridge} onValueChange={setBridge}>
+              <Select value={bridge} onValueChange={(v) => setBridge(v ?? "")}>
                 <SelectTrigger>
                   <SelectValue placeholder={t('netif.select_bridge', 'Выберите мост')} />
                 </SelectTrigger>

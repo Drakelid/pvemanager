@@ -149,7 +149,7 @@ export default function NodeShellPage() {
           <span className="text-xs text-muted-foreground">Node: {node}</span>
           <Badge
             variant="secondary"
-            className={`text-[10px] ${
+            className={`text-2xs ${
               status === 'connected'
                 ? 'bg-green-500/10 text-green-500'
                 : status === 'connecting'

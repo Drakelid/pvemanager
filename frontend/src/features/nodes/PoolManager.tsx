@@ -62,7 +62,7 @@ function PoolMembers({ serverId, poolid, vms }: { serverId: number; poolid: stri
                 : available.map(v => (
                   <SelectItem key={v.vmid} value={String(v.vmid)}>
                     <span className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-[10px]">{v.type === 'qemu' ? 'VM' : 'LXC'}</Badge>
+                      <Badge variant="outline" className="text-2xs">{v.type === 'qemu' ? 'VM' : 'LXC'}</Badge>
                       {v.name || `#${v.vmid}`} <span className="text-xs text-muted-foreground">#{v.vmid}</span>
                     </span>
                   </SelectItem>
@@ -78,7 +78,7 @@ function PoolMembers({ serverId, poolid, vms }: { serverId: number; poolid: stri
         <div className="space-y-1">
           {members.map(m => (
             <div key={m.id} className="flex items-center gap-2 rounded border px-2 py-1 text-xs">
-              <Badge variant="outline" className="text-[10px]">
+              <Badge variant="outline" className="text-2xs">
                 {m.type === 'storage' ? 'STORAGE' : m.type === 'qemu' ? 'VM' : 'LXC'}
               </Badge>
               <span className="font-medium">{m.name || m.storage || m.id}</span>

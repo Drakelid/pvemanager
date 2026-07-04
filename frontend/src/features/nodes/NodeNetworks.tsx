@@ -229,7 +229,7 @@ export default function NodeNetworks({ serverId, nodeNames }: { serverId: number
                   <TableCell className="font-mono font-medium">
                     {iface.iface}
                     {iface.ipam_name && (
-                      <Badge variant="outline" className="ml-2 text-[10px]">IPAM: {iface.ipam_name}</Badge>
+                      <Badge variant="outline" className="ml-2 text-2xs">IPAM: {iface.ipam_name}</Badge>
                     )}
                   </TableCell>
                   <TableCell><Badge variant="secondary">{iface.type}</Badge></TableCell>

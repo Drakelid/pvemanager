@@ -782,7 +782,7 @@ export default function BackupsPage() {
                 {Array.from(selectedBackups.values()).map((b) => (
                   <div key={b.volid} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
                     <span className="flex items-center gap-2 min-w-0">
-                      <Badge variant="outline" className="uppercase text-[10px] shrink-0">{detectVmType(b.volid)}</Badge>
+                      <Badge variant="outline" className="uppercase text-2xs shrink-0">{detectVmType(b.volid)}</Badge>
                       <span className="font-mono shrink-0">#{b.vmid}</span>
                       <span className="font-mono text-xs text-muted-foreground truncate">{b.volid}</span>
                     </span>
@@ -794,7 +794,7 @@ export default function BackupsPage() {
 
             <div>
               <Label>{t('backups.bulk_target_node')}</Label>
-              <Select value={bulkTargetNode} onValueChange={v => setBulkTargetNode(v)}>
+              <Select value={bulkTargetNode} onValueChange={v => setBulkTargetNode(v ?? "")}>
                 <SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   <SelectItem value="__source__">— {t('backups.bulk_target_node_source')}</SelectItem>
@@ -806,7 +806,7 @@ export default function BackupsPage() {
 
             <div>
               <Label>{t('backups.restore_target_storage')}</Label>
-              <Select value={bulkTargetStorage} onValueChange={v => setBulkTargetStorage(v)}>
+              <Select value={bulkTargetStorage} onValueChange={v => setBulkTargetStorage(v ?? "")}>
                 <SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   <SelectItem value={FROM_BACKUP}>{t('backups.storage_from_backup')}</SelectItem>
@@ -986,7 +986,7 @@ export default function BackupsPage() {
                                 });
                               }}
                             />
-                            <Badge variant="outline" className="uppercase text-[10px] px-1">{vm.type}</Badge>
+                            <Badge variant="outline" className="uppercase text-2xs px-1">{vm.type}</Badge>
                             <span className="font-mono text-xs w-12">{vm.vmid}</span>
                             <span className="truncate">{vm.name || '—'}</span>
                             <span className="ml-auto text-xs text-muted-foreground font-mono">{vm.node}</span>

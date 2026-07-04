@@ -123,7 +123,7 @@ function PlatformCard({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>{t('hw.bios', 'BIOS')}</Label>
-            <Select value={bios} onValueChange={setBios}>
+            <Select value={bios} onValueChange={(v) => setBios(v ?? "")}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {BIOS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
@@ -132,7 +132,7 @@ function PlatformCard({
           </div>
           <div className="space-y-1.5">
             <Label>{t('hw.machine', 'Тип платформы')}</Label>
-            <Select value={machine} onValueChange={setMachine}>
+            <Select value={machine} onValueChange={(v) => setMachine(v ?? "")}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {MACHINE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
@@ -141,7 +141,7 @@ function PlatformCard({
           </div>
           <div className="space-y-1.5">
             <Label>{t('hw.vga', 'Дисплей (VGA)')}</Label>
-            <Select value={vga} onValueChange={setVga}>
+            <Select value={vga} onValueChange={(v) => setVga(v ?? "")}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {VGA_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
@@ -150,7 +150,7 @@ function PlatformCard({
           </div>
           <div className="space-y-1.5">
             <Label>{t('hw.scsihw', 'SCSI-контроллер')}</Label>
-            <Select value={scsihw} onValueChange={setScsihw}>
+            <Select value={scsihw} onValueChange={(v) => setScsihw(v ?? "")}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {SCSIHW_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
@@ -166,8 +166,8 @@ function PlatformCard({
 
         {/* EFI-диск: обязателен для OVMF, показываем выбор хранилища */}
         {needsEfiDisk && (
-          <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-500">
+          <div className="rounded-md border border-warning/40 bg-warning/5 p-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-warning">
               <AlertTriangle className="h-4 w-4" />
               {t('hw.efi_required_title', 'Для OVMF (UEFI) нужен EFI-диск')}
             </div>
@@ -176,7 +176,7 @@ function PlatformCard({
             </p>
             <div className="space-y-1.5">
               <Label>{t('hw.efi_storage', 'Хранилище EFI-диска')}</Label>
-              <Select value={efiStorage} onValueChange={setEfiStorage}>
+              <Select value={efiStorage} onValueChange={(v) => setEfiStorage(v ?? "")}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={
                     storagesLoading
@@ -275,7 +275,7 @@ export default function HardwareTab({ serverId, vmid, type, node }: Props) {
         </CardHeader>
         <CardContent className="space-y-3">
           {isRunning && (
-            <div className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-600 dark:text-amber-500">
+            <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/5 p-2.5 text-xs text-warning">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               {t('hw.running_lock', 'VM запущена — проброс устройств нельзя добавить или удалить. Выключите VM.')}
             </div>

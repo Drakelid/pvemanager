@@ -82,7 +82,7 @@ export function useMyQuota() {
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { full_name?: string; email?: string; ssh_public_key?: string }) =>
+    mutationFn: (data: { full_name?: string; email?: string; ssh_public_key?: string; language?: string }) =>
       apiClient.put<{ message: string }>('/settings/api/profile', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.profile }),
   });

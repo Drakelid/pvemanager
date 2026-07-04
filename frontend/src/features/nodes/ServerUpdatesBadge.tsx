@@ -60,12 +60,12 @@ export default function ServerUpdatesBadge({
       {total > 0 && (
         <Link
           to={`/nodes/${serverId}?tab=admin`}
-          className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
+          className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs font-medium text-warning transition-colors hover:bg-warning/20"
           title={t('nodes.updates_available_count', { count: total })}
         >
           <ArrowUpCircle className="h-4 w-4 shrink-0" />
           <span className="flex-1 min-w-0 truncate">{t('nodes.updates_available')}</span>
-          <span className="rounded-full bg-amber-500/20 px-2 py-0.5 font-semibold tabular-nums">
+          <span className="rounded-full bg-warning/20 px-2 py-0.5 font-semibold tabular-nums">
             {total}
           </span>
         </Link>

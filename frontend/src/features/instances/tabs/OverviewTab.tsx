@@ -28,9 +28,9 @@ function MetricCard({
   const barColor =
     percent !== undefined
       ? percent >= 90
-        ? 'bg-red-500'
+        ? 'bg-danger'
         : percent >= 70
-          ? 'bg-amber-500'
+          ? 'bg-warning'
           : 'bg-primary'
       : 'bg-primary';
 
@@ -82,7 +82,7 @@ function NetworkCard({ label, inRate, outRate }: { label: string; inRate?: numbe
 
 function DiskCard({ disk }: { disk: DiskInfo }) {
   const pct = disk.total > 0 ? (disk.used / disk.total) * 100 : 0;
-  const barColor = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary';
+  const barColor = pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-primary';
   return (
     <Card>
       <CardContent className="p-4">
