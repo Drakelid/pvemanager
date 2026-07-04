@@ -560,6 +560,63 @@ export function useResizeDisk(serverId: number, vmid: number, type: string, node
   });
 }
 
+export function useUnlockInstance(serverId: number, vmid: number, type: string, node: string) {
+  const qc = useQueryClient();
+  const prefix = type === 'lxc' ? 'container' : 'vm';
+  return useMutation({
+    mutationFn: () => apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/unlock?node=${node}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
+      qc.invalidateQueries({ queryKey: vmKeys.status(serverId, vmid) });
+    },
+  });
+}
+
+export interface CloudInitInput {
+  ciuser?: string;
+  cipassword?: string;
+  sshkeys?: string;
+  ipconfig0?: string;
+  nameserver?: string;
+  searchdomain?: string;
+}
+
+export function useUpdateCloudInit(serverId: number, vmid: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CloudInitInput) =>
+      apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/cloud-init?node=${node}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) }),
+  });
+}
+
+export function useMoveDisk(serverId: number, vmid: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { disk: string; target_storage: string; delete?: boolean; format?: string }) =>
+      apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/disk/move?node=${node}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) }),
+  });
+}
+
+export function useAddDisk(serverId: number, vmid: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { disk: string; storage: string; size_gb: number; ssd?: boolean; discard?: boolean; iothread?: boolean }) =>
+      apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/disk/add?node=${node}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) }),
+  });
+}
+
+export function useDetachDisk(serverId: number, vmid: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { disk: string; destroy?: boolean }) =>
+      apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/disk/detach?node=${node}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) }),
+  });
+}
+
 // ==================== Config Update ====================
 export function useUpdateConfig(serverId: number, vmid: number, type: string, node: string) {
   const qc = useQueryClient();

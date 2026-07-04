@@ -1430,6 +1430,44 @@ def migrate_user_quotas(conn):
     logger.info("✓ user_quotas table created")
 
 
+def migrate_granular_permissions(conn):
+    """
+    Migration 29: Backfill granular RBAC permissions.
+
+    Splits umbrella permissions (server:view/manage, vm:view, user:manage) into
+    granular ones (firewall:*, network:*, node:*, storage:*, pool:*, access:*)
+    for existing roles, and ensures the default roles include the new keys.
+    """
+    logger.info("Migration 29: Backfilling granular RBAC permissions...")
+
+    if not table_exists(conn, 'roles'):
+        logger.info("Table roles does not exist, skipping granular permissions migration")
+        return
+
+    try:
+        from app.rbac.migration import (
+            backfill_granular_permissions,
+            ensure_default_roles_new_format,
+        )
+    except ImportError:
+        try:
+            from backend.app.rbac.migration import (
+                backfill_granular_permissions,
+                ensure_default_roles_new_format,
+            )
+        except ImportError:
+            logger.warning("Could not import RBAC utilities, skipping granular permissions migration")
+            return
+
+    updated = backfill_granular_permissions(conn)
+    logger.info(f"Backfilled granular permissions for {updated} role(s)")
+
+    # Ensure default roles pick up the new granular keys as well
+    ensure_default_roles_new_format(conn)
+
+    logger.info("✓ Granular permissions migration completed")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1666,6 +1704,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"User quotas migration: {e}")
+                conn.rollback()
+
+            # Migration 29: Backfill granular RBAC permissions
+            try:
+                migrate_granular_permissions(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Granular permissions migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

@@ -638,7 +638,89 @@ def _create_permissions() -> PermissionRegistry:
         category="Notifications",
         requires=["notification:view"]
     ))
-    
+
+    # Firewall permissions (datacenter / node / VM firewall)
+    registry.register(Permission(
+        resource="firewall", action="view",
+        display_name="View Firewall",
+        description="View firewall rules, groups and options",
+        category="Firewall"
+    ))
+    registry.register(Permission(
+        resource="firewall", action="manage",
+        display_name="Manage Firewall",
+        description="Manage firewall rules, security groups, IP sets and options",
+        category="Firewall",
+        requires=["firewall:view"]
+    ))
+
+    # Networking permissions (node interfaces + SDN)
+    registry.register(Permission(
+        resource="network", action="view",
+        display_name="View Networking",
+        description="View node network interfaces and SDN configuration",
+        category="Networking"
+    ))
+    registry.register(Permission(
+        resource="network", action="manage",
+        display_name="Manage Networking",
+        description="Manage node network interfaces, bridges and SDN (zones, vnets, subnets)",
+        category="Networking",
+        requires=["network:view"]
+    ))
+
+    # Node administration permissions (services, APT, upgrade)
+    registry.register(Permission(
+        resource="node", action="view",
+        display_name="View Node Administration",
+        description="View node services, APT updates and repositories",
+        category="Node Administration"
+    ))
+    registry.register(Permission(
+        resource="node", action="manage",
+        display_name="Manage Node Administration",
+        description="Control systemd services and manage APT repositories/refresh",
+        category="Node Administration",
+        requires=["node:view"]
+    ))
+    registry.register(Permission(
+        resource="node", action="upgrade",
+        display_name="Upgrade Node Packages",
+        description="Run apt dist-upgrade via the node console (root shell)",
+        category="Node Administration",
+        requires=["node:view"]
+    ))
+
+    # Resource pool permissions
+    registry.register(Permission(
+        resource="pool", action="view",
+        display_name="View Pools",
+        description="View resource pools and their members",
+        category="Resource Pools"
+    ))
+    registry.register(Permission(
+        resource="pool", action="manage",
+        display_name="Manage Pools",
+        description="Create/delete pools and manage pool membership",
+        category="Resource Pools",
+        requires=["pool:view"]
+    ))
+
+    # PVE access permissions (authentication realms & API tokens)
+    registry.register(Permission(
+        resource="access", action="view",
+        display_name="View PVE Access",
+        description="View Proxmox authentication realms and API tokens",
+        category="PVE Access"
+    ))
+    registry.register(Permission(
+        resource="access", action="manage",
+        display_name="Manage PVE Access",
+        description="Manage Proxmox authentication realms and API tokens",
+        category="PVE Access",
+        requires=["access:view"]
+    ))
+
     return registry
 
 

@@ -1,7 +1,9 @@
 import { Outlet } from 'react-router';
 import { Monitor } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import AuthPattern from '@/features/auth/AuthPattern';
+import { useThemeStore } from '@/stores/theme-store';
+import authBgDark from '@/assets/auth/auth-bg-dark.png';
+import authBgLight from '@/assets/auth/auth-bg-light.png';
 
 function LanguageSwitcher() {
   const { i18n } = useTranslation();
@@ -12,7 +14,7 @@ function LanguageSwitcher() {
       value={lang}
       onChange={(e) => i18n.changeLanguage(e.target.value)}
       aria-label="Language"
-      className="cursor-pointer rounded-md bg-transparent py-1 pr-1 text-sm text-text-secondary outline-none transition-colors hover:text-text-primary focus-visible:text-text-primary"
+      className="cursor-pointer rounded-md bg-transparent py-1 pr-1 text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground"
     >
       <option value="ru">Русский</option>
       <option value="en">English</option>
@@ -22,12 +24,21 @@ function LanguageSwitcher() {
 
 export default function AuthLayout() {
   const year = new Date().getFullYear();
+  const theme = useThemeStore((s) => s.theme);
+  const authBg = theme === 'light' ? authBgLight : authBgDark;
 
   return (
-    <div className="grid min-h-screen bg-surface-0 lg:grid-cols-[1.4fr_1fr]">
-      {/* Левая декоративная панель */}
-      <div className="relative hidden overflow-hidden bg-surface-1 text-primary/60 lg:block">
-        <AuthPattern className="absolute inset-0 h-full w-full" />
+    <div className="grid min-h-screen bg-background lg:grid-cols-[1.4fr_1fr]">
+      {/* Левая декоративная панель со сгенерированным фоном */}
+      <div className="relative hidden overflow-hidden bg-muted lg:block">
+        <img
+          src={authBg}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        {/* Плавный бесшовный переход к панели формы (в обеих темах) */}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-background/70" />
       </div>
 
       {/* Правая панель с формой */}
@@ -48,7 +59,7 @@ export default function AuthLayout() {
         </div>
 
         {/* Футер */}
-        <div className="flex items-center gap-4 text-sm text-text-secondary">
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <LanguageSwitcher />
           <span>PVEmanager © {year}</span>
         </div>

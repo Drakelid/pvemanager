@@ -1528,6 +1528,258 @@ async def resize_vm_disk(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/api/{server_id}/vm/{vmid}/disk/move")
+async def move_vm_disk(
+    server_id: int,
+    vmid: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:manage"))
+):
+    """Переместить диск VM в другое хранилище (move_disk)."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    disk = data.get('disk')
+    target_storage = data.get('target_storage')
+    if not disk or not target_storage:
+        raise HTTPException(status_code=400, detail="Требуются параметры disk и target_storage")
+
+    try:
+        client = _get_proxmox_client(server)
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+
+        result = client.move_vm_disk(
+            node, vmid, disk, target_storage,
+            delete=bool(data.get('delete', True)),
+            target_format=data.get('format') or None,
+        )
+        if result.get('success'):
+            logger.info(f"User {current_user.username} moved disk {disk} of VM {vmid} to {target_storage}")
+            return JSONResponse(content={"status": "success", "upid": result.get('upid')})
+        raise HTTPException(status_code=400, detail=result.get('error', 'Failed'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error moving VM {vmid} disk: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/{server_id}/vm/{vmid}/disk/add")
+async def add_vm_disk(
+    server_id: int,
+    vmid: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:manage"))
+):
+    """Добавить новый диск VM."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    disk = data.get('disk')
+    storage = data.get('storage')
+    size_gb = data.get('size_gb')
+    if not disk or not storage or not size_gb:
+        raise HTTPException(status_code=400, detail="Требуются параметры disk, storage и size_gb")
+
+    try:
+        client = _get_proxmox_client(server)
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+
+        result = client.add_vm_disk(
+            node, vmid, disk, storage, int(size_gb),
+            ssd=bool(data.get('ssd', False)),
+            discard=bool(data.get('discard', False)),
+            iothread=bool(data.get('iothread', False)),
+        )
+        if result.get('success'):
+            logger.info(f"User {current_user.username} added disk {disk} ({size_gb}G) to VM {vmid}")
+            return JSONResponse(content={"status": "success"})
+        raise HTTPException(status_code=400, detail=result.get('error', 'Failed'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding disk to VM {vmid}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/{server_id}/vm/{vmid}/disk/detach")
+async def detach_vm_disk(
+    server_id: int,
+    vmid: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:manage"))
+):
+    """Отключить (или удалить) диск VM."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    disk = data.get('disk')
+    if not disk:
+        raise HTTPException(status_code=400, detail="Требуется параметр disk")
+
+    try:
+        client = _get_proxmox_client(server)
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+
+        result = client.detach_vm_disk(node, vmid, disk, destroy=bool(data.get('destroy', False)))
+        if result.get('success'):
+            logger.info(f"User {current_user.username} detached disk {disk} of VM {vmid}")
+            return JSONResponse(content={"status": "success"})
+        raise HTTPException(status_code=400, detail=result.get('error', 'Failed'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error detaching VM {vmid} disk: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/{server_id}/vm/{vmid}/unlock")
+def unlock_vm_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:manage"))
+):
+    """Снять блокировку (lock) с VM — аналог qm unlock."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+    try:
+        client = _get_proxmox_client(server)
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+        result = client.unlock_vm(node, vmid)
+        if result.get("success"):
+            logger.info(f"User {current_user.username} unlocked VM {vmid} on {server.name}")
+            return JSONResponse(content={"status": "success"})
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unlocking VM {vmid}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/{server_id}/container/{vmid}/unlock")
+def unlock_container_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:manage"))
+):
+    """Снять блокировку (lock) с LXC — аналог pct unlock."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+    try:
+        client = _get_proxmox_client(server)
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+        result = client.unlock_container(node, vmid)
+        if result.get("success"):
+            logger.info(f"User {current_user.username} unlocked container {vmid} on {server.name}")
+            return JSONResponse(content={"status": "success"})
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unlocking container {vmid}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/{server_id}/vm/{vmid}/cloud-init")
+async def update_vm_cloud_init(
+    server_id: int,
+    vmid: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:manage"))
+):
+    """Обновить cloud-init параметры VM (user/password/SSH/IP/DNS)."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    try:
+        client = _get_proxmox_client(server)
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+
+        result = client.update_cloud_init(
+            node, vmid,
+            ciuser=data.get('ciuser'),
+            cipassword=data.get('cipassword'),
+            sshkeys=data.get('sshkeys'),
+            ipconfig0=data.get('ipconfig0'),
+            nameserver=data.get('nameserver'),
+            searchdomain=data.get('searchdomain'),
+        )
+        if result.get('success'):
+            logger.info(f"User {current_user.username} updated cloud-init of VM {vmid} on {server.name}")
+            return JSONResponse(content={"status": "success"})
+        raise HTTPException(status_code=400, detail=result.get('error', 'Failed'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating cloud-init for VM {vmid}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/{server_id}/vm/{vmid}/serial/enable")
+def enable_vm_serial(
+    server_id: int,
+    vmid: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:manage"))
+):
+    """Добавить serial0 (socket) в конфиг VM, если его нет — для serial-консоли.
+
+    Возвращает added=True, если устройство было только что добавлено (тогда для
+    появления в гостевой ОС может потребоваться перезагрузка VM).
+    """
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+    try:
+        client = _get_proxmox_client(server)
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+
+        cfg = client.get_vm_config(node, vmid) or {}
+        present = any(k.startswith("serial") for k in cfg)
+        added = False
+        if not present:
+            client.update_vm_config(node, vmid, {"serial0": "socket"})
+            added = True
+            logger.info(f"User {current_user.username} enabled serial0 on VM {vmid}")
+        return JSONResponse(content={"status": "success", "added": added, "present": True})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error enabling serial for VM {vmid}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/api/{server_id}/container/{vmid}/disk/resize")
 async def resize_container_disk(
     server_id: int,
@@ -2885,6 +3137,351 @@ async def terminal_websocket_fixed(
         logger.info(f"Terminal session closed for container {vmid}")
 
 
+# ==================== VM Serial Console WebSocket Proxy ====================
+
+@router.websocket("/ws/serial/{server_id}/{node}/{vmid}")
+async def serial_websocket(
+    websocket: WebSocket,
+    server_id: int,
+    node: str,
+    vmid: int,
+    token: str = Query(None),  # JWT панели (?token=)
+    db: Session = Depends(get_db)
+):
+    """WebSocket serial-консоль для VM (qemu) через Proxmox termproxy.
+
+    Идентично LXC-терминалу, но использует эндпоинты qemu. Требует, чтобы у VM
+    был настроен serial0 (см. /vm/{vmid}/serial/enable) и гость выводил в ttyS0.
+    """
+    import websockets
+    import httpx
+    from urllib.parse import quote
+
+    user = authenticate_ws_token(token, db)
+    if not user:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+    if not PermissionEngine.has_permission(user, "vm:console"):
+        await websocket.close(code=4003, reason="Permission denied")
+        return
+    if not check_vm_access(db, user, server_id, vmid):
+        await websocket.close(code=4003, reason="Access denied")
+        return
+
+    await websocket.accept()
+    logger.info(f"Serial WebSocket accepted for VM {vmid} on node {node} (user={user.username})")
+
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        await websocket.close(code=1008, reason="Proxmox server not found")
+        return
+
+    proxmox_ws = None
+    try:
+        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            if not server.password:
+                await websocket.close(code=1011, reason="Serial console requires password authentication")
+                return
+
+            auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
+            auth_resp = await client.post(
+                f"https://{server.ip_address}:8006/api2/json/access/ticket",
+                data={"username": auth_username, "password": server.password}
+            )
+            if auth_resp.status_code != 200:
+                await websocket.close(code=1011, reason="Authentication failed")
+                return
+
+            auth_data = auth_resp.json()["data"]
+            ticket = auth_data["ticket"]
+            csrf_token = auth_data["CSRFPreventionToken"]
+
+            term_resp = await client.post(
+                f"https://{server.ip_address}:8006/api2/json/nodes/{node}/qemu/{vmid}/termproxy",
+                headers={"CSRFPreventionToken": csrf_token},
+                cookies={"PVEAuthCookie": ticket}
+            )
+            if term_resp.status_code != 200:
+                logger.error(f"Serial termproxy failed: {term_resp.status_code} - {term_resp.text}")
+                await websocket.close(code=1011, reason="Failed to create serial session (is serial0 configured?)")
+                return
+
+            term_data = term_resp.json()["data"]
+            vncticket = term_data["ticket"]
+            port = term_data["port"]
+
+        proxmox_ws_url = (
+            f"wss://{server.ip_address}:8006/api2/json/nodes/{node}/qemu/{vmid}/vncwebsocket"
+            f"?port={port}&vncticket={quote(vncticket, safe='')}"
+        )
+
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        proxmox_ws = await websockets.connect(
+            proxmox_ws_url,
+            ssl=ssl_context,
+            extra_headers=[("Cookie", f"PVEAuthCookie={ticket}")],
+            subprotocols=["binary"],
+            max_size=None,
+            ping_interval=None,
+            close_timeout=5
+        )
+
+        await proxmox_ws.send(f"{auth_username}:{vncticket}\n")
+        try:
+            ok_raw = await asyncio.wait_for(proxmox_ws.recv(), timeout=10.0)
+        except asyncio.TimeoutError:
+            await websocket.close(code=1011, reason="Serial auth timeout")
+            return
+
+        ok_bytes = ok_raw if isinstance(ok_raw, bytes) else ok_raw.encode("utf-8")
+        if not ok_bytes.startswith(b"OK"):
+            await websocket.close(code=1011, reason="Serial authentication rejected")
+            return
+        if len(ok_bytes) > 2:
+            await websocket.send_bytes(ok_bytes[2:])
+
+        async def client_to_proxmox():
+            try:
+                while True:
+                    message = await websocket.receive()
+                    if message["type"] == "websocket.disconnect":
+                        break
+                    if "bytes" in message:
+                        await proxmox_ws.send(message["bytes"])
+                    elif "text" in message:
+                        await proxmox_ws.send(message["text"].encode("utf-8"))
+            except WebSocketDisconnect:
+                pass
+            except Exception as e:
+                logger.debug(f"serial client_to_proxmox ended: {e}")
+
+        async def proxmox_to_client():
+            try:
+                async for message in proxmox_ws:
+                    if isinstance(message, bytes):
+                        await websocket.send_bytes(message)
+                    else:
+                        await websocket.send_bytes(message.encode("utf-8"))
+            except Exception as e:
+                logger.debug(f"serial proxmox_to_client ended: {e}")
+
+        done, pending = await asyncio.wait(
+            [
+                asyncio.create_task(client_to_proxmox()),
+                asyncio.create_task(proxmox_to_client()),
+            ],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in pending:
+            task.cancel()
+
+    except Exception as e:
+        logger.error(f"Serial WebSocket error: {e}")
+        try:
+            await websocket.close(code=1011, reason=str(e))
+        except Exception:
+            pass
+    finally:
+        if proxmox_ws:
+            try:
+                await proxmox_ws.close()
+            except Exception:
+                pass
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+        logger.info(f"Serial session closed for VM {vmid}")
+
+
+# ==================== Node Shell (APT upgrade) ====================
+
+# Разрешённые команды node-termproxy (Proxmox: upgrade | login | ceph_install)
+_ALLOWED_NODE_SHELL_CMDS = {"upgrade", "login"}
+
+
+@router.websocket("/ws/node-shell/{server_id}/{node}")
+async def node_shell_websocket(
+    websocket: WebSocket,
+    server_id: int,
+    node: str,
+    cmd: str = Query("upgrade"),  # upgrade | login
+    token: str = Query(None),     # JWT панели (?token=) — браузеры не шлют заголовки на WS
+    db: Session = Depends(get_db)
+):
+    """
+    WebSocket root-терминал на уровне ноды через Proxmox termproxy API.
+    Используется для установки обновлений (cmd=upgrade → apt dist-upgrade),
+    как это делает штатная кнопка «Upgrade» в интерфейсе Proxmox.
+    """
+    import websockets
+    import httpx
+    from urllib.parse import quote
+
+    # --- Authenticate the panel user before opening a root shell -----------
+    user = authenticate_ws_token(token, db)
+    if not user:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+    if not PermissionEngine.has_permission(user, "node:upgrade"):
+        await websocket.close(code=4003, reason="Permission denied")
+        return
+    if cmd not in _ALLOWED_NODE_SHELL_CMDS:
+        await websocket.close(code=4003, reason="Command not allowed")
+        return
+
+    await websocket.accept()
+    logger.info(f"Node shell WebSocket accepted for node {node} (cmd={cmd}, user={user.username})")
+
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        await websocket.close(code=1008, reason="Proxmox server not found")
+        return
+
+    proxmox_ws = None
+    bytes_to_proxmox = 0
+    bytes_from_proxmox = 0
+
+    try:
+        # Шаг 1: Auth ticket (termproxy требует пароль, не API-токен)
+        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            if not server.password:
+                await websocket.close(code=1011, reason="Node shell requires password authentication")
+                return
+
+            auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
+            auth_resp = await client.post(
+                f"https://{server.ip_address}:8006/api2/json/access/ticket",
+                data={"username": auth_username, "password": server.password}
+            )
+            if auth_resp.status_code != 200:
+                logger.error(f"Auth failed: {auth_resp.status_code} {auth_resp.text}")
+                await websocket.close(code=1011, reason="Authentication failed")
+                return
+
+            auth_data = auth_resp.json()["data"]
+            ticket = auth_data["ticket"]
+            csrf_token = auth_data["CSRFPreventionToken"]
+
+            # Шаг 2: Termproxy на уровне ноды с нужной командой
+            term_resp = await client.post(
+                f"https://{server.ip_address}:8006/api2/json/nodes/{node}/termproxy",
+                headers={"CSRFPreventionToken": csrf_token},
+                cookies={"PVEAuthCookie": ticket},
+                data={"cmd": cmd},
+            )
+            if term_resp.status_code != 200:
+                logger.error(f"Node termproxy failed: {term_resp.status_code} - {term_resp.text}")
+                await websocket.close(code=1011, reason="Failed to create node shell session")
+                return
+
+            term_data = term_resp.json()["data"]
+            vncticket = term_data["ticket"]
+            port = term_data["port"]
+            logger.info(f"✅ Node termproxy: node={node}, cmd={cmd}, port={port}")
+
+        # Шаг 3: WebSocket к Proxmox (node-level vncwebsocket)
+        proxmox_ws_url = (
+            f"wss://{server.ip_address}:8006/api2/json/nodes/{node}/vncwebsocket"
+            f"?port={port}&vncticket={quote(vncticket, safe='')}"
+        )
+
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        proxmox_ws = await websockets.connect(
+            proxmox_ws_url,
+            ssl=ssl_context,
+            extra_headers=[("Cookie", f"PVEAuthCookie={ticket}")],
+            subprotocols=["binary"],
+            max_size=None,
+            ping_interval=None,
+            close_timeout=5
+        )
+
+        # Auth handshake: "USERNAME:VNCTICKET\n" → "OK"
+        await proxmox_ws.send(f"{auth_username}:{vncticket}\n")
+        try:
+            ok_raw = await asyncio.wait_for(proxmox_ws.recv(), timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.error("Node shell auth timeout — no OK received")
+            await websocket.close(code=1011, reason="Node shell auth timeout")
+            return
+
+        ok_bytes = ok_raw if isinstance(ok_raw, bytes) else ok_raw.encode("utf-8")
+        if not ok_bytes.startswith(b"OK"):
+            logger.error(f"Node shell auth rejected: {ok_bytes[:50]!r}")
+            await websocket.close(code=1011, reason="Node shell authentication rejected")
+            return
+
+        if len(ok_bytes) > 2:
+            await websocket.send_bytes(ok_bytes[2:])
+
+        async def client_to_proxmox():
+            nonlocal bytes_to_proxmox
+            try:
+                while True:
+                    message = await websocket.receive()
+                    if message["type"] == "websocket.disconnect":
+                        break
+                    if "bytes" in message:
+                        bytes_to_proxmox += len(message["bytes"])
+                        await proxmox_ws.send(message["bytes"])
+                    elif "text" in message:
+                        bytes_to_proxmox += len(message["text"])
+                        await proxmox_ws.send(message["text"].encode("utf-8"))
+            except WebSocketDisconnect:
+                pass
+            except Exception as e:
+                logger.debug(f"client_to_proxmox ended: {e}")
+
+        async def proxmox_to_client():
+            nonlocal bytes_from_proxmox
+            try:
+                async for message in proxmox_ws:
+                    if isinstance(message, bytes):
+                        bytes_from_proxmox += len(message)
+                        await websocket.send_bytes(message)
+                    else:
+                        bytes_from_proxmox += len(message)
+                        await websocket.send_bytes(message.encode("utf-8"))
+            except Exception as e:
+                logger.debug(f"proxmox_to_client ended: {e}")
+
+        done, pending = await asyncio.wait(
+            [
+                asyncio.create_task(client_to_proxmox()),
+                asyncio.create_task(proxmox_to_client()),
+            ],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in pending:
+            task.cancel()
+
+    except Exception as e:
+        logger.error(f"Node shell WebSocket error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        try:
+            await websocket.close(code=1011, reason=str(e))
+        except Exception:
+            pass
+    finally:
+        logger.info(f"Node shell stats — to Proxmox: {bytes_to_proxmox}B, from Proxmox: {bytes_from_proxmox}B")
+        if proxmox_ws:
+            try:
+                await proxmox_ws.close()
+            except Exception:
+                pass
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+        logger.info(f"Node shell session closed for node {node}")
 
 
 # ==================== Bulk Operations API ====================

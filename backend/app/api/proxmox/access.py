@@ -34,7 +34,7 @@ def _ok_or_400(result: dict):
 async def list_realms(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("user:manage")),
+    current_user: User = Depends(PermissionChecker("access:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -49,7 +49,7 @@ async def create_realm(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("user:manage")),
+    current_user: User = Depends(PermissionChecker("access:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -72,7 +72,7 @@ async def update_realm(
     realm: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("user:manage")),
+    current_user: User = Depends(PermissionChecker("access:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -90,7 +90,7 @@ async def delete_realm(
     server_id: int,
     realm: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("user:manage")),
+    current_user: User = Depends(PermissionChecker("access:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -108,7 +108,7 @@ async def delete_realm(
 async def list_access_users(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("user:manage")),
+    current_user: User = Depends(PermissionChecker("access:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -123,7 +123,7 @@ async def list_user_tokens(
     server_id: int,
     userid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("user:manage")),
+    current_user: User = Depends(PermissionChecker("access:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -140,7 +140,7 @@ async def create_user_token(
     tokenid: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("user:manage")),
+    current_user: User = Depends(PermissionChecker("access:manage")),
 ):
     """Создать API-токен. Секрет (value) возвращается один раз."""
     client = _resolve_client(db, server_id)
@@ -165,7 +165,7 @@ async def delete_user_token(
     userid: str,
     tokenid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("user:manage")),
+    current_user: User = Depends(PermissionChecker("access:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:

@@ -12,6 +12,7 @@ import InstancesPage from '@/features/instances/InstancesPage';
 import InstanceDetailPage from '@/features/instances/InstanceDetailPage';
 const SnapshotArchivesPage = lazy(() => import('./features/instances/SnapshotArchivesPage.tsx'));
 import ConsolePage from '@/features/console/ConsolePage';
+const NodeShellPage = lazy(() => import('./features/console/NodeShellPage.tsx'));
 
 // Lazy-loaded pages
 // NOTE: явные относительные пути с расширением .tsx — обход бага rolldown-vite
@@ -61,6 +62,11 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute />,
     children: [
       // Console — separate layout (no sidebar)
+      {
+        path: '/console/node/:serverId/:node',
+        element: <ConsoleLayout />,
+        children: [{ index: true, element: <SuspenseWrap><NodeShellPage /></SuspenseWrap> }],
+      },
       {
         path: '/console/:serverId/:vmid',
         element: <ConsoleLayout />,

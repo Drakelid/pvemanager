@@ -29,6 +29,7 @@ export default function ConsolePage() {
   const { t } = useTranslation();
   const node = searchParams.get('node') || '';
   const type = searchParams.get('type') || 'qemu';
+  const isSerial = type === 'qemu' && searchParams.get('mode') === 'serial';
 
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [errorMsg, setErrorMsg] = useState('');
@@ -114,118 +115,107 @@ export default function ConsolePage() {
     }
   }, [sid, vid, node]);
 
+  // ==================== xterm.js session (LXC terminal / VM serial) ====================
+  // Общая обвязка xterm + WebSocket. wsPath — путь до нужного ws-эндпоинта Proxmox-прокси.
+  const setupXtermSession = useCallback(async (wsPath: string) => {
+    // Dynamic import xterm.js
+    const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
+      import('@xterm/xterm'),
+      import('@xterm/addon-fit'),
+      import('@xterm/addon-web-links'),
+    ]);
+
+    if (!containerRef.current) return;
+
+    const fitAddon = new FitAddon();
+    const webLinksAddon = new WebLinksAddon();
+
+    const terminal = new Terminal({
+      cursorBlink: true,
+      fontSize: 14,
+      fontFamily: 'JetBrains Mono, monospace',
+      theme: {
+        background: '#09090B',
+        foreground: '#F0F0F3',
+        cursor: '#F0F0F3',
+        selectionBackground: 'rgba(255,255,255,0.2)',
+      },
+    });
+
+    terminal.loadAddon(fitAddon);
+    terminal.loadAddon(webLinksAddon);
+    terminal.open(containerRef.current);
+    requestAnimationFrame(() => fitAddon.fit());
+
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const authToken = apiClient.getToken();
+    const tokenParam = authToken ? `?token=${encodeURIComponent(authToken)}` : '';
+    const wsUrl = `${wsProto}//${window.location.host}${wsPath}${tokenParam}`;
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setStatus('connected');
+      const { cols, rows } = terminal;
+      ws.send(`1:${cols}:${rows}:`);
+      keepaliveRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send('2');
+      }, 120000);
+    };
+
+    ws.onmessage = (event) => {
+      if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
+      else terminal.write(event.data);
+    };
+    ws.onclose = () => { setStatus('error'); setErrorMsg('Terminal connection closed'); };
+    ws.onerror = () => { setStatus('error'); setErrorMsg('Terminal connection error'); };
+
+    terminal.onData((data: string) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        const byteLength = new TextEncoder().encode(data).byteLength;
+        ws.send(`0:${byteLength}:${data}`);
+      }
+    });
+    terminal.onResize(({ cols, rows }) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(`1:${cols}:${rows}:`);
+    });
+
+    const handleResize = () => fitAddon.fit();
+    window.addEventListener('resize', handleResize);
+    termRef.current = { terminal, fitAddon, cleanup: () => window.removeEventListener('resize', handleResize) };
+  }, []);
+
   // ==================== Terminal Console (LXC) ====================
   const connectTerminal = useCallback(async () => {
     try {
       const data = await apiClient.get<VNCData>(
         `/proxmox/api/${sid}/container/${vid}/terminal?node=${node}`
       );
-
-      // Dynamic import xterm.js
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
-        import('@xterm/xterm'),
-        import('@xterm/addon-fit'),
-        import('@xterm/addon-web-links'),
-      ]);
-
-      if (!containerRef.current) return;
-
-      const fitAddon = new FitAddon();
-      const webLinksAddon = new WebLinksAddon();
-
-      const terminal = new Terminal({
-        cursorBlink: true,
-        fontSize: 14,
-        fontFamily: 'JetBrains Mono, monospace',
-        theme: {
-          background: '#09090B',
-          foreground: '#F0F0F3',
-          cursor: '#F0F0F3',
-          selectionBackground: 'rgba(255,255,255,0.2)',
-        },
-      });
-
-      terminal.loadAddon(fitAddon);
-      terminal.loadAddon(webLinksAddon);
-      terminal.open(containerRef.current);
-
-      // Wait a frame, then fit
-      requestAnimationFrame(() => {
-        fitAddon.fit();
-      });
-
-      // WebSocket connection
-      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const authToken = apiClient.getToken();
-      const tokenParam = authToken ? `?token=${encodeURIComponent(authToken)}` : '';
-      const wsUrl = `${wsProto}//${window.location.host}/proxmox/ws/terminal/${sid}/${data.node}/${vid}${tokenParam}`;
-      const ws = new WebSocket(wsUrl);
-      ws.binaryType = 'arraybuffer';
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setStatus('connected');
-
-        // Send resize
-        const { cols, rows } = terminal;
-        ws.send(`1:${cols}:${rows}:`);
-
-        // Keepalive every 120s
-        keepaliveRef.current = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send('2');
-          }
-        }, 120000);
-      };
-
-      ws.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer) {
-          terminal.write(new Uint8Array(event.data));
-        } else {
-          terminal.write(event.data);
-        }
-      };
-
-      ws.onclose = () => {
-        setStatus('error');
-        setErrorMsg('Terminal connection closed');
-      };
-
-      ws.onerror = () => {
-        setStatus('error');
-        setErrorMsg('Terminal connection error');
-      };
-
-      // User input → WebSocket
-      terminal.onData((data: string) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const encoder = new TextEncoder();
-          const byteLength = encoder.encode(data).byteLength;
-          ws.send(`0:${byteLength}:${data}`);
-        }
-      });
-
-      // Resize handler
-      terminal.onResize(({ cols, rows }) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(`1:${cols}:${rows}:`);
-        }
-      });
-
-      // Window resize
-      const handleResize = () => fitAddon.fit();
-      window.addEventListener('resize', handleResize);
-
-      termRef.current = { terminal, fitAddon, cleanup: () => window.removeEventListener('resize', handleResize) };
+      await setupXtermSession(`/proxmox/ws/terminal/${sid}/${data.node}/${vid}`);
     } catch (err) {
       setStatus('error');
       setErrorMsg(err instanceof Error ? err.message : 'Failed to connect');
     }
-  }, [sid, vid, node]);
+  }, [sid, vid, node, setupXtermSession]);
+
+  // ==================== Serial Console (QEMU) ====================
+  const connectSerial = useCallback(async () => {
+    try {
+      // Убедиться, что у VM есть serial0 (добавит при отсутствии)
+      await apiClient.post(`/proxmox/api/${sid}/vm/${vid}/serial/enable?node=${node}`);
+      await setupXtermSession(`/proxmox/ws/serial/${sid}/${node}/${vid}`);
+    } catch (err) {
+      setStatus('error');
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to connect');
+    }
+  }, [sid, vid, node, setupXtermSession]);
 
   // ==================== Connect on mount ====================
   useEffect(() => {
-    if (type === 'qemu') {
+    if (isSerial) {
+      connectSerial();
+    } else if (type === 'qemu') {
       connectVNC();
     } else {
       connectTerminal();
@@ -248,7 +238,7 @@ export default function ConsolePage() {
         t.terminal.dispose();
       }
     };
-  }, [type, connectVNC, connectTerminal]);
+  }, [type, isSerial, connectVNC, connectTerminal, connectSerial]);
 
   // ==================== Fullscreen ====================
   const toggleFullscreen = () => {
@@ -291,7 +281,7 @@ export default function ConsolePage() {
           </Badge>
         </div>
         <div className="flex items-center gap-1">
-          {type === 'qemu' && (
+          {type === 'qemu' && !isSerial && (
             <Button
               variant="ghost"
               size="sm"
@@ -301,6 +291,9 @@ export default function ConsolePage() {
               <Keyboard className="mr-1 h-3 w-3" />
               Ctrl+Alt+Del
             </Button>
+          )}
+          {isSerial && (
+            <Badge variant="secondary" className="text-[10px] bg-blue-500/10 text-blue-500">serial</Badge>
           )}
           <Button
             variant="ghost"
@@ -334,7 +327,8 @@ export default function ConsolePage() {
                 onClick={() => {
                   setStatus('connecting');
                   setErrorMsg('');
-                  if (type === 'qemu') connectVNC();
+                  if (isSerial) connectSerial();
+                  else if (type === 'qemu') connectVNC();
                   else connectTerminal();
                 }}
               >

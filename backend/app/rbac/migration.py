@@ -26,6 +26,7 @@ NEW_DEFAULT_ROLES = [
             "server:update": True,
             "server:delete": True,
             "server:manage": True,
+            "cluster:manage": True,
             # VMs
             "vm:view": True,
             "vm:create": True,
@@ -57,9 +58,26 @@ NEW_DEFAULT_ROLES = [
             # Storage
             "storage:view": True,
             "storage:manage": True,
+            # Firewall
+            "firewall:view": True,
+            "firewall:manage": True,
+            # Networking (interfaces + SDN)
+            "network:view": True,
+            "network:manage": True,
+            # Node administration (services, APT, upgrade)
+            "node:view": True,
+            "node:manage": True,
+            "node:upgrade": True,
+            # Resource pools
+            "pool:view": True,
+            "pool:manage": True,
+            # PVE access (realms & API tokens)
+            "access:view": True,
+            "access:manage": True,
             # Backups
             "backup:view": True,
             "backup:create": True,
+            "backup:restore": True,
             "backup:delete": True,
             "backup:manage": True,
             # IPAM
@@ -115,6 +133,10 @@ NEW_DEFAULT_ROLES = [
             "lxc:console": True,
             "template:view": True,
             "storage:view": True,
+            "firewall:view": True,
+            "network:view": True,
+            "node:view": True,
+            "pool:view": True,
             "backup:view": True,
             "backup:create": True,
             "ipam:view": True,
@@ -146,6 +168,10 @@ NEW_DEFAULT_ROLES = [
             "lxc:console": True,
             "template:view": True,
             "storage:view": True,
+            "firewall:view": True,
+            "network:view": True,
+            "node:view": True,
+            "pool:view": True,
             "ipam:view": True,
             "setting:view": True,
             "notification:view": True,
@@ -164,6 +190,10 @@ NEW_DEFAULT_ROLES = [
             "lxc:view": True,
             "template:view": True,
             "storage:view": True,
+            "firewall:view": True,
+            "network:view": True,
+            "node:view": True,
+            "pool:view": True,
             "ipam:view": True,
         }
     },
@@ -446,3 +476,67 @@ def ensure_default_roles_new_format(conn) -> None:
                 }
             )
             logger.info(f"Created role '{role_data['name']}' with new permission format")
+
+
+# Granular permissions introduced after RBAC v2. For existing deployments the
+# corresponding features used to be gated behind umbrella permissions
+# (server:view / server:manage / vm:view / user:manage). Backfill the new
+# granular keys for any role that already holds the umbrella permission so that
+# custom roles do not silently lose access after the split.
+GRANULAR_BACKFILL = [
+    # (umbrella permission, [granular permissions implied by it])
+    ("server:view", ["firewall:view", "network:view", "node:view", "storage:view"]),
+    ("vm:view", ["pool:view", "firewall:view"]),
+    ("server:manage", [
+        "firewall:view", "firewall:manage",
+        "network:view", "network:manage",
+        "node:view", "node:manage", "node:upgrade",
+        "storage:view", "storage:manage",
+        "pool:view", "pool:manage",
+    ]),
+    ("user:manage", ["access:view", "access:manage"]),
+]
+
+
+def backfill_granular_permissions(conn) -> int:
+    """
+    Add granular permission keys to roles that already have the matching
+    umbrella permission. Only adds missing keys — never overrides an explicit
+    grant/deny — so it is idempotent and safe to run on every startup.
+
+    Returns the number of roles updated.
+    """
+    import json
+
+    result = conn.execute(text("SELECT id, name, permissions FROM roles"))
+    roles = result.fetchall()
+
+    updated = 0
+    for role_id, role_name, permissions in roles:
+        if isinstance(permissions, str):
+            try:
+                permissions = json.loads(permissions)
+            except Exception:
+                continue
+        if not isinstance(permissions, dict) or not permissions:
+            continue
+
+        additions = {}
+        for umbrella, implied in GRANULAR_BACKFILL:
+            if permissions.get(umbrella) is True:
+                for perm in implied:
+                    if perm not in permissions:
+                        additions[perm] = True
+
+        if additions:
+            merged = {**permissions, **additions}
+            conn.execute(
+                text("UPDATE roles SET permissions = :perms WHERE id = :id"),
+                {"perms": json.dumps(merged), "id": role_id},
+            )
+            logger.info(
+                f"Backfilled {len(additions)} granular permission(s) for role '{role_name}'"
+            )
+            updated += 1
+
+    return updated

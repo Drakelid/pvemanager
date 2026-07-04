@@ -13,6 +13,7 @@ import { useVirtualMachines } from '@/hooks/use-instances';
 import type { ProxmoxServerCreate } from '@/types';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
+import ServerUpdatesBadge from './ServerUpdatesBadge';
 
 interface ServerFormData {
   name: string;
@@ -318,6 +319,8 @@ export default function NodesPage() {
                 {srv.description && (
                   <p className="text-xs text-muted-foreground truncate">{srv.description}</p>
                 )}
+
+                <ServerUpdatesBadge serverId={srv.id} online={srv.is_online} />
               </CardContent>
             </Card>
           );

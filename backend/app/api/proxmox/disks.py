@@ -35,7 +35,7 @@ async def list_disks(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("storage:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -51,7 +51,7 @@ async def disk_smart(
     node: str,
     disk: str = Query(..., description="devpath, напр. /dev/sda"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("storage:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -67,7 +67,7 @@ async def wipe_disk(
     node: str,
     disk: str = Query(..., description="devpath, напр. /dev/sdb"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("storage:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -86,7 +86,7 @@ async def list_zfs_pools(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("storage:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -102,7 +102,7 @@ async def get_zfs_pool(
     node: str,
     name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("storage:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -118,7 +118,7 @@ async def create_zfs_pool(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("storage:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -148,7 +148,7 @@ async def destroy_zfs_pool(
     name: str,
     cleanup_disks: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("storage:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:

@@ -20,7 +20,7 @@ router = APIRouter()
 def get_sdn_status(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view"))
+    current_user: User = Depends(PermissionChecker("network:view"))
 ):
     """Check if SDN is available on the server"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -52,7 +52,7 @@ def get_sdn_status(
 def get_sdn_zones(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view"))
+    current_user: User = Depends(PermissionChecker("network:view"))
 ):
     """Get all SDN zones"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -73,7 +73,7 @@ def get_sdn_zones(
 def get_sdn_dns(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view"))
+    current_user: User = Depends(PermissionChecker("network:view"))
 ):
     """Get SDN DNS server entries (zone `dns` option expects one of their IDs)"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -93,7 +93,7 @@ async def create_sdn_zone(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage"))
+    current_user: User = Depends(PermissionChecker("network:manage"))
 ):
     """Create a new SDN zone"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -131,7 +131,7 @@ def delete_sdn_zone(
     server_id: int,
     zone: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage"))
+    current_user: User = Depends(PermissionChecker("network:manage"))
 ):
     """Delete an SDN zone"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -159,7 +159,7 @@ def delete_sdn_zone(
 def get_sdn_vnets(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view"))
+    current_user: User = Depends(PermissionChecker("network:view"))
 ):
     """Get all SDN VNets"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -181,7 +181,7 @@ async def create_sdn_vnet(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage"))
+    current_user: User = Depends(PermissionChecker("network:manage"))
 ):
     """Create a new SDN VNet"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -220,7 +220,7 @@ def delete_sdn_vnet(
     server_id: int,
     vnet: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage"))
+    current_user: User = Depends(PermissionChecker("network:manage"))
 ):
     """Delete an SDN VNet"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -249,7 +249,7 @@ def get_sdn_subnets(
     server_id: int,
     vnet: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view"))
+    current_user: User = Depends(PermissionChecker("network:view"))
 ):
     """Get subnets for a VNet"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -272,7 +272,7 @@ async def create_sdn_subnet(
     vnet: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage"))
+    current_user: User = Depends(PermissionChecker("network:manage"))
 ):
     """Create a subnet in a VNet"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -336,7 +336,7 @@ async def create_sdn_subnet(
 def apply_sdn_changes(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage"))
+    current_user: User = Depends(PermissionChecker("network:manage"))
 ):
     """Apply pending SDN changes"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -366,7 +366,7 @@ async def update_sdn_zone(
     zone: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage"))
+    current_user: User = Depends(PermissionChecker("network:manage"))
 ):
     """Update an existing SDN zone"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -395,7 +395,7 @@ async def update_sdn_vnet(
     vnet: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage"))
+    current_user: User = Depends(PermissionChecker("network:manage"))
 ):
     """Update an existing SDN VNet"""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
@@ -425,7 +425,7 @@ def delete_sdn_subnet(
     subnet_cidr: str,
     delete_ipam_network: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage"))
+    current_user: User = Depends(PermissionChecker("network:manage"))
 ):
     """Delete a subnet from a VNet. subnet_cidr uses '-' instead of '/' (e.g. 10.0.0.0-24)."""
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()

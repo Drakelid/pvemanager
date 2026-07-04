@@ -800,7 +800,7 @@ function RolesTab() {
                     <div className="flex items-center gap-2">
                       <Shield className="h-4 w-4" />
                       <div>
-                        <div>{r.display_name}</div>
+                        <div>{t(`perms.role.${r.name}.name`, r.display_name)}</div>
                         <div className="text-xs text-muted-foreground">{r.name}</div>
                       </div>
                       {r.is_system && (
@@ -808,7 +808,7 @@ function RolesTab() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{r.description || '—'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{t(`perms.role.${r.name}.desc`, r.description || '—')}</TableCell>
                   <TableCell>{enabledCount}</TableCell>
                   <TableCell>{r.user_count}</TableCell>
                   <TableCell>
@@ -934,7 +934,7 @@ function RoleDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {mode === 'create' ? t('users.create_role') : `${t('users.edit_role')}: ${role?.display_name}`}
+            {mode === 'create' ? t('users.create_role') : `${t('users.edit_role')}: ${role ? t(`perms.role.${role.name}.name`, role.display_name) : ''}`}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
@@ -974,7 +974,9 @@ function RoleDialog({
             <div className="border rounded-md max-h-80 overflow-y-auto p-3 space-y-3">
               {Object.entries(permCategories).map(([cat, items]) => (
                 <div key={cat}>
-                  <div className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase">{cat}</div>
+                  <div className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase">
+                    {t(`perms.cat.${cat}`, cat)}
+                  </div>
                   <div className="grid grid-cols-2 gap-1">
                     {Object.entries(items).map(([code, label]) => (
                       <label key={code} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent rounded px-2 py-1">
@@ -984,7 +986,9 @@ function RoleDialog({
                           onChange={() => togglePerm(code)}
                           className="h-4 w-4"
                         />
-                        <span className="flex-1 truncate" title={code}>{label}</span>
+                        <span className="flex-1 truncate" title={code}>
+                          {t(`perms.label.${code.replace(/:/g, '_')}`, label as string)}
+                        </span>
                       </label>
                     ))}
                   </div>

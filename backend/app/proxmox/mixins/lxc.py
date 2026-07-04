@@ -5,6 +5,22 @@ import shlex
 from loguru import logger
 
 class LxcMixin:
+        def unlock_container(self, node: str, vmid: int) -> Dict:
+            """Снять блокировку (lock) с LXC — аналог `pct unlock`.
+
+            config.put(delete='lock', skiplock=1); skiplock принимается только
+            для root@pam.
+            """
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            try:
+                self.proxmox.nodes(node).lxc(vmid).config.put(delete="lock", skiplock=1)
+                logger.info(f"С LXC {vmid} снята блокировка")
+                return {"success": True}
+            except Exception as e:
+                logger.error(f"Ошибка снятия блокировки LXC {vmid}: {e}")
+                return {"success": False, "error": str(e)}
+
         def start_container(self, node: str, vmid: int) -> Optional[str]:
             """Запустить LXC контейнер. Возвращает UPID задачи или None при ошибке."""
             if not self.proxmox:

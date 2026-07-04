@@ -273,6 +273,117 @@ class VmMixin:
             logger.info(f"Размер диска {disk} VM {vmid} изменен на {size}")
             return True
 
+        def move_vm_disk(self, node: str, vmid: int, disk: str, target_storage: str,
+                         delete: bool = True, target_format: str = None) -> Dict:
+            """Переместить диск VM в другое хранилище (POST qemu/{vmid}/move_disk).
+
+            Args:
+                disk: имя диска (scsi0, virtio0, ...)
+                target_storage: целевое хранилище
+                delete: удалить исходный диск после копирования
+                target_format: raw|qcow2|vmdk (опционально)
+            Returns:
+                {"success": bool, "upid"?: str, "error"?: str}
+            """
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            try:
+                params = {"disk": disk, "storage": target_storage, "delete": 1 if delete else 0}
+                if target_format:
+                    params["format"] = target_format
+                upid = self.proxmox.nodes(node).qemu(vmid).move_disk.post(**params)
+                if isinstance(upid, str):
+                    if not self.wait_for_task(node, upid, timeout=3600):
+                        status = self.get_task_status(node, upid) or {}
+                        reason = status.get("exitstatus") or "move_disk task failed"
+                        logger.error(f"Move диска {disk} VM {vmid} провалился: {reason}")
+                        return {"success": False, "error": f"Proxmox: {reason}"}
+                logger.info(f"Диск {disk} VM {vmid} перемещён в {target_storage}")
+                return {"success": True, "upid": upid if isinstance(upid, str) else None}
+            except Exception as e:
+                logger.error(f"Ошибка перемещения диска {disk} VM {vmid}: {e}")
+                return {"success": False, "error": str(e)}
+
+        def add_vm_disk(self, node: str, vmid: int, disk: str, storage: str, size_gb: int,
+                        ssd: bool = False, discard: bool = False, iothread: bool = False) -> Dict:
+            """Добавить новый диск VM (config.put c аллокацией storage:size).
+
+            Args:
+                disk: имя устройства (scsi1, virtio1, ...) — должно быть свободно
+                storage: хранилище для нового диска
+                size_gb: размер в ГБ
+                ssd/discard/iothread: опциональные флаги
+            """
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            try:
+                spec = f"{storage}:{int(size_gb)}"
+                if ssd:
+                    spec += ",ssd=1"
+                if discard:
+                    spec += ",discard=on"
+                if iothread:
+                    spec += ",iothread=1"
+                self.proxmox.nodes(node).qemu(vmid).config.post(**{disk: spec})
+                logger.info(f"Добавлен диск {disk} ({spec}) к VM {vmid}")
+                return {"success": True}
+            except Exception as e:
+                logger.error(f"Ошибка добавления диска {disk} к VM {vmid}: {e}")
+                return {"success": False, "error": str(e)}
+
+        def detach_vm_disk(self, node: str, vmid: int, disk: str, destroy: bool = False) -> Dict:
+            """Отключить диск VM. destroy=True — также физически удалить том.
+
+            PVE переводит отключённый диск в unusedN (том сохраняется). Чтобы удалить
+            данные, вторым шагом удаляем соответствующую unused-запись (её значение —
+            volid исходного диска). Без destroy диск просто становится unused.
+            """
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            try:
+                # volid исходного диска — по нему найдём unused-запись после отключения
+                old_volid = None
+                if destroy:
+                    cfg = self.get_vm_config(node, vmid) or {}
+                    spec = cfg.get(disk)
+                    if isinstance(spec, str):
+                        old_volid = spec.split(",", 1)[0]
+
+                self.proxmox.nodes(node).qemu(vmid).config.put(delete=disk)
+
+                if destroy and old_volid:
+                    cfg2 = self.get_vm_config(node, vmid) or {}
+                    unused_key = next(
+                        (k for k, v in cfg2.items()
+                         if k.startswith("unused") and isinstance(v, str) and old_volid in v),
+                        None,
+                    )
+                    if unused_key:
+                        self.proxmox.nodes(node).qemu(vmid).config.put(delete=unused_key)
+                        logger.info(f"Том {old_volid} диска {disk} VM {vmid} удалён ({unused_key})")
+
+                logger.info(f"Диск {disk} VM {vmid} отключён (destroy={destroy})")
+                return {"success": True}
+            except Exception as e:
+                logger.error(f"Ошибка отключения диска {disk} VM {vmid}: {e}")
+                return {"success": False, "error": str(e)}
+
+        def unlock_vm(self, node: str, vmid: int) -> Dict:
+            """Снять блокировку (lock) с VM — аналог `qm unlock`.
+
+            Реализуется через config.put(delete='lock', skiplock=1). skiplock
+            принимается Proxmox только для root@pam (в т.ч. API-токенов root@pam).
+            """
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            try:
+                self.proxmox.nodes(node).qemu(vmid).config.put(delete="lock", skiplock=1)
+                logger.info(f"С VM {vmid} снята блокировка")
+                return {"success": True}
+            except Exception as e:
+                logger.error(f"Ошибка снятия блокировки VM {vmid}: {e}")
+                return {"success": False, "error": str(e)}
+
         def grow_vm_filesystem(self, node: str, vmid: int, mountpoint: str = "/") -> Dict:
             """
             Расширить раздел и файловую систему внутри гостя после ресайза диска.

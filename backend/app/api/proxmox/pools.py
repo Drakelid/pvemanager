@@ -32,7 +32,7 @@ def _ok_or_400(result: dict):
 async def list_pools(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vm:view")),
+    current_user: User = Depends(PermissionChecker("pool:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -47,7 +47,7 @@ async def get_pool(
     server_id: int,
     poolid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vm:view")),
+    current_user: User = Depends(PermissionChecker("pool:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -62,7 +62,7 @@ async def create_pool(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("pool:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -84,7 +84,7 @@ async def update_pool(
     poolid: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("pool:manage")),
 ):
     """Добавить/убрать участников пула (vms, storage) или изменить comment."""
     client = _resolve_client(db, server_id)
@@ -109,7 +109,7 @@ async def delete_pool(
     server_id: int,
     poolid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("pool:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:

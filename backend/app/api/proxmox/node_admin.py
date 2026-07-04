@@ -35,7 +35,7 @@ async def list_services(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("node:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -52,7 +52,7 @@ async def service_action(
     service: str,
     action: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("node:manage")),
 ):
     if action not in ("start", "stop", "restart", "reload"):
         raise HTTPException(status_code=400, detail="action must be start/stop/restart/reload")
@@ -73,7 +73,7 @@ async def apt_updates(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("node:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -88,7 +88,7 @@ async def apt_refresh(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("node:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -107,7 +107,7 @@ async def apt_repositories(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("node:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -123,7 +123,7 @@ async def set_apt_repository(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("node:manage")),
 ):
     """Включить/выключить репозиторий (path + index + enabled)."""
     client = _resolve_client(db, server_id)
@@ -148,7 +148,7 @@ async def add_standard_repository(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("node:manage")),
 ):
     """Добавить стандартный репозиторий PVE по handle."""
     client = _resolve_client(db, server_id)

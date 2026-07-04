@@ -36,7 +36,7 @@ def _ok_or_400(result: dict):
 async def get_firewall_options(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -51,7 +51,7 @@ async def update_firewall_options(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -70,7 +70,7 @@ async def update_firewall_options(
 async def get_firewall_rules(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -85,7 +85,7 @@ async def create_firewall_rule(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -104,7 +104,7 @@ async def update_firewall_rule(
     pos: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -122,7 +122,7 @@ async def delete_firewall_rule(
     server_id: int,
     pos: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -140,7 +140,7 @@ async def delete_firewall_rule(
 async def get_firewall_groups(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -155,7 +155,7 @@ async def create_firewall_group(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -177,7 +177,7 @@ async def delete_firewall_group(
     server_id: int,
     group: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -194,7 +194,7 @@ async def get_firewall_group_rules(
     server_id: int,
     group: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -210,7 +210,7 @@ async def create_firewall_group_rule(
     group: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -230,7 +230,7 @@ async def update_firewall_group_rule(
     pos: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -249,7 +249,7 @@ async def delete_firewall_group_rule(
     group: str,
     pos: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -267,7 +267,7 @@ async def delete_firewall_group_rule(
 async def get_firewall_ipsets(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -282,7 +282,7 @@ async def create_firewall_ipset(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -304,7 +304,7 @@ async def delete_firewall_ipset(
     server_id: int,
     name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -321,7 +321,7 @@ async def get_firewall_ipset_entries(
     server_id: int,
     name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -337,7 +337,7 @@ async def add_firewall_ipset_entry(
     name: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -361,7 +361,7 @@ async def delete_firewall_ipset_entry(
     name: str,
     cidr: str = Query(..., description="CIDR записи (содержит '/', поэтому в query)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -379,7 +379,7 @@ async def delete_firewall_ipset_entry(
 async def get_firewall_aliases(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -394,7 +394,7 @@ async def create_firewall_alias(
     server_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -417,7 +417,7 @@ async def update_firewall_alias(
     name: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -439,7 +439,7 @@ async def delete_firewall_alias(
     server_id: int,
     name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -458,7 +458,7 @@ async def get_node_firewall_options(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -474,7 +474,7 @@ async def update_node_firewall_options(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -494,7 +494,7 @@ async def get_node_firewall_rules(
     server_id: int,
     node: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -510,7 +510,7 @@ async def create_node_firewall_rule(
     node: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -530,7 +530,7 @@ async def update_node_firewall_rule(
     pos: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     data = await request.json()
@@ -549,7 +549,7 @@ async def delete_node_firewall_rule(
     node: str,
     pos: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -568,7 +568,7 @@ async def get_node_firewall_log(
     limit: int = Query(100, ge=1, le=500),
     start: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:
@@ -593,7 +593,7 @@ async def get_guest_firewall_options(
     vmid: int,
     node: str = Query(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vm:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     _norm_type(vm_type)
@@ -613,7 +613,7 @@ async def update_guest_firewall_options(
     request: Request,
     node: str = Query(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     _norm_type(vm_type)
@@ -635,7 +635,7 @@ async def get_guest_firewall_rules(
     vmid: int,
     node: str = Query(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vm:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     _norm_type(vm_type)
@@ -655,7 +655,7 @@ async def create_guest_firewall_rule(
     request: Request,
     node: str = Query(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     _norm_type(vm_type)
@@ -679,7 +679,7 @@ async def update_guest_firewall_rule(
     request: Request,
     node: str = Query(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     _norm_type(vm_type)
@@ -702,7 +702,7 @@ async def delete_guest_firewall_rule(
     pos: int,
     node: str = Query(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:manage")),
+    current_user: User = Depends(PermissionChecker("firewall:manage")),
 ):
     client = _resolve_client(db, server_id)
     _norm_type(vm_type)
@@ -725,7 +725,7 @@ async def get_guest_firewall_log(
     limit: int = Query(100, ge=1, le=500),
     start: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("vm:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     _norm_type(vm_type)
@@ -743,7 +743,7 @@ async def get_guest_firewall_log(
 async def get_firewall_macros(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(PermissionChecker("server:view")),
+    current_user: User = Depends(PermissionChecker("firewall:view")),
 ):
     client = _resolve_client(db, server_id)
     try:

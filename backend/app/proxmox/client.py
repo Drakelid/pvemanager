@@ -929,6 +929,57 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             logger.warning(f"Таймаут ожидания разблокировки VM {vmid}")
             return False
 
+        def update_cloud_init(
+            self, node: str, vmid: int,
+            ciuser=None, cipassword=None, sshkeys=None,
+            ipconfig0=None, nameserver=None, searchdomain=None,
+        ) -> Dict:
+            """Точечно обновить cloud-init параметры существующей VM.
+
+            Значение None — поле не трогаем; пустая строка "" — удалить параметр.
+            Пустой cipassword трактуется как «оставить текущий» (blank = keep).
+            sshkeys перед отправкой URL-кодируется (требование PVE).
+            """
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            import urllib.parse
+
+            params: Dict = {}
+            deletes = []
+
+            def _set(key, value, allow_clear=True):
+                if value is None:
+                    return
+                if value == '' and allow_clear:
+                    deletes.append(key)
+                elif value != '':
+                    params[key] = value
+
+            _set('ciuser', ciuser)
+            if cipassword:  # пустой пароль не меняем
+                params['cipassword'] = cipassword
+            if sshkeys is not None:
+                if sshkeys.strip() == '':
+                    deletes.append('sshkeys')
+                else:
+                    params['sshkeys'] = urllib.parse.quote(sshkeys, safe='')
+            _set('ipconfig0', ipconfig0)
+            _set('nameserver', nameserver)
+            _set('searchdomain', searchdomain)
+
+            if deletes:
+                params['delete'] = ','.join(deletes)
+            if not params:
+                return {"success": True}
+
+            try:
+                self.proxmox.nodes(node).qemu(vmid).config.put(**params)
+                logger.info(f"Cloud-init VM {vmid} обновлён: {list(params.keys())}")
+                return {"success": True}
+            except Exception as e:
+                logger.error(f"Ошибка обновления cloud-init VM {vmid}: {e}")
+                return {"success": False, "error": str(e)}
+
         def configure_vm(
             self,
             node: str,
@@ -1299,9 +1350,9 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
 
             # Фильтруем разрешенные параметры
             allowed_params = {
-                'cores', 'sockets', 'memory', 'balloon', 'name', 'description',
-                'cpu', 'cpulimit', 'cpuunits', 'onboot', 'startup', 'boot', 'bootdisk',
-                'agent', 'ostype', 'tablet', 'hotplug', 'protection',
+                'cores', 'sockets', 'vcpus', 'numa', 'memory', 'balloon', 'name', 'description',
+                'cpu', 'cpulimit', 'cpuunits', 'affinity', 'onboot', 'startup', 'boot', 'bootdisk',
+                'agent', 'ostype', 'tablet', 'hotplug', 'protection', 'kvm',
                 'ciuser', 'cipassword', 'sshkeys', 'tags',
                 # Hardware editor: CPU/NUMA, дисплей, контроллер, тип платформы,
                 # efidisk0 — EFI-диск, обязателен для загрузки в режиме OVMF (UEFI).

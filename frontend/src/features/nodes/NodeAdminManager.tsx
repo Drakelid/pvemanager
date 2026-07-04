@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, Server, Play, Square, RotateCw, PackageCheck } from 'lucide-react';
+import { RefreshCw, Server, Play, Square, RotateCw, PackageCheck, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -128,9 +128,18 @@ export default function NodeAdminManager({ serverId, nodeNames }: { serverId: nu
                     ? t('nodeadm.updates_count', 'Доступно обновлений: {{n}}', { n: updates.length })
                     : t('nodeadm.up_to_date', 'Обновлений нет')}
                 </p>
-                <Button size="sm" variant="outline" onClick={refreshApt} disabled={aptRefresh.isPending}>
-                  <PackageCheck className="mr-1 h-4 w-4" />{t('nodeadm.refresh', 'Проверить (apt update)')}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={refreshApt} disabled={aptRefresh.isPending}>
+                    <PackageCheck className="mr-1 h-4 w-4" />{t('nodeadm.refresh', 'Проверить (apt update)')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => window.open(`/console/node/${serverId}/${node}?cmd=upgrade`, '_blank', 'noopener,noreferrer')}
+                    disabled={!node}
+                  >
+                    <Download className="mr-1 h-4 w-4" />{t('nodeadm.do_upgrade', 'Установить обновления')}
+                  </Button>
+                </div>
               </div>
               {updates.length > 0 && (
                 <Table>
@@ -150,7 +159,7 @@ export default function NodeAdminManager({ serverId, nodeNames }: { serverId: nu
                   </TableBody>
                 </Table>
               )}
-              <p className="text-xs text-muted-foreground">{t('nodeadm.upgrade_hint', 'Установка обновлений выполняется в консоли ноды (apt dist-upgrade) — API не поддерживает неинтерактивный upgrade.')}</p>
+              <p className="text-xs text-muted-foreground">{t('nodeadm.upgrade_hint', '«Установить обновления» откроет консоль ноды с apt dist-upgrade (потребуется подтверждение). Не закрывайте вкладку до завершения.')}</p>
             </TabsContent>
 
             {/* Repositories */}

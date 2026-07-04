@@ -211,6 +211,11 @@ export default function InstanceDetailPage() {
                   <ArrowRightLeft className="mr-2 h-4 w-4" /> {t('instances.migrate', 'Миграция')}
                 </DropdownMenuItem>
                 {isQemu && (
+                  <DropdownMenuItem render={<Link to={`/console/${serverId}/${vmid}?node=${node}&type=${type}&mode=serial`} target="_blank" />}>
+                    <Terminal className="mr-2 h-4 w-4" /> {t('instances.serial_console', 'Serial-консоль')}
+                  </DropdownMenuItem>
+                )}
+                {isQemu && (
                   <DropdownMenuItem onClick={() => setDialog('iso')}>
                     <Disc className="mr-2 h-4 w-4" /> {t('common.iso', 'ISO образ')}
                   </DropdownMenuItem>
