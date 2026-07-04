@@ -202,7 +202,7 @@ def cancel_task(
 def get_all_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    limit: int = Query(30, ge=1, le=200),
+    limit: int = Query(30, ge=1, le=500),
     status_filter: str = Query(None, alias="status"),
 ):
     """

@@ -379,7 +379,32 @@ export default function DashboardPage() {
     if (!ws.isConnected) ws.connect()
     const unsub = ws.subscribe('dashboard_metrics', (data: unknown) => {
       const payload = data as { data?: Rec }
-      if (payload?.data) qc.setQueryData(['resources'], payload.data)
+      const next = payload?.data
+      if (!next) return
+      const incoming = (next.servers as Rec[]) ?? []
+      // Ignore ticks where every server failed to fetch — a transient Proxmox
+      // timeout must not wipe the dashboard back to zero and then restore it.
+      if (incoming.length === 0) return
+      qc.setQueryData(['resources'], (prev: Rec | undefined) => {
+        if (!prev) return next
+        const prevServers = (prev.servers as Rec[]) ?? []
+        const byId = new Map(prevServers.map(s => [s.id, s]))
+        // Merge per server: when an incoming server came back degraded (empty
+        // nodes/vms/containers due to a partial failure), keep the last good
+        // values instead of flashing them to empty.
+        const merged = incoming.map(s => {
+          const old = byId.get(s.id)
+          if (!old) return s
+          return {
+            ...old,
+            ...s,
+            nodes: (s.nodes as Rec[])?.length ? s.nodes : old.nodes,
+            vms: (s.vms as Rec[])?.length ? s.vms : old.vms,
+            containers: (s.containers as Rec[])?.length ? s.containers : old.containers,
+          }
+        })
+        return { ...prev, ...next, servers: merged }
+      })
     })
     return unsub
   }, [qc])
