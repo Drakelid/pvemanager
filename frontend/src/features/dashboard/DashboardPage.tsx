@@ -10,7 +10,6 @@ import { getTasksWebSocket } from '@/lib/websocket'
 import { useInstancesMetricsSync } from '@/hooks/use-instances'
 import { useAllTasks, useActiveTaskCount } from '@/hooks/use-tasks'
 import { useIPAMNetworks } from '@/hooks/use-ipam'
-import { useNodeRrddata } from '@/hooks/use-nodes'
 
 const CHART_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#ec4899', '#84cc16']
 
@@ -18,11 +17,12 @@ type Rec = Record<string, unknown>
 
 // ==================== Helpers ====================
 function barColor(pct: number) {
-  return pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-green-500'
+  return pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-success'
 }
 
+// SVG stroke colour — reference theme tokens so light/dark stay in sync.
 function gaugeStroke(pct: number) {
-  return pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#22c55e'
+  return pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warning)' : 'var(--success)'
 }
 
 // ==================== Resource Bar ====================
@@ -33,7 +33,7 @@ function ResourceBar({ label, percent }: { label: string; percent: number }) {
         <span className="text-muted-foreground">{label}</span>
         <span className="tabular-nums font-medium">{percent.toFixed(1)}%</span>
       </div>
-      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-track overflow-hidden">
         <div
           className={`h-full rounded-full transition-all ${barColor(percent)}`}
           style={{ width: `${Math.min(percent, 100)}%` }}
@@ -54,7 +54,7 @@ function CircularGauge({ label, value }: { label: string; value: number }) {
     <div className="flex flex-col items-center gap-1.5">
       <div className="relative w-[68px] h-[68px]">
         <svg viewBox="0 0 72 72" className="w-full h-full -rotate-90">
-          <circle cx="36" cy="36" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7" />
+          <circle cx="36" cy="36" r={r} fill="none" stroke="var(--track)" strokeWidth="7" />
           <circle
             cx="36" cy="36" r={r}
             fill="none" stroke={gaugeStroke(value)} strokeWidth="7"
@@ -67,7 +67,7 @@ function CircularGauge({ label, value }: { label: string; value: number }) {
           <span className="text-[13px] font-bold tabular-nums">{Math.round(clamped)}</span>
         </div>
       </div>
-      <span className="text-[10px] text-muted-foreground tracking-wide">{label}</span>
+      <span className="text-2xs text-muted-foreground tracking-wide">{label}</span>
     </div>
   )
 }
@@ -93,7 +93,7 @@ function ClusterOverviewCard({ serverList, nodeStats, allVMs, memPercent, diskPe
     <Card className="h-full">
       <CardContent className="p-5 flex flex-col gap-4 h-full">
         <div className="flex items-center gap-1.5">
-          <button className="flex items-center gap-1.5 group text-left">
+          <button className="flex items-center gap-1.5 group text-left rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <span className="text-base font-semibold group-hover:text-primary transition-colors">{clusterName}</span>
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
           </button>
@@ -102,16 +102,16 @@ function ClusterOverviewCard({ serverList, nodeStats, allVMs, memPercent, diskPe
         <div className={`grid ${cols} gap-4`}>
           {availableIPs > 0 && (
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">IPv4 доступно</p>
-              <p className="text-3xl font-bold tabular-nums text-green-400">{availableIPs.toLocaleString()}</p>
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">IPv4 доступно</p>
+              <p className="text-3xl font-bold tabular-nums text-success">{availableIPs.toLocaleString()}</p>
             </div>
           )}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Узлов</p>
+            <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Узлов</p>
             <p className="text-3xl font-bold tabular-nums">{nodeStats.length}</p>
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">VM</p>
+            <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">VM</p>
             <p className="text-3xl font-bold tabular-nums">{totalVMs + totalCTs}</p>
           </div>
         </div>
@@ -175,7 +175,7 @@ function TasksTodayCard() {
         {rows.map(({ label, value, red }) => (
           <div key={label} className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">{label}</span>
-            <span className={`text-sm font-semibold tabular-nums ${red ? 'text-red-500' : ''}`}>{value}</span>
+            <span className={`text-sm font-semibold tabular-nums ${red ? 'text-danger' : ''}`}>{value}</span>
           </div>
         ))}
         <div className="border-t border-border pt-2.5 flex items-center justify-between">
@@ -252,7 +252,7 @@ function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
                 <button
                   key={t}
                   onClick={() => setTab(t)}
-                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card ${
                     tab === t
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground hover:text-foreground'
@@ -265,7 +265,7 @@ function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
           </div>
         </CardHeader>
         <CardContent className="px-5 pb-4">
-          <div className="grid grid-cols-[1fr_56px_56px_56px] gap-2 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border mb-1">
+          <div className="grid grid-cols-[1fr_56px_56px_56px] gap-2 px-2 py-1 text-2xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border mb-1">
             <span>Название узлов</span>
             <span className="text-right">CPU, %</span>
             <span className="text-right">RAM</span>
@@ -285,18 +285,18 @@ function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
                   className="grid grid-cols-[1fr_56px_56px_56px] gap-2 items-center px-2 py-2 rounded hover:bg-muted/40 text-sm"
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${online ? 'bg-green-500' : 'bg-red-400'}`} />
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${online ? 'bg-success' : 'bg-danger'}`} />
                     <span className="truncate">{String(n.node || n.name || `node-${i + 1}`)}</span>
-                    {n.server_name && (
-                      <span className="text-[10px] text-muted-foreground shrink-0">
+                    {!!n.server_name && (
+                      <span className="text-2xs text-muted-foreground shrink-0">
                         #{String(n.server_name)}
                       </span>
                     )}
                   </div>
-                  <span className={`text-right tabular-nums text-xs font-medium ${cpu >= 90 ? 'text-red-400' : cpu >= 70 ? 'text-amber-400' : ''}`}>
+                  <span className={`text-right tabular-nums text-xs font-medium ${cpu >= 90 ? 'text-danger' : cpu >= 70 ? 'text-warning' : ''}`}>
                     {cpu.toFixed(0)}
                   </span>
-                  <span className={`text-right tabular-nums text-xs ${ram >= 90 ? 'text-red-400' : ram >= 70 ? 'text-amber-400' : ''}`}>
+                  <span className={`text-right tabular-nums text-xs ${ram >= 90 ? 'text-danger' : ram >= 70 ? 'text-warning' : ''}`}>
                     {ram.toFixed(0)}
                   </span>
                   <span className="text-right tabular-nums text-xs text-muted-foreground">{disk.toFixed(0)}</span>
@@ -346,7 +346,7 @@ function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
                     color: 'var(--popover-foreground)',
                   }}
                   itemStyle={{ color: 'var(--popover-foreground)' }}
-                  formatter={(v: number, name: string) => [`${v}%`, name]}
+                  formatter={(v, name) => [`${v}%`, name]}
                 />
                 <Legend
                   formatter={(value) => <span style={{ fontSize: 11 }}>{value}</span>}
@@ -396,7 +396,7 @@ export default function DashboardPage() {
   )
 
   const nodeStats = serverList.flatMap(s =>
-    ((s.nodes as Rec[]) ?? []).map(n => ({
+    ((s.nodes as Rec[]) ?? []).map((n): Rec => ({
       ...n,
       server_name: s.server_name,
       server_id: s.id,

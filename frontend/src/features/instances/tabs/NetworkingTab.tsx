@@ -154,7 +154,7 @@ export default function NetworkingTab({ serverId, vmid, type, node }: Props) {
                     {iface.ips.map((ip) => (
                       <div key={ip.address} className="flex items-center gap-2">
                         <span className="font-mono text-xs">{ip.address}/{ip.prefix}</span>
-                        <Badge variant="secondary" className="text-[10px]">{ip.type}</Badge>
+                        <Badge variant="secondary" className="text-2xs">{ip.type}</Badge>
                       </div>
                     ))}
                   </div>

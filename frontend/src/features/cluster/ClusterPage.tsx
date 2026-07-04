@@ -248,14 +248,14 @@ function JoinWizard({
         {step === 2 && check && (
           <div className="space-y-4">
             {check.guests_count === 0 ? (
-              <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-3 text-sm">
-                <Info className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+              <div className="flex items-start gap-2 rounded-md bg-success/10 p-3 text-sm">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                 <span>{t('cluster.node_clean', 'Node has no VMs/containers — ready to join.')}</span>
               </div>
             ) : (
               <>
-                <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-3 text-sm">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                <div className="flex items-start gap-2 rounded-md bg-warning/10 p-3 text-sm">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                   <span>
                     {t('cluster.guests_warning',
                       'Joining a cluster overwrites /etc/pve — all VMs/containers on this node will be lost. They must be backed up and deleted first.')}
@@ -266,7 +266,7 @@ function JoinWizard({
                   {check.guests.map((g) => (
                     <div key={`${g.type}-${g.vmid}`} className="flex items-center justify-between border-b px-3 py-1.5 text-sm last:border-b-0">
                       <span className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[10px]">{g.type === 'qemu' ? 'VM' : 'LXC'}</Badge>
+                        <Badge variant="outline" className="text-2xs">{g.type === 'qemu' ? 'VM' : 'LXC'}</Badge>
                         {g.name} <span className="text-muted-foreground">#{g.vmid}</span>
                       </span>
                       <StatusDot status={g.status} />
@@ -306,8 +306,8 @@ function JoinWizard({
                   </Button>
                 )}
                 {prepared && (
-                  <div className="flex items-center gap-2 rounded-md bg-green-500/10 p-3 text-sm">
-                    <Info className="h-4 w-4 text-green-500" />
+                  <div className="flex items-center gap-2 rounded-md bg-success/10 p-3 text-sm">
+                    <Info className="h-4 w-4 text-success" />
                     {t('cluster.node_ready', 'Node cleared and ready to join.')}
                   </div>
                 )}
@@ -468,8 +468,8 @@ export default function ClusterPage() {
             </div>
 
             {members.length === 2 && (
-              <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-2.5 text-xs">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+              <div className="flex items-start gap-2 rounded-md bg-warning/10 p-2.5 text-xs">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                 <span>{t('cluster.two_node_quorum', 'A 2-node cluster loses quorum if one node fails. 3+ nodes or a QDevice is recommended for production.')}</span>
               </div>
             )}

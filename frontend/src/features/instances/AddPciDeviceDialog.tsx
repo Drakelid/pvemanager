@@ -108,7 +108,7 @@ export default function AddPciDeviceDialog({ open, onClose, serverId, vmid, node
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>{t('hw.pci_device', 'Устройство')}</Label>
-            <Select value={deviceId} onValueChange={setDeviceId}>
+            <Select value={deviceId} onValueChange={(v) => setDeviceId(v ?? "")}>
               <SelectTrigger className="w-full">
                 <SelectValue
                   placeholder={

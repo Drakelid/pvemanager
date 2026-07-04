@@ -117,7 +117,7 @@ function ZoneDialog({ serverId, open, onOpenChange, editing }: {
               <Label>DNS</Label>
               <Select
                 value={form.dns}
-                onValueChange={v => set('dns', v === '__none__' ? '' : v)}
+                onValueChange={v => set('dns', v && v !== '__none__' ? v : '')}
                 disabled={dnsEntries.length === 0}
               >
                 <SelectTrigger className="mt-1 w-full">
@@ -470,7 +470,7 @@ export default function SDNManager({ serverId }: { serverId: number }) {
                         >
                           <ChevronRight className={`h-4 w-4 transition-transform ${expandedVNet === v.vnet ? 'rotate-90' : ''}`} />
                           <span className="font-mono font-medium">{v.vnet}</span>
-                          <Badge variant="outline" className="text-[10px]">{v.zone}</Badge>
+                          <Badge variant="outline" className="text-2xs">{v.zone}</Badge>
                           {v.tag != null && <span className="text-xs text-muted-foreground">tag {v.tag}</span>}
                           {v.alias && <span className="text-xs text-muted-foreground">— {v.alias}</span>}
                         </button>

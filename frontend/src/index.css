@@ -5,15 +5,26 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "DM Sans", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "DM Sans Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
   --font-heading: var(--font-sans);
 
-  --color-surface-0: #09090B;
-  --color-surface-1: #111113;
-  --color-surface-2: #1A1A1F;
-  --color-text-primary: #F0F0F3;
-  --color-text-secondary: #A0A0AB;
+  /* One named step below text-xs (12px) for micro labels / meta text, so the
+     type scale is 11·12·14·16·18·24·32 instead of ad-hoc text-[10px]/[11px]. */
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-2xs--line-height: 1rem;
+
+  /* Semantic status tokens — use text-success / bg-warning / text-danger etc.
+     instead of hardcoded green-500 / amber-500 / red-500 so both themes and
+     future palette changes stay consistent. */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  /* Neutral track for progress bars / gauge backgrounds (theme-aware). */
+  --color-track: var(--track);
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -93,6 +104,13 @@
   --sidebar-accent-foreground: oklch(0.205 0.015 264);
   --sidebar-border: oklch(0.922 0.004 264);
   --sidebar-ring: oklch(0.592 0.19 264);
+  --success: oklch(0.62 0.17 149);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.70 0.15 70);
+  --warning-foreground: oklch(0.2 0.03 70);
+  --danger: oklch(0.577 0.245 27.33);
+  --danger-foreground: oklch(1 0 0);
+  --track: oklch(0.922 0.004 264);
 }
 
 .dark {
@@ -128,6 +146,13 @@
   --sidebar-accent-foreground: oklch(0.94 0.005 264);
   --sidebar-border: oklch(0.27 0.008 264);
   --sidebar-ring: oklch(0.592 0.19 264);
+  --success: oklch(0.723 0.191 149);
+  --success-foreground: oklch(0.16 0.02 149);
+  --warning: oklch(0.80 0.15 75);
+  --warning-foreground: oklch(0.18 0.03 75);
+  --danger: oklch(0.62 0.22 27.33);
+  --danger-foreground: oklch(1 0 0);
+  --track: oklch(0.30 0.008 264);
 }
 
 @layer base {
@@ -136,5 +161,18 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Respect users who ask for less motion: neutralise transitions/animations
+     globally instead of auditing every component (WCAG reduced-motion). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

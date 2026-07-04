@@ -1,10 +1,11 @@
+import type { ReactElement } from 'react';
 import { Monitor } from 'lucide-react';
 
 type OsInfo = {
   label: string;
   bg: string;
   fg: string;
-  svg?: JSX.Element;
+  svg?: ReactElement;
 };
 
 const OS_MAP: Array<{ keys: string[]; info: OsInfo }> = [

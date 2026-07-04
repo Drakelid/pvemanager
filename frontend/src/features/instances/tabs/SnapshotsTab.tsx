@@ -147,7 +147,7 @@ export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
                     </TableCell>
                     <TableCell>
                       {snap.vmstate ? (
-                        <Badge variant="secondary" className="text-[10px]">RAM</Badge>
+                        <Badge variant="secondary" className="text-2xs">RAM</Badge>
                       ) : (
                         <span className="text-xs text-muted-foreground">No</span>
                       )}

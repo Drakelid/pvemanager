@@ -132,7 +132,7 @@ function ExecuteScriptCard({ serverId, vmid, node }: { serverId: number; vmid: n
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">{t('instances.exit_code')}:</span>
-              <code className={r.exit_code === 0 ? 'text-green-600 dark:text-green-500' : 'text-destructive'}>{r.exit_code ?? '—'}</code>
+              <code className={r.exit_code === 0 ? 'text-success' : 'text-destructive'}>{r.exit_code ?? '—'}</code>
             </div>
             {r.error && <p className="text-xs text-destructive">{r.error}</p>}
             {r.stdout != null && r.stdout !== '' && (
@@ -433,7 +433,7 @@ function CloudInitCard({ serverId, vmid, type, node }: { serverId: number; vmid:
       </CardHeader>
       <CardContent className="space-y-4">
         {!hasCloudInit && (
-          <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-500">
+          <p className="rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
             {t('instances.ci_no_drive')}
           </p>
         )}
@@ -953,7 +953,7 @@ function DiskManagementCard({ serverId, vmid, type, node }: { serverId: number; 
         <div className="space-y-2 border-t pt-3">
           <Label className="text-xs font-medium">{t('instances.disk_add')}</Label>
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1"><Label className="text-[11px]">{t('instances.disk_bus')}</Label>
+            <div className="space-y-1"><Label className="text-2xs">{t('instances.disk_bus')}</Label>
               <Select value={addBus} onValueChange={(v) => v && setAddBus(v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -963,13 +963,13 @@ function DiskManagementCard({ serverId, vmid, type, node }: { serverId: number; 
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1"><Label className="text-[11px]">{t('instances.migrate_target_storage')}</Label>
+            <div className="space-y-1"><Label className="text-2xs">{t('instances.migrate_target_storage')}</Label>
               <Select value={addStorage} onValueChange={(v) => v && setAddStorage(v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>{storages.map((s) => <SelectItem key={s.storage} value={s.storage}>{s.storage}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-1"><Label className="text-[11px]">{t('instances.new_size_gb')}</Label>
+            <div className="space-y-1"><Label className="text-2xs">{t('instances.new_size_gb')}</Label>
               <Input type="number" min={1} value={addSize} onChange={(e) => setAddSize(e.target.value)} />
             </div>
           </div>
@@ -1159,7 +1159,7 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
             <div className="space-y-1.5">
               <Label htmlFor="disk-device">{t('instances.disk_device')}</Label>
               {diskDevices.length > 0 ? (
-                <Select value={diskDevice} onValueChange={setDiskDevice}>
+                <Select value={diskDevice} onValueChange={(v) => setDiskDevice(v ?? "")}>
                   <SelectTrigger id="disk-device">
                     <SelectValue placeholder={t('common.placeholder_disk')} />
                   </SelectTrigger>
@@ -1212,7 +1212,7 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
           </p>
           {growResult && (
             <div className="space-y-1.5">
-              <p className={`text-xs font-medium ${growResult.grown ? 'text-green-500' : 'text-amber-500'}`}>
+              <p className={`text-xs font-medium ${growResult.grown ? 'text-success' : 'text-warning'}`}>
                 {growResult.grown
                   ? 'Файловая система расширена внутри ОС'
                   : 'Файловая система не расширена — вывод growpart ниже'}

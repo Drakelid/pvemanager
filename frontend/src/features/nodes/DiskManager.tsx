@@ -261,13 +261,13 @@ export default function DiskManager({ serverId, nodeNames }: { serverId: number;
                     {disks.map(d => (
                       <TableRow key={d.devpath}>
                         <TableCell className="font-mono text-xs font-medium">{d.devpath}</TableCell>
-                        <TableCell><Badge variant="outline" className="uppercase text-[10px]">{d.type || '—'}</Badge></TableCell>
-                        <TableCell className="text-xs">{d.model || '—'}{d.serial ? <span className="block text-[10px] text-muted-foreground font-mono">{d.serial}</span> : null}</TableCell>
+                        <TableCell><Badge variant="outline" className="uppercase text-2xs">{d.type || '—'}</Badge></TableCell>
+                        <TableCell className="text-xs">{d.model || '—'}{d.serial ? <span className="block text-2xs text-muted-foreground font-mono">{d.serial}</span> : null}</TableCell>
                         <TableCell className="text-xs tabular-nums">{formatBytes(d.size || 0)}</TableCell>
                         <TableCell className="text-xs">{d.used || <span className="text-muted-foreground">{t('disks.free', 'свободен')}</span>}</TableCell>
                         <TableCell>
                           {d.health ? <Badge variant={healthVariant(d.health)}>{d.health}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
-                          {d.wearout != null && d.wearout !== '' && <span className="ml-1 text-[10px] text-muted-foreground">wear {d.wearout}%</span>}
+                          {d.wearout != null && d.wearout !== '' && <span className="ml-1 text-2xs text-muted-foreground">wear {d.wearout}%</span>}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">

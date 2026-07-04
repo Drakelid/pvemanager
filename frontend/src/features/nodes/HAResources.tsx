@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useHAStatus, useAddToHA, useRemoveFromHA } from '@/hooks/use-ha';
-import type { VirtualMachine } from '@/types';
+import type { VMInstance } from '@/types';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
 
@@ -34,7 +34,7 @@ const emptyAddForm: AddForm = {
   comment: '',
 };
 
-export default function HAResources({ serverId, vms }: { serverId: number; vms: VirtualMachine[] }) {
+export default function HAResources({ serverId, vms }: { serverId: number; vms: VMInstance[] }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const { data, isLoading, isFetching, refetch } = useHAStatus(serverId);
@@ -203,7 +203,7 @@ export default function HAResources({ serverId, vms }: { serverId: number; vms: 
               <div>
                 <Label>{t('ha.group')}</Label>
                 {groups.length > 0 ? (
-                  <Select value={form.group || '__none'} onValueChange={v => set('group', v === '__none' ? '' : v)}>
+                  <Select value={form.group || '__none'} onValueChange={v => set('group', v && v !== '__none' ? v : '')}>
                     <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none">{t('ha.no_group')}</SelectItem>

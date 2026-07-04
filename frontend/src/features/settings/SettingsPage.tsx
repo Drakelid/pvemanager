@@ -503,7 +503,7 @@ function AboutTab() {
             {check.error ? (
               <p className="text-destructive">{check.error}</p>
             ) : check.update_available ? (
-              <p className="font-medium text-amber-600 dark:text-amber-500">
+              <p className="font-medium text-warning">
                 {t('settings.update_available')}: {check.latest_version}
               </p>
             ) : (
@@ -517,7 +517,7 @@ function AboutTab() {
 
         {/* Update in progress banner */}
         {status?.is_updating && (
-          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
             <p className="font-medium">{t('settings.update_in_progress')}</p>
             <p className="text-xs text-muted-foreground">{status.stage} — {status.progress}%</p>
             <Button size="sm" variant="ghost" className="mt-2" onClick={() => resetUpdate.mutate()} disabled={resetUpdate.isPending}>

@@ -574,7 +574,7 @@ function UserServersForm({
             : t('users.no_workspaces')}
         </div>
         {!data.user_workspaces.length && (
-          <div className="text-xs text-amber-600">{t('users.workspace_required')}</div>
+          <div className="text-xs text-warning">{t('users.workspace_required')}</div>
         )}
         <div className="space-y-2 max-h-80 overflow-y-auto">
           {data.servers.map(srv => (

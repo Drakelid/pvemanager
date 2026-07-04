@@ -345,7 +345,7 @@ function PoolsCard({ networkId, pools }: { networkId: number; pools: IPAMPool[] 
 const ipMapColors: Record<string, string> = {
   gateway: 'bg-purple-500',
   allocated: 'bg-blue-500',
-  reserved: 'bg-amber-500',
+  reserved: 'bg-warning',
   available: 'bg-muted',
 };
 

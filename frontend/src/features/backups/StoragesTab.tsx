@@ -417,10 +417,10 @@ function NativeJobDialog({ serverId, open, onOpenChange, editing, backupStorages
           <div>
             <Label className="text-xs text-muted-foreground">{t('storages.retention')}</Label>
             <div className="mt-1.5 grid grid-cols-4 gap-2">
-              <div className="space-y-1"><Label className="text-[11px]">{t('backups.keep_last')}</Label><Input type="number" min={0} value={form.keep_last} onChange={e => set('keep_last', e.target.value)} /></div>
-              <div className="space-y-1"><Label className="text-[11px]">{t('backups.keep_daily')}</Label><Input type="number" min={0} value={form.keep_daily} onChange={e => set('keep_daily', e.target.value)} /></div>
-              <div className="space-y-1"><Label className="text-[11px]">{t('backups.keep_weekly')}</Label><Input type="number" min={0} value={form.keep_weekly} onChange={e => set('keep_weekly', e.target.value)} /></div>
-              <div className="space-y-1"><Label className="text-[11px]">{t('backups.keep_monthly')}</Label><Input type="number" min={0} value={form.keep_monthly} onChange={e => set('keep_monthly', e.target.value)} /></div>
+              <div className="space-y-1"><Label className="text-2xs">{t('backups.keep_last')}</Label><Input type="number" min={0} value={form.keep_last} onChange={e => set('keep_last', e.target.value)} /></div>
+              <div className="space-y-1"><Label className="text-2xs">{t('backups.keep_daily')}</Label><Input type="number" min={0} value={form.keep_daily} onChange={e => set('keep_daily', e.target.value)} /></div>
+              <div className="space-y-1"><Label className="text-2xs">{t('backups.keep_weekly')}</Label><Input type="number" min={0} value={form.keep_weekly} onChange={e => set('keep_weekly', e.target.value)} /></div>
+              <div className="space-y-1"><Label className="text-2xs">{t('backups.keep_monthly')}</Label><Input type="number" min={0} value={form.keep_monthly} onChange={e => set('keep_monthly', e.target.value)} /></div>
             </div>
           </div>
 
@@ -566,7 +566,7 @@ export default function StoragesTab() {
                     <TableRow key={s.storage}>
                       <TableCell className="font-mono font-medium">
                         {s.storage}
-                        {s.disable === 1 && <Badge variant="secondary" className="ml-2 text-[10px]">{t('storages.disabled')}</Badge>}
+                        {s.disable === 1 && <Badge variant="secondary" className="ml-2 text-2xs">{t('storages.disabled')}</Badge>}
                       </TableCell>
                       <TableCell><Badge variant="outline">{s.type}</Badge></TableCell>
                       <TableCell className="text-xs">{s.content || '—'}</TableCell>

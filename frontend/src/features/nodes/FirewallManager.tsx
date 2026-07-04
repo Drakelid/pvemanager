@@ -192,7 +192,7 @@ export function RuleRow({ rule, onToggle, onDelete }: {
   rule: FirewallRule; onToggle?: () => void; onDelete: () => void;
 }) {
   const disabled = rule.enable === 0;
-  const actionColor = rule.action === 'ACCEPT' ? 'text-green-600 dark:text-green-500'
+  const actionColor = rule.action === 'ACCEPT' ? 'text-success'
     : rule.action === 'DROP' || rule.action === 'REJECT' ? 'text-destructive' : '';
   return (
     <TableRow className={disabled ? 'opacity-50' : ''}>
@@ -206,7 +206,7 @@ export function RuleRow({ rule, onToggle, onDelete }: {
         <div className="flex justify-end gap-1">
           {onToggle && (
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onToggle} title={disabled ? 'Enable' : 'Disable'}>
-              <Power className={`h-3.5 w-3.5 ${disabled ? '' : 'text-green-600 dark:text-green-500'}`} />
+              <Power className={`h-3.5 w-3.5 ${disabled ? '' : 'text-success'}`} />
             </Button>
           )}
           <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={onDelete}>
@@ -299,7 +299,7 @@ function IpsetEntries({ serverId, name }: { serverId: number; name: string }) {
           {entries.map(e => (
             <div key={e.cidr} className="flex items-center gap-2 rounded border px-2 py-1 text-xs">
               <span className="font-mono">{e.cidr}</span>
-              {e.nomatch ? <Badge variant="outline" className="text-[10px]">nomatch</Badge> : null}
+              {e.nomatch ? <Badge variant="outline" className="text-2xs">nomatch</Badge> : null}
               {e.comment && <span className="text-muted-foreground">— {e.comment}</span>}
               <Button variant="ghost" size="icon" className="ml-auto h-6 w-6 text-destructive" onClick={() => remove(e.cidr)}>
                 <Trash2 className="h-3 w-3" />

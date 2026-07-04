@@ -257,13 +257,13 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
         {STEPS.map((s, i) => (
             <div key={s} className="flex items-center gap-2">
               <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
-                i < stepIdx ? 'bg-green-500/20 text-green-400' :
-                i === stepIdx ? 'bg-blue-500/20 text-blue-400 ring-2 ring-blue-500/50' :
+                i < stepIdx ? 'bg-success/20 text-success' :
+                i === stepIdx ? 'bg-primary/20 text-primary ring-2 ring-primary/50' :
                 'bg-muted text-muted-foreground'
               }`}>
                 {i < stepIdx ? <CheckCircle className="h-4 w-4" /> : i + 1}
               </div>
-              {i < STEPS.length - 1 && <div className={`h-0.5 w-8 ${i < stepIdx ? 'bg-green-500/50' : 'bg-border'}`} />}
+              {i < STEPS.length - 1 && <div className={`h-0.5 w-8 ${i < stepIdx ? 'bg-success/50' : 'bg-border'}`} />}
             </div>
           ))}
         </div>
@@ -276,7 +276,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
             {servers.map(srv => (
               <Card
                 key={srv.id}
-                className={`cursor-pointer transition-colors hover:border-blue-500/50 ${selectedServer?.id === srv.id ? 'border-blue-500 bg-blue-500/5' : ''}`}
+                className={`cursor-pointer transition-colors hover:border-primary/50 ${selectedServer?.id === srv.id ? 'border-primary bg-primary/5' : ''}`}
                 onClick={() => { setSelectedServer(srv); setSelectedLXCTemplate(null); setSelectedTemplate(null); }}
               >
                 <CardContent className="flex items-center gap-3 p-4">
@@ -301,29 +301,31 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
           <h3 className="text-lg font-semibold">{t('wizard.select_type')}</h3>
           <div className="grid gap-3 sm:grid-cols-2">
             <Card
-              className={`cursor-pointer transition-colors hover:border-blue-500/50 ${kind === 'vm' ? 'border-blue-500 bg-blue-500/5' : ''}`}
+              interactive
+              className={kind === 'vm' ? 'border-primary bg-primary/5' : ''}
               onClick={() => setKind('vm')}
             >
               <CardContent className="flex items-center gap-4 p-5">
-                <HardDrive className="h-10 w-10 text-blue-400 shrink-0" />
+                <HardDrive className="h-10 w-10 text-primary shrink-0" />
                 <div>
                   <p className="font-semibold">{t('wizard.type_vm')}</p>
                   <p className="text-sm text-muted-foreground">{t('wizard.type_vm_desc')}</p>
                 </div>
-                {kind === 'vm' && <CheckCircle className="ml-auto h-5 w-5 text-blue-400 shrink-0" />}
+                {kind === 'vm' && <CheckCircle className="ml-auto h-5 w-5 text-primary shrink-0" />}
               </CardContent>
             </Card>
             <Card
-              className={`cursor-pointer transition-colors hover:border-green-500/50 ${kind === 'lxc' ? 'border-green-500 bg-green-500/5' : ''}`}
+              interactive
+              className={kind === 'lxc' ? 'border-success bg-success/5' : ''}
               onClick={() => setKind('lxc')}
             >
               <CardContent className="flex items-center gap-4 p-5">
-                <Container className="h-10 w-10 text-green-400 shrink-0" />
+                <Container className="h-10 w-10 text-success shrink-0" />
                 <div>
                   <p className="font-semibold">{t('wizard.type_lxc')}</p>
                   <p className="text-sm text-muted-foreground">{t('wizard.type_lxc_desc')}</p>
                 </div>
-                {kind === 'lxc' && <CheckCircle className="ml-auto h-5 w-5 text-green-400 shrink-0" />}
+                {kind === 'lxc' && <CheckCircle className="ml-auto h-5 w-5 text-success shrink-0" />}
               </CardContent>
             </Card>
           </div>
@@ -344,7 +346,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   {groupTemplates.map(tpl => (
                     <Card
                       key={tpl.id}
-                      className={`cursor-pointer transition-colors hover:border-blue-500/50 ${selectedTemplate?.id === tpl.id ? 'border-blue-500 bg-blue-500/5' : ''}`}
+                      className={`cursor-pointer transition-colors hover:border-primary/50 ${selectedTemplate?.id === tpl.id ? 'border-primary bg-primary/5' : ''}`}
                       onClick={() => selectTemplate(tpl)}
                     >
                       <CardContent className="p-3">
@@ -390,12 +392,12 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               {lxcTemplates.map(tpl => (
                 <Card
                   key={tpl.volid}
-                  className={`cursor-pointer transition-colors hover:border-green-500/50 ${selectedLXCTemplate?.volid === tpl.volid ? 'border-green-500 bg-green-500/5' : ''}`}
+                  className={`cursor-pointer transition-colors hover:border-success/50 ${selectedLXCTemplate?.volid === tpl.volid ? 'border-success bg-success/5' : ''}`}
                   onClick={() => setSelectedLXCTemplate(tpl)}
                 >
                   <CardContent className="p-3">
                     <div className="flex items-center gap-2">
-                      <Container className="h-5 w-5 text-green-400 shrink-0" />
+                      <Container className="h-5 w-5 text-success shrink-0" />
                       <span className="font-medium text-sm truncate">{tpl.name}</span>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground font-mono">
@@ -479,7 +481,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 </div>
                 <div>
                   <Label>{t('wizard.storage')}</Label>
-                  <Select value={config.storage} onValueChange={v => setConfig(p => ({ ...p, storage: v }))}>
+                  <Select value={config.storage} onValueChange={v => setConfig(p => ({ ...p, storage: v ?? '' }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {vmStorages.length > 0
@@ -583,7 +585,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 </div>
                 <div>
                   <Label>{t('wizard.storage')}</Label>
-                  <Select value={lxcConfig.storage} onValueChange={v => setLxcConfig(p => ({ ...p, storage: v }))}>
+                  <Select value={lxcConfig.storage} onValueChange={v => setLxcConfig(p => ({ ...p, storage: v ?? '' }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {lxcStorages.length > 0
@@ -814,7 +816,7 @@ function QuotaHint({ addCores, addMemoryMb, addDiskGb }: { addCores: number; add
   ];
 
   return (
-    <Card className="border-amber-500/40">
+    <Card className="border-warning/40">
       <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Gauge className="h-4 w-4" />{t('users.quota.manage')}</CardTitle></CardHeader>
       <CardContent className="grid gap-2 sm:grid-cols-2">
         {rows.filter(r => r.limit !== null).map(r => {

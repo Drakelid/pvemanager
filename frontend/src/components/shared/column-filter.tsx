@@ -72,7 +72,7 @@ export function ColumnFilter<TData>({ column, variant = 'text', formatOption }: 
           <Button
             variant="ghost"
             size="icon"
-            className={cn('h-6 w-6', isActive && 'text-amber-500')}
+            className={cn('h-6 w-6', isActive && 'text-warning')}
           />
         }
       >

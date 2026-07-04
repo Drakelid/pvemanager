@@ -37,7 +37,7 @@ export default function NotificationsDropdown() {
           {unread > 0 && (
             <Badge
               variant="destructive"
-              className="absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1 text-[10px]"
+              className="absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1 text-2xs"
             >
               {unread > 99 ? '99+' : unread}
             </Badge>
@@ -67,7 +67,7 @@ export default function NotificationsDropdown() {
                   {n.title && n.message && (
                     <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
                   )}
-                  <p className="text-[10px] text-muted-foreground mt-1">
+                  <p className="text-2xs text-muted-foreground mt-1">
                     {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
                   </p>
                 </div>

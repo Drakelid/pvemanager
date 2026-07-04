@@ -58,7 +58,7 @@ export function useSDNDns(serverId: number, enabled = true) {
 // Invalidate the SDN status (pending indicator) alongside the changed entity.
 function useSDNInvalidator(serverId: number) {
   const qc = useQueryClient();
-  return (...keys: readonly unknown[][]) => {
+  return (...keys: ReadonlyArray<readonly unknown[]>) => {
     qc.invalidateQueries({ queryKey: sdnKeys.status(serverId) });
     keys.forEach(k => qc.invalidateQueries({ queryKey: k }));
   };
