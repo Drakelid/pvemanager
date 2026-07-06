@@ -3,9 +3,9 @@ Metrics Broadcaster — asyncio background tasks that push live metrics
 to WebSocket channel subscribers.
 
 Channels:
-  dashboard_metrics                          — all servers / VMs overview (10 s)
-  server_metrics:{server_id}_{node}          — single Proxmox node status (5 s)
-  instance_metrics:{server_id}_{vmid}_{type}_{node}  — VM / LXC status (5 s)
+  dashboard_metrics                          — all servers / VMs overview (2 s)
+  server_metrics:{server_id}_{node}          — single Proxmox node status (2 s)
+  instance_metrics:{server_id}_{vmid}_{type}_{node}  — VM / LXC status (1 s)
 
 On-demand:
   handle_rrd_request(ws, request_id, action, params, db_factory)
@@ -286,7 +286,7 @@ def _fetch_rrd(db_factory, server_id: int, action: str, params: dict):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Dashboard metrics loop  (push every 10 s)
+# Dashboard metrics loop  (push every 2 s)
 # ──────────────────────────────────────────────────────────────────────────────
 
 async def dashboard_metrics_loop(db_factory) -> None:
@@ -326,7 +326,7 @@ async def dashboard_metrics_loop(db_factory) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Server / node metrics loop  (push every 5 s)
+# Server / node metrics loop  (push every 2 s)
 # ──────────────────────────────────────────────────────────────────────────────
 
 async def server_metrics_loop(db_factory) -> None:
