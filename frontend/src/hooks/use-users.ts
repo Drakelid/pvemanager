@@ -181,6 +181,15 @@ export function useTerminateUserSessions() {
   });
 }
 
+export function useDisableUser2FA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: number) =>
+      apiClient.post<{ message: string }>(`/admin/api/users/${userId}/disable-2fa`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: userKeys.users }),
+  });
+}
+
 // ==================== User → Servers ====================
 
 export function useUserServerAssignments(userId: number) {

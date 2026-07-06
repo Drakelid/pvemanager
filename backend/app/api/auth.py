@@ -11,7 +11,11 @@ from ..models import User, PasswordResetToken
 from ..schemas import (
     UserCreate, UserResponse, LoginRequest, Token,
     ForgotPasswordRequest, ResetPasswordRequest,
+    TwoFactorStatusResponse, TwoFactorSetupResponse,
+    TwoFactorEnableRequest, TwoFactorEnableResponse,
+    TwoFactorDisableRequest, MessageResponse,
 )
+from ..services import two_factor_service as tfa
 from ..auth import (
     get_password_hash, 
     verify_password, 
@@ -157,9 +161,46 @@ def login(login_data: LoginRequest, request: Request, db: Session = Depends(get_
             detail="User account is disabled"
         )
     
+    # Two-factor authentication gate (after password + active checks).
+    # Password is correct at this point; require the second factor before
+    # issuing a token or creating a session.
+    if user.two_factor_enabled:
+        if not login_data.code:
+            return {"two_factor_required": True, "token_type": "bearer"}
+
+        from ..services import two_factor_service as tfa
+        code_ok = tfa.verify_totp(user.two_factor_secret, login_data.code)
+        if not code_ok:
+            backup = list(user.two_factor_backup_codes or [])
+            if tfa.consume_backup_code(login_data.code, backup):
+                user.two_factor_backup_codes = backup
+                db.commit()
+                code_ok = True
+
+        if not code_ok:
+            SecurityService.record_login_attempt(
+                db, client_ip, login_data.username, False, "Invalid 2FA code", user_agent
+            )
+            LoggingService.log_auth(
+                db=db,
+                action="login_failed",
+                username=login_data.username,
+                ip_address=client_ip,
+                success=False,
+                error_message="Invalid two-factor code",
+                user_agent=user_agent,
+                user_id=user.id,
+            )
+            # Use 400 (not 401) so the SPA's global 401 handler does not force a
+            # redirect/reload and wipe the login form + error message.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid two-factor code",
+            )
+
     # SUCCESS - Reset failed attempts
     SecurityService.reset_failed_attempts(db, user)
-    
+
     # Create session
     session, was_other_terminated = SecurityService.create_session(
         db, user, client_ip, user_agent
@@ -280,6 +321,7 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
             "display_name": current_user.role.display_name if current_user.role else ("Administrator" if current_user.is_admin else "User")
         },
         "permissions": permissions,
+        "two_factor_enabled": current_user.two_factor_enabled,
         "require_password_change": current_user.require_password_change,
         "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
         "created_at": current_user.created_at.isoformat() if current_user.created_at else None
@@ -298,6 +340,98 @@ def get_my_sessions(current_user: User = Depends(get_current_user), db: Session 
         "last_activity": s.last_activity.isoformat() if s.last_activity else None,
         "expires_at": s.expires_at.isoformat() if s.expires_at else None
     } for s in sessions]
+
+
+# ==================== Two-Factor Authentication ====================
+
+@router.get("/api/auth/2fa/status", response_model=TwoFactorStatusResponse)
+def two_factor_status(current_user: User = Depends(get_current_user)):
+    """Return whether 2FA is enabled and how many backup codes remain."""
+    remaining = len(current_user.two_factor_backup_codes or []) if current_user.two_factor_enabled else 0
+    return TwoFactorStatusResponse(
+        enabled=bool(current_user.two_factor_enabled),
+        backup_codes_remaining=remaining,
+    )
+
+
+@router.post("/api/auth/2fa/setup", response_model=TwoFactorSetupResponse)
+def two_factor_setup(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Begin 2FA enrollment: generate a fresh secret and QR code.
+
+    The secret is stored but 2FA is NOT active until confirmed via /enable.
+    """
+    if current_user.two_factor_enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="2FA is already enabled")
+
+    secret = tfa.generate_secret()
+    current_user.two_factor_secret = secret
+    db.commit()
+
+    uri = tfa.build_otpauth_uri(secret, current_user.username)
+    return TwoFactorSetupResponse(secret=secret, otpauth_uri=uri, qr_svg=tfa.qr_svg(uri))
+
+
+@router.post("/api/auth/2fa/enable", response_model=TwoFactorEnableResponse)
+def two_factor_enable(
+    data: TwoFactorEnableRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Confirm enrollment by verifying a TOTP code; return one-time backup codes."""
+    if current_user.two_factor_enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="2FA is already enabled")
+    if not current_user.two_factor_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Run 2FA setup first")
+    if not tfa.verify_totp(current_user.two_factor_secret, data.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+
+    backup_codes = tfa.generate_backup_codes()
+    current_user.two_factor_backup_codes = tfa.hash_backup_codes(backup_codes)
+    current_user.two_factor_enabled = True
+    db.commit()
+
+    LoggingService.log_auth(
+        db=db, action="2fa_enabled", username=current_user.username,
+        ip_address=get_client_ip(request), success=True, user_id=current_user.id,
+    )
+    logger.info(f"User {current_user.username} enabled 2FA")
+    return TwoFactorEnableResponse(enabled=True, backup_codes=backup_codes)
+
+
+@router.post("/api/auth/2fa/disable", response_model=MessageResponse)
+def two_factor_disable(
+    data: TwoFactorDisableRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Disable 2FA. Requires the account password (and current code if enabled)."""
+    if not verify_password(data.password, current_user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect password")
+
+    if current_user.two_factor_enabled:
+        code_ok = tfa.verify_totp(current_user.two_factor_secret, data.code or "")
+        if not code_ok:
+            backup = list(current_user.two_factor_backup_codes or [])
+            code_ok = tfa.consume_backup_code(data.code or "", backup)
+        if not code_ok:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid two-factor code")
+
+    current_user.two_factor_enabled = False
+    current_user.two_factor_secret = None
+    current_user.two_factor_backup_codes = None
+    db.commit()
+
+    LoggingService.log_auth(
+        db=db, action="2fa_disabled", username=current_user.username,
+        ip_address=get_client_ip(request), success=True, user_id=current_user.id,
+    )
+    logger.info(f"User {current_user.username} disabled 2FA")
+    return MessageResponse(message="Two-factor authentication disabled")
 
 
 @router.post("/api/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

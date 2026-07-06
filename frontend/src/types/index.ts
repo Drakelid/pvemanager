@@ -15,6 +15,7 @@ export interface User {
   failed_login_attempts?: number;
   locked_until?: string | null;
   require_password_change?: boolean;
+  two_factor_enabled?: boolean;
   // Map of "resource:action" -> granted. Admins receive every permission.
   permissions?: Record<string, boolean>;
 }
@@ -22,41 +23,43 @@ export interface User {
 export interface LoginRequest {
   username: string;
   password: string;
+  code?: string;
 }
 
 export interface AuthResponse {
-  access_token: string;
+  access_token?: string;
   token_type: string;
   session_id?: string;
+  two_factor_required?: boolean;
 }
 
 // ==================== Proxmox Server Types ====================
 
-export interface ProxmoxServer {
-  id: number;
-  name: string;
 export interface ServerWorkspaceBrief {
   id: number;
   name: string;
   color?: string;
 }
 
+export interface ProxmoxServer {
+  id: number;
+  name: string;
   hostname: string;
   ip_address: string;
   port: number;
   api_user: string;
   verify_ssl: boolean;
+  cluster_name?: string;
   description?: string;
   created_at: string;
   updated_at: string;
-  cluster_name?: string;
   last_check?: string;
   is_online?: boolean;
   last_error?: string;
+  workspaces?: ServerWorkspaceBrief[];
 }
 
 export interface ProxmoxServerCreate {
-  workspaces?: ServerWorkspaceBrief[];
   name: string;
   hostname: string;
   ip_address: string;

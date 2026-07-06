@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
-  Search, Plus, Shield, Trash2, RotateCcw, Unlock, Pencil, Server, LogOut, Ban, KeyRound, Gauge,
+  Search, Plus, Shield, ShieldOff, Trash2, RotateCcw, Unlock, Pencil, Server, LogOut, Ban, KeyRound, Gauge,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { User } from '@/types';
 import {
   useUsers, useCreateUser, useUpdateUser, useDeleteUser,
-  useResetPassword, useUnlockUser, useTerminateUserSessions,
+  useResetPassword, useUnlockUser, useTerminateUserSessions, useDisableUser2FA,
   useRoles, useCreateRole, useUpdateRole, useDeleteRole, usePermissions,
   useSessions, useTerminateSession, useTerminateAllSessions,
   useUserServerAssignments, useSetUserServers,
@@ -93,6 +93,7 @@ function UsersTab() {
   const { data: users = [] } = useUsers();
   const deleteUser = useDeleteUser();
   const unlockUser = useUnlockUser();
+  const disable2FA = useDisableUser2FA();
   const terminateSessions = useTerminateUserSessions();
 
   const filtered = users.filter(u => {
@@ -208,6 +209,18 @@ function UsersTab() {
                           })}
                         >
                           <Unlock className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {u.two_factor_enabled && (
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title={t('users.disable_2fa')}
+                          onClick={() => disable2FA.mutate(u.id, {
+                            onSuccess: r => toast.success(r.message),
+                            onError: e => toast.error(getErrMsg(e)),
+                          })}
+                        >
+                          <ShieldOff className="h-3.5 w-3.5" />
                         </Button>
                       )}
                       <Button

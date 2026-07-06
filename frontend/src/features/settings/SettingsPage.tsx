@@ -25,6 +25,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SSHKeysManager } from './SSHKeysManager';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
+import { apiClient } from '@/lib/api-client';
+import { useAuthStore } from '@/stores/auth-store';
 
 export default function SettingsPage() {
   const { t } = useTranslation();
@@ -112,8 +114,158 @@ function ProfileTab() {
           }}>{t('settings.change_password')}</Button>
         </CardContent>
       </Card>
+      <TwoFactorCard />
       <QuotaCard />
     </div>
+  );
+}
+
+interface TwoFactorStatus { enabled: boolean; backup_codes_remaining: number }
+interface TwoFactorSetup { secret: string; otpauth_uri: string; qr_svg: string }
+
+function TwoFactorCard() {
+  const { t } = useTranslation();
+  const loadUser = useAuthStore((s) => s.loadUser);
+  const [status, setStatus] = useState<TwoFactorStatus | null>(null);
+  const [setup, setSetup] = useState<TwoFactorSetup | null>(null);
+  const [code, setCode] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Disable flow
+  const [showDisable, setShowDisable] = useState(false);
+  const [disablePwd, setDisablePwd] = useState('');
+  const [disableCode, setDisableCode] = useState('');
+
+  const refresh = () =>
+    apiClient.get<TwoFactorStatus>('/api/auth/2fa/status').then(setStatus).catch(() => {});
+
+  useEffect(() => { refresh(); }, []);
+
+  const startSetup = async () => {
+    setBusy(true);
+    try {
+      const data = await apiClient.post<TwoFactorSetup>('/api/auth/2fa/setup');
+      setSetup(data);
+      setBackupCodes(null);
+      setCode('');
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const confirmEnable = async () => {
+    setBusy(true);
+    try {
+      const res = await apiClient.post<{ backup_codes: string[] }>('/api/auth/2fa/enable', { code });
+      setBackupCodes(res.backup_codes);
+      setSetup(null);
+      setCode('');
+      await refresh();
+      loadUser();
+      toast.success(t('settings.tfa.enabled_ok'));
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const confirmDisable = async () => {
+    setBusy(true);
+    try {
+      await apiClient.post('/api/auth/2fa/disable', { password: disablePwd, code: disableCode });
+      setShowDisable(false);
+      setDisablePwd('');
+      setDisableCode('');
+      setBackupCodes(null);
+      await refresh();
+      loadUser();
+      toast.success(t('settings.tfa.disabled_ok'));
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm flex items-center gap-2">
+          {t('settings.tfa.title')}
+          {status?.enabled
+            ? <Badge variant="default">{t('settings.tfa.on')}</Badge>
+            : <Badge variant="secondary">{t('settings.tfa.off')}</Badge>}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{t('settings.tfa.description')}</p>
+
+        {/* Freshly generated backup codes (shown once, right after enabling) */}
+        {backupCodes && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+            <p className="text-sm font-medium">{t('settings.tfa.backup_codes_title')}</p>
+            <p className="text-xs text-muted-foreground">{t('settings.tfa.backup_codes_hint')}</p>
+            <div className="grid grid-cols-2 gap-1.5 font-mono text-sm">
+              {backupCodes.map((c) => <span key={c} className="select-all">{c}</span>)}
+            </div>
+            <Button size="sm" variant="outline" onClick={() => navigator.clipboard?.writeText(backupCodes.join('\n'))}>
+              {t('settings.tfa.copy_codes')}
+            </Button>
+          </div>
+        )}
+
+        {/* Not enabled — offer setup */}
+        {!status?.enabled && !setup && !backupCodes && (
+          <Button size="sm" onClick={startSetup} disabled={busy}>{t('settings.tfa.enable')}</Button>
+        )}
+
+        {/* Setup in progress — QR + verify */}
+        {setup && (
+          <div className="space-y-3">
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+              <div
+                className="h-40 w-40 rounded-md bg-white p-2 [&>svg]:h-full [&>svg]:w-full"
+                dangerouslySetInnerHTML={{ __html: setup.qr_svg }}
+              />
+              <div className="space-y-1 text-xs">
+                <p className="text-muted-foreground">{t('settings.tfa.scan_hint')}</p>
+                <p className="text-muted-foreground">{t('settings.tfa.manual_key')}</p>
+                <code className="select-all break-all font-mono text-foreground">{setup.secret}</code>
+              </div>
+            </div>
+            <div className="max-w-xs space-y-1">
+              <Label>{t('settings.tfa.enter_code')}</Label>
+              <Input value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} placeholder="123456" />
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={confirmEnable} disabled={busy || code.length < 6}>{t('settings.tfa.verify_enable')}</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setSetup(null); setCode(''); }}>{t('common.cancel')}</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Enabled — show remaining backup codes + disable */}
+        {status?.enabled && !backupCodes && (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {t('settings.tfa.backup_remaining', { count: status.backup_codes_remaining })}
+            </p>
+            {!showDisable ? (
+              <Button size="sm" variant="destructive" onClick={() => setShowDisable(true)}>{t('settings.tfa.disable')}</Button>
+            ) : (
+              <div className="space-y-2 rounded-md border p-3">
+                <div className="max-w-xs space-y-1">
+                  <Label>{t('settings.current_password')}</Label>
+                  <Input type="password" value={disablePwd} onChange={(e) => setDisablePwd(e.target.value)} />
+                </div>
+                <div className="max-w-xs space-y-1">
+                  <Label>{t('settings.tfa.current_code')}</Label>
+                  <Input value={disableCode} inputMode="numeric" onChange={(e) => setDisableCode(e.target.value)} placeholder="123456" />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="destructive" onClick={confirmDisable} disabled={busy || !disablePwd}>{t('settings.tfa.confirm_disable')}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setShowDisable(false); setDisablePwd(''); setDisableCode(''); }}>{t('common.cancel')}</Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

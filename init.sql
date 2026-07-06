@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS users (
     require_password_change BOOLEAN DEFAULT FALSE NOT NULL,
     two_factor_enabled BOOLEAN DEFAULT FALSE NOT NULL,
     two_factor_secret VARCHAR(100),
+    two_factor_backup_codes JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     last_login TIMESTAMP WITH TIME ZONE

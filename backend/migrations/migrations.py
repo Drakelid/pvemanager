@@ -1468,6 +1468,25 @@ def migrate_granular_permissions(conn):
     logger.info("✓ Granular permissions migration completed")
 
 
+def migrate_two_factor(conn):
+    """Migration 30: Two-factor authentication columns on users.
+
+    Ensures the TOTP columns exist (older DBs predating init.sql) and adds the
+    ``two_factor_backup_codes`` JSON column for single-use recovery codes.
+    """
+    added = False
+    if add_column_if_not_exists(conn, 'users', 'two_factor_enabled', "BOOLEAN DEFAULT FALSE NOT NULL"):
+        added = True
+    if add_column_if_not_exists(conn, 'users', 'two_factor_secret', "VARCHAR(100)"):
+        added = True
+    if add_column_if_not_exists(conn, 'users', 'two_factor_backup_codes', "JSONB"):
+        added = True
+    if added:
+        logger.info("✓ Added two-factor authentication columns to users")
+    else:
+        logger.info("✓ users two-factor columns already exist")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1712,6 +1731,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Granular permissions migration: {e}")
+                conn.rollback()
+
+            # Migration 30: Two-factor authentication columns
+            try:
+                migrate_two_factor(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Two-factor migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

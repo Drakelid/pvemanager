@@ -909,6 +909,46 @@ async def unlock_user(
     return {"message": "User unlocked"}
 
 
+@router.post("/api/users/{user_id}/disable-2fa")
+async def admin_disable_two_factor(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("user:update"))
+):
+    """Admin reset: forcibly disable a user's two-factor authentication.
+
+    Used when a user loses their authenticator device and all backup codes.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.two_factor_enabled and not user.two_factor_secret:
+        return {"message": "2FA is not enabled for this user"}
+
+    user.two_factor_enabled = False
+    user.two_factor_secret = None
+    user.two_factor_backup_codes = None
+    db.commit()
+
+    LoggingService.log(
+        db=db,
+        level=LoggingService.WARNING,
+        category=LoggingService.AUTH,
+        action="user_2fa_disabled",
+        message=f"2FA for user '{user.username}' disabled by {current_user.username}",
+        username=current_user.username,
+        user_id=current_user.id,
+        ip_address=get_client_ip(request),
+        resource_type="user",
+        resource_id=str(user.id),
+        resource_name=user.username
+    )
+
+    return {"message": "Two-factor authentication disabled for user"}
+
+
 @router.post("/api/users/{user_id}/terminate-sessions")
 async def terminate_user_sessions(
     user_id: int,

@@ -65,6 +65,8 @@ class User(Base):
     require_password_change = Column(Boolean, default=False, nullable=False)
     two_factor_enabled = Column(Boolean, default=False, nullable=False)
     two_factor_secret = Column(String(100), nullable=True)
+    # List of SHA-256 hashes of single-use recovery codes (JSON array).
+    two_factor_backup_codes = Column(JSON, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

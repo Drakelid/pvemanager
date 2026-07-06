@@ -31,6 +31,7 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     is_admin: bool
+    two_factor_enabled: bool = False
     created_at: datetime
     last_login: Optional[datetime] = None
 
@@ -40,8 +41,11 @@ class UserResponse(UserBase):
 
 
 class Token(BaseModel):
-    access_token: str
+    # access_token is absent when the login step succeeded on password but a
+    # second factor is still required (two_factor_required=True).
+    access_token: Optional[str] = None
     token_type: str = "bearer"
+    two_factor_required: Optional[bool] = None
 
 
 class TokenData(BaseModel):
@@ -51,6 +55,38 @@ class TokenData(BaseModel):
 class LoginRequest(BaseModel):
     username: str = Field(..., description="Username")
     password: str = Field(..., description="Password")
+    code: Optional[str] = Field(None, description="TOTP or backup code (when 2FA is enabled)")
+
+
+# ==================== Two-Factor (2FA) Schemas ====================
+
+class TwoFactorStatusResponse(BaseModel):
+    enabled: bool
+    backup_codes_remaining: int = 0
+
+
+class TwoFactorSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+    qr_svg: str
+
+
+class TwoFactorEnableRequest(BaseModel):
+    code: str = Field(..., description="6-digit TOTP code from the authenticator app")
+
+
+class TwoFactorEnableResponse(BaseModel):
+    enabled: bool = True
+    backup_codes: List[str]
+
+
+class TwoFactorDisableRequest(BaseModel):
+    password: str = Field(..., description="Current account password")
+    code: Optional[str] = Field(None, description="Current TOTP or backup code")
+
+
+class MessageResponse(BaseModel):
+    message: str
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -182,6 +218,15 @@ class ProxmoxServerUpdate(BaseModel):
     description: Optional[str] = None
 
 
+class ServerWorkspaceBrief(BaseModel):
+    """Compact workspace reference shown on server cards"""
+    id: int
+    name: str
+    color: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class ProxmoxServerResponse(BaseModel):
     """Schema for Proxmox server response"""
     id: int
@@ -191,12 +236,14 @@ class ProxmoxServerResponse(BaseModel):
     port: int
     api_user: str
     verify_ssl: bool
+    cluster_name: Optional[str] = None
     description: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     last_check: Optional[datetime] = None
     is_online: Optional[bool] = None
     last_error: Optional[str] = None
+    workspaces: List[ServerWorkspaceBrief] = []
 
     # Exclude sensitive fields
     api_token_value: Optional[str] = Field(None, exclude=True)
@@ -218,15 +265,6 @@ class ProxmoxVMResponse(BaseModel):
     mem: Optional[int] = None
     maxmem: Optional[int] = None
     disk: Optional[int] = None
-class ServerWorkspaceBrief(BaseModel):
-    """Compact workspace reference shown on server cards"""
-    id: int
-    name: str
-    color: Optional[str] = None
-
-    model_config = {"from_attributes": True}
-
-
     maxdisk: Optional[int] = None
     uptime: Optional[int] = None
 
@@ -236,14 +274,12 @@ class ServerWorkspaceBrief(BaseModel):
 class OSTemplateGroupBase(BaseModel):
     """Base schema for OS Template Group"""
     name: str = Field(..., min_length=1, max_length=100, description="Group name (e.g., Ubuntu, Debian)")
-    cluster_name: Optional[str] = None
     icon: Optional[str] = Field(None, max_length=200, description="Icon (emoji, class or HTML)")
     description: Optional[str] = Field(None, description="Group description")
     sort_order: int = Field(default=0, description="Sort order")
     is_active: bool = Field(default=True, description="Is group active")
 
 
-    workspaces: List[ServerWorkspaceBrief] = []
 class OSTemplateGroupCreate(OSTemplateGroupBase):
     """Schema for creating OS Template Group"""
     pass
