@@ -2027,8 +2027,17 @@ def get_server_nodes(
         except Exception:
             pass
 
+        # Версия Proxmox VE (общая для кластера), например "8.2.4".
+        version = None
+        try:
+            ver = client.proxmox.version.get()
+            if ver:
+                version = ver.get("version")
+        except Exception:
+            pass
+
         logger.info(f"Nodes for server {server_id} ({server.name}), cluster_id={cluster_id}: {len(nodes)} node(s)")
-        return JSONResponse(content={"nodes": nodes, "cluster_id": cluster_id})
+        return JSONResponse(content={"nodes": nodes, "cluster_id": cluster_id, "version": version})
     except Exception as e:
         logger.error(f"Error getting nodes from {server.name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

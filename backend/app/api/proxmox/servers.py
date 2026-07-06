@@ -23,6 +23,33 @@ from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
 router = APIRouter()
 
 
+def _attach_workspaces(db: Session, servers: list) -> None:
+    """Прикрепить к каждому серверу список рабочих областей, в которых он состоит.
+
+    Пишет транзиентный атрибут ``server.workspaces`` (список словарей), который
+    затем читает Pydantic-схема ``ProxmoxServerResponse`` через ``from_attributes``.
+    """
+    from ...models import WorkspaceServer, Workspace
+
+    if not servers:
+        return
+
+    server_ids = [s.id for s in servers]
+    rows = (
+        db.query(WorkspaceServer.server_id, Workspace.id, Workspace.name, Workspace.color)
+        .join(Workspace, Workspace.id == WorkspaceServer.workspace_id)
+        .filter(WorkspaceServer.server_id.in_(server_ids))
+        .all()
+    )
+
+    mapping: dict[int, list] = {}
+    for sid, wid, wname, wcolor in rows:
+        mapping.setdefault(sid, []).append({"id": wid, "name": wname, "color": wcolor})
+
+    for s in servers:
+        s.workspaces = mapping.get(s.id, [])
+
+
 # ==================== Proxmox Server CRUD ====================
 
 @router.get("/api/servers", response_model=List[ProxmoxServerResponse])
@@ -45,7 +72,9 @@ def list_proxmox_servers(
         query = db.query(ProxmoxServer)
         if server_ids is not None:
             query = query.filter(ProxmoxServer.id.in_(server_ids))
-        return query.all()
+        servers = query.all()
+        _attach_workspaces(db, servers)
+        return servers
 
     # Non-privileged user: must be directly assigned AND server must be in one of their workspaces
     assigned_ids = {s.id for s in current_user.assigned_servers}
@@ -76,7 +105,9 @@ def list_proxmox_servers(
     if not effective_ids:
         return []
 
-    return db.query(ProxmoxServer).filter(ProxmoxServer.id.in_(effective_ids)).all()
+    servers = db.query(ProxmoxServer).filter(ProxmoxServer.id.in_(effective_ids)).all()
+    _attach_workspaces(db, servers)
+    return servers
 
 
 @router.post("/api/servers", response_model=ProxmoxServerResponse, status_code=status.HTTP_201_CREATED)
@@ -158,6 +189,7 @@ def get_proxmox_server(
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Proxmox server not found")
+    _attach_workspaces(db, [server])
     return server
 
 

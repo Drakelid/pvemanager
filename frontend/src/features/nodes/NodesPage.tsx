@@ -1,19 +1,85 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Server, Monitor, Container, Plus, Pencil, Trash2, Wifi, Loader2 } from 'lucide-react';
+import { Server, Monitor, Container, Plus, Pencil, Trash2, Wifi, Loader2, Clock, Layers, LayoutGrid } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestServerCredentials } from '@/hooks/use-nodes';
+import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestServerCredentials, useNodes } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
-import type { ProxmoxServerCreate } from '@/types';
+import type { ProxmoxServer, ProxmoxServerCreate } from '@/types';
+import { formatUptime } from '@/lib/format';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
 import ServerUpdatesBadge from './ServerUpdatesBadge';
+
+/**
+ * Сводка по узлу сервера: версия Proxmox, число нод в кластере и аптайм.
+ * Тянет `/nodes` (кэш переиспользуется с ServerUpdatesBadge), поэтому
+ * дополнительного запроса не создаёт.
+ */
+function ServerMeta({ serverId, online }: { serverId: number; online?: boolean }) {
+  const { t } = useTranslation();
+  const { data } = useNodes(online ? serverId : 0);
+
+  if (!online) return null;
+  const nodes = data?.nodes ?? [];
+  if (nodes.length === 0) return null;
+
+  const uptime = nodes.reduce((max, n) => Math.max(max, n.uptime ?? 0), 0);
+  const version = data?.version;
+
+  if (!version && nodes.length <= 1 && uptime <= 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {version && (
+        <Badge variant="outline" className="gap-1 font-mono text-[11px]">
+          <Layers className="h-3 w-3" />PVE {version}
+        </Badge>
+      )}
+      {nodes.length > 1 && (
+        <Badge variant="secondary" className="gap-1 text-[11px]">
+          <Server className="h-3 w-3" />{t('nodes.cluster_nodes_count', { count: nodes.length })}
+        </Badge>
+      )}
+      {uptime > 0 && (
+        <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />{formatUptime(uptime)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Чипы рабочих областей, в которых состоит сервер. */
+function WorkspaceChips({ server }: { server: ProxmoxServer }) {
+  const { t } = useTranslation();
+  const workspaces = server.workspaces ?? [];
+  if (workspaces.length === 0) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <LayoutGrid className="h-3 w-3" />{t('nodes.no_workspace')}
+      </span>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {workspaces.map(ws => (
+        <span
+          key={ws.id}
+          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium"
+        >
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: ws.color || 'var(--muted-foreground)' }} />
+          {ws.name}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 interface ServerFormData {
   name: string;
@@ -314,6 +380,12 @@ export default function NodesPage() {
                   <Badge variant={srv.is_online ? 'default' : 'destructive'}>
                     {srv.is_online ? t('common.online') : t('common.offline')}
                   </Badge>
+                </div>
+
+                <ServerMeta serverId={srv.id} online={srv.is_online} />
+
+                <div className="border-t border-border/60 pt-3">
+                  <WorkspaceChips server={srv} />
                 </div>
 
                 {srv.description && (

@@ -34,7 +34,7 @@ export function useServer(serverId: number) {
 export function useNodes(serverId: number) {
   return useQuery({
     queryKey: nodeKeys.nodes(serverId),
-    queryFn: () => apiClient.get<{ nodes: ProxmoxNode[]; cluster_id: string }>(`/proxmox/api/${serverId}/nodes`),
+    queryFn: () => apiClient.get<{ nodes: ProxmoxNode[]; cluster_id: string; version?: string | null }>(`/proxmox/api/${serverId}/nodes`),
     enabled: serverId > 0,
     refetchInterval: 30000,
   });

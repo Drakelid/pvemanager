@@ -35,6 +35,12 @@ export interface AuthResponse {
 export interface ProxmoxServer {
   id: number;
   name: string;
+export interface ServerWorkspaceBrief {
+  id: number;
+  name: string;
+  color?: string;
+}
+
   hostname: string;
   ip_address: string;
   port: number;
@@ -43,12 +49,14 @@ export interface ProxmoxServer {
   description?: string;
   created_at: string;
   updated_at: string;
+  cluster_name?: string;
   last_check?: string;
   is_online?: boolean;
   last_error?: string;
 }
 
 export interface ProxmoxServerCreate {
+  workspaces?: ServerWorkspaceBrief[];
   name: string;
   hostname: string;
   ip_address: string;

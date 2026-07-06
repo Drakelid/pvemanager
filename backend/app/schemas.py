@@ -218,6 +218,15 @@ class ProxmoxVMResponse(BaseModel):
     mem: Optional[int] = None
     maxmem: Optional[int] = None
     disk: Optional[int] = None
+class ServerWorkspaceBrief(BaseModel):
+    """Compact workspace reference shown on server cards"""
+    id: int
+    name: str
+    color: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
     maxdisk: Optional[int] = None
     uptime: Optional[int] = None
 
@@ -227,12 +236,14 @@ class ProxmoxVMResponse(BaseModel):
 class OSTemplateGroupBase(BaseModel):
     """Base schema for OS Template Group"""
     name: str = Field(..., min_length=1, max_length=100, description="Group name (e.g., Ubuntu, Debian)")
+    cluster_name: Optional[str] = None
     icon: Optional[str] = Field(None, max_length=200, description="Icon (emoji, class or HTML)")
     description: Optional[str] = Field(None, description="Group description")
     sort_order: int = Field(default=0, description="Sort order")
     is_active: bool = Field(default=True, description="Is group active")
 
 
+    workspaces: List[ServerWorkspaceBrief] = []
 class OSTemplateGroupCreate(OSTemplateGroupBase):
     """Schema for creating OS Template Group"""
     pass

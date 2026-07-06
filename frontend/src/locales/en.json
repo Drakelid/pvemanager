@@ -465,7 +465,9 @@
     "auto_create_token_hint": "An API token will be created on the Proxmox server automatically. For a cluster, all nodes will be added.",
     "auto_fields_required": "Name, host and password are required",
     "cluster_mode": "Cluster",
-    "standalone": "Standalone"
+    "standalone": "Standalone",
+    "cluster_nodes_count": "{{count}} nodes",
+    "no_workspace": "No workspace"
   },
   "netif": {
     "title": "Network Interfaces",

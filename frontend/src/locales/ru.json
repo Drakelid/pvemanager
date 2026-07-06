@@ -465,7 +465,9 @@
     "auto_create_token_hint": "API-токен будет создан на сервере Proxmox автоматически. Для кластера добавятся все ноды.",
     "auto_fields_required": "Нужны имя, хост и пароль",
     "cluster_mode": "Кластер",
-    "standalone": "Одиночный"
+    "standalone": "Одиночный",
+    "cluster_nodes_count": "{{count}} узла(ов)",
+    "no_workspace": "Без рабочей области"
   },
   "netif": {
     "title": "Сетевые интерфейсы",
