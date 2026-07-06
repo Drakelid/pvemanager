@@ -331,6 +331,44 @@ class VmMixin:
                 logger.error(f"Ошибка добавления диска {disk} к VM {vmid}: {e}")
                 return {"success": False, "error": str(e)}
 
+        def attach_vm_physical_disk(self, node: str, vmid: int, disk: str, devpath: str,
+                                    aio: Optional[str] = None, discard: bool = False,
+                                    ssd: bool = False, serial: Optional[str] = None) -> Dict:
+            """Пробросить физический диск ноды в VM (raw device passthrough).
+
+            В отличие от add_vm_disk, значение конфига — абсолютный путь устройства
+            (`/dev/disk/by-id/...`), а не аллокация storage:size. Эквивалент
+            `qm set <vmid> -<disk> /dev/disk/by-id/...`.
+
+            Args:
+                disk: имя устройства (scsi1, virtio1, sata1, ...) — должно быть свободно
+                devpath: абсолютный путь блочного устройства (желательно /dev/disk/by-id/*)
+                aio: io_uring | native | threads (опц.)
+                discard/ssd: опциональные флаги
+                serial: серийный номер для гостя (опц.)
+            """
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            # Защита от инъекции произвольного volid: пробрасываем только пути под /dev/.
+            if not isinstance(devpath, str) or not devpath.startswith("/dev/"):
+                return {"success": False, "error": "Недопустимый путь устройства (ожидается /dev/...)"}
+            try:
+                spec = devpath
+                if aio in ("io_uring", "native", "threads"):
+                    spec += f",aio={aio}"
+                if discard:
+                    spec += ",discard=on"
+                if ssd:
+                    spec += ",ssd=1"
+                if serial:
+                    spec += f",serial={serial}"
+                self.proxmox.nodes(node).qemu(vmid).config.post(**{disk: spec})
+                logger.info(f"Проброшен физический диск {disk} ({spec}) в VM {vmid}")
+                return {"success": True}
+            except Exception as e:
+                logger.error(f"Ошибка проброса физического диска {disk} в VM {vmid}: {e}")
+                return {"success": False, "error": str(e)}
+
         def detach_vm_disk(self, node: str, vmid: int, disk: str, destroy: bool = False) -> Dict:
             """Отключить диск VM. destroy=True — также физически удалить том.
 

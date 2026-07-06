@@ -18,10 +18,29 @@ class DisksMixin:
         if not self.proxmox:
             return []
         try:
-            return list(self.proxmox.nodes(node).disks.list.get() or [])
+            disks = list(self.proxmox.nodes(node).disks.list.get() or [])
+            for d in disks:
+                d["passthrough_path"] = self._disk_passthrough_path(d)
+            return disks
         except Exception as e:
             logger.error(f"Error getting disks for node {node}: {e}")
             return []
+
+    @staticmethod
+    def _disk_passthrough_path(disk: Dict) -> Optional[str]:
+        """Стабильный путь устройства для проброса в VM.
+
+        Предпочитаем /dev/disk/by-id/* (не меняется между загрузками),
+        затем wwn, в крайнем случае — devpath (/dev/sdX, нестабилен).
+        """
+        by_id = disk.get("by_id_link") or disk.get("by-id-link")
+        if by_id:
+            return by_id if str(by_id).startswith("/dev/") else f"/dev/disk/by-id/{by_id}"
+        wwn = disk.get("wwn")
+        if wwn:
+            wwn = str(wwn).replace("0x", "")
+            return f"/dev/disk/by-id/wwn-0x{wwn}"
+        return disk.get("devpath")
 
     def get_disk_smart(self, node: str, disk: str) -> Dict:
         """SMART-данные диска (health + attributes)."""

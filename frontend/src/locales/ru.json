@@ -574,7 +574,20 @@
     "no_usb": "Устройства не найдены",
     "usb3": "USB 3.0",
     "err_usb_required": "Выберите USB-устройство",
-    "usb_added": "Устройство {{key}} добавлено"
+    "usb_added": "Устройство {{key}} добавлено",
+    "disk": "Диск",
+    "add_disk_title": "Проброс физического диска",
+    "add_disk_description": "Будет добавлено как {{key}}",
+    "disk_device": "Диск",
+    "select_disk": "Выберите диск",
+    "no_disks": "Диски не найдены",
+    "disk_bus": "Шина",
+    "disk_ssd": "Эмулировать SSD",
+    "disk_discard": "Discard / TRIM",
+    "disk_used_warn": "Диск занят ({{used}}) — проброс может привести к потере данных.",
+    "disk_passthrough_hint": "Диск отдаётся VM монопольно по стабильному пути /dev/disk/by-id/. Привязан к этой ноде — миграция на другую ноду недоступна.",
+    "err_disk_required": "Выберите диск",
+    "disk_added": "Диск {{key}} проброшен"
   },
   "fw": {
     "title": "Firewall (датацентр)",

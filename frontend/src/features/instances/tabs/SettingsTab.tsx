@@ -850,7 +850,8 @@ function DiskManagementCard({ serverId, vmid, type, node }: { serverId: number; 
     const re = /^(scsi\d+|sata\d+|virtio\d+|ide\d+)$/;
     return Object.entries(config)
       .filter(([k, v]) => re.test(k) && typeof v === 'string'
-        && !v.includes('media=cdrom') && !v.includes('cloudinit'))
+        && !v.includes('media=cdrom') && !v.includes('cloudinit')
+        && !v.startsWith('/dev/'))  // проброшенные физдиски — управляются во вкладке «Оборудование»
       .map(([k]) => k);
   }, [config]);
 

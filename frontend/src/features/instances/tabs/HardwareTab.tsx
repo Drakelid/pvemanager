@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Usb, Plus, Trash2, MemoryStick, Loader2, AlertTriangle } from 'lucide-react';
+import { Cpu, Usb, HardDrive, Plus, Trash2, MemoryStick, Loader2, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ import { useImageStorages } from '@/hooks/use-image-catalog';
 import { toast } from 'sonner';
 import AddPciDeviceDialog from '../AddPciDeviceDialog';
 import AddUsbDeviceDialog from '../AddUsbDeviceDialog';
+import AddPhysicalDiskDialog from '../AddPhysicalDiskDialog';
 
 interface Props {
   serverId: number;
@@ -214,21 +215,29 @@ export default function HardwareTab({ serverId, vmid, type, node }: Props) {
 
   const [showAddPci, setShowAddPci] = useState(false);
   const [showAddUsb, setShowAddUsb] = useState(false);
+  const [showAddDisk, setShowAddDisk] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const cfg = config as Record<string, unknown> | undefined;
   // Проброс PCI/USB нельзя менять на работающей VM — устройства не поддерживают hotplug.
   const isRunning = status?.status === 'running';
 
-  // Проброшенные устройства: hostpciN (PCI) и usbN (USB)
+  // Проброшенные устройства: hostpciN (PCI), usbN (USB) и физдиски (scsiN/virtioN/sataN
+  // со значением-путём /dev/...). Обычные диски (storage:size) сюда не попадают.
   const passthrough = useMemo(() => {
-    if (!cfg) return [] as Array<{ key: string; value: string; kind: 'pci' | 'usb' }>;
+    if (!cfg) return [] as Array<{ key: string; value: string; kind: 'pci' | 'usb' | 'disk' }>;
     return Object.entries(cfg)
-      .filter(([k]) => /^(hostpci|usb)\d+$/.test(k))
+      .filter(([k, v]) =>
+        /^(hostpci|usb)\d+$/.test(k) ||
+        (/^(scsi|virtio|sata|ide)\d+$/.test(k) && typeof v === 'string' && v.startsWith('/dev/')))
       .map(([key, value]) => ({
         key,
         value: String(value),
-        kind: key.startsWith('hostpci') ? ('pci' as const) : ('usb' as const),
+        kind: key.startsWith('hostpci')
+          ? ('pci' as const)
+          : key.startsWith('usb')
+            ? ('usb' as const)
+            : ('disk' as const),
       }))
       .sort((a, b) => a.key.localeCompare(b.key));
   }, [cfg]);
@@ -270,6 +279,10 @@ export default function HardwareTab({ serverId, vmid, type, node }: Props) {
                 onClick={() => setShowAddUsb(true)}>
                 <Plus className="mr-1.5 h-3.5 w-3.5" />USB
               </Button>
+              <Button size="sm" variant="outline"
+                onClick={() => setShowAddDisk(true)}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" />{t('hw.disk', 'Диск')}
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -291,7 +304,9 @@ export default function HardwareTab({ serverId, vmid, type, node }: Props) {
                 <div className="flex items-center gap-2">
                   {kind === 'pci'
                     ? <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
-                    : <Usb className="h-3.5 w-3.5 text-muted-foreground" />}
+                    : kind === 'usb'
+                      ? <Usb className="h-3.5 w-3.5 text-muted-foreground" />
+                      : <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />}
                   <Badge variant="outline">{key}</Badge>
                   <span className="font-mono text-xs">{value}</span>
                 </div>
@@ -299,9 +314,9 @@ export default function HardwareTab({ serverId, vmid, type, node }: Props) {
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 text-destructive hover:text-destructive"
-                  disabled={isRunning}
+                  disabled={isRunning && kind !== 'disk'}
                   onClick={() => setDeleteTarget(key)}
-                  title={isRunning
+                  title={isRunning && kind !== 'disk'
                     ? t('hw.stop_first', 'Выключите VM для изменения проброса')
                     : t('hw.remove_device', 'Удалить устройство')}
                 >
@@ -327,6 +342,14 @@ export default function HardwareTab({ serverId, vmid, type, node }: Props) {
       <AddUsbDeviceDialog
         open={showAddUsb}
         onClose={() => setShowAddUsb(false)}
+        serverId={serverId}
+        vmid={vmid}
+        node={node}
+        config={cfg}
+      />
+      <AddPhysicalDiskDialog
+        open={showAddDisk}
+        onClose={() => setShowAddDisk(false)}
         serverId={serverId}
         vmid={vmid}
         node={node}

@@ -574,7 +574,20 @@
     "no_usb": "No devices found",
     "usb3": "USB 3.0",
     "err_usb_required": "Select a USB device",
-    "usb_added": "Device {{key}} added"
+    "usb_added": "Device {{key}} added",
+    "disk": "Disk",
+    "add_disk_title": "Physical disk passthrough",
+    "add_disk_description": "Will be added as {{key}}",
+    "disk_device": "Disk",
+    "select_disk": "Select a disk",
+    "no_disks": "No disks found",
+    "disk_bus": "Bus",
+    "disk_ssd": "Emulate SSD",
+    "disk_discard": "Discard / TRIM",
+    "disk_used_warn": "Disk is in use ({{used}}) — passthrough may cause data loss.",
+    "disk_passthrough_hint": "The disk is given to the VM exclusively via a stable /dev/disk/by-id/ path. Bound to this node — migration to another node is not available.",
+    "err_disk_required": "Select a disk",
+    "disk_added": "Disk {{key}} passed through"
   },
   "fw": {
     "title": "Firewall (datacenter)",

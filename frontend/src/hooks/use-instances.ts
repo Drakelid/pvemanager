@@ -608,6 +608,15 @@ export function useAddDisk(serverId: number, vmid: number, node: string) {
   });
 }
 
+export function useAttachPhysicalDisk(serverId: number, vmid: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { disk: string; devpath: string; aio?: string; discard?: boolean; ssd?: boolean; serial?: string }) =>
+      apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/disk/attach-physical?node=${node}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) }),
+  });
+}
+
 export function useDetachDisk(serverId: number, vmid: number, node: string) {
   const qc = useQueryClient();
   return useMutation({

@@ -1612,6 +1612,49 @@ async def add_vm_disk(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/api/{server_id}/vm/{vmid}/disk/attach-physical")
+async def attach_vm_physical_disk(
+    server_id: int,
+    vmid: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:manage"))
+):
+    """Пробросить физический диск ноды в VM (raw device passthrough)."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    disk = data.get('disk')
+    devpath = data.get('devpath')
+    if not disk or not devpath:
+        raise HTTPException(status_code=400, detail="Требуются параметры disk и devpath")
+
+    try:
+        client = _get_proxmox_client(server)
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+
+        result = client.attach_vm_physical_disk(
+            node, vmid, disk, devpath,
+            aio=data.get('aio'),
+            discard=bool(data.get('discard', False)),
+            ssd=bool(data.get('ssd', False)),
+            serial=data.get('serial') or None,
+        )
+        if result.get('success'):
+            logger.info(f"User {current_user.username} passed physical disk {devpath} as {disk} to VM {vmid}")
+            return JSONResponse(content={"status": "success"})
+        raise HTTPException(status_code=400, detail=result.get('error', 'Failed'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error attaching physical disk to VM {vmid}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/api/{server_id}/vm/{vmid}/disk/detach")
 async def detach_vm_disk(
     server_id: int,

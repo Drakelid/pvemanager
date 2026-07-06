@@ -13,6 +13,9 @@ export interface NodeDisk {
   wearout?: number | string;
   rpm?: number;
   gpt?: number;
+  wwn?: string;
+  by_id_link?: string;
+  passthrough_path?: string;  // стабильный путь для проброса в VM
 }
 
 export interface ZfsPool {
