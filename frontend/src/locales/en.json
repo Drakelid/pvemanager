@@ -39,6 +39,7 @@
     "by": "by",
     "source": "Source",
     "version": "Version",
+    "port": "Port",
     "disclaimer": "This compose file runs as-is from a third-party repository. Review what will be installed.",
     "view_compose": "View source compose",
     "back": "Back to catalog",

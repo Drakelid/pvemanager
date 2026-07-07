@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import { useServers } from '@/hooks/use-nodes';
 import { useIPAMNetworks, useIPAMPools } from '@/hooks/use-ipam';
-import { useInstallApp, useInstalledApp, useOperationProgress } from '@/hooks/use-appstore';
+import { useInstallApp, useInstalledApp, useOperationProgress, useAppOperations } from '@/hooks/use-appstore';
 import type { AppOperation, CatalogApp } from '@/types/appstore';
 
 interface Props {
@@ -61,6 +61,18 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
     else if (o.status === 'failed') setPhase('failed');
   }, []);
   useOperationProgress(phase === 'progress' ? installedAppId : null, onOp);
+
+  // Резервный опрос статуса через REST: если WebSocket-событие потеряно
+  // (или установка идёт долго, напр. docker compose тянет тяжёлые образы),
+  // прогресс всё равно обновляется и мастер не «зависает» на старом шаге.
+  const { data: polledOps } = useAppOperations(
+    phase === 'progress' ? (installedAppId ?? 0) : 0,
+    3000,
+  );
+  useEffect(() => {
+    const latest = polledOps?.[0];  // операции отсортированы по времени (свежая первой)
+    if (latest && latest.installed_app_id === installedAppId) onOp(latest);
+  }, [polledOps, installedAppId, onOp]);
 
   // видимые поля формы (random генерируются на сервере, пользователю не показываем)
   const visibleFields = useMemo(

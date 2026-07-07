@@ -73,11 +73,13 @@ export function useInstalledApp(id: number) {
   });
 }
 
-export function useAppOperations(id: number) {
+export function useAppOperations(id: number, pollMs?: number) {
   return useQuery({
     queryKey: appstoreKeys.operations(id),
     queryFn: () => apiClient.get<{ items: AppOperation[] }>(`/api/appstore/apps/${id}/operations`).then((r) => r.items),
     enabled: id > 0,
+    // Резервный опрос (когда задан) — прогресс не зависит только от WebSocket.
+    refetchInterval: pollMs && pollMs > 0 ? pollMs : false,
   });
 }
 
