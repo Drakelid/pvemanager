@@ -24,3 +24,4 @@ email-validator==2.2.0
 websockets==12.0
 apscheduler==3.10.4
 alembic==1.13.2
+PyYAML==6.0.2

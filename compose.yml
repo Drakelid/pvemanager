@@ -53,6 +53,8 @@ services:
       - ./logs:/app/logs
       - ./VERSION:/app/VERSION:ro
       - /etc/localtime:/etc/localtime:ro
+      # App Store: кэш логотипов/данных каталога (persist across rebuilds)
+      - appstore_data:/app/data
       # For system updates
       - .:/project:rw
     restart: unless-stopped
@@ -110,6 +112,7 @@ services:
 volumes:
   db_data:
   logs:
+  appstore_data:
 
 networks:
   pvemanager-network:

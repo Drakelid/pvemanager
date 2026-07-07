@@ -24,6 +24,7 @@ from .api import notifications as notifications_router
 from .api import users as users_router
 from .api import workspaces as workspaces_router
 from .api import ssh_keys as ssh_keys_router
+from .api import appstore as appstore_router
 from .logging_middleware import RequestLoggingMiddleware
 from .language_middleware import LanguageMiddleware
 from .i18n import I18nService
@@ -200,6 +201,22 @@ async def lifespan(app: FastAPI):
         start_metrics_broadcaster(SessionLocal)
     except Exception as e:
         logger.warning(f"Metrics broadcaster startup failed: {e}")
+
+    # Start App Store catalog scheduler (periodic runtipi-appstore sync)
+    try:
+        from .services.appstore_catalog import start_catalog_scheduler
+        start_catalog_scheduler()
+        logger.info("App Store catalog scheduler started")
+    except Exception as e:
+        logger.warning(f"App Store catalog scheduler startup failed: {e}")
+
+    # Start App Store state reconciliation (LXC status vs DB, orphan detection)
+    try:
+        from .services.appstore_engine import start_reconcile_scheduler
+        start_reconcile_scheduler()
+        logger.info("App Store reconcile scheduler started")
+    except Exception as e:
+        logger.warning(f"App Store reconcile scheduler startup failed: {e}")
 
     logger.info("Application startup complete")
     yield
@@ -429,6 +446,7 @@ def create_app() -> FastAPI:
     app.include_router(users_router.router, prefix="/admin", tags=["users", "admin"])
     app.include_router(workspaces_router.router, tags=["workspaces"])
     app.include_router(ssh_keys_router.router, tags=["ssh-keys"])
+    app.include_router(appstore_router.router, tags=["appstore"])
 
     return app
 

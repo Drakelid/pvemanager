@@ -706,6 +706,28 @@ def _create_permissions() -> PermissionRegistry:
         requires=["pool:view"]
     ))
 
+    # App Store permissions (каталог self-hosted приложений)
+    registry.register(Permission(
+        resource="app", action="view",
+        display_name="View App Store",
+        description="Просмотр каталога приложений и установленных приложений",
+        category="App Store"
+    ))
+    registry.register(Permission(
+        resource="app", action="install",
+        display_name="Install Apps",
+        description="Установка приложений из каталога (создание LXC)",
+        category="App Store",
+        requires=["app:view"]
+    ))
+    registry.register(Permission(
+        resource="app", action="manage",
+        display_name="Manage App Store",
+        description="Синхронизация каталога, обновление/удаление приложений",
+        category="App Store",
+        requires=["app:view"]
+    ))
+
     # PVE access permissions (authentication realms & API tokens)
     registry.register(Permission(
         resource="access", action="view",

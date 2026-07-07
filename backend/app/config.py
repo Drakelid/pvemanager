@@ -72,6 +72,21 @@ class Settings(BaseSettings):
     # Timezone
     TZ: str = Field(default="UTC", env="TZ")
 
+    # ── App Store (модуль каталога self-hosted приложений) ──────────────────
+    # Источник каталога. Рекомендуется фиксировать REF на конкретный tag/commit
+    # (митигация риска смены формата Runtipi, ТЗ п.13); дефолт master — «всегда свежий».
+    RUNTIPI_APPSTORE_REPO: str = Field(default="runtipi/runtipi-appstore", env="RUNTIPI_APPSTORE_REPO")
+    RUNTIPI_APPSTORE_REF: str = Field(default="master", env="RUNTIPI_APPSTORE_REF")
+    # Каталог для кэша логотипов/данных App Store (монтируемый volume — переживает пересборку).
+    APPSTORE_DATA_DIR: str = Field(default="/app/data/appstore", env="APPSTORE_DATA_DIR")
+    # Периодичность авто-синхронизации каталога (ТЗ F-CAT-1).
+    CATALOG_SYNC_INTERVAL_HOURS: int = Field(default=24, env="CATALOG_SYNC_INTERVAL_HOURS")
+    # Архитектура целевых нод (для пометки неподдерживаемых приложений). amd64|arm64.
+    APPSTORE_HOST_ARCH: str = Field(default="amd64", env="APPSTORE_HOST_ARCH")
+    # Золотой LXC-шаблон (vztmpl) с предустановленным Docker — из него клонируются приложения.
+    # Напр. "local:vztmpl/golden-docker_12_amd64.tar.zst". Обязателен для установки (M2).
+    APPSTORE_GOLDEN_TEMPLATE: Optional[str] = Field(default=None, env="APPSTORE_GOLDEN_TEMPLATE")
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

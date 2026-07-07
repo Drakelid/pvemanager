@@ -1487,6 +1487,92 @@ def migrate_two_factor(conn):
         logger.info("✓ users two-factor columns already exist")
 
 
+def migrate_appstore_catalog(conn):
+    """Create catalog_apps table for the App Store module (M1)."""
+    if table_exists(conn, 'catalog_apps'):
+        logger.info("Table catalog_apps already exists, skipping")
+        return
+
+    conn.execute(text("""
+        CREATE TABLE catalog_apps (
+            app_id VARCHAR(100) PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            version VARCHAR(50),
+            tipi_version INTEGER,
+            categories JSONB NOT NULL DEFAULT '[]'::jsonb,
+            short_desc TEXT,
+            description_md TEXT,
+            logo_path VARCHAR(300),
+            port INTEGER,
+            form_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+            compose_yaml TEXT,
+            architectures JSONB NOT NULL DEFAULT '[]'::jsonb,
+            available BOOLEAN NOT NULL DEFAULT TRUE,
+            unavailable_reason VARCHAR(200),
+            deprecated BOOLEAN NOT NULL DEFAULT FALSE,
+            dynamic_config BOOLEAN NOT NULL DEFAULT FALSE,
+            source_url VARCHAR(500),
+            author VARCHAR(200),
+            synced_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+        )
+    """))
+    conn.execute(text("CREATE INDEX idx_catalog_apps_available ON catalog_apps (available)"))
+    conn.execute(text("CREATE INDEX idx_catalog_apps_name ON catalog_apps (name)"))
+    logger.info("✓ App Store catalog_apps table created")
+
+
+def migrate_appstore_installed(conn):
+    """Create installed_apps and app_operations tables for the App Engine (M2)."""
+    if not table_exists(conn, 'installed_apps'):
+        conn.execute(text("""
+            CREATE TABLE installed_apps (
+                id SERIAL PRIMARY KEY,
+                app_id VARCHAR(100),
+                server_id INTEGER,
+                vmid INTEGER,
+                node VARCHAR(100),
+                name VARCHAR(200) NOT NULL,
+                version_installed VARCHAR(50),
+                tipi_version_installed INTEGER,
+                env_encrypted TEXT,
+                ip VARCHAR(64),
+                port INTEGER,
+                status VARCHAR(20) NOT NULL DEFAULT 'installing',
+                update_available BOOLEAN NOT NULL DEFAULT FALSE,
+                last_snapshot VARCHAR(200),
+                owner_id INTEGER,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+            )
+        """))
+        conn.execute(text("CREATE INDEX idx_installed_apps_status ON installed_apps (status)"))
+        conn.execute(text("CREATE INDEX idx_installed_apps_owner ON installed_apps (owner_id)"))
+        conn.execute(text("CREATE INDEX idx_installed_apps_server_vmid ON installed_apps (server_id, vmid)"))
+        logger.info("✓ App Store installed_apps table created")
+
+    if not table_exists(conn, 'app_operations'):
+        conn.execute(text("""
+            CREATE TABLE app_operations (
+                id SERIAL PRIMARY KEY,
+                installed_app_id INTEGER REFERENCES installed_apps(id) ON DELETE CASCADE,
+                type VARCHAR(20) NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'running',
+                progress INTEGER NOT NULL DEFAULT 0,
+                steps_log JSONB NOT NULL DEFAULT '[]'::jsonb,
+                error_text TEXT,
+                user_id INTEGER,
+                started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+                finished_at TIMESTAMP WITH TIME ZONE
+            )
+        """))
+        conn.execute(text("CREATE INDEX idx_app_operations_installed ON app_operations (installed_app_id)"))
+        logger.info("✓ App Store app_operations table created")
+
+    # M4: версия, зафиксированная в pre-update снапшоте (для отката версии в БД)
+    add_column_if_not_exists(conn, 'installed_apps', 'snapshot_version', 'VARCHAR(50)')
+    add_column_if_not_exists(conn, 'installed_apps', 'snapshot_tipi_version', 'INTEGER')
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -1739,6 +1825,22 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Two-factor migration: {e}")
+                conn.rollback()
+
+            # Migration 31: App Store catalog
+            try:
+                migrate_appstore_catalog(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"App Store catalog migration: {e}")
+                conn.rollback()
+
+            # Migration 32: App Store installed apps + operations
+            try:
+                migrate_appstore_installed(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"App Store installed migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

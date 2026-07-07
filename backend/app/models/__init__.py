@@ -7,6 +7,7 @@ from .metrics import InstanceMetric, InstanceNicMetric
 from .settings import PanelSettings, SecuritySetting, Workspace, WorkspaceServer, WorkspaceUser
 from .misc import Notification, NotificationPreference, BackupJob, AuditLog
 from .catalog import ImageMirror
+from .appstore import CatalogApp, InstalledApp, AppOperation
 
 __all__ = [
     'Base', 'utcnow',
@@ -17,5 +18,6 @@ __all__ = [
     'InstanceMetric', 'InstanceNicMetric',
     'PanelSettings', 'SecuritySetting', 'Workspace', 'WorkspaceServer', 'WorkspaceUser',
     'Notification', 'NotificationPreference', 'BackupJob', 'AuditLog',
-    'ImageMirror'
+    'ImageMirror',
+    'CatalogApp', 'InstalledApp', 'AppOperation'
 ]

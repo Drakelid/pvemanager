@@ -35,6 +35,9 @@ const UsersPage = lazy(() => import('./features/users/UsersPage.tsx'));
 const WorkspacesPage = lazy(() => import('./features/workspaces/WorkspacesPage.tsx'));
 const LogsPage = lazy(() => import('./features/logs/LogsPage.tsx'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage.tsx'));
+const AppStorePage = lazy(() => import('./features/appstore/AppStorePage.tsx'));
+const AppDetailPage = lazy(() => import('./features/appstore/AppDetailPage.tsx'));
+const MyAppsPage = lazy(() => import('./features/appstore/MyAppsPage.tsx'));
 
 function LazyFallback() {
   return <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">Loading…</div>;
@@ -86,6 +89,9 @@ export const router = createBrowserRouter([
           { path: '/nodes/:serverId', element: <SuspenseWrap><NodeDetailPage /></SuspenseWrap> },
           { path: '/cluster', element: <SuspenseWrap><ClusterPage /></SuspenseWrap> },
           { path: '/templates', element: <SuspenseWrap><TemplatesPage /></SuspenseWrap> },
+          { path: '/appstore', element: <SuspenseWrap><AppStorePage /></SuspenseWrap> },
+          { path: '/appstore/:appId', element: <SuspenseWrap><AppDetailPage /></SuspenseWrap> },
+          { path: '/my-apps', element: <SuspenseWrap><MyAppsPage /></SuspenseWrap> },
           { path: '/images', element: <SuspenseWrap><ImagesPage /></SuspenseWrap> },
           { path: '/backups', element: <SuspenseWrap><BackupsPage /></SuspenseWrap> },
           { path: '/tasks', element: <SuspenseWrap><TasksPage /></SuspenseWrap> },

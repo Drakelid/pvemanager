@@ -21,6 +21,8 @@ import {
   ChevronDown,
   Building2,
   Check,
+  Store,
+  Package,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -72,6 +74,13 @@ const navGroups: NavGroup[] = [
       { label: 'Images', icon: HardDriveDownload, path: '/images', permission: 'template:manage' },
       { label: 'Backups', icon: Archive, path: '/backups', permission: 'backup:view' },
       { label: 'Tasks', icon: ClipboardList, path: '/tasks', permission: 'vm:view' },
+    ],
+  },
+  {
+    title: 'Applications',
+    items: [
+      { label: 'App Store', icon: Store, path: '/appstore', permission: 'app:view' },
+      { label: 'My Apps', icon: Package, path: '/my-apps', permission: 'app:view' },
     ],
   },
   {
