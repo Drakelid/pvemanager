@@ -153,20 +153,47 @@ class SSHClient:
         
         return False
     
-    def execute(self, command: str, return_exit_code: bool = False) -> Union[Optional[str], tuple]:
-        """Выполнить команду на сервере"""
+    def execute(self, command: str, return_exit_code: bool = False,
+                timeout: Optional[int] = None) -> Union[Optional[str], tuple]:
+        """Выполнить команду на сервере.
+
+        timeout — предельное время ожидания завершения команды (сек). Если не
+        задан, используется self.timeout. Команды, легально идущие долго
+        (docker compose pull/up), должны передавать увеличенный timeout.
+        """
         if not self._connected or not self.client:
             if not self.connect():
                 return (None, -1) if return_exit_code else None
-        
+
+        cmd_timeout = timeout if timeout is not None else self.timeout
         try:
             stdin, stdout, stderr = self.client.exec_command(
-                command, timeout=self.timeout, get_pty=False
+                command, timeout=cmd_timeout, get_pty=False
             )
-            
-            # Wait for command to complete
-            exit_code = stdout.channel.recv_exit_status()
-            
+
+            # ВАЖНО: recv_exit_status() ИГНОРИРУЕТ таймаут exec_command и блокирует
+            # поток навсегда, если удалённая команда подвисла (типичная ловушка
+            # paramiko — из-за неё установка приложения замирала на «pct push»).
+            # Поэтому ждём готовности статуса с жёстким дедлайном.
+            channel = stdout.channel
+            deadline = time.time() + cmd_timeout
+            while not channel.exit_status_ready():
+                if time.time() > deadline:
+                    logger.error(
+                        f"Command exit-status timeout on {self.hostname} "
+                        f"(>{cmd_timeout}s): {command}"
+                    )
+                    try:
+                        channel.close()
+                    except Exception:
+                        pass
+                    self._connected = False
+                    self._cleanup_connection()
+                    return (None, -1) if return_exit_code else None
+                time.sleep(0.2)
+
+            exit_code = channel.recv_exit_status()
+
             output = stdout.read().decode('utf-8', errors='ignore').strip()
             error_output = stderr.read().decode('utf-8', errors='ignore').strip()
             

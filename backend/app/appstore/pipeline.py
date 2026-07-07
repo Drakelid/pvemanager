@@ -23,6 +23,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional
 
+import yaml
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -92,12 +93,25 @@ def _node_ssh(server: ProxmoxServer, client) -> SSHClient:
         hostname=ssh_host,
         username="root",
         password=getattr(client, "_password", None),
+        timeout=30,  # запас на подключение; per-command таймаут задаётся в _run
     )
 
 
-def _run(ssh: SSHClient, cmd: str, *, what: str) -> str:
-    """Выполнить команду на ноде, вернуть stdout. Бросить PocError при exit!=0."""
-    output, exit_code = ssh.execute(cmd, return_exit_code=True)
+# Таймаут по умолчанию для быстрых команд на ноде (pct exec/push, mkdir и т.п.).
+# Долгие шаги (docker compose pull/up) передают увеличенный таймаут явно.
+_CMD_TIMEOUT = 60
+_DOCKER_TIMEOUT = 600
+
+
+def _run(ssh: SSHClient, cmd: str, *, what: str, timeout: int = _CMD_TIMEOUT) -> str:
+    """Выполнить команду на ноде, вернуть stdout. Бросить PocError при exit!=0.
+
+    При таймауте execute() вернёт exit_code=-1 → бросаем PocError (установка
+    завершается с ошибкой, а не зависает бесконечно).
+    """
+    output, exit_code = ssh.execute(cmd, return_exit_code=True, timeout=timeout)
+    if exit_code == -1:
+        raise PocError(f"{what}: таймаут (>{timeout}с) или обрыв SSH")
     if exit_code != 0:
         raise PocError(f"{what}: exit={exit_code}: {(output or '').strip()[:400]}")
     return output or ""
@@ -111,6 +125,58 @@ def _pct(vmid: int, inner: str) -> str:
 def _shq(s: str) -> str:
     """Одинарные кавычки для shell (безопасно для фиксированных строк)."""
     return "'" + s.replace("'", "'\"'\"'") + "'"
+
+
+def _normalize_compose(compose_yaml: str) -> str:
+    """Привести compose Runtipi к самодостаточному виду для standalone-запуска.
+
+    Runtipi-приложения ссылаются в сервисах на сеть `tipi_main_network`, но
+    рассчитывают, что top-level объявление сети добавит рантайм Runtipi. У нас
+    его нет → `docker compose up` падает с «refers to undefined network ...:
+    invalid compose project». Сеть мы создаём заранее (`docker network create`),
+    поэтому здесь достаточно объявить любую упомянутую, но необъявленную сеть как
+    external. При любой ошибке разбора возвращаем исходный compose без изменений.
+    """
+    try:
+        doc = yaml.safe_load(compose_yaml)
+        if not isinstance(doc, dict):
+            return compose_yaml
+
+        services = doc.get("services")
+        if not isinstance(services, dict):
+            return compose_yaml
+
+        referenced: set[str] = set()
+        for svc in services.values():
+            if not isinstance(svc, dict):
+                continue
+            nets = svc.get("networks")
+            if isinstance(nets, list):
+                referenced.update(str(n) for n in nets)
+            elif isinstance(nets, dict):
+                referenced.update(str(n) for n in nets.keys())
+
+        if not referenced:
+            return compose_yaml
+
+        top = doc.get("networks")
+        if not isinstance(top, dict):
+            top = {}
+        changed = False
+        for net in referenced:
+            if net not in top:
+                # Сеть создаётся заранее на ноде → подключаемся как external.
+                top[net] = {"external": True}
+                changed = True
+
+        if not changed:
+            return compose_yaml
+
+        doc["networks"] = top
+        return yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
+    except Exception as e:
+        logger.warning(f"[appstore-poc] normalize compose failed, using raw: {e}")
+        return compose_yaml
 
 
 def _push_file(ssh: SSHClient, vmid: int, content: str, dest: str) -> None:
@@ -233,11 +299,12 @@ def poc_install(db: Session, spec: InstallSpec, on_step: StepCb = _noop) -> Inst
         )
 
         on_step("Доставка docker-compose.yml и .env (pct push)...", 75)
-        _push_file(ssh, vmid, spec.compose_yaml, f"{APP_DIR}/docker-compose.yml")
+        _push_file(ssh, vmid, _normalize_compose(spec.compose_yaml), f"{APP_DIR}/docker-compose.yml")
         # IP-зависимые платформенные переменные (ТЗ 5.3) заполняем здесь — IP уже известен.
         env = dict(spec.env_vars)
         env.setdefault("APP_DOMAIN", ip)
         env.setdefault("APP_HOST", ip)
+        env.setdefault("LOCAL_DOMAIN", "tipi.local")  # стандартная переменная Runtipi
         env["APP_IP"] = ip
         # значения .env: убираем переводы строк (одна строка на переменную)
         env_content = "".join(f"{k}={str(v).replace(chr(10), ' ').replace(chr(13), ' ')}\n"
@@ -249,6 +316,7 @@ def poc_install(db: Session, spec: InstallSpec, on_step: StepCb = _noop) -> Inst
             ssh,
             _pct(vmid, f"cd {APP_DIR} && docker compose --env-file .env up -d"),
             what="docker compose up",
+            timeout=_DOCKER_TIMEOUT,  # тянет образы — может идти минуты
         )
 
         on_step(f"Health-check http://{ip}:{spec.port} ...", 92)
@@ -297,10 +365,11 @@ def poc_update(server, client, vmid: int, node: str, compose_yaml: str,
                        f"docker network create {TIPI_NETWORK}"),
             what="ensure docker network",
         )
-        _push_file(ssh, vmid, compose_yaml, f"{APP_DIR}/docker-compose.yml")
+        _push_file(ssh, vmid, _normalize_compose(compose_yaml), f"{APP_DIR}/docker-compose.yml")
         env = dict(env_vars)
         env.setdefault("APP_DOMAIN", ip)
         env.setdefault("APP_HOST", ip)
+        env.setdefault("LOCAL_DOMAIN", "tipi.local")  # стандартная переменная Runtipi
         env["APP_IP"] = ip
         env_content = "".join(f"{k}={str(v).replace(chr(10), ' ').replace(chr(13), ' ')}\n"
                               for k, v in env.items())
@@ -312,6 +381,7 @@ def poc_update(server, client, vmid: int, node: str, compose_yaml: str,
             _pct(vmid, f"cd {APP_DIR} && docker compose --env-file .env pull && "
                        f"docker compose --env-file .env up -d"),
             what="docker compose pull/up",
+            timeout=_DOCKER_TIMEOUT,  # pull больших образов — может идти минуты
         )
 
         on_step(f"Health-check http://{ip}:{port} ...", 88)
