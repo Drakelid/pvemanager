@@ -4,7 +4,7 @@
 
 **Modern web panel for managing Proxmox servers, virtual machines and LXC containers**
 
-[![Version](https://img.shields.io/badge/version-1.7.0-blue?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.8.0-blue?style=flat-square)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](compose.yml)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](backend/)
@@ -33,6 +33,13 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **SDN support** — manage Software-Defined Networking zones, VNets, and subnets; edit zones and VNets; auto-create IPAM networks for subnets
 - **Node networking** — manage node-level network interfaces (bridges, bonds, VLANs); apply/revert pending config
 - **Networks page** — unified UI for SDN and node interface management
+
+### App Store
+- **Self-hosted app catalog** — one-click install of self-hosted apps, each into its own unprivileged LXC running Docker Compose (1 app = 1 LXC); catalog imported from `runtipi/runtipi-appstore` (~265 apps)
+- **Install wizard** — dynamic app parameters (form fields), advanced LXC resources, auto-generated secrets, live install progress over WebSocket, and one-time credential display
+- **My Apps lifecycle** — start / stop / restart / logs / delete, with background reconciliation (orphan detection) and per-app status
+- **Update & Rollback** — snapshot-backed updates (`docker compose pull`) with health-check and one-click rollback to the pre-update snapshot
+- **Secure by design** — unprivileged LXC only, Fernet-encrypted secrets, injection-safe `pct exec`/`pct push`, RBAC `app:view` / `app:install` / `app:manage`
 
 ### Access & Console
 - **VNC console** — in-browser console via noVNC, no client software required

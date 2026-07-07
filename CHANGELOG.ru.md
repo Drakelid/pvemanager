@@ -4,6 +4,22 @@
 
 ---
 
+## [v1.8.0] - 2026-07-07
+
+### 🛒 App Store
+
+- **Каталог self-hosted приложений с установкой в один клик** — новый модуль App Store: каждое приложение разворачивается в собственном **unprivileged LXC**-контейнере с **Docker Compose** (1 приложение = 1 LXC). Каталог импортируется из репозитория `runtipi/runtipi-appstore` (~265 приложений проходят фильтр)
+- **Catalog Service** — импорт метаданных, логотипов, описаний и compose-файлов в новую таблицу `catalog_apps`; идемпотентная синхронизация (кнопка *Обновить каталог* + автоматически раз в 24 ч через APScheduler); битый `config.json` пропускается, не роняя весь синк; флаг `update_available` вычисляется по `tipi_version`
+- **Пайплайн установки** — клон золотого LXC-шаблона → `pct push` compose/`.env` → `docker compose up -d` → HTTP health-check, с **живым журналом шагов по WebSocket**, динамическим рендером `form_fields` (text/password/email/number/boolean/fqdn), автогенерацией `random`-секретов и хранением env в зашифрованном виде (Fernet); сгенерированные учётные данные показываются один раз
+- **Управление жизненным циклом** — start / stop / restart / логи (`docker compose logs`) / удаление, плюс фоновая **реконсиляция состояния** каждые 60 с (контейнеры, удалённые мимо PVEmanager, помечаются `orphaned`)
+- **Обновление и откат** — при обновлении создаётся pre-update снапшот Proxmox, затем `docker compose pull && up -d` с health-check; откат восстанавливает снапшот (вместе с данными); хранится только последний pre-update снапшот
+- **UI** — сетка каталога (поиск, категории), страница приложения с дисклеймером об источнике и превью compose, мастер установки с расширенными параметрами LXC и живым прогрессом, экран управления **Мои приложения**; локали RU/EN; атрибуция *Powered by Runtipi appstore*
+- **Безопасность** — только unprivileged LXC; `pct exec` / `pct push` через SSH с доставкой файлов через base64 и экранированием значений `.env` (без shell-инъекций); новые права RBAC `app:view` / `app:install` / `app:manage`
+- **Модель данных и настройки** — таблицы `catalog_apps`, `installed_apps`, `app_operations` (миграции 31–32); новые env-настройки `APPSTORE_GOLDEN_TEMPLATE`, `RUNTIPI_APPSTORE_REF`, `APPSTORE_DATA_DIR`, `CATALOG_SYNC_INTERVAL_HOURS`, `APPSTORE_HOST_ARCH`
+- **Документация** — `docs/golden-template.md` (подготовка золотого LXC-шаблона) и `docs/appstore-poc.md` / `appstore-catalog.md` / `appstore-engine.md`
+
+---
+
 ## [v1.7.0] - 2026-06-26
 
 ### 🎯 Квоты

@@ -4,6 +4,22 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.8.0] - 2026-07-07
+
+### 🛒 App Store
+
+- **Self-hosted app catalog with one-click install** — new App Store module: each application is deployed into its own **unprivileged LXC** container running **Docker Compose** (1 app = 1 LXC). The catalog is imported from the `runtipi/runtipi-appstore` repository (~265 apps pass the filter)
+- **Catalog Service** — imports app metadata, logos, descriptions and compose files into the new `catalog_apps` table; idempotent sync (manual *Refresh catalog* button + automatic every 24 h via APScheduler); a broken `config.json` is skipped without failing the whole sync; the `update_available` flag is computed from `tipi_version`
+- **Install pipeline** — clone golden LXC template → `pct push` compose/`.env` → `docker compose up -d` → HTTP health-check, with a **live step journal over WebSocket**, dynamic `form_fields` rendering (text/password/email/number/boolean/fqdn), auto-generated `random` secrets, and Fernet-encrypted env storage; generated credentials are shown once
+- **Lifecycle management** — start / stop / restart / logs (`docker compose logs`) / delete, plus background **state reconciliation** every 60 s (containers removed outside PVEmanager are flagged `orphaned`)
+- **Update & Rollback** — update takes a pre-update Proxmox snapshot, then `docker compose pull && up -d` with health-check; rollback restores the snapshot (data included); only the latest pre-update snapshot is kept
+- **UI** — App Store grid (search, categories), app detail page with a source disclaimer and compose preview, install wizard with advanced LXC options and live progress, and a **My Apps** management screen; RU/EN locales; *Powered by Runtipi appstore* attribution
+- **Security** — unprivileged LXC only; `pct exec` / `pct push` via SSH with base64 file delivery and escaped `.env` values (no shell injection); new RBAC permissions `app:view` / `app:install` / `app:manage`
+- **Data model & settings** — `catalog_apps`, `installed_apps`, `app_operations` tables (migrations 31–32); new env settings `APPSTORE_GOLDEN_TEMPLATE`, `RUNTIPI_APPSTORE_REF`, `APPSTORE_DATA_DIR`, `CATALOG_SYNC_INTERVAL_HOURS`, `APPSTORE_HOST_ARCH`
+- **Docs** — `docs/golden-template.md` (golden LXC template preparation) and `docs/appstore-poc.md` / `appstore-catalog.md` / `appstore-engine.md`
+
+---
+
 ## [v1.7.0] - 2026-06-26
 
 ### 🎯 Quotas

@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.5.2-1
+> Complete guide for installation, configuration and usage of PVEmanager v1.8.0
 
 ---
 
@@ -15,27 +15,28 @@
 7. [OS Templates](#-os-templates)
 8. [Images — Cloud Image Catalog](#-images--cloud-image-catalog)
 9. [LXC CT Template Deployment](#-lxc-ct-template-deployment)
-10. [Proxmox Clusters](#-proxmox-clusters)
-11. [Snapshots](#-snapshots)
-12. [Backups](#-backups)
-13. [IPAM](#-ipam)
-14. [Remote Command Execution](#-remote-command-execution)
-15. [Monitoring](#-monitoring)
-16. [Security (RBAC v2)](#-security)
-17. [Localization](#-localization)
-18. [Settings](#-settings)
-19. [SSH Keys Management](#-ssh-keys-management)
-20. [Networks (SDN & Node Interfaces)](#node-network-interfaces)
-21. [pve CLI Tool](#-pve-cli-tool)
-22. [API Reference](#-api-reference)
-23. [Workspaces](#-workspaces)
-24. [User → Server Assignment](#-user--server-assignment)
-25. [VM / LXC Ownership](#-vm--lxc-ownership)
-26. [Quotas](#-quotas)
-27. [Logs & Audit](#-logs--audit)
-28. [Deployment Guide](#-installation-and-deployment)
-29. [Troubleshooting](#-troubleshooting)
-30. [FAQ](#-faq)
+10. [App Store](#-app-store)
+11. [Proxmox Clusters](#-proxmox-clusters)
+12. [Snapshots](#-snapshots)
+13. [Backups](#-backups)
+14. [IPAM](#-ipam)
+15. [Remote Command Execution](#-remote-command-execution)
+16. [Monitoring](#-monitoring)
+17. [Security (RBAC v2)](#-security)
+18. [Localization](#-localization)
+19. [Settings](#-settings)
+20. [SSH Keys Management](#-ssh-keys-management)
+21. [Networks (SDN & Node Interfaces)](#node-network-interfaces)
+22. [pve CLI Tool](#-pve-cli-tool)
+23. [API Reference](#-api-reference)
+24. [Workspaces](#-workspaces)
+25. [User → Server Assignment](#-user--server-assignment)
+26. [VM / LXC Ownership](#-vm--lxc-ownership)
+27. [Quotas](#-quotas)
+28. [Logs & Audit](#-logs--audit)
+29. [Deployment Guide](#-installation-and-deployment)
+30. [Troubleshooting](#-troubleshooting)
+31. [FAQ](#-faq)
 
 ---
 
@@ -764,6 +765,77 @@ Containers created from CT templates support reinstall:
 4. The old container is destroyed and a new one is created with the same VMID
 
 > **Note:** `nesting=1` is enabled by default on all new LXC containers for systemd 255+ (cgroup v2) compatibility.
+
+---
+
+## 🛒 App Store
+
+Catalog of self-hosted applications with one-click install. Each app runs in its own **unprivileged LXC** container with **Docker Compose** (1 app = 1 LXC). The catalog is imported from the [`runtipi/runtipi-appstore`](https://github.com/runtipi/runtipi-appstore) repository.
+
+### Prerequisites
+
+- A **golden LXC template** (Debian 12 + Docker + Compose) prepared once and referenced via `APPSTORE_GOLDEN_TEMPLATE` (e.g. `local:vztmpl/golden-docker_12_amd64.tar.zst`). See [docs/golden-template.md](docs/golden-template.md).
+- **SSH access** from the panel to the Proxmox node (used for `pct exec` / `pct push`).
+- `FERNET_KEY` set (encrypts app secrets at rest).
+
+### Environment settings
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `APPSTORE_GOLDEN_TEMPLATE` | — | golden vztmpl volid (required for install) |
+| `RUNTIPI_APPSTORE_REPO` | `runtipi/runtipi-appstore` | catalog source |
+| `RUNTIPI_APPSTORE_REF` | `master` | branch/tag/commit (pin recommended) |
+| `APPSTORE_DATA_DIR` | `/app/data/appstore` | logo cache (mounted volume) |
+| `CATALOG_SYNC_INTERVAL_HOURS` | `24` | auto catalog sync interval |
+| `APPSTORE_HOST_ARCH` | `amd64` | target node arch (marks unsupported apps) |
+
+### Catalog
+
+- **App Store** screen: card grid with search and category filters; **Refresh catalog** button + last-sync timestamp.
+- Automatic sync every 24 h; a broken app entry is skipped without failing the whole sync.
+- App page: description, version, source link, install disclaimer, and a compose preview.
+
+### Install
+
+Pipeline (each step is journaled and streamed over WebSocket):
+
+1. Clone the golden LXC template (default 2 vCPU / 2048 MB / 8 GB, DHCP or advanced overrides).
+2. Start and wait for IP.
+3. `pct push` `docker-compose.yml` + `.env` (form answers + generated `random` secrets).
+4. `docker compose up -d`.
+5. HTTP health-check.
+6. Show the app URL and one-time credentials.
+
+A failed step sets status `error` with a step log; **Retry** does not recreate the LXC (idempotent by VMID), **Delete** removes the container and the record.
+
+### My Apps
+
+Manage installed apps: **Start / Stop / Restart / Logs / Delete**, live status, and a clickable `IP:port`.
+
+- **Reconciliation** runs every 60 s and on screen open: an LXC removed outside PVEmanager is flagged `orphaned`.
+- **Update**: takes a pre-update Proxmox snapshot → `docker compose pull && up -d` → health-check; keeps only the last pre-update snapshot.
+- **Rollback**: restores the snapshot (⚠️ also reverts app **data** to the snapshot moment) and reverts the version in the database.
+
+### Permissions
+
+`app:view` (catalog + My Apps), `app:install` (install), `app:manage` (sync, lifecycle, update, rollback, delete). Admins bypass all checks.
+
+### REST API
+
+```
+GET    /api/appstore/catalog                      # list (q, category)
+GET    /api/appstore/catalog/{app_id}             # detail
+GET    /api/appstore/catalog/{app_id}/logo        # logo (public)
+POST   /api/appstore/catalog/sync                 # manual sync (admin)
+POST   /api/appstore/apps/install                 # install
+GET    /api/appstore/apps                          # installed list
+POST   /api/appstore/apps/{id}/action/{start|stop|restart}
+GET    /api/appstore/apps/{id}/logs
+POST   /api/appstore/apps/{id}/update
+POST   /api/appstore/apps/{id}/rollback
+POST   /api/appstore/apps/reconcile
+DELETE /api/appstore/apps/{id}
+```
 
 ---
 

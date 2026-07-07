@@ -4,7 +4,7 @@
 
 **Современная веб-панель для управления серверами Proxmox, виртуальными машинами и контейнерами LXC**
 
-[![Версия](https://img.shields.io/badge/версия-1.7.0-blue?style=flat-square)](CHANGELOG.md)
+[![Версия](https://img.shields.io/badge/версия-1.8.0-blue?style=flat-square)](CHANGELOG.md)
 [![Лицензия](https://img.shields.io/badge/лицензия-MIT-green?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-готов-2496ED?style=flat-square&logo=docker&logoColor=white)](compose.yml)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](backend/)
@@ -33,6 +33,13 @@ PVEmanager — это самостоятельно размещаемая веб
 - **Поддержка SDN** — управляйте зонами Software-Defined Networking, VNet и подсетями; редактируйте зоны и VNet; автоматическое создание сетей IPAM для подсетей
 - **Сетевые интерфейсы узлов** — управляйте сетевыми интерфейсами на уровне узла (мосты, связки, VLAN); применяйте/откатывайте ожидающую конфигурацию
 - **Страница сетей** — унифицированный интерфейс для управления SDN и сетевыми интерфейсами узлов
+
+### App Store
+- **Каталог self-hosted приложений** — установка в один клик, каждое приложение — в собственном unprivileged LXC с Docker Compose (1 приложение = 1 LXC); каталог импортируется из `runtipi/runtipi-appstore` (~265 приложений)
+- **Мастер установки** — динамические параметры приложения (form_fields), расширенные ресурсы LXC, автогенерация секретов, живой прогресс установки по WebSocket и показ учётных данных один раз
+- **Жизненный цикл в «Мои приложения»** — start / stop / restart / логи / удаление, с фоновой реконсиляцией (детект orphaned) и статусом по каждому приложению
+- **Обновление и откат** — обновления на основе снапшотов (`docker compose pull`) с health-check и откатом в один клик к pre-update снапшоту
+- **Безопасность by design** — только unprivileged LXC, шифрование секретов (Fernet), защита `pct exec`/`pct push` от инъекций, RBAC `app:view` / `app:install` / `app:manage`
 
 ### Доступ и консоль
 - **Консоль VNC** — консоль в браузере через noVNC, не требуется клиентское ПО
