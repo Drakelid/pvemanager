@@ -26,6 +26,43 @@ from ...services.metrics_history import query_instance_metrics, timeframe_to_ran
 
 router = APIRouter()
 
+
+def _cleanup_installed_apps(db: Session, server_id: int, vmid: int) -> int:
+    """Удалить записи App Store (installed_apps), привязанные к удаляемому LXC/VM.
+
+    Без этого приложение, установленное через каталог, остаётся «хвостом»
+    в разделе «Мои приложения» после удаления инстанса со страницы инстансов.
+    Каскад (app_operations.installed_app_id ON DELETE CASCADE) чистит журнал операций.
+    """
+    try:
+        from ...models import InstalledApp
+        rows = (
+            db.query(InstalledApp)
+            .filter(InstalledApp.server_id == server_id, InstalledApp.vmid == vmid)
+            .all()
+        )
+        if not rows:
+            return 0
+        notify = [(ia.id, ia.owner_id) for ia in rows]
+        for ia in rows:
+            db.delete(ia)
+        db.commit()
+        logger.info(f"Removed {len(rows)} installed_apps record(s) for vmid={vmid} server={server_id}")
+        # Live-обновление раздела «Мои приложения» у владельца (тот же WS-эвент, что и штатное удаление)
+        try:
+            from ...websocket_manager import broadcast_task_update
+            for _iaid, _owner in notify:
+                if _owner:
+                    broadcast_task_update(_owner, "appstore_app_deleted", {"installed_app_id": _iaid})
+        except Exception:
+            pass
+        return len(rows)
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Failed to cleanup installed_apps for vmid={vmid}: {e}")
+        return 0
+
+
 import time as time_lib
 import threading
 
@@ -953,7 +990,10 @@ async def delete_vm(
                     logger.info(f"Auto-released IPAM allocation for IP {released_ip} after VM {vmid} deletion")
             except Exception as e:
                 logger.warning(f"Failed to release IPAM allocation for VM {vmid}: {e}")
-            
+
+            # Убираем «хвост» App Store в «Мои приложения» (если инстанс был установлен из каталога)
+            _cleanup_installed_apps(db, server_id, vmid)
+
             # Register ProxmoxTask for delete tracking
             try:
                 from datetime import datetime, timezone as _tz
@@ -1311,6 +1351,9 @@ async def delete_container(
                     logger.info(f"Auto-released IPAM allocation for IP {released_ip} after container {vmid} deletion")
             except Exception as e:
                 logger.warning(f"Failed to release IPAM allocation for container {vmid}: {e}")
+
+            # Убираем «хвост» App Store в «Мои приложения» (если контейнер был установлен из каталога)
+            _cleanup_installed_apps(db, server_id, vmid)
 
             # Register ProxmoxTask for delete tracking
             try:
