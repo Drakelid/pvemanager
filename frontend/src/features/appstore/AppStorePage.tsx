@@ -127,6 +127,9 @@ export default function AppStorePage() {
                 {(app.categories ?? []).slice(0, 2).map((c) => (
                   <Badge key={c} variant="outline" className="text-2xs">{t(`appstore.categories.${c}`, c)}</Badge>
                 ))}
+                {app.port && (
+                  <Badge variant="outline" className="text-2xs">{t('appstore.port')}: {app.port}</Badge>
+                )}
                 {!app.available && (
                   <Badge variant="destructive" className="text-2xs">{t('appstore.unavailable')}</Badge>
                 )}
