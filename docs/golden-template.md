@@ -15,11 +15,27 @@
 
 ## Пошагово
 
-1. Создать временный unprivileged CT из стандартного шаблона Debian 12 на ноде:
+1. Создать временный unprivileged CT из стандартного шаблона Debian 12 на ноде.
+
+   > ⚠️ Не хардкодьте версию шаблона. Точное имя (напр. `debian-12-standard_12.12-1_amd64.tar.zst`)
+   > меняется со временем — всегда берите его из вывода `pveam available`, иначе `pveam download`
+   > упадёт с `no such template`, а `pct create` — с `volume ... does not exist`.
+
    ```bash
    pveam update
-   pveam download local debian-12-standard_12.7-1_amd64.tar.zst   # версия может отличаться
-   pct create 9000 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
+   # 1a. Узнать актуальное имя шаблона (версия ниже — только пример):
+   pveam available --section system | grep debian-12-standard
+   # -> system  debian-12-standard_12.12-1_amd64.tar.zst   (используйте это имя далее)
+
+   # 1b. Скачать именно это имя в storage local:
+   TMPL=debian-12-standard_12.12-1_amd64.tar.zst   # подставьте имя из вывода 1a
+   pveam download local "$TMPL"
+
+   # 1c. Убедиться, что файл реально появился в vztmpl:
+   pvesm list local --content vztmpl
+
+   # 1d. Создать CT, указав ТО ЖЕ имя, что скачали:
+   pct create 9000 "local:vztmpl/$TMPL" \
        --hostname golden-docker --unprivileged 1 \
        --features nesting=1,keyctl=1 \
        --cores 2 --memory 2048 --swap 512 \
