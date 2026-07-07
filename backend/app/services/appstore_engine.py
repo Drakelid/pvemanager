@@ -28,7 +28,8 @@ from ..appstore.pipeline import (
 from ..api.proxmox._helpers import _get_proxmox_client, get_next_vmid
 from ..config import settings
 from ..db import SessionLocal
-from ..models import AppOperation, CatalogApp, InstalledApp, ProxmoxServer
+from ..ipam_service import IPAMService
+from ..models import AppOperation, CatalogApp, InstalledApp, IPAMNetwork, ProxmoxServer
 from ..websocket_manager import broadcast_task_update
 
 _engine_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="appstore_engine")
@@ -140,10 +141,42 @@ def build_env(app: CatalogApp, form_answers: dict) -> tuple[dict, dict]:
 
 # ── Установка ─────────────────────────────────────────────────────────────────
 
+def _allocate_ipam(db, *, network_id: int, pool_id: Optional[int], name: str,
+                   server_id: int, vmid: int, node: Optional[str],
+                   allocated_by: Optional[str]) -> tuple[str, str]:
+    """Выделить IP из IPAM для приложения. Возвращает (ip_config, static_ip).
+
+    ip_config — строка для net0 ("ip=<addr>/<mask>,gw=<gw>"). Бросает EngineError
+    при отсутствии свободного адреса, чтобы ошибка сразу вернулась пользователю.
+    """
+    ipam = IPAMService(db)
+    allocation, error = ipam.auto_allocate_ip(
+        network_id=network_id, pool_id=pool_id,
+        resource_type="ct", resource_name=name,
+        proxmox_server_id=server_id, proxmox_vmid=vmid, proxmox_node=node,
+        allocated_by=allocated_by, notes=f"App Store: {name}",
+    )
+    if error or not allocation:
+        raise EngineError(f"Не удалось выделить IP из IPAM: {error or 'нет свободных адресов'}")
+
+    ip = allocation.ip_address
+    net = db.query(IPAMNetwork).filter(IPAMNetwork.id == network_id).first()
+    mask = "24"
+    gateway = None
+    if net:
+        if net.network and "/" in net.network:
+            mask = net.network.split("/")[1]
+        gateway = net.gateway or None
+    ip_config = f"ip={ip}/{mask},gw={gateway}" if gateway else f"ip={ip}/{mask}"
+    return ip_config, ip
+
+
 def install(db, user, *, app_id: str, name: str, form_answers: dict,
             server_id: int, node: Optional[str] = None, cores: int = 2,
             memory: int = 2048, disk: int = 8, storage: str = "local-lvm",
-            bridge: str = "vmbr0", ostemplate: Optional[str] = None) -> dict:
+            bridge: str = "vmbr0", ostemplate: Optional[str] = None,
+            ipam_network_id: Optional[int] = None,
+            ipam_pool_id: Optional[int] = None) -> dict:
     """Синхронная часть: валидация + запись в БД. Пайплайн — в пуле потоков."""
     app = db.query(CatalogApp).filter(CatalogApp.app_id == app_id).first()
     if not app:
@@ -166,11 +199,22 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
     env, secrets_shown = build_env(app, form_answers)
     vmid = get_next_vmid(db, server_id)
 
+    # IPAM (опционально): выделяем адрес до старта пайплайна, чтобы ошибка
+    # (нет свободных IP) вернулась пользователю синхронно.
+    ip_config = None
+    static_ip = None
+    if ipam_network_id:
+        ip_config, static_ip = _allocate_ipam(
+            db, network_id=ipam_network_id, pool_id=ipam_pool_id, name=name,
+            server_id=server_id, vmid=vmid, node=node,
+            allocated_by=getattr(user, "username", None),
+        )
+
     ia = InstalledApp(
         app_id=app_id, server_id=server_id, vmid=vmid, node=node, name=name,
         version_installed=str(app.version) if app.version is not None else None,
         tipi_version_installed=app.tipi_version,
-        env_encrypted=json.dumps(env), port=app.port, status="installing",
+        env_encrypted=json.dumps(env), ip=static_ip, port=app.port, status="installing",
         owner_id=user.id,
     )
     db.add(ia)
@@ -182,7 +226,7 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
     _engine_executor.submit(
         _run_install, ia.id, op.id, user.id, app.compose_yaml, env, golden,
         cores, memory, disk, server_id, node, name, app.port, ia.version_installed, vmid,
-        storage, bridge,
+        storage, bridge, ip_config, static_ip,
     )
     return {"installed_app_id": ia.id, "operation_id": op.id, "vmid": vmid, "secrets": secrets_shown}
 
@@ -200,7 +244,7 @@ def _new_operation(db, installed_app_id: int, op_type: str, user_id: int) -> App
 
 def _run_install(installed_app_id, operation_id, user_id, compose_yaml, env, ostemplate,
                  cores, memory, disk, server_id, node, name, port, version, vmid,
-                 storage, bridge):
+                 storage, bridge, ip_config=None, static_ip=None):
     """Тело установки в пуле потоков."""
     db = SessionLocal()
     try:
@@ -208,7 +252,7 @@ def _run_install(installed_app_id, operation_id, user_id, compose_yaml, env, ost
             server_id=server_id, ostemplate=ostemplate, name=name,
             compose_yaml=compose_yaml, port=port or 80, env_vars=env,
             node=node, vmid=vmid, cores=cores, memory=memory, disk=disk,
-            storage=storage, bridge=bridge,
+            storage=storage, bridge=bridge, ip_config=ip_config, static_ip=static_ip,
         )
 
         def on_step(step: str, progress: int) -> None:
@@ -271,10 +315,13 @@ def retry_install(db, user, installed_app_id: int) -> dict:
     db.commit()
 
     op = _new_operation(db, ia.id, "install", user.id)
+    # Контейнер уже создан (идемпотентный повтор): net0 не применяется заново,
+    # поэтому ip_config не нужен. Известный статический IP передаём, чтобы не
+    # ждать выдачи впустую (для DHCP он None → ожидание по-старому).
     _engine_executor.submit(
         _run_install, ia.id, op.id, user.id, compose, env, golden,
         2, 2048, 8, ia.server_id, ia.node, ia.name, ia.port, ia.version_installed, ia.vmid,
-        "local-lvm", "vmbr0",
+        "local-lvm", "vmbr0", None, ia.ip,
     )
     return {"installed_app_id": ia.id, "operation_id": op.id}
 
@@ -305,6 +352,13 @@ def _run_delete(installed_app_id, operation_id, user_id, server_id, vmid, node):
                 poc_teardown(db, server_id, vmid, node, on_step)
             except Exception as e:
                 logger.warning(f"[appstore-engine] teardown vmid={vmid}: {e}")
+            # Освобождаем IP в IPAM (no-op, если приложение ставилось по DHCP).
+            try:
+                IPAMService(db).release_ip_by_vmid(
+                    server_id, vmid, released_by="appstore",
+                    reason=f"App Store: удаление приложения #{installed_app_id}")
+            except Exception as e:
+                logger.warning(f"[appstore-engine] IPAM release vmid={vmid}: {e}")
 
         # финальное событие ДО удаления записи (каскад удалит app_operations)
         _finish_op(operation_id, user_id, "completed")

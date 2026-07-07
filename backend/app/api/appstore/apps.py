@@ -39,6 +39,10 @@ class InstallRequest(BaseModel):
     storage: str = "local-lvm"
     bridge: str = "vmbr0"
     ostemplate: Optional[str] = None  # переопределение золотого шаблона
+    # IPAM (опционально): если задан network — IP выделяется из пула IPAM,
+    # иначе контейнер получает адрес по DHCP.
+    ipam_network_id: Optional[int] = None
+    ipam_pool_id: Optional[int] = None
 
 
 def _can_admin(user: User) -> bool:
@@ -67,6 +71,7 @@ def install_app(
             server_id=req.server_id, node=req.node, cores=req.cores,
             memory=req.memory, disk=req.disk, storage=req.storage,
             bridge=req.bridge, ostemplate=req.ostemplate,
+            ipam_network_id=req.ipam_network_id, ipam_pool_id=req.ipam_pool_id,
         )
     except engine.EngineError as e:
         raise HTTPException(status_code=400, detail=str(e))

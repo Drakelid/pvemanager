@@ -64,6 +64,11 @@ class InstallSpec:
     features: str = "nesting=1,keyctl=1"  # обязательно для Docker в unprivileged LXC
     health_timeout: int = 300             # сек
     ip_timeout: int = 60                  # сек ожидания IP после старта
+    # IPAM: статическая конфигурация сети. Если ip_config задан — используется
+    # вместо ip=dhcp при создании net0; static_ip — заранее известный адрес
+    # (тогда не ждём выдачи по DHCP).
+    ip_config: Optional[str] = None       # напр. "ip=10.0.0.5/24,gw=10.0.0.1"
+    static_ip: Optional[str] = None       # напр. "10.0.0.5"
 
 
 @dataclass
@@ -179,7 +184,8 @@ def poc_install(db: Session, spec: InstallSpec, on_step: StepCb = _noop) -> Inst
         on_step(f"Контейнер VMID {vmid} уже существует — повтор без пересоздания", 40)
     else:
         on_step(f"Создание LXC VMID {vmid} на ноде {node}...", 20)
-        net0 = f"name=eth0,bridge={spec.bridge},ip=dhcp,firewall=1"
+        ip_cfg = spec.ip_config or "ip=dhcp"
+        net0 = f"name=eth0,bridge={spec.bridge},{ip_cfg},firewall=1"
         upid = client.create_lxc_container(
             node=node,
             vmid=vmid,
@@ -211,7 +217,9 @@ def poc_install(db: Session, spec: InstallSpec, on_step: StepCb = _noop) -> Inst
         raise PocError("SSH к ноде не установлен (нужен root-доступ к ноде для pct exec/push)")
     try:
         on_step("Ожидание IP-адреса...", 55)
-        ip = _wait_ip(ssh, vmid, spec.ip_timeout)
+        # Статический IP из IPAM известен заранее — подтверждаем через контейнер,
+        # но при таймауте всё равно используем выделенный адрес.
+        ip = _wait_ip(ssh, vmid, spec.ip_timeout) or spec.static_ip
         if not ip:
             raise PocError(f"Контейнер не получил IP за {spec.ip_timeout}с")
 

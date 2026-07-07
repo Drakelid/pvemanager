@@ -14,6 +14,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select';
 import { useServers } from '@/hooks/use-nodes';
+import { useIPAMNetworks, useIPAMPools } from '@/hooks/use-ipam';
 import { useInstallApp, useInstalledApp, useOperationProgress } from '@/hooks/use-appstore';
 import type { AppOperation, CatalogApp } from '@/types/appstore';
 
@@ -41,6 +42,11 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
   const [disk, setDisk] = useState(8);
   const [storage, setStorage] = useState('local-lvm');
   const [bridge, setBridge] = useState('vmbr0');
+  const [ipamNetworkId, setIpamNetworkId] = useState<string>('');
+  const [ipamPoolId, setIpamPoolId] = useState<string>('');
+
+  const { data: ipamNetworks = [] } = useIPAMNetworks();
+  const { data: ipamPools = [] } = useIPAMPools(ipamNetworkId ? Number(ipamNetworkId) : undefined);
 
   const [phase, setPhase] = useState<Phase>('form');
   const [installedAppId, setInstalledAppId] = useState<number | null>(null);
@@ -67,6 +73,7 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
     setName(app.app_id); setServerId(''); setNode(''); setAnswers({});
     setAdvanced(false); setCores(2); setMemory(2048); setDisk(8);
     setStorage('local-lvm'); setBridge('vmbr0');
+    setIpamNetworkId(''); setIpamPoolId('');
   };
 
   const handleClose = (o: boolean) => {
@@ -80,6 +87,8 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
       {
         app_id: app.app_id, name, server_id: Number(serverId), node: node || undefined,
         form_answers: answers, cores, memory, disk, storage, bridge,
+        ipam_network_id: ipamNetworkId ? Number(ipamNetworkId) : undefined,
+        ipam_pool_id: ipamPoolId ? Number(ipamPoolId) : undefined,
       },
       {
         onSuccess: (r) => {
@@ -191,6 +200,46 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
                     <Label>{t('appstore.bridge')}</Label>
                     <Input value={bridge} onChange={(e) => setBridge(e.target.value)} />
                   </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label>{t('appstore.ipam_network')}</Label>
+                    <Select
+                      value={ipamNetworkId || 'dhcp'}
+                      onValueChange={(v) => {
+                        const nv = !v || v === 'dhcp' ? '' : v;
+                        setIpamNetworkId(nv);
+                        setIpamPoolId('');
+                      }}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="dhcp">{t('appstore.ipam_dhcp')}</SelectItem>
+                        {ipamNetworks.map((n) => (
+                          <SelectItem key={n.id} value={String(n.id)}>
+                            {n.name} ({n.network})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {ipamNetworkId && ipamPools.length > 0 && (
+                    <div className="col-span-2 space-y-1.5">
+                      <Label>{t('appstore.ipam_pool')}</Label>
+                      <Select
+                        value={ipamPoolId || 'auto'}
+                        onValueChange={(v) => setIpamPoolId(!v || v === 'auto' ? '' : v)}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">{t('appstore.ipam_pool_auto')}</SelectItem>
+                          {ipamPools.map((p) => (
+                            <SelectItem key={p.id} value={String(p.id)}>
+                              {p.name} ({p.range_start}–{p.range_end})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

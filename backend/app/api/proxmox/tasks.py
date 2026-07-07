@@ -10,7 +10,7 @@ import httpx
 import websockets
 
 from ...db import get_db
-from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive, ProxmoxTask, DeployTask
+from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive, ProxmoxTask, DeployTask, AppOperation, InstalledApp
 from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
 from ...proxmox import ProxmoxClient, get_proxmox_resources
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
@@ -212,19 +212,41 @@ def get_all_tasks(
     bulk_q = db.query(TaskQueue).filter(TaskQueue.user_id == current_user.id)
     proxmox_q = db.query(ProxmoxTask).filter(ProxmoxTask.user_id == current_user.id)
     deploy_q = db.query(DeployTask).filter(DeployTask.user_id == current_user.id)
+    appstore_q = db.query(AppOperation).filter(AppOperation.user_id == current_user.id)
 
     if status_filter:
         # Normalise statuses: proxmox uses running/completed/failed; bulk uses the same + pending/cancelled
         bulk_q = bulk_q.filter(TaskQueue.status == status_filter)
         proxmox_q = proxmox_q.filter(ProxmoxTask.status == status_filter)
         deploy_q = deploy_q.filter(DeployTask.status == status_filter)
+        appstore_q = appstore_q.filter(AppOperation.status == status_filter)
 
     bulk_tasks = bulk_q.order_by(TaskQueue.created_at.desc()).limit(limit).all()
     proxmox_tasks = proxmox_q.order_by(ProxmoxTask.created_at.desc()).limit(limit).all()
     deploy_tasks = deploy_q.order_by(DeployTask.created_at.desc()).limit(limit).all()
+    appstore_ops = appstore_q.order_by(AppOperation.started_at.desc()).limit(limit).all()
 
-    # Resolve server_id -> name once for enrichment (proxmox/deploy tasks carry server_id).
-    server_ids = {t.server_id for t in proxmox_tasks if t.server_id} | {t.server_id for t in deploy_tasks if t.server_id}
+    # App Store operations carry only installed_app_id; resolve app name/node/server.
+    ia_ids = {o.installed_app_id for o in appstore_ops if o.installed_app_id}
+    ia_map = {}
+    if ia_ids:
+        for ia in db.query(InstalledApp).filter(InstalledApp.id.in_(ia_ids)).all():
+            ia_map[ia.id] = ia
+    appstore_tasks = [
+        o.to_task_dict(
+            app_name=(ia_map.get(o.installed_app_id).name if ia_map.get(o.installed_app_id) else None),
+            node=(ia_map.get(o.installed_app_id).node if ia_map.get(o.installed_app_id) else None),
+            server_id=(ia_map.get(o.installed_app_id).server_id if ia_map.get(o.installed_app_id) else None),
+        )
+        for o in appstore_ops
+    ]
+
+    # Resolve server_id -> name once for enrichment (proxmox/deploy/appstore tasks carry server_id).
+    server_ids = (
+        {t.server_id for t in proxmox_tasks if t.server_id}
+        | {t.server_id for t in deploy_tasks if t.server_id}
+        | {t.get("server_id") for t in appstore_tasks if t.get("server_id")}
+    )
     server_names = {}
     if server_ids:
         for sid, sname in db.query(ProxmoxServer.id, ProxmoxServer.name).filter(ProxmoxServer.id.in_(server_ids)).all():
@@ -244,7 +266,8 @@ def get_all_tasks(
     all_tasks = sorted(
         [_enrich(t.to_dict()) for t in bulk_tasks]
         + [_enrich(t.to_dict()) for t in proxmox_tasks]
-        + [_enrich(t.to_dict()) for t in deploy_tasks],
+        + [_enrich(t.to_dict()) for t in deploy_tasks]
+        + [_enrich(t) for t in appstore_tasks],
         key=lambda t: t.get("created_at") or "",
         reverse=True,
     )[:limit]
@@ -273,7 +296,12 @@ def get_active_count(
         DeployTask.status.in_(["pending", "running"]),
     ).scalar() or 0
 
-    return {"count": bulk_count + proxmox_count + deploy_count}
+    appstore_count = db.query(func.count(AppOperation.id)).filter(
+        AppOperation.user_id == current_user.id,
+        AppOperation.status == "running",
+    ).scalar() or 0
+
+    return {"count": bulk_count + proxmox_count + deploy_count + appstore_count}
 
 
 # ─── Proxmox UPID task log from DB ──────────────────────────────────────────
@@ -324,6 +352,11 @@ def clear_completed_tasks(
         DeployTask.user_id == current_user.id,
         DeployTask.status.in_(done_statuses),
     ).delete(synchronize_session=False)
+    # App Store: чистим только историю операций (installed_apps не трогаем).
+    appstore_deleted = db.query(AppOperation).filter(
+        AppOperation.user_id == current_user.id,
+        AppOperation.status.in_(done_statuses),
+    ).delete(synchronize_session=False)
     db.commit()
-    return {"deleted": bulk_deleted + proxmox_deleted + deploy_deleted}
+    return {"deleted": bulk_deleted + proxmox_deleted + deploy_deleted + appstore_deleted}
 

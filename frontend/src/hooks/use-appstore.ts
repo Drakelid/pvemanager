@@ -92,6 +92,8 @@ export interface InstallArgs {
   disk: number;
   storage: string;
   bridge: string;
+  ipam_network_id?: number;
+  ipam_pool_id?: number;
 }
 
 export function useInstallApp() {

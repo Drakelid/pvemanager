@@ -152,6 +152,18 @@ class InstalledApp(Base):
         return f"<InstalledApp(id={self.id}, name='{self.name}', vmid={self.vmid}, status='{self.status}')>"
 
 
+# Человекочитаемые названия операций для общего списка «Задачи».
+APP_OPERATION_LABELS = {
+    "install": "Установка приложения",
+    "update": "Обновление приложения",
+    "rollback": "Откат приложения",
+    "delete": "Удаление приложения",
+    "start": "Запуск приложения",
+    "stop": "Остановка приложения",
+    "restart": "Перезапуск приложения",
+}
+
+
 class AppOperation(Base):
     """Журнал операции над приложением (install/update/rollback/delete/...) — ТЗ 8."""
     __tablename__ = "app_operations"
@@ -180,6 +192,36 @@ class AppOperation(Base):
             "user_id": self.user_id,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+    def to_task_dict(self, *, app_name: Optional[str] = None,
+                     node: Optional[str] = None,
+                     server_id: Optional[int] = None) -> dict:
+        """Представление операции для общего списка «Задачи» (/api/all-tasks).
+
+        Поля приведены к общему виду с TaskQueue/ProxmoxTask/DeployTask:
+        description, step/current_step, error_message, created_at, progress.
+        """
+        label = APP_OPERATION_LABELS.get(self.type, self.type)
+        steps = self.steps_log or []
+        last_step = steps[-1].get("step") if steps else None
+        return {
+            "id": self.id,
+            "kind": "appstore",
+            "type": self.type,
+            "description": f"{label}: {app_name}" if app_name else label,
+            "status": self.status,
+            "progress": self.progress,
+            "step": last_step,
+            "current_step": last_step,
+            "error_message": self.error_text,
+            "installed_app_id": self.installed_app_id,
+            "user_id": self.user_id,
+            "node": node,
+            "server_id": server_id,
+            "created_at": self.started_at.isoformat() if self.started_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.finished_at.isoformat() if self.finished_at else None,
         }
 
     def __repr__(self):
