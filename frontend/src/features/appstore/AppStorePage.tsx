@@ -78,7 +78,7 @@ export default function AppStorePage() {
           <SelectContent>
             <SelectItem value="">{t('appstore.all_categories')}</SelectItem>
             {(meta?.categories ?? []).map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
+              <SelectItem key={c} value={c}>{t(`appstore.categories.${c}`, c)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -125,7 +125,7 @@ export default function AppStorePage() {
               </div>
               <div className="mt-auto flex flex-wrap items-center gap-1">
                 {(app.categories ?? []).slice(0, 2).map((c) => (
-                  <Badge key={c} variant="outline" className="text-2xs">{c}</Badge>
+                  <Badge key={c} variant="outline" className="text-2xs">{t(`appstore.categories.${c}`, c)}</Badge>
                 ))}
                 {!app.available && (
                   <Badge variant="destructive" className="text-2xs">{t('appstore.unavailable')}</Badge>

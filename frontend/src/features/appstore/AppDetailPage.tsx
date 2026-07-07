@@ -48,7 +48,7 @@ export default function AppDetailPage() {
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {app.version && <span>{t('appstore.version')}: {app.version}</span>}
             {app.author && <span>{t('appstore.by')} {app.author}</span>}
-            {(app.categories ?? []).map((c) => <Badge key={c} variant="outline" className="text-2xs">{c}</Badge>)}
+            {(app.categories ?? []).map((c) => <Badge key={c} variant="outline" className="text-2xs">{t(`appstore.categories.${c}`, c)}</Badge>)}
           </div>
         </div>
         <Button onClick={() => setWizardOpen(true)} disabled={!app.available}>
