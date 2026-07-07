@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useCatalogApp } from '@/hooks/use-appstore';
+import { Markdown } from '@/components/shared/Markdown';
 import InstallWizard from './InstallWizard';
 
 export default function AppDetailPage() {
@@ -82,7 +83,7 @@ export default function AppDetailPage() {
 
       {app.description_md && (
         <Card className="p-4">
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{app.description_md}</div>
+          <Markdown content={app.description_md} />
         </Card>
       )}
 

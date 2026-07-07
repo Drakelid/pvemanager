@@ -16,7 +16,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ...auth import PermissionChecker
@@ -48,17 +48,21 @@ def list_catalog(
             CatalogApp.short_desc.ilike(like),
             CatalogApp.app_id.ilike(like),
         ))
-    if category:
-        # categories — JSONB-массив строк; оператор ? (jsonb_exists) проверяет наличие элемента
-        query = query.filter(func.jsonb_exists(CatalogApp.categories, category))
 
-    total = query.count()
-    rows = query.order_by(CatalogApp.name.asc()).offset(offset).limit(limit).all()
+    rows = query.order_by(CatalogApp.name.asc()).all()
+
+    # Фильтр по категории — в Python: categories хранится как JSON-массив строк,
+    # это надёжнее JSONB-операторов на generic JSON-колонке (независимо от диалекта).
+    if category:
+        rows = [r for r in rows if category in (r.categories or [])]
+
+    total = len(rows)
+    page = rows[offset:offset + limit]
     return {
         "total": total,
         "limit": limit,
         "offset": offset,
-        "items": [a.to_dict(light=True) for a in rows],
+        "items": [a.to_dict(light=True) for a in page],
     }
 
 

@@ -88,7 +88,14 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
           setPhase('progress');
           toast.success(t('appstore.install_started'));
         },
-        onError: (e) => toast.error((e as Error).message || t('appstore.install_failed')),
+        onError: (e) => {
+          const msg = (e as Error).message || '';
+          toast.error(
+            msg.includes('APPSTORE_GOLDEN_TEMPLATE')
+              ? t('appstore.golden_missing')
+              : (msg || t('appstore.install_failed')),
+          );
+        },
       },
     );
   };

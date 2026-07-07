@@ -70,6 +70,7 @@
     "update_started": "Update started",
     "rollback_started": "Rollback started",
     "powered_by": "Powered by Runtipi appstore",
+    "golden_missing": "Golden LXC template is not configured. Set the APPSTORE_GOLDEN_TEMPLATE variable (see docs/golden-template.md).",
     "install_title": "Install {{name}}",
     "step_advanced": "Advanced (LXC resources)",
     "server": "Server",

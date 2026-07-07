@@ -98,7 +98,7 @@ export default function AppStorePage() {
           <p>{t('appstore.no_apps')}</p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((app) => (
             <Card
               key={app.app_id}
@@ -120,7 +120,7 @@ export default function AppStorePage() {
                       <Badge variant="secondary" className="shrink-0">{t('appstore.installed_badge')}</Badge>
                     )}
                   </div>
-                  <p className="line-clamp-2 text-xs text-muted-foreground">{app.short_desc}</p>
+                  <p className="line-clamp-3 text-xs text-muted-foreground">{app.short_desc}</p>
                 </div>
               </div>
               <div className="mt-auto flex flex-wrap items-center gap-1">

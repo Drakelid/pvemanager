@@ -70,6 +70,7 @@
     "update_started": "Обновление запущено",
     "rollback_started": "Откат запущен",
     "powered_by": "Powered by Runtipi appstore",
+    "golden_missing": "Не настроен золотой LXC-шаблон. Задайте переменную APPSTORE_GOLDEN_TEMPLATE (см. docs/golden-template.md).",
     "install_title": "Установка {{name}}",
     "step_advanced": "Дополнительно (ресурсы LXC)",
     "server": "Сервер",
