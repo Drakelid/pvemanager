@@ -30,7 +30,20 @@ export function Markdown({ content, className = '' }: { content: string; classNa
           h4: (p) => <h4 className="mt-3 mb-1.5 text-sm font-medium" {...clean(p)} />,
           p: (p) => <p className="my-2" {...clean(p)} />,
           a: (p) => <a target="_blank" rel="noreferrer" className="text-primary hover:underline" {...clean(p)} />,
-          img: (p) => <img loading="lazy" className="my-2 max-w-full rounded-md border" {...clean(p)} />,
+          // Скриншоты из сторонних README часто лежат на CDN с hotlink-защитой
+          // (cloudinary и т.п.): по Referer они обрывают запрос (NS_BINDING_ABORTED)
+          // либо браузер режет ответ (OpaqueResponseBlocking). Снимаем реферер и
+          // мягко прячем не загрузившиеся картинки, чтобы не было «поломанных» иконок.
+          img: (p) => (
+            <img
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              decoding="async"
+              className="my-2 max-w-full rounded-md border"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              {...clean(p)}
+            />
+          ),
           ul: (p) => <ul className="my-2 list-disc space-y-1 pl-5" {...clean(p)} />,
           ol: (p) => <ol className="my-2 list-decimal space-y-1 pl-5" {...clean(p)} />,
           li: (p) => <li className="marker:text-muted-foreground" {...clean(p)} />,
