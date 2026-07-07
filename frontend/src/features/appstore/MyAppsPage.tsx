@@ -16,11 +16,13 @@ import {
   useInstalledApps, useAppstoreRealtime, useRetryApp, useDeleteApp,
   useLifecycleAction, useReconcile, useAppLogs, useUpdateApp, useRollbackApp,
 } from '@/hooks/use-appstore';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 import type { InstalledApp } from '@/types/appstore';
 
 export default function MyAppsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const confirm = useConfirm();
   useAppstoreRealtime();
   const { data: apps = [], isLoading } = useInstalledApps();
   const retry = useRetryApp();
@@ -37,8 +39,12 @@ export default function MyAppsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleDelete = (a: InstalledApp) => {
-    if (!window.confirm(t('appstore.delete_confirm', { name: a.name }))) return;
+  const handleDelete = async (a: InstalledApp) => {
+    if (!(await confirm(t('appstore.delete_confirm', { name: a.name }), {
+      title: t('appstore.delete'),
+      confirmLabel: t('appstore.delete'),
+      variant: 'destructive',
+    }))) return;
     del.mutate(a.id, {
       onSuccess: () => toast.success(t('appstore.deleted')),
       onError: (e) => toast.error((e as Error).message),
@@ -58,16 +64,22 @@ export default function MyAppsPage() {
     });
   };
 
-  const handleUpdate = (a: InstalledApp) => {
-    if (!window.confirm(t('appstore.update_confirm', { name: a.name }))) return;
+  const handleUpdate = async (a: InstalledApp) => {
+    if (!(await confirm(t('appstore.update_confirm', { name: a.name }), {
+      title: t('appstore.update'),
+      confirmLabel: t('appstore.update'),
+    }))) return;
     update.mutate(a.id, {
       onSuccess: () => toast.success(t('appstore.update_started')),
       onError: (e) => toast.error((e as Error).message),
     });
   };
 
-  const handleRollback = (a: InstalledApp) => {
-    if (!window.confirm(t('appstore.rollback_confirm', { name: a.name }))) return;
+  const handleRollback = async (a: InstalledApp) => {
+    if (!(await confirm(t('appstore.rollback_confirm', { name: a.name }), {
+      title: t('appstore.rollback'),
+      confirmLabel: t('appstore.rollback'),
+    }))) return;
     rollback.mutate(a.id, {
       onSuccess: () => toast.success(t('appstore.rollback_started')),
       onError: (e) => toast.error((e as Error).message),
