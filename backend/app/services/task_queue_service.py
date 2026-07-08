@@ -40,7 +40,7 @@ class TaskQueueService:
     """Service for managing and processing bulk operation tasks"""
     
     # Valid task types
-    TASK_TYPES = ['bulk_start', 'bulk_stop', 'bulk_restart', 'bulk_delete', 'bulk_shutdown']
+    TASK_TYPES = ['bulk_start', 'bulk_stop', 'bulk_restart', 'bulk_delete', 'bulk_shutdown', 'bulk_migrate']
     
     @staticmethod
     def create_task(
@@ -164,12 +164,14 @@ class TaskQueueProcessor:
             return None
     
     def _execute_vm_action(
-        self, 
-        client: ProxmoxClient, 
-        action: str, 
-        vmid: int, 
-        vm_type: str, 
-        node: str
+        self,
+        client: ProxmoxClient,
+        action: str,
+        vmid: int,
+        vm_type: str,
+        node: str,
+        target_node: Optional[str] = None,
+        online: bool = False,
     ) -> tuple[bool, str]:
         """Execute action on VM/container"""
         try:
@@ -185,6 +187,10 @@ class TaskQueueProcessor:
                     client.stop_container(node, vmid)
                 elif action == 'delete':
                     client.delete_container(node, vmid)
+                elif action == 'migrate':
+                    if not target_node:
+                        return False, "target_node is required"
+                    client.migrate_container(node, vmid, target_node, online=online)
                 else:
                     return False, f"Unknown action: {action}"
             else:  # qemu
@@ -199,9 +205,13 @@ class TaskQueueProcessor:
                     client.stop_vm(node, vmid)
                 elif action == 'delete':
                     client.delete_vm(node, vmid)
+                elif action == 'migrate':
+                    if not target_node:
+                        return False, "target_node is required"
+                    client.migrate_vm(node, vmid, target_node, online=online)
                 else:
                     return False, f"Unknown action: {action}"
-            
+
             return True, "OK"
         except Exception as e:
             return False, str(e)
@@ -229,6 +239,7 @@ class TaskQueueProcessor:
                 'bulk_restart': 'restart',
                 'bulk_shutdown': 'shutdown',
                 'bulk_delete': 'delete',
+                'bulk_migrate': 'migrate',
             }
             action = action_map.get(task.task_type)
             
@@ -248,7 +259,9 @@ class TaskQueueProcessor:
                 vm_type = item.get('vm_type', 'qemu')
                 node = item.get('node', '')
                 name = item.get('name', f'{vm_type.upper()}-{vmid}')
-                
+                target_node = item.get('target_node')
+                online = bool(item.get('online'))
+
                 client = self._get_proxmox_client(db, server_id)
                 if not client:
                     results.append({
@@ -260,7 +273,8 @@ class TaskQueueProcessor:
                     })
                     task.failed_items += 1
                 else:
-                    success, message = self._execute_vm_action(client, action, vmid, vm_type, node)
+                    success, message = self._execute_vm_action(
+                        client, action, vmid, vm_type, node, target_node, online)
                     results.append({
                         'server_id': server_id,
                         'vmid': vmid,

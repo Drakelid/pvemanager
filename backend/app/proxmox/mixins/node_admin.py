@@ -253,3 +253,62 @@ class NodeAdminMixin:
         except Exception as e:
             logger.error(f"Error adding standard repo {handle} on {node}: {e}")
             return {"success": False, "error": str(e)}
+
+    # ---------- TLS certificates ----------
+
+    def get_node_certificates(self, node: str) -> List[Dict]:
+        """
+        Информация о TLS-сертификатах ноды.
+        GET /nodes/{node}/certificates/info →
+        [{filename, fingerprint, subject, issuer, notbefore, notafter, san,
+          pem, public-key-type, public-key-bits}].
+        """
+        if not self.proxmox:
+            return []
+        try:
+            return list(self.proxmox.nodes(node).certificates.info.get() or [])
+        except Exception as e:
+            logger.error(f"Error getting certificates for {node}: {e}")
+            return []
+
+    def upload_node_certificate(self, node: str, certificates: str, key: str = None,
+                                force: bool = True, restart: bool = True) -> Dict:
+        """
+        Загрузить/заменить пользовательский сертификат pveproxy (PEM).
+        POST /nodes/{node}/certificates/custom.
+
+        Args:
+            certificates: PEM-цепочка (сертификат + промежуточные)
+            key: приватный ключ PEM (опционально, если уже загружен)
+            force: перезаписать существующий пользовательский сертификат
+            restart: перезапустить pveproxy для применения
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+        params = {
+            "certificates": certificates,
+            "force": 1 if force else 0,
+            "restart": 1 if restart else 0,
+        }
+        if key:
+            params["key"] = key
+        try:
+            self.proxmox.nodes(node).certificates.custom.post(**params)
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Error uploading certificate on {node}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def delete_node_certificate(self, node: str, restart: bool = True) -> Dict:
+        """
+        Удалить пользовательский сертификат (вернуться к самоподписанному).
+        DELETE /nodes/{node}/certificates/custom.
+        """
+        if not self.proxmox:
+            return {"success": False, "error": "Not connected"}
+        try:
+            self.proxmox.nodes(node).certificates.custom.delete(restart=1 if restart else 0)
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Error deleting certificate on {node}: {e}")
+            return {"success": False, "error": str(e)}

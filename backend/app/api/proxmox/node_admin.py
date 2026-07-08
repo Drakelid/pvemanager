@@ -346,6 +346,69 @@ async def set_apt_repository(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== TLS certificates ====================
+
+@router.get("/api/servers/{server_id}/nodes/{node}/certificates")
+async def node_certificates(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:view")),
+):
+    client = _resolve_client(db, server_id)
+    try:
+        return JSONResponse(content={"certificates": await _run_in_executor(
+            lambda: client.get_node_certificates(node))})
+    except Exception as e:
+        logger.error(f"Error getting certificates on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/servers/{server_id}/nodes/{node}/certificates")
+async def upload_node_certificate(
+    server_id: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:manage")),
+):
+    """Загрузить пользовательский сертификат pveproxy (PEM cert + key)."""
+    client = _resolve_client(db, server_id)
+    data = await request.json()
+    certificates = data.get("certificates")
+    if not certificates:
+        raise HTTPException(status_code=400, detail="certificates (PEM) is required")
+    try:
+        return _ok_or_400(await _run_in_executor(lambda: client.upload_node_certificate(
+            node, certificates, data.get("key"),
+            bool(data.get("force", True)), bool(data.get("restart", True)))))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading certificate on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/servers/{server_id}/nodes/{node}/certificates")
+async def delete_node_certificate(
+    server_id: int,
+    node: str,
+    restart: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:manage")),
+):
+    """Удалить пользовательский сертификат (вернуть самоподписанный)."""
+    client = _resolve_client(db, server_id)
+    try:
+        return _ok_or_400(await _run_in_executor(
+            lambda: client.delete_node_certificate(node, restart)))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting certificate on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.put("/api/servers/{server_id}/nodes/{node}/apt/repositories")
 async def add_standard_repository(
     server_id: int,

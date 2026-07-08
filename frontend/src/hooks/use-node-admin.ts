@@ -75,6 +75,19 @@ export interface NodeTime {
   localtime?: number;
 }
 
+export interface NodeCertificate {
+  filename?: string;
+  fingerprint?: string;
+  subject?: string;
+  issuer?: string;
+  notbefore?: number;
+  notafter?: number;
+  san?: string[];
+  pem?: string;
+  'public-key-type'?: string;
+  'public-key-bits'?: number;
+}
+
 export const nodeAdminKeys = {
   services: (s: number, n: string) => ['node-services', s, n] as const,
   updates: (s: number, n: string) => ['apt-updates', s, n] as const,
@@ -85,6 +98,7 @@ export const nodeAdminKeys = {
   dns: (s: number, n: string) => ['node-dns', s, n] as const,
   hosts: (s: number, n: string) => ['node-hosts', s, n] as const,
   time: (s: number, n: string) => ['node-time', s, n] as const,
+  certificates: (s: number, n: string) => ['node-certificates', s, n] as const,
 };
 
 const base = (s: number, n: string) => `/proxmox/api/servers/${s}/nodes/${n}`;
@@ -223,5 +237,32 @@ export function useSetAptRepository(serverId: number, node: string) {
     mutationFn: (data: { path: string; index: number; enabled: boolean }) =>
       apiClient.post(`${base(serverId, node)}/apt/repositories`, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: nodeAdminKeys.repos(serverId, node) }),
+  });
+}
+
+// ---------- TLS certificates ----------
+export function useNodeCertificates(serverId: number, node: string, enabled = true) {
+  return useQuery({
+    queryKey: nodeAdminKeys.certificates(serverId, node),
+    queryFn: () => apiClient.get<{ certificates: NodeCertificate[] }>(`${base(serverId, node)}/certificates`),
+    enabled: serverId > 0 && !!node && enabled,
+  });
+}
+
+export function useUploadNodeCertificate(serverId: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { certificates: string; key?: string; force?: boolean; restart?: boolean }) =>
+      apiClient.post(`${base(serverId, node)}/certificates`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeAdminKeys.certificates(serverId, node) }),
+  });
+}
+
+export function useDeleteNodeCertificate(serverId: number, node: string) {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, boolean>({
+    mutationFn: (restart) =>
+      apiClient.delete(`${base(serverId, node)}/certificates?restart=${restart ? 'true' : 'false'}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: nodeAdminKeys.certificates(serverId, node) }),
   });
 }

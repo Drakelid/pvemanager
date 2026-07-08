@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import NodeSyslog from './NodeSyslog';
 import NodeTasks from './NodeTasks';
 import NodeSystemConfig from './NodeSystemConfig';
+import NodeCertificates from './NodeCertificates';
 
 function stateVariant(s?: string): 'default' | 'secondary' | 'destructive' {
   if (!s) return 'secondary';
@@ -90,6 +91,7 @@ export default function NodeAdminManager({ serverId, nodeNames }: { serverId: nu
               <TabsTrigger value="services">{t('nodeadm.services', 'Сервисы')} ({services.length})</TabsTrigger>
               <TabsTrigger value="updates">{t('nodeadm.updates', 'Обновления')}</TabsTrigger>
               <TabsTrigger value="repos">{t('nodeadm.repos', 'Репозитории')}</TabsTrigger>
+              <TabsTrigger value="certs">{t('nodeadm.certs', 'Сертификаты')}</TabsTrigger>
               <TabsTrigger value="syslog">{t('nodeadm.syslog', 'Журнал')}</TabsTrigger>
               <TabsTrigger value="tasks">{t('nodeadm.tasks', 'Задачи')}</TabsTrigger>
               <TabsTrigger value="system">{t('nodeadm.system', 'Система')}</TabsTrigger>
@@ -193,6 +195,11 @@ export default function NodeAdminManager({ serverId, nodeNames }: { serverId: nu
                   </div>
                 </div>
               ))}
+            </TabsContent>
+
+            {/* TLS certificates */}
+            <TabsContent value="certs" className="mt-4">
+              {tab === 'certs' && <NodeCertificates serverId={serverId} node={node} />}
             </TabsContent>
 
             {/* Syslog */}

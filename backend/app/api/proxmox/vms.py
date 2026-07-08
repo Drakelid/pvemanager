@@ -83,10 +83,12 @@ class BulkOperationItem(BaseModel):
     vm_type: str  # 'qemu' or 'lxc'
     name: str
     node: str
+    target_node: Optional[str] = None  # для action=migrate
+    online: Optional[bool] = None       # live-миграция запущенной VM
 
 
 class BulkOperationRequest(BaseModel):
-    action: str  # start, stop, restart, shutdown, delete
+    action: str  # start, stop, restart, shutdown, delete, migrate
     items: TypingList[BulkOperationItem]
 
 
@@ -3598,19 +3600,26 @@ def create_bulk_operation(
         'restart': 'bulk_restart',
         'shutdown': 'bulk_shutdown',
         'delete': 'bulk_delete',
+        'migrate': 'bulk_migrate',
     }
-    
+
     task_type = action_to_task_type.get(request.action)
     if not task_type:
         raise HTTPException(status_code=400, detail=f"Invalid action: {request.action}")
-    
+
     if not request.items:
         raise HTTPException(status_code=400, detail="No items selected")
-    
+
     # For delete action, require higher permission
     if request.action == 'delete':
         if not check_permission(current_user, "vm:delete"):
             raise HTTPException(status_code=403, detail="Delete permission required")
+
+    # For migrate, каждый элемент обязан нести целевую ноду
+    if request.action == 'migrate':
+        missing = [i.vmid for i in request.items if not i.target_node]
+        if missing:
+            raise HTTPException(status_code=400, detail="target_node is required for migrate")
     
     # Convert to list of dicts
     items = [item.model_dump() for item in request.items]

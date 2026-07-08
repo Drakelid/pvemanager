@@ -41,8 +41,10 @@ import {
   ArrowUp,
   HardDrive,
   Lock,
+  ArrowRightLeft,
 } from 'lucide-react';
 import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
+import BulkMigrateDialog from './BulkMigrateDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -237,6 +239,7 @@ export default function InstancesPage() {
   const bulkOp = useBulkOperation();
   const bulkTasks = useBulkTasksStore((s) => s.tasks);
   const addBulkTask = useBulkTasksStore((s) => s.addTask);
+  const [migrateOpen, setMigrateOpen] = useState(false);
 
   // Human-readable label for an in-flight bulk action (status overlay / progress).
   const bulkActionLabel = useCallback((action: string) => {
@@ -246,6 +249,7 @@ export default function InstancesPage() {
       case 'restart': return t('instances.status_restarting', 'Перезагрузка');
       case 'shutdown': return t('instances.status_shutting_down', 'Выключение');
       case 'delete': return t('instances.status_deleting', 'Удаление');
+      case 'migrate': return t('instances.status_migrating', 'Миграция');
       default: return action;
     }
   }, [t]);
@@ -524,6 +528,58 @@ export default function InstancesPage() {
             });
           }
           toast.success(`${bulkActionLabel(action)}: ${items.length}`);
+          setRowSelection({});
+        },
+        onError: (err) => toast.error(err.message),
+      }
+    );
+  };
+
+  // Миграция возможна только внутри одного сервера/кластера.
+  const bulkServerId = useMemo(() => {
+    const ids = new Set(selectedVMs.map((vm) => vm.server_id));
+    return ids.size === 1 ? selectedVMs[0]?.server_id ?? null : null;
+  }, [selectedVMs]);
+  const bulkSourceNodes = useMemo(
+    () => Array.from(new Set(selectedVMs.map((vm) => vm.node))),
+    [selectedVMs],
+  );
+
+  const handleBulkMigrate = (targetNode: string, online: boolean) => {
+    // Пропускаем инстансы, уже находящиеся на целевой ноде.
+    const toMigrate = selectedVMs.filter((vm) => vm.node !== targetNode);
+    if (!toMigrate.length) {
+      toast.info(t('instances.nothing_to_migrate', 'Все выбранные инстансы уже на целевой ноде'));
+      setMigrateOpen(false);
+      return;
+    }
+    const items = toMigrate.map((vm) => ({
+      server_id: vm.server_id!,
+      vmid: vm.vmid,
+      vm_type: vm.type,
+      name: vm.name || String(vm.vmid),
+      node: vm.node,
+      target_node: targetNode,
+      online: online && vm.status === 'running',
+    }));
+    bulkOp.mutate(
+      { action: 'migrate', items },
+      {
+        onSuccess: (data) => {
+          if (data?.task_id) {
+            addBulkTask({
+              id: data.task_id,
+              action: 'migrate',
+              items: items.map((i) => ({ server_id: i.server_id, vmid: i.vmid, name: i.name })),
+              status: 'pending',
+              total: items.length,
+              completed: 0,
+              failed: 0,
+              results: [],
+            });
+          }
+          toast.success(`${bulkActionLabel('migrate')}: ${items.length}`);
+          setMigrateOpen(false);
           setRowSelection({});
         },
         onError: (err) => toast.error(err.message),
@@ -1028,6 +1084,14 @@ export default function InstancesPage() {
           <Button variant="outline" size="sm" onClick={() => handleBulk('stop')} disabled={bulkOp.isPending}>
             <Square className="mr-1 h-3 w-3" /> {t('common.stop', 'Остановить')}
           </Button>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => setMigrateOpen(true)}
+            disabled={bulkOp.isPending || !bulkServerId}
+            title={!bulkServerId ? t('instances.migrate_same_server', 'Выберите инстансы одного сервера') : undefined}
+          >
+            <ArrowRightLeft className="mr-1 h-3 w-3" /> {t('instances.migrate', 'Мигрировать')}
+          </Button>
           <Button variant="destructive" size="sm" onClick={() => handleBulk('delete')} disabled={bulkOp.isPending}>
             <Trash2 className="mr-1 h-3 w-3" /> {t('common.delete', 'Удалить')}
           </Button>
@@ -1035,6 +1099,18 @@ export default function InstancesPage() {
             {t('common.clear', 'Очистить')}
           </Button>
         </div>
+      )}
+
+      {bulkServerId && (
+        <BulkMigrateDialog
+          open={migrateOpen}
+          onOpenChange={setMigrateOpen}
+          serverId={bulkServerId}
+          sourceNodes={bulkSourceNodes}
+          count={selectedVMs.length}
+          onConfirm={handleBulkMigrate}
+          pending={bulkOp.isPending}
+        />
       )}
 
       {/* Bulk operation progress (tracked like instance creation) */}

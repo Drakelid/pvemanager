@@ -487,6 +487,8 @@ interface BulkItem {
   vm_type: string;
   name: string;
   node: string;
+  target_node?: string;  // для action='migrate'
+  online?: boolean;
 }
 
 interface BulkOperationResponse {
