@@ -12,6 +12,9 @@ import {
   useAptUpdates, useAptRefresh, useAptRepositories, useSetAptRepository,
 } from '@/hooks/use-node-admin';
 import { toast } from 'sonner';
+import NodeSyslog from './NodeSyslog';
+import NodeTasks from './NodeTasks';
+import NodeSystemConfig from './NodeSystemConfig';
 
 function stateVariant(s?: string): 'default' | 'secondary' | 'destructive' {
   if (!s) return 'secondary';
@@ -29,6 +32,7 @@ export default function NodeAdminManager({ serverId, nodeNames }: { serverId: nu
 
   const { data: servicesData, refetch, isFetching } = useNodeServices(serverId, node);
   const serviceAction = useServiceAction(serverId, node);
+  const [tab, setTab] = useState('services');
   const [aptOpen, setAptOpen] = useState(false);
   const [reposOpen, setReposOpen] = useState(false);
   const { data: updatesData } = useAptUpdates(serverId, node, aptOpen);
@@ -81,11 +85,14 @@ export default function NodeAdminManager({ serverId, nodeNames }: { serverId: nu
         {!node ? (
           <p className="py-8 text-center text-sm text-muted-foreground">{t('common.no_data', 'Нет данных')}</p>
         ) : (
-          <Tabs defaultValue="services" onValueChange={(v) => { setAptOpen(v === 'updates'); setReposOpen(v === 'repos'); }}>
-            <TabsList>
+          <Tabs value={tab} onValueChange={(v) => { setTab(v); setAptOpen(v === 'updates'); setReposOpen(v === 'repos'); }}>
+            <TabsList className="flex-wrap h-auto">
               <TabsTrigger value="services">{t('nodeadm.services', 'Сервисы')} ({services.length})</TabsTrigger>
               <TabsTrigger value="updates">{t('nodeadm.updates', 'Обновления')}</TabsTrigger>
               <TabsTrigger value="repos">{t('nodeadm.repos', 'Репозитории')}</TabsTrigger>
+              <TabsTrigger value="syslog">{t('nodeadm.syslog', 'Журнал')}</TabsTrigger>
+              <TabsTrigger value="tasks">{t('nodeadm.tasks', 'Задачи')}</TabsTrigger>
+              <TabsTrigger value="system">{t('nodeadm.system', 'Система')}</TabsTrigger>
             </TabsList>
 
             {/* Services */}
@@ -186,6 +193,21 @@ export default function NodeAdminManager({ serverId, nodeNames }: { serverId: nu
                   </div>
                 </div>
               ))}
+            </TabsContent>
+
+            {/* Syslog */}
+            <TabsContent value="syslog" className="mt-4">
+              {tab === 'syslog' && <NodeSyslog serverId={serverId} node={node} />}
+            </TabsContent>
+
+            {/* Task history */}
+            <TabsContent value="tasks" className="mt-4">
+              {tab === 'tasks' && <NodeTasks serverId={serverId} node={node} />}
+            </TabsContent>
+
+            {/* System config: DNS / hosts / time */}
+            <TabsContent value="system" className="mt-4">
+              {tab === 'system' && <NodeSystemConfig serverId={serverId} node={node} />}
             </TabsContent>
           </Tabs>
         )}

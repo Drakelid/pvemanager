@@ -690,6 +690,13 @@ def _create_permissions() -> PermissionRegistry:
         category="Node Administration",
         requires=["node:view"]
     ))
+    registry.register(Permission(
+        resource="node", action="power",
+        display_name="Power Control Node",
+        description="Reboot or shut down the physical node",
+        category="Node Administration",
+        requires=["node:view"]
+    ))
 
     # Resource pool permissions
     registry.register(Permission(

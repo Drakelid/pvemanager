@@ -64,10 +64,11 @@ NEW_DEFAULT_ROLES = [
             # Networking (interfaces + SDN)
             "network:view": True,
             "network:manage": True,
-            # Node administration (services, APT, upgrade)
+            # Node administration (services, APT, upgrade, power)
             "node:view": True,
             "node:manage": True,
             "node:upgrade": True,
+            "node:power": True,
             # Resource pools
             "pool:view": True,
             "pool:manage": True,
@@ -490,7 +491,7 @@ GRANULAR_BACKFILL = [
     ("server:manage", [
         "firewall:view", "firewall:manage",
         "network:view", "network:manage",
-        "node:view", "node:manage", "node:upgrade",
+        "node:view", "node:manage", "node:upgrade", "node:power",
         "storage:view", "storage:manage",
         "pool:view", "pool:manage",
     ]),

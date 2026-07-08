@@ -28,6 +28,210 @@ def _ok_or_400(result: dict):
     raise HTTPException(status_code=400, detail=result.get("error", "Operation failed"))
 
 
+# ==================== Power: reboot / shutdown ====================
+
+@router.post("/api/servers/{server_id}/nodes/{node}/status")
+async def node_power_action(
+    server_id: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:power")),
+):
+    """Управление питанием ноды: reboot | shutdown (как в UI Proxmox)."""
+    data = await request.json()
+    command = data.get("command")
+    if command not in ("reboot", "shutdown"):
+        raise HTTPException(status_code=400, detail="command must be reboot or shutdown")
+    client = _resolve_client(db, server_id)
+    try:
+        return _ok_or_400(await _run_in_executor(lambda: client.node_power_action(node, command)))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error {command} node {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Syslog ====================
+
+@router.get("/api/servers/{server_id}/nodes/{node}/syslog")
+async def node_syslog(
+    server_id: int,
+    node: str,
+    limit: int = 500,
+    start: int = 0,
+    service: str = None,
+    since: str = None,
+    until: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:view")),
+):
+    client = _resolve_client(db, server_id)
+    try:
+        return JSONResponse(content={"syslog": await _run_in_executor(
+            lambda: client.get_node_syslog(node, limit, start, service, since, until))})
+    except Exception as e:
+        logger.error(f"Error getting syslog on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Task history ====================
+
+@router.get("/api/servers/{server_id}/nodes/{node}/tasks")
+async def node_tasks(
+    server_id: int,
+    node: str,
+    limit: int = 100,
+    start: int = 0,
+    errors: bool = False,
+    typefilter: str = None,
+    userfilter: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:view")),
+):
+    client = _resolve_client(db, server_id)
+    try:
+        return JSONResponse(content={"tasks": await _run_in_executor(
+            lambda: client.get_node_tasks(node, limit, start, errors, typefilter, userfilter))})
+    except Exception as e:
+        logger.error(f"Error getting tasks on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/servers/{server_id}/nodes/{node}/tasks/{upid}/log")
+async def node_task_log(
+    server_id: int,
+    node: str,
+    upid: str,
+    limit: int = 500,
+    start: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:view")),
+):
+    client = _resolve_client(db, server_id)
+    try:
+        return JSONResponse(content={
+            "log": await _run_in_executor(lambda: client.get_node_task_log(node, upid, limit, start)),
+            "status": await _run_in_executor(lambda: client.get_node_task_status(node, upid)),
+        })
+    except Exception as e:
+        logger.error(f"Error getting task log {upid} on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== System: DNS / hosts / time ====================
+
+@router.get("/api/servers/{server_id}/nodes/{node}/dns")
+async def get_node_dns(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:view")),
+):
+    client = _resolve_client(db, server_id)
+    try:
+        return JSONResponse(content={"dns": await _run_in_executor(lambda: client.get_node_dns(node))})
+    except Exception as e:
+        logger.error(f"Error getting DNS on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/servers/{server_id}/nodes/{node}/dns")
+async def set_node_dns(
+    server_id: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:manage")),
+):
+    client = _resolve_client(db, server_id)
+    data = await request.json()
+    try:
+        return _ok_or_400(await _run_in_executor(lambda: client.set_node_dns(
+            node, data.get("search"), data.get("dns1"), data.get("dns2"), data.get("dns3"))))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting DNS on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/servers/{server_id}/nodes/{node}/hosts")
+async def get_node_hosts(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:view")),
+):
+    client = _resolve_client(db, server_id)
+    try:
+        return JSONResponse(content={"hosts": await _run_in_executor(lambda: client.get_node_hosts(node))})
+    except Exception as e:
+        logger.error(f"Error getting hosts on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/servers/{server_id}/nodes/{node}/hosts")
+async def set_node_hosts(
+    server_id: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:manage")),
+):
+    client = _resolve_client(db, server_id)
+    data = await request.json()
+    hosts_data = data.get("data")
+    if hosts_data is None:
+        raise HTTPException(status_code=400, detail="data is required")
+    try:
+        return _ok_or_400(await _run_in_executor(
+            lambda: client.set_node_hosts(node, hosts_data, data.get("digest"))))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting hosts on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/servers/{server_id}/nodes/{node}/time")
+async def get_node_time(
+    server_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:view")),
+):
+    client = _resolve_client(db, server_id)
+    try:
+        return JSONResponse(content={"time": await _run_in_executor(lambda: client.get_node_time(node))})
+    except Exception as e:
+        logger.error(f"Error getting time on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/servers/{server_id}/nodes/{node}/time")
+async def set_node_timezone(
+    server_id: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("node:manage")),
+):
+    client = _resolve_client(db, server_id)
+    data = await request.json()
+    timezone = data.get("timezone")
+    if not timezone:
+        raise HTTPException(status_code=400, detail="timezone is required")
+    try:
+        return _ok_or_400(await _run_in_executor(lambda: client.set_node_timezone(node, timezone)))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting timezone on {node}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== Services ====================
 
 @router.get("/api/servers/{server_id}/nodes/{node}/services")

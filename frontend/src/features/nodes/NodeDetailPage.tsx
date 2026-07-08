@@ -1,14 +1,71 @@
 import { useParams, useSearchParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Cpu, MemoryStick, HardDrive, Clock } from 'lucide-react';
+import { ArrowLeft, Cpu, MemoryStick, HardDrive, Clock, MoreVertical, TerminalSquare, RotateCw, Power } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useServer, useNodes, useClusterInfo } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
+import { useNodePower } from '@/hooks/use-node-admin';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
+import { useAuthStore } from '@/stores/auth-store';
 import { StatusDot } from '@/components/shared/status-dot';
 import { formatBytes, formatUptime, formatPercent } from '@/lib/format';
+
+/** Меню действий питания/консоли для одной ноды (Shell / Reboot / Shutdown). */
+function NodeActionsMenu({ serverId, node }: { serverId: number; node: string }) {
+  const { t } = useTranslation();
+  const confirm = useConfirm();
+  const power = useNodePower(serverId, node);
+  const canPower = !!useAuthStore((s) => s.user?.permissions?.['node:power']);
+
+  const doPower = async (command: 'reboot' | 'shutdown') => {
+    const ok = await confirm(
+      command === 'reboot'
+        ? t('nodes.confirm_reboot', 'Перезагрузить ноду «{{node}}»? Все ВМ и контейнеры на ней будут остановлены.', { node })
+        : t('nodes.confirm_shutdown', 'Выключить ноду «{{node}}»? Доступ к ней будет потерян до ручного включения.', { node }),
+      { title: command === 'reboot' ? t('nodes.reboot', 'Перезагрузка') : t('nodes.shutdown', 'Выключение'), variant: 'destructive' },
+    );
+    if (!ok) return;
+    power.mutate(command, {
+      onSuccess: () => toast.success(
+        command === 'reboot'
+          ? t('nodes.reboot_started', 'Перезагрузка ноды запущена')
+          : t('nodes.shutdown_started', 'Выключение ноды запущено')),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-7 w-7" />}>
+        <MoreVertical className="h-4 w-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem
+          render={<Link to={`/console/node/${serverId}/${node}?cmd=login`} target="_blank" rel="noopener noreferrer" />}>
+          <TerminalSquare className="mr-2 h-4 w-4" />{t('nodes.shell', 'Консоль (Shell)')}
+        </DropdownMenuItem>
+        {canPower && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => doPower('reboot')}>
+              <RotateCw className="mr-2 h-4 w-4" />{t('nodes.reboot', 'Перезагрузка')}
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive" onClick={() => doPower('shutdown')}>
+              <Power className="mr-2 h-4 w-4" />{t('nodes.shutdown', 'Выключение')}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 import NodeNetworks from './NodeNetworks';
 import HAResources from './HAResources';
 import SDNManager from './SDNManager';
@@ -89,8 +146,11 @@ export default function NodeDetailPage() {
                   <Card key={node.node}>
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium">{node.node}</span>
-                        <StatusDot status={node.status} />
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{node.node}</span>
+                          <StatusDot status={node.status} />
+                        </div>
+                        <NodeActionsMenu serverId={sid} node={node.node} />
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1"><Cpu className="h-3 w-3" />{formatPercent(node.cpu || 0)} CPU</div>
