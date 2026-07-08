@@ -395,20 +395,27 @@ function EjectDialog({
   const { t } = useTranslation();
   const ejectNode = useEjectNode();
   const [rootpw, setRootpw] = useState('');
+  const [panelOnly, setPanelOnly] = useState(false);
 
   const handleEject = () => {
     if (!viaServer || !node) return;
     ejectNode.mutate(
-      { serverId: viaServer.id, node_name: node.hostname, rootpw: rootpw.trim() || undefined, clear_panel_entry: true },
       {
-        onSuccess: (res) => { toast.success(res.message); setRootpw(''); onOpenChange(false); },
+        serverId: viaServer.id,
+        node_name: node.hostname,
+        rootpw: rootpw.trim() || undefined,
+        clear_panel_entry: true,
+        panel_only: panelOnly || undefined,
+      },
+      {
+        onSuccess: (res) => { toast.success(res.message); setRootpw(''); setPanelOnly(false); onOpenChange(false); },
         onError: (err) => toast.error(err.message),
       },
     );
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) setRootpw(''); onOpenChange(v); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { setRootpw(''); setPanelOnly(false); } onOpenChange(v); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>{t('cluster.eject_title', 'Eject node from cluster')}</DialogTitle></DialogHeader>
         <div className="space-y-4">
@@ -425,8 +432,18 @@ function EjectDialog({
           </p>
           <div>
             <Label>{t('cluster.rootpw_ssh', 'root password (for SSH fallback, optional)')}</Label>
-            <Input type="password" value={rootpw} onChange={(e) => setRootpw(e.target.value)} className="mt-1" />
+            <Input type="password" value={rootpw} onChange={(e) => setRootpw(e.target.value)} className="mt-1" disabled={panelOnly} />
           </div>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={panelOnly} onChange={(e) => setPanelOnly(e.target.checked)} className="mt-0.5 h-4 w-4" />
+            <span>
+              {t('cluster.eject_panel_only', 'Only detach the panel entry (do not touch Proxmox)')}
+              <span className="block text-xs text-muted-foreground">
+                {t('cluster.eject_panel_only_hint',
+                  'Use this when the node is not actually in the cluster (e.g. a previous join failed) or is unreachable for pvecm delnode.')}
+              </span>
+            </span>
+          </label>
         </div>
         <DialogFooter className="gap-2">
           <DialogClose render={<Button variant="outline" />}>{t('common.cancel', 'Cancel')}</DialogClose>

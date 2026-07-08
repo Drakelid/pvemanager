@@ -183,6 +183,8 @@
     "eject_confirm": "Eject",
     "eject_via": "via",
     "rootpw_ssh": "root password (for SSH fallback, optional)",
+    "eject_panel_only": "Only detach the panel entry (do not touch Proxmox)",
+    "eject_panel_only_hint": "Use this when the node is not actually in the cluster (e.g. a previous join failed) or is unreachable for pvecm delnode.",
     "nodes": "nodes",
     "standalone": "Standalone servers",
     "no_standalone": "No standalone servers.",

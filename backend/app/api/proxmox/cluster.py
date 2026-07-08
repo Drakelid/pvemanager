@@ -677,10 +677,14 @@ def eject_cluster_node(
         node_name (str): hostname ноды для удаления
         rootpw (str, optional): root-пароль для SSH fallback
         clear_panel_entry (bool, optional): Очистить cluster_name у панельной записи ноды (default: true)
+        panel_only (bool, optional): Не трогать Proxmox, только отвязать запись в
+            панели. Для случаев, когда нода на самом деле не в кластере (напр.
+            прошлый join не завершился) или недоступна для delnode/SSH.
     """
     node_name = body.get("node_name", "").strip()
     rootpw = body.get("rootpw")
     clear_panel_entry = body.get("clear_panel_entry", True)
+    panel_only = bool(body.get("panel_only", False))
 
     if not node_name:
         raise HTTPException(
@@ -690,6 +694,35 @@ def eject_cluster_node(
 
     # server_id — это нода, с которой выполняем команду (остающаяся в кластере)
     server = _get_server_or_404(db, server_id)
+
+    # --- Режим "только панель": не обращаемся к Proxmox, чистим запись в БД ---
+    if panel_only:
+        ejected_server = db.query(ProxmoxServer).filter(
+            ProxmoxServer.hostname == node_name,
+            ProxmoxServer.cluster_name == server.cluster_name,
+        ).first()
+        if not ejected_server:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Панельная запись ноды '{node_name}' в кластере "
+                       f"'{server.cluster_name}' не найдена."
+            )
+        ejected_server.cluster_name = None
+        db.commit()
+        logger.info(
+            f"User {current_user.username} detached panel entry '{ejected_server.name}' "
+            f"from cluster '{server.cluster_name}' (panel-only, no Proxmox op)"
+        )
+        return {
+            "success": True,
+            "ejected_node": node_name,
+            "cluster_name": server.cluster_name,
+            "method": "panel",
+            "message": (
+                f"Запись ноды '{node_name}' отвязана от кластера в панели. "
+                "Proxmox не затрагивался."
+            ),
+        }
 
     # Build client — prefer password for SSH fallback availability
     if rootpw or server.password:

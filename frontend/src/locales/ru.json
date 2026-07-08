@@ -183,6 +183,8 @@
     "eject_confirm": "Исключить",
     "eject_via": "через",
     "rootpw_ssh": "Пароль root (для SSH-fallback, опционально)",
+    "eject_panel_only": "Только отвязать запись в панели (не трогать Proxmox)",
+    "eject_panel_only_hint": "Используйте, если нода на самом деле не в кластере (напр. прошлый join не завершился) или недоступна для pvecm delnode.",
     "nodes": "нод(ы)",
     "standalone": "Standalone-серверы",
     "no_standalone": "Нет standalone-серверов.",

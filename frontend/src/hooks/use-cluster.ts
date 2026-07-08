@@ -121,7 +121,7 @@ export function useJoinCluster() {
 export function useEjectNode() {
   const invalidate = useInvalidateCluster();
   return useMutation({
-    mutationFn: ({ serverId, ...body }: { serverId: number; node_name: string; rootpw?: string; clear_panel_entry?: boolean }) =>
+    mutationFn: ({ serverId, ...body }: { serverId: number; node_name: string; rootpw?: string; clear_panel_entry?: boolean; panel_only?: boolean }) =>
       apiClient.post<{ success: boolean; ejected_node: string; message: string }>(
         `/proxmox/api/cluster/${serverId}/eject-node`,
         body,
