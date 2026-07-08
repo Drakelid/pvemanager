@@ -31,6 +31,51 @@ def _get_server_or_404(db: Session, server_id: int) -> ProxmoxServer:
     return server
 
 
+def _extract_fingerprint(join_data: dict, target_ip: str = None) -> Optional[str]:
+    """
+    Достать SHA-256 fingerprint из ответа GET /cluster/config/join.
+
+    В Proxmox API нет поля `fingerprint` на верхнем уровне — оно лежит в
+    nodelist[].pve_fp у каждой ноды. Выбираем запись целевой кластерной ноды
+    по pve_addr/ring0_addr == target_ip, с фолбэком на preferred_node и на
+    первую ноду с непустым pve_fp.
+    """
+    if not isinstance(join_data, dict):
+        return None
+
+    # Совместимость: если провайдер всё же вернул fingerprint сверху — берём его.
+    top = join_data.get("fingerprint")
+    if top:
+        return top
+
+    nodelist = join_data.get("nodelist") or []
+
+    def _fp(entry: dict) -> Optional[str]:
+        return entry.get("pve_fp") if isinstance(entry, dict) else None
+
+    # 1) По IP целевой ноды
+    if target_ip:
+        for entry in nodelist:
+            if not isinstance(entry, dict):
+                continue
+            if target_ip in (entry.get("pve_addr"), entry.get("ring0_addr")) and _fp(entry):
+                return entry["pve_fp"]
+
+    # 2) По preferred_node
+    preferred = join_data.get("preferred_node")
+    if preferred:
+        for entry in nodelist:
+            if isinstance(entry, dict) and entry.get("name") == preferred and _fp(entry):
+                return entry["pve_fp"]
+
+    # 3) Первая нода с непустым pve_fp
+    for entry in nodelist:
+        if _fp(entry):
+            return entry["pve_fp"]
+
+    return None
+
+
 def _get_password_client(server: ProxmoxServer, override_password: str = None) -> ProxmoxClient:
     """
     Build a ProxmoxClient that uses password auth (required for cluster ops).
@@ -200,7 +245,7 @@ def get_cluster_join_info(
         "server_id": server_id,
         "server_name": server.name,
         "cluster_name": totem.get("cluster_name") or server.cluster_name,
-        "fingerprint": data.get("fingerprint"),
+        "fingerprint": _extract_fingerprint(data, target_ip=server.ip_address),
         "nodelist": data.get("nodelist", []),
         "config_digest": data.get("config_digest"),
         "preferred_node_ip": server.ip_address,
@@ -525,7 +570,7 @@ async def join_cluster(
         )
 
     join_data = join_info_result.get("data", {})
-    fingerprint = join_data.get("fingerprint")
+    fingerprint = _extract_fingerprint(join_data, target_ip=cluster_server.ip_address)
     cluster_name = join_data.get("totem", {}).get("cluster_name") or cluster_server.cluster_name
 
     if not fingerprint:
