@@ -77,3 +77,6 @@ graphify-out/
 # Local-only Superpowers artifacts (specs, plans, SDD scratch) — never pushed
 docs/superpowers/
 .superpowers/
+
+# Планы разработки не коммитим в репозиторий
+docs/plans/
