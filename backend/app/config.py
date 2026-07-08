@@ -82,10 +82,12 @@ class Settings(BaseSettings):
     # отдельным провайдером; см. UmbrelCatalogProvider.
     UMBREL_APPSTORE_REPO: str = Field(default="getumbrel/umbrel-apps", env="UMBREL_APPSTORE_REPO")
     UMBREL_APPSTORE_REF: str = Field(default="master", env="UMBREL_APPSTORE_REF")
-    # Иконки Umbrel-приложений лежат не в umbrel-apps, а в отдельном репозитории
-    # галереи (<app-id>/icon.svg). Скачивается одним tarball при синхронизации.
-    UMBREL_APPSTORE_GALLERY_REPO: str = Field(
-        default="getumbrel/umbrel-apps-gallery", env="UMBREL_APPSTORE_GALLERY_REPO")
+    # Иконки Umbrel-приложений лежат не в umbrel-apps, а в галерее
+    # (<app-id>/icon.svg). Тянем их пофайлово с GitHub Pages CDN параллельно —
+    # это быстрее, чем качать тяжёлый tarball галереи (со скриншотами).
+    UMBREL_APPSTORE_GALLERY_CDN: str = Field(
+        default="https://getumbrel.github.io/umbrel-apps-gallery",
+        env="UMBREL_APPSTORE_GALLERY_CDN")
     # Активные источники каталога (через запятую): "runtipi", "umbrel" или оба.
     # По умолчанию только runtipi — Umbrel включается явно.
     APPSTORE_SOURCES: str = Field(default="runtipi", env="APPSTORE_SOURCES")

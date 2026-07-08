@@ -17,6 +17,7 @@ import os
 import tarfile
 import tempfile
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -151,10 +152,10 @@ class UmbrelCatalogProvider(CatalogProvider):
     PREFIX = "umbrel-"
 
     def __init__(self, repo: Optional[str] = None, ref: Optional[str] = None,
-                 gallery_repo: Optional[str] = None):
+                 gallery_cdn: Optional[str] = None):
         self.repo = repo or settings.UMBREL_APPSTORE_REPO
         self.ref = ref or settings.UMBREL_APPSTORE_REF
-        self.gallery_repo = gallery_repo or settings.UMBREL_APPSTORE_GALLERY_REPO
+        self.gallery_cdn = gallery_cdn or settings.UMBREL_APPSTORE_GALLERY_CDN
 
     def fetch(self) -> Dict[str, AppRaw]:
         archive = self._download_tarball(self.repo, self.ref)
@@ -191,38 +192,48 @@ class UmbrelCatalogProvider(CatalogProvider):
             except Exception:
                 pass
 
-        # Иконки — из отдельного репозитория галереи (<app-id>/icon.svg). Сбой
+        # Иконки — из галереи Umbrel (<app-id>/icon.svg), пофайлово с CDN. Сбой
         # получения иконок не должен ронять синк каталога.
         try:
-            icons = self._fetch_gallery_icons()
+            raw_ids = [app_id[len(self.PREFIX):] for app_id in apps]
+            icons = self._fetch_gallery_icons(raw_ids)
             for app_id, raw in apps.items():
                 data = icons.get(app_id[len(self.PREFIX):])
                 if data:
                     raw.logo_bytes = data
                     raw.logo_ext = ".svg"
+            logger.info(f"[appstore] umbrel icons fetched: {len(icons)}/{len(apps)}")
         except Exception as e:
             logger.warning(f"[appstore] umbrel gallery icons failed: {e}")
 
         return apps
 
-    def _fetch_gallery_icons(self) -> Dict[str, bytes]:
-        """Скачать tarball галереи Umbrel и вернуть словарь raw_id → bytes(icon.svg)."""
-        archive = self._download_tarball(self.gallery_repo, self.ref)
-        icons: Dict[str, bytes] = {}
-        try:
-            with tarfile.open(archive, mode="r:gz") as tar:
-                for member in tar:
-                    if not member.isfile():
-                        continue
-                    # путь вида "<repo>-<ref>/<app-id>/icon.svg"
-                    parts = member.name.split("/")
-                    if len(parts) == 3 and parts[2].lower() == "icon.svg":
-                        icons[parts[1]] = self._read(tar, member)
-        finally:
+    def _fetch_gallery_icons(self, raw_ids: List[str]) -> Dict[str, bytes]:
+        """Скачать icon.svg каждого приложения параллельно с CDN галереи Umbrel.
+
+        Быстрее тяжёлого tarball галереи (тот тянет и скриншоты). HTTP 404 → у
+        приложения нет иконки (не ошибка); сетевой сбой отдельного запроса просто
+        пропускает иконку, не роняя синк.
+        """
+        base = (self.gallery_cdn or "").rstrip("/")
+        if not base or not raw_ids:
+            return {}
+
+        def _one(raw_id: str):
+            url = f"{base}/{raw_id}/icon.svg"
             try:
-                archive.unlink()
+                r = httpx.get(url, timeout=15, follow_redirects=True)
+                if r.status_code == 200 and r.content:
+                    return raw_id, r.content
             except Exception:
-                pass
+                return None
+            return None
+
+        icons: Dict[str, bytes] = {}
+        with ThreadPoolExecutor(max_workers=16, thread_name_prefix="umbrel_icons") as ex:
+            for res in ex.map(_one, raw_ids):
+                if res:
+                    icons[res[0]] = res[1]
         return icons
 
     @staticmethod
@@ -483,6 +494,28 @@ def start_catalog_scheduler():
         replace_existing=True,
         misfire_grace_time=3600,
     )
+
+    # Стартовый синк: на свежем деплое каталог пуст, а IntervalTrigger впервые
+    # сработает только через CATALOG_SYNC_INTERVAL_HOURS. Чтобы не ждать 24ч,
+    # запускаем разовый синк немедленно в фоне (не блокируя старт приложения).
+    try:
+        db = SessionLocal()
+        try:
+            is_empty = db.query(CatalogApp).count() == 0
+        finally:
+            db.close()
+        if is_empty:
+            aps.add_job(
+                _scheduled_sync,
+                trigger="date",  # run_date по умолчанию = сейчас → разовый запуск
+                id="appstore_catalog_initial_sync",
+                replace_existing=True,
+                misfire_grace_time=600,
+            )
+            logger.info("App Store catalog empty — initial sync scheduled")
+    except Exception as e:
+        logger.warning(f"App Store initial catalog sync check failed: {e}")
+
     if not aps.running:
         aps.start()
     logger.info(

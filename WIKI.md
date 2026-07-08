@@ -788,7 +788,7 @@ Catalog of self-hosted applications with one-click install. Each app runs in its
 | `RUNTIPI_APPSTORE_REF` | `master` | branch/tag/commit (pin recommended) |
 | `UMBREL_APPSTORE_REPO` | `getumbrel/umbrel-apps` | Umbrel catalog source (used when `umbrel` is enabled) |
 | `UMBREL_APPSTORE_REF` | `master` | Umbrel branch/tag/commit |
-| `UMBREL_APPSTORE_GALLERY_REPO` | `getumbrel/umbrel-apps-gallery` | Umbrel icons source (`<app-id>/icon.svg`) |
+| `UMBREL_APPSTORE_GALLERY_CDN` | `https://getumbrel.github.io/umbrel-apps-gallery` | Umbrel icons CDN (`<app-id>/icon.svg`, fetched per-file in parallel) |
 | `APPSTORE_DATA_DIR` | `/app/data/appstore` | logo cache (mounted volume) |
 | `CATALOG_SYNC_INTERVAL_HOURS` | `24` | auto catalog sync interval |
 | `APPSTORE_HOST_ARCH` | `amd64` | target node arch (marks unsupported apps) |
