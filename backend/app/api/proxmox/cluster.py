@@ -501,13 +501,18 @@ async def join_cluster(
         cluster_server_id (int): ID любой ноды существующего кластера
         rootpw (str): root-пароль присоединяемой ноды
         link0 (str, optional): Локальный IP присоединяемой ноды для corosync
+        cluster_host (str, optional): Адрес кластерной ноды, к которому
+            подключается присоединяемая нода (IP в corosync-сети). Если не
+            задан — берётся ip_address кластерной ноды из панели, что может
+            быть публичным FQDN и недоступно из выделенной приватной сети.
 
     Returns 409 если нода содержит VM/LXC (сначала вызовите prepare-join).
     """
     node_server_id = body.get("node_server_id")
     cluster_server_id = body.get("cluster_server_id")
     rootpw = body.get("rootpw", "").strip()
-    link0 = body.get("link0")
+    link0 = (body.get("link0") or "").strip() or None
+    cluster_host = (body.get("cluster_host") or "").strip() or None
 
     if not node_server_id or not cluster_server_id:
         raise HTTPException(
@@ -570,7 +575,11 @@ async def join_cluster(
         )
 
     join_data = join_info_result.get("data", {})
-    fingerprint = _extract_fingerprint(join_data, target_ip=cluster_server.ip_address)
+    # Адрес, к которому реально подключается присоединяемая нода: явный
+    # cluster_host (IP corosync-сети) в приоритете, иначе — ip_address из панели.
+    connect_host = cluster_host or cluster_server.ip_address
+    fingerprint = _extract_fingerprint(join_data, target_ip=connect_host) \
+        or _extract_fingerprint(join_data, target_ip=cluster_server.ip_address)
     cluster_name = join_data.get("totem", {}).get("cluster_name") or cluster_server.cluster_name
 
     if not fingerprint:
@@ -583,7 +592,7 @@ async def join_cluster(
     joining_client = _get_password_client(node_server, rootpw)
     result = await _run_in_executor(
         joining_client.join_cluster,
-        cluster_host=cluster_server.ip_address,
+        cluster_host=connect_host,
         rootpw=rootpw,
         fingerprint=fingerprint,
         link0=link0,
@@ -595,26 +604,58 @@ async def join_cluster(
             detail=f"Ошибка присоединения к кластеру: {result.get('error')}"
         )
 
-    # --- Обновить панель: выставить cluster_name ---
-    node_server.cluster_name = cluster_name
-    db.commit()
+    node_upid = result.get("upid")
 
-    logger.info(
-        f"User {current_user.username} joined '{node_server.name}' "
-        f"to cluster '{cluster_name}' (via '{cluster_server.name}')"
-    )
+    # --- Подтвердить членство перед записью в БД ---
+    # Задача join выполняется асинхронно и может упасть (напр. таймаут
+    # подключения к кластерной ноде по недоступному адресу). При УСПЕШНОМ join
+    # API присоединяемой ноды перезапускается, поэтому надёжнее спрашивать
+    # кластерную ноду (node1): как только присоединяемая нода реально войдёт в
+    # кластер, она появится в её списке нод. Окно ~40с — чтобы уложиться в
+    # proxy_read_timeout (60с) фронтового nginx.
+    joined_confirmed = False
+    for _ in range(20):
+        await asyncio.sleep(2)
+        try:
+            cluster_nodes = await _run_in_executor(cluster_client.get_nodes)
+        except Exception:
+            cluster_nodes = []
+        names = {n.get("node") for n in cluster_nodes if isinstance(n, dict)}
+        if node_name in names:
+            joined_confirmed = True
+            break
+
+    if joined_confirmed:
+        # Только теперь помечаем ноду как члена кластера в панели.
+        node_server.cluster_name = cluster_name
+        db.commit()
+        logger.info(
+            f"User {current_user.username} joined '{node_server.name}' "
+            f"to cluster '{cluster_name}' (via '{cluster_server.name}')"
+        )
+        message = f"Нода '{node_server.name}' присоединена к кластеру '{cluster_name}'."
+    else:
+        # Членство не подтверждено — НЕ выставляем cluster_name, чтобы панель
+        # не показывала ложное присоединение.
+        logger.warning(
+            f"Join of '{node_server.name}' to '{cluster_name}' not confirmed "
+            f"within timeout (upid={node_upid})"
+        )
+        message = (
+            f"Задача присоединения запущена (upid={node_upid}), но членство "
+            f"'{node_server.name}' в кластере пока не подтверждено. Проверьте задачу; "
+            "если нода не вошла в кластер — убедитесь, что кластерная нода доступна "
+            "с присоединяемой по адресу corosync (link0), а не по публичному FQDN."
+        )
 
     return {
         "success": True,
         "node_server_id": node_server_id,
         "node_name": node_server.name,
-        "cluster_name": cluster_name,
-        "upid": result.get("upid"),
-        "message": (
-            f"Нода '{node_server.name}' присоединяется к кластеру '{cluster_name}'. "
-            "После завершения задачи интерфейс ноды перезапустится. "
-            "Отслеживайте прогресс через upid."
-        ),
+        "cluster_name": cluster_name if joined_confirmed else None,
+        "confirmed": joined_confirmed,
+        "upid": node_upid,
+        "message": message,
     }
 
 

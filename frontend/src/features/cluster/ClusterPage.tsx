@@ -143,11 +143,12 @@ function JoinWizard({
   const [prepared, setPrepared] = useState(false);
   const [rootpw, setRootpw] = useState('');
   const [link0, setLink0] = useState('');
+  const [clusterHost, setClusterHost] = useState('');
   const [confirmed, setConfirmed] = useState(false);
 
   const reset = () => {
     setStep(1); setNodeServerId(''); setClusterServerId(''); setCheck(null);
-    setBackupStorage(''); setPrepared(false); setRootpw(''); setLink0(''); setConfirmed(false);
+    setBackupStorage(''); setPrepared(false); setRootpw(''); setLink0(''); setClusterHost(''); setConfirmed(false);
   };
 
   const close = (v: boolean) => { if (!v) reset(); onOpenChange(v); };
@@ -183,12 +184,18 @@ function JoinWizard({
         cluster_server_id: Number(clusterServerId),
         rootpw: rootpw.trim(),
         link0: link0.trim() || undefined,
+        cluster_host: clusterHost.trim() || undefined,
       },
       {
         onSuccess: (res) => {
-          toast.success(res.message || t('cluster.join_started', 'Join started'));
-          reset();
-          onOpenChange(false);
+          if (res.confirmed === false) {
+            // Задача запущена, но членство не подтверждено — предупреждаем, окно не закрываем.
+            toast.warning(res.message || t('cluster.join_unconfirmed', 'Join started but not confirmed'));
+          } else {
+            toast.success(res.message || t('cluster.join_started', 'Join started'));
+            reset();
+            onOpenChange(false);
+          }
         },
         onError: (err) => toast.error(err.message),
       },
@@ -196,6 +203,7 @@ function JoinWizard({
   };
 
   const joiningServer = standalone.find((s) => s.id === Number(nodeServerId));
+  const targetClusterNode = clusterMembers.find((s) => s.id === Number(clusterServerId));
 
   return (
     <Dialog open={open} onOpenChange={close}>
@@ -341,8 +349,16 @@ function JoinWizard({
               <Input type="password" value={rootpw} onChange={(e) => setRootpw(e.target.value)} className="mt-1" autoFocus />
             </div>
             <div>
-              <Label>{t('cluster.link0', 'Corosync link0 IP (optional)')}</Label>
+              <Label>{t('cluster.link0', 'Corosync link0 IP of the joining node (optional)')}</Label>
               <Input value={link0} onChange={(e) => setLink0(e.target.value)} className="mt-1" placeholder={joiningServer?.ip_address} />
+            </div>
+            <div>
+              <Label>{t('cluster.cluster_host', 'Cluster node address to connect to (optional)')}</Label>
+              <Input value={clusterHost} onChange={(e) => setClusterHost(e.target.value)} className="mt-1" placeholder={targetClusterNode?.ip_address} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('cluster.cluster_host_hint',
+                  'Private IP of the cluster node reachable over the corosync network. Leave empty to use its panel address (may be a public FQDN unreachable from a dedicated network).')}
+              </p>
             </div>
 
             <label className="flex items-center gap-2 text-sm">

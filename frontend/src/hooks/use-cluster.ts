@@ -60,6 +60,7 @@ export interface ClusterActionResult {
   cluster_name?: string;
   upid?: string;
   message: string;
+  confirmed?: boolean;
 }
 
 // ==================== Queries ====================
@@ -111,7 +112,7 @@ export function usePrepareJoin() {
 export function useJoinCluster() {
   const invalidate = useInvalidateCluster();
   return useMutation({
-    mutationFn: (body: { node_server_id: number; cluster_server_id: number; rootpw: string; link0?: string }) =>
+    mutationFn: (body: { node_server_id: number; cluster_server_id: number; rootpw: string; link0?: string; cluster_host?: string }) =>
       apiClient.post<ClusterActionResult>('/proxmox/api/cluster/join', body),
     onSuccess: () => invalidate(),
   });
