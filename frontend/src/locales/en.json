@@ -30,6 +30,22 @@
       "runtipi": "Runtipi",
       "umbrel": "Umbrel"
     },
+    "golden": {
+      "button": "Golden template",
+      "title": "Golden LXC template",
+      "desc": "Automatically build the golden template (Debian 12 + Docker + Compose) on the selected node. App Store clones app containers from it.",
+      "current": "Current template",
+      "none": "not configured",
+      "server": "Proxmox server",
+      "pick_server": "Select a server",
+      "template_storage": "Template storage",
+      "rootfs_storage": "Rootfs storage",
+      "force": "Rebuild",
+      "build": "Build template",
+      "started": "Template build started",
+      "failed": "Build failed",
+      "working": "Working..."
+    },
     "refresh_catalog": "Refresh catalog",
     "last_synced": "Last synced",
     "never": "never",

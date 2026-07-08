@@ -2,13 +2,15 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Store, Search, RefreshCw, Loader2, Package } from 'lucide-react';
+import { Store, Search, RefreshCw, Loader2, Package, HardDriveDownload } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { useCatalog, useCatalogMeta, useInstalledApps, useSyncCatalog } from '@/hooks/use-appstore';
+import { useAuthStore } from '@/stores/auth-store';
+import GoldenTemplateDialog from './GoldenTemplateDialog';
 
 export default function AppStorePage() {
   const { t } = useTranslation();
@@ -16,6 +18,8 @@ export default function AppStorePage() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('');
   const [source, setSource] = useState<string>('');
+  const [goldenOpen, setGoldenOpen] = useState(false);
+  const isAdmin = useAuthStore((s) => s.user?.is_admin ?? false);
 
   const { data: catalog, isLoading } = useCatalog(search, category, source);
   const { data: meta } = useCatalogMeta();
@@ -52,6 +56,12 @@ export default function AppStorePage() {
             <Package className="mr-2 h-4 w-4" />
             {t('appstore.my_apps')}
           </Button>
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={() => setGoldenOpen(true)}>
+              <HardDriveDownload className="mr-2 h-4 w-4" />
+              {t('appstore.golden.button', 'Золотой шаблон')}
+            </Button>
+          )}
           <Button size="sm" onClick={handleSync} disabled={sync.isPending}>
             {sync.isPending
               ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -164,6 +174,8 @@ export default function AppStorePage() {
           {t('appstore.powered_by')}
         </a>
       </div>
+
+      {isAdmin && <GoldenTemplateDialog open={goldenOpen} onOpenChange={setGoldenOpen} />}
     </div>
   );
 }

@@ -16,13 +16,15 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ...auth import PermissionChecker
 from ...config import settings
 from ...db import SessionLocal, get_db
-from ...models import CatalogApp
+from ...models import CatalogApp, User
+from ...services import appstore_engine as engine
 from ...services.appstore_catalog import get_catalog_meta, sync_catalog
 
 router = APIRouter()
@@ -123,3 +125,41 @@ async def trigger_sync(
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Синхронизация не удалась: {e}")
     return {"success": True, "stats": stats}
+
+
+# ── Золотой шаблон (Workstream B) ─────────────────────────────────────────────
+
+class GoldenTemplateRequest(BaseModel):
+    server_id: int
+    node: Optional[str] = None
+    template_storage: str = "local"     # dir-storage для итогового vztmpl
+    rootfs_storage: str = "local-lvm"   # storage для rootfs временного CT
+    bridge: str = "vmbr0"
+    force: bool = False                 # пересобрать, даже если шаблон уже есть
+
+
+@router.post("/api/appstore/golden-template")
+def build_golden_template(
+    req: GoldenTemplateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("app:manage")),
+):
+    """Собрать золотой LXC-шаблон на ноде (фоновая операция). Прогресс — по WebSocket."""
+    try:
+        result = engine.prepare_golden_template(
+            db, current_user, server_id=req.server_id, node=req.node,
+            template_storage=req.template_storage, rootfs_storage=req.rootfs_storage,
+            bridge=req.bridge, force=req.force,
+        )
+    except engine.EngineError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, **result}
+
+
+@router.get("/api/appstore/golden-template/status")
+def golden_template_status(
+    db: Session = Depends(get_db),
+    _: object = Depends(PermissionChecker("app:view")),
+):
+    """Текущий шаблон (БД/env) и последняя операция сборки."""
+    return engine.golden_template_status(db)

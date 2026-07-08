@@ -30,6 +30,22 @@
       "runtipi": "Runtipi",
       "umbrel": "Umbrel"
     },
+    "golden": {
+      "button": "Золотой шаблон",
+      "title": "Золотой LXC-шаблон",
+      "desc": "Автоматическая сборка golden-шаблона (Debian 12 + Docker + Compose) на выбранной ноде. Из него App Store клонирует контейнеры приложений.",
+      "current": "Текущий шаблон",
+      "none": "не настроен",
+      "server": "Сервер Proxmox",
+      "pick_server": "Выберите сервер",
+      "template_storage": "Хранилище шаблона",
+      "rootfs_storage": "Хранилище rootfs",
+      "force": "Пересобрать",
+      "build": "Собрать шаблон",
+      "started": "Сборка шаблона запущена",
+      "failed": "Ошибка сборки",
+      "working": "Выполняется..."
+    },
     "refresh_catalog": "Обновить каталог",
     "last_synced": "Обновлён",
     "never": "никогда",

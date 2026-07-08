@@ -25,7 +25,9 @@ from ..appstore.pipeline import (
     APP_DIR, APP_DATA_DIR, InstallSpec, PocError, _NAME_RE, _node_ssh, _shq,
     poc_install, poc_teardown, poc_update,
 )
+from ..appstore.golden_template import GoldenSpec, build_golden_template
 from ..api.proxmox._helpers import _get_proxmox_client, get_next_vmid, soft_delete_vm_instance
+from ..api.settings import get_setting, set_setting
 from ..config import settings
 from ..db import SessionLocal
 from ..ipam_service import IPAMService
@@ -139,6 +141,88 @@ def build_env(app: CatalogApp, form_answers: dict) -> tuple[dict, dict]:
     return env, secrets_shown
 
 
+# ── Золотой шаблон (Workstream B) ─────────────────────────────────────────────
+
+# Ключ PanelSettings, куда сохраняется volid собранного золотого шаблона.
+_GOLDEN_SETTING_KEY = "appstore_golden_template"
+
+
+def _resolve_golden_template(db, ostemplate: Optional[str] = None) -> Optional[str]:
+    """Определить golden vztmpl: явный override → сохранённый в БД → env-дефолт."""
+    return (
+        ostemplate
+        or get_setting(db, _GOLDEN_SETTING_KEY)
+        or settings.APPSTORE_GOLDEN_TEMPLATE
+    )
+
+
+def prepare_golden_template(db, user, *, server_id: int, node: Optional[str] = None,
+                            template_storage: str = "local",
+                            rootfs_storage: str = "local-lvm",
+                            bridge: str = "vmbr0", force: bool = False) -> dict:
+    """Запустить сборку золотого шаблона в фоне. Возвращает operation_id."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise EngineError("Proxmox сервер не найден")
+
+    op = _new_operation(db, None, "golden_template", user.id)
+    _engine_executor.submit(
+        _run_golden_template, op.id, user.id, server_id, node,
+        template_storage, rootfs_storage, bridge, force,
+    )
+    return {"operation_id": op.id}
+
+
+def _run_golden_template(operation_id, user_id, server_id, node,
+                         template_storage, rootfs_storage, bridge, force):
+    db = SessionLocal()
+    try:
+        def on_step(step: str, progress: int) -> None:
+            _record_step(operation_id, user_id, step, progress)
+
+        spec = GoldenSpec(
+            server_id=server_id, node=node, template_storage=template_storage,
+            rootfs_storage=rootfs_storage, bridge=bridge, force=force,
+        )
+        result = build_golden_template(db, spec, on_step)
+
+        # Сохраняем volid в БД — install() будет предпочитать его env-дефолту.
+        try:
+            set_setting(db, _GOLDEN_SETTING_KEY, result.volid,
+                        description="App Store: собранный золотой LXC-шаблон")
+        except Exception as e:
+            logger.warning(f"[appstore-engine] save golden template setting: {e}")
+
+        _finish_op(operation_id, user_id, "completed")
+        try:
+            broadcast_task_update(user_id, "appstore_golden_template_done",
+                                  {"volid": result.volid, "node": result.node,
+                                   "status": result.status})
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error(f"[appstore-engine] golden template failed: {e}")
+        _finish_op(operation_id, user_id, "failed", error=str(e))
+    finally:
+        db.close()
+
+
+def golden_template_status(db) -> dict:
+    """Текущий шаблон (из БД/env) + последняя операция сборки."""
+    op = (
+        db.query(AppOperation)
+        .filter(AppOperation.type == "golden_template")
+        .order_by(AppOperation.started_at.desc())
+        .first()
+    )
+    return {
+        "configured_template": _resolve_golden_template(db),
+        "env_template": settings.APPSTORE_GOLDEN_TEMPLATE,
+        "saved_template": get_setting(db, _GOLDEN_SETTING_KEY),
+        "last_operation": op.to_dict() if op else None,
+    }
+
+
 # ── Установка ─────────────────────────────────────────────────────────────────
 
 def _allocate_ipam(db, *, network_id: int, pool_id: Optional[int], name: str,
@@ -189,9 +273,10 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
     if not _NAME_RE.match(name or ""):
         raise EngineError("Недопустимое имя приложения (a-z, 0-9, дефис, 1..63)")
 
-    golden = ostemplate or settings.APPSTORE_GOLDEN_TEMPLATE
+    golden = _resolve_golden_template(db, ostemplate)
     if not golden:
-        raise EngineError("Не настроен золотой шаблон LXC (APPSTORE_GOLDEN_TEMPLATE)")
+        raise EngineError("Не настроен золотой шаблон LXC — подготовьте его "
+                          "(App Store → золотой шаблон) или задайте APPSTORE_GOLDEN_TEMPLATE")
 
     server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
     if not server:
@@ -316,9 +401,10 @@ def retry_install(db, user, installed_app_id: int) -> dict:
     compose = app.compose_yaml if app else None
     if not compose:
         raise EngineError("compose приложения недоступен для повтора")
-    golden = settings.APPSTORE_GOLDEN_TEMPLATE
+    golden = _resolve_golden_template(db)
     if not golden:
-        raise EngineError("Не настроен золотой шаблон LXC (APPSTORE_GOLDEN_TEMPLATE)")
+        raise EngineError("Не настроен золотой шаблон LXC — подготовьте его "
+                          "(App Store → золотой шаблон) или задайте APPSTORE_GOLDEN_TEMPLATE")
 
     env = ia.env_dict()
     ia.status = "installing"

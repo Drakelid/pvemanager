@@ -58,6 +58,41 @@ export function useSyncCatalog() {
   });
 }
 
+// ── Золотой шаблон (Workstream B) ────────────────────────────────────────────
+
+export interface GoldenTemplateStatus {
+  configured_template: string | null;
+  env_template: string | null;
+  saved_template: string | null;
+  last_operation: AppOperation | null;
+}
+
+export interface GoldenBuildArgs {
+  server_id: number;
+  node?: string;
+  template_storage?: string;
+  rootfs_storage?: string;
+  bridge?: string;
+  force?: boolean;
+}
+
+export function useGoldenTemplateStatus(pollMs?: number) {
+  return useQuery({
+    queryKey: ['appstore-golden-status'],
+    queryFn: () => apiClient.get<GoldenTemplateStatus>('/api/appstore/golden-template/status'),
+    refetchInterval: pollMs && pollMs > 0 ? pollMs : false,
+  });
+}
+
+export function useBuildGoldenTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: GoldenBuildArgs) =>
+      apiClient.post<{ success: boolean; operation_id: number }>('/api/appstore/golden-template', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['appstore-golden-status'] }),
+  });
+}
+
 // ── Установленные ──────────────────────────────────────────────────────────
 
 export function useInstalledApps() {
