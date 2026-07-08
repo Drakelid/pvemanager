@@ -14,6 +14,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select';
 import { useServers } from '@/hooks/use-nodes';
+import { useLXCStorages } from '@/hooks/use-lxc-templates';
 import { useIPAMNetworks, useIPAMPools } from '@/hooks/use-ipam';
 import { useInstallApp, useInstalledApp, useOperationProgress, useAppOperations } from '@/hooks/use-appstore';
 import type { AppOperation, CatalogApp } from '@/types/appstore';
@@ -47,6 +48,21 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
 
   const { data: ipamNetworks = [] } = useIPAMNetworks();
   const { data: ipamPools = [] } = useIPAMPools(ipamNetworkId ? Number(ipamNetworkId) : undefined);
+
+  // Хранилища ноды под rootfs LXC (для выбора вместо ручного ввода).
+  const { data: storages = [] } = useLXCStorages(
+    serverId ? Number(serverId) : undefined,
+    node || undefined,
+    'rootdir',
+  );
+  // Автовыбор валидного хранилища, когда список загрузился (предпочитаем текущее/local-lvm).
+  useEffect(() => {
+    if (storages.length && !storages.some((s) => s.storage === storage)) {
+      const preferred = storages.find((s) => s.storage === 'local-lvm') ?? storages[0];
+      setStorage(preferred.storage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storages]);
 
   const [phase, setPhase] = useState<Phase>('form');
   const [installedAppId, setInstalledAppId] = useState<number | null>(null);
@@ -206,7 +222,15 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
                   </div>
                   <div className="space-y-1.5">
                     <Label>{t('appstore.storage')}</Label>
-                    <Input value={storage} onChange={(e) => setStorage(e.target.value)} />
+                    <Select value={storage} onValueChange={(v) => { if (v) setStorage(v); }}>
+                      <SelectTrigger><SelectValue placeholder={t('appstore.storage')} /></SelectTrigger>
+                      <SelectContent>
+                        {storages.length === 0 && <SelectItem value={storage}>{storage}</SelectItem>}
+                        {storages.map((s) => (
+                          <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1.5">
                     <Label>{t('appstore.bridge')}</Label>

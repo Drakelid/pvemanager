@@ -113,7 +113,7 @@ def _run(ssh: SSHClient, cmd: str, *, what: str, timeout: int = _CMD_TIMEOUT) ->
     if exit_code == -1:
         raise PocError(f"{what}: таймаут (>{timeout}с) или обрыв SSH")
     if exit_code != 0:
-        raise PocError(f"{what}: exit={exit_code}: {(output or '').strip()[:400]}")
+        raise PocError(f"{what}: exit={exit_code}: {(output or '').strip()[:2000]}")
     return output or ""
 
 
@@ -314,7 +314,7 @@ def poc_install(db: Session, spec: InstallSpec, on_step: StepCb = _noop) -> Inst
         on_step("Запуск docker compose up -d...", 85)
         _run(
             ssh,
-            _pct(vmid, f"cd {APP_DIR} && docker compose --env-file .env up -d"),
+            _pct(vmid, f"cd {APP_DIR} && docker compose --env-file .env up -d 2>&1"),
             what="docker compose up",
             timeout=_DOCKER_TIMEOUT,  # тянет образы — может идти минуты
         )
@@ -378,8 +378,8 @@ def poc_update(server, client, vmid: int, node: str, compose_yaml: str,
         on_step("docker compose pull && up -d...", 65)
         _run(
             ssh,
-            _pct(vmid, f"cd {APP_DIR} && docker compose --env-file .env pull && "
-                       f"docker compose --env-file .env up -d"),
+            _pct(vmid, f"cd {APP_DIR} && docker compose --env-file .env pull 2>&1 && "
+                       f"docker compose --env-file .env up -d 2>&1"),
             what="docker compose pull/up",
             timeout=_DOCKER_TIMEOUT,  # pull больших образов — может идти минуты
         )
