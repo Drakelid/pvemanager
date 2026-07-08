@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useServers, useNodes } from '@/hooks/use-nodes';
 import { useTemplates, useTemplateGroups } from '@/hooks/use-templates';
 import { useIPAMNetworks } from '@/hooks/use-ipam';
-import { autoPickNetworkId } from '@/features/ipam/network-scope';
+import { scopedNetworks, autoPickNetworkId } from '@/features/ipam/network-scope';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useLXCTemplates, useLXCStorages, useDeployLXC } from '@/hooks/use-lxc-templates';
 import { useMySSHKeys, useUserSSHKeys } from '@/hooks/use-ssh-keys';
 import { useProfile, useMyQuota } from '@/hooks/use-settings';
@@ -103,13 +104,10 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   const { data: vmStorages = [] } = useLXCStorages(selectedServer?.id, undefined, 'images');
   const { data: nodesData } = useNodes(selectedServer?.id ?? 0);
   const nodes = nodesData?.nodes ?? [];
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
 
-  // Смена ноды (VM): выбираем ноду и авто-подбираем IPAM-сеть, привязанную к ней.
-  const handleVMNodeChange = (node: string) => {
-    setSelectedNode(node);
-    const nid = autoPickNetworkId(networks, selectedServer?.id, node || undefined);
-    setConfig(p => ({ ...p, ipam_network_id: nid }));
-  };
+  // Нода нужна только для размещения; сеть подбирается по активной рабочей области.
+  const handleVMNodeChange = (node: string) => setSelectedNode(node);
 
   // ── SSH Keys & ownership ──────────────────────────────────────────────────
   const { data: profile } = useProfile();
@@ -235,19 +233,9 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   };
 
   // ── Filtered IPAM networks ────────────────────────────────────────────────
-  // Show only networks matching the selected server (or global networks with no server assigned)
-  // Further filter by node if a node is set
-  const vmFilteredNetworks = networks.filter(n =>
-    n.is_active &&
-    (!n.proxmox_server_id || !selectedServer || n.proxmox_server_id === selectedServer.id) &&
-    (!n.proxmox_node || !selectedNode || n.proxmox_node === selectedNode)
-  );
-
-  const lxcFilteredNetworks = networks.filter(n =>
-    n.is_active &&
-    (!n.proxmox_server_id || !selectedServer || n.proxmox_server_id === selectedServer.id) &&
-    (!n.proxmox_node || !selectedLXCTemplate?.node || n.proxmox_node === selectedLXCTemplate.node)
-  );
+  // Сети активной рабочей области (список уже отфильтрован бэкендом по X-Active-Workspace).
+  const vmFilteredNetworks = scopedNetworks(networks, activeWorkspaceId);
+  const lxcFilteredNetworks = vmFilteredNetworks;
 
   // Apply template defaults when template selected
   const selectTemplate = (tpl: OSTemplate) => {
@@ -290,8 +278,9 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 onClick={() => {
                   setSelectedServer(srv); setSelectedLXCTemplate(null); setSelectedTemplate(null);
                   setSelectedNode('');
-                  setConfig(p => ({ ...p, ipam_network_id: null }));
-                  setLxcConfig(p => ({ ...p, ipam_network_id: null }));
+                  const nid = autoPickNetworkId(networks, activeWorkspaceId);
+                  setConfig(p => ({ ...p, ipam_network_id: nid }));
+                  setLxcConfig(p => ({ ...p, ipam_network_id: nid }));
                 }}
               >
                 <CardContent className="flex items-center gap-3 p-4">
@@ -410,7 +399,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   className={`cursor-pointer transition-colors hover:border-success/50 ${selectedLXCTemplate?.volid === tpl.volid ? 'border-success bg-success/5' : ''}`}
                   onClick={() => {
                     setSelectedLXCTemplate(tpl);
-                    const nid = autoPickNetworkId(networks, selectedServer?.id, tpl.node || undefined);
+                    const nid = autoPickNetworkId(networks, activeWorkspaceId);
                     setLxcConfig(p => ({ ...p, ipam_network_id: nid }));
                   }}
                 >

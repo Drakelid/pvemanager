@@ -1521,6 +1521,21 @@ def migrate_appstore_catalog(conn):
     logger.info("✓ App Store catalog_apps table created")
 
 
+def migrate_appstore_catalog_source(conn):
+    """Add source column to catalog_apps (мультиисточник: runtipi | umbrel)."""
+    if not table_exists(conn, 'catalog_apps'):
+        return
+    if column_exists(conn, 'catalog_apps', 'source'):
+        return
+    conn.execute(text(
+        "ALTER TABLE catalog_apps ADD COLUMN source VARCHAR(50) NOT NULL DEFAULT 'runtipi'"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_catalog_apps_source ON catalog_apps (source)"
+    ))
+    logger.info("✓ App Store catalog_apps.source column added")
+
+
 def migrate_appstore_installed(conn):
     """Create installed_apps and app_operations tables for the App Engine (M2)."""
     if not table_exists(conn, 'installed_apps'):
@@ -1571,6 +1586,47 @@ def migrate_appstore_installed(conn):
     # M4: версия, зафиксированная в pre-update снапшоте (для отката версии в БД)
     add_column_if_not_exists(conn, 'installed_apps', 'snapshot_version', 'VARCHAR(50)')
     add_column_if_not_exists(conn, 'installed_apps', 'snapshot_tipi_version', 'INTEGER')
+
+
+def migrate_ipam_network_workspace(conn):
+    """Migration 33: Bind IPAM networks to a workspace + default-network flag.
+
+    Adds ipam_networks.workspace_id (FK workspaces) and ipam_networks.is_default.
+    Backfills workspace_id from the network's proxmox_server_id via workspace_servers
+    (each server belongs to a workspace), so existing server-bound networks land in
+    the right workspace automatically.
+    """
+    if not table_exists(conn, 'ipam_networks'):
+        logger.info("Table ipam_networks does not exist, skipping workspace migration")
+        return
+
+    added = False
+    if add_column_if_not_exists(conn, 'ipam_networks', 'workspace_id', 'INTEGER REFERENCES workspaces(id) ON DELETE SET NULL'):
+        added = True
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_ipam_network_workspace ON ipam_networks(workspace_id)"
+        ))
+    if add_column_if_not_exists(conn, 'ipam_networks', 'is_default', 'BOOLEAN NOT NULL DEFAULT FALSE'):
+        added = True
+
+    # Backfill workspace_id from server binding (only for rows not yet assigned).
+    if table_exists(conn, 'workspace_servers'):
+        try:
+            conn.execute(text("""
+                UPDATE ipam_networks n
+                SET workspace_id = ws.workspace_id
+                FROM workspace_servers ws
+                WHERE n.workspace_id IS NULL
+                  AND n.proxmox_server_id IS NOT NULL
+                  AND ws.server_id = n.proxmox_server_id
+            """))
+        except Exception as e:
+            logger.debug(f"IPAM workspace backfill: {e}")
+
+    if added:
+        logger.info("✓ Added workspace_id/is_default to ipam_networks")
+    else:
+        logger.info("✓ ipam_networks.workspace_id/is_default already exist")
 
 
 def run_all_migrations(engine, db_session=None):
@@ -1841,6 +1897,22 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"App Store installed migration: {e}")
+                conn.rollback()
+
+            # Migration 33: IPAM network workspace binding + default flag
+            try:
+                migrate_ipam_network_workspace(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"IPAM network workspace migration: {e}")
+                conn.rollback()
+
+            # Migration 34: App Store catalog source column (runtipi | umbrel)
+            try:
+                migrate_appstore_catalog_source(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"App Store catalog source migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

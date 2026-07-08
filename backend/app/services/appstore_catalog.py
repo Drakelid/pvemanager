@@ -49,8 +49,9 @@ def _logos_dir() -> Path:
 
 class AppRaw:
     """Сырые файлы одного приложения из репозитория."""
-    def __init__(self, app_id: str):
+    def __init__(self, app_id: str, source: str = "runtipi"):
         self.app_id = app_id
+        self.source = source
         self.config: Optional[dict] = None
         self.compose: Optional[str] = None
         self.description_md: Optional[str] = None
@@ -61,18 +62,16 @@ class AppRaw:
 # ── Провайдер источника (изоляция, риск п.13) ─────────────────────────────────
 
 class CatalogProvider(ABC):
+    # источник, к которому относится провайдер (для scoping'а в sync_catalog)
+    source: str = "runtipi"
+
     @abstractmethod
     def fetch(self) -> Dict[str, AppRaw]:
         """Вернуть словарь app_id → AppRaw. Может бросить при сетевой ошибке."""
 
-
-class RuntipiCatalogProvider(CatalogProvider):
-    def __init__(self, repo: Optional[str] = None, ref: Optional[str] = None):
-        self.repo = repo or settings.RUNTIPI_APPSTORE_REPO
-        self.ref = ref or settings.RUNTIPI_APPSTORE_REF
-
-    def _download(self) -> Path:
-        url = f"https://github.com/{self.repo}/archive/{self.ref}.tar.gz"
+    @staticmethod
+    def _download_tarball(repo: str, ref: str) -> Path:
+        url = f"https://github.com/{repo}/archive/{ref}.tar.gz"
         logger.info(f"[appstore] downloading catalog tarball: {url}")
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz")
         try:
@@ -83,6 +82,22 @@ class RuntipiCatalogProvider(CatalogProvider):
         finally:
             tmp.close()
         return Path(tmp.name)
+
+    @staticmethod
+    def _read(tar: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
+        f = tar.extractfile(member)
+        return f.read() if f else b""
+
+
+class RuntipiCatalogProvider(CatalogProvider):
+    source = "runtipi"
+
+    def __init__(self, repo: Optional[str] = None, ref: Optional[str] = None):
+        self.repo = repo or settings.RUNTIPI_APPSTORE_REPO
+        self.ref = ref or settings.RUNTIPI_APPSTORE_REF
+
+    def _download(self) -> Path:
+        return self._download_tarball(self.repo, self.ref)
 
     def fetch(self) -> Dict[str, AppRaw]:
         archive = self._download()
@@ -101,7 +116,7 @@ class RuntipiCatalogProvider(CatalogProvider):
                         continue
                     app_id = parts[ai + 1]
                     rel = parts[ai + 2:]  # путь внутри apps/<id>/
-                    raw = apps.setdefault(app_id, AppRaw(app_id))
+                    raw = apps.setdefault(app_id, AppRaw(app_id, source=self.source))
                     fname = rel[-1].lower()
 
                     try:
@@ -123,10 +138,119 @@ class RuntipiCatalogProvider(CatalogProvider):
                 pass
         return apps
 
+
+class UmbrelCatalogProvider(CatalogProvider):
+    """Провайдер каталога Umbrel (getumbrel/umbrel-apps).
+
+    Структура репозитория: `<repo>-<ref>/<app-id>/{umbrel-app.yml,
+    docker-compose.yml, <logo>}`. Метаданные лежат в umbrel-app.yml (а не в
+    compose, как у Runtipi), поэтому нормализуем их в тот же shape, что ждёт
+    _build_fields. app_id префиксуется "umbrel-" для изоляции PK от Runtipi.
+    """
+    source = "umbrel"
+    PREFIX = "umbrel-"
+
+    def __init__(self, repo: Optional[str] = None, ref: Optional[str] = None,
+                 gallery_repo: Optional[str] = None):
+        self.repo = repo or settings.UMBREL_APPSTORE_REPO
+        self.ref = ref or settings.UMBREL_APPSTORE_REF
+        self.gallery_repo = gallery_repo or settings.UMBREL_APPSTORE_GALLERY_REPO
+
+    def fetch(self) -> Dict[str, AppRaw]:
+        archive = self._download_tarball(self.repo, self.ref)
+        apps: Dict[str, AppRaw] = {}
+        try:
+            with tarfile.open(archive, mode="r:gz") as tar:
+                for member in tar:
+                    if not member.isfile():
+                        continue
+                    # путь вида "<repo>-<ref>/<app-id>/<file>"
+                    parts = member.name.split("/")
+                    if len(parts) != 3:
+                        continue  # интересуют только файлы в корне папки приложения
+                    raw_id = parts[1]
+                    if not raw_id or raw_id.startswith("."):
+                        continue  # .github, .gitignore и т.п.
+                    app_id = self.PREFIX + raw_id
+                    fname = parts[-1].lower()
+                    raw = apps.setdefault(app_id, AppRaw(app_id, source=self.source))
+                    try:
+                        if fname == "umbrel-app.yml":
+                            raw.config = self._map_manifest(
+                                raw_id, yaml.safe_load(self._read(tar, member)))
+                        elif fname == "docker-compose.yml":
+                            raw.compose = self._read(tar, member).decode("utf-8", "replace")
+                        elif fname in _LOGO_NAMES:
+                            raw.logo_bytes = self._read(tar, member)
+                            raw.logo_ext = os.path.splitext(fname)[1] or ".jpg"
+                    except Exception as e:
+                        logger.warning(f"[appstore] parse umbrel {app_id}/{fname}: {e}")
+        finally:
+            try:
+                archive.unlink()
+            except Exception:
+                pass
+
+        # Иконки — из отдельного репозитория галереи (<app-id>/icon.svg). Сбой
+        # получения иконок не должен ронять синк каталога.
+        try:
+            icons = self._fetch_gallery_icons()
+            for app_id, raw in apps.items():
+                data = icons.get(app_id[len(self.PREFIX):])
+                if data:
+                    raw.logo_bytes = data
+                    raw.logo_ext = ".svg"
+        except Exception as e:
+            logger.warning(f"[appstore] umbrel gallery icons failed: {e}")
+
+        return apps
+
+    def _fetch_gallery_icons(self) -> Dict[str, bytes]:
+        """Скачать tarball галереи Umbrel и вернуть словарь raw_id → bytes(icon.svg)."""
+        archive = self._download_tarball(self.gallery_repo, self.ref)
+        icons: Dict[str, bytes] = {}
+        try:
+            with tarfile.open(archive, mode="r:gz") as tar:
+                for member in tar:
+                    if not member.isfile():
+                        continue
+                    # путь вида "<repo>-<ref>/<app-id>/icon.svg"
+                    parts = member.name.split("/")
+                    if len(parts) == 3 and parts[2].lower() == "icon.svg":
+                        icons[parts[1]] = self._read(tar, member)
+        finally:
+            try:
+                archive.unlink()
+            except Exception:
+                pass
+        return icons
+
     @staticmethod
-    def _read(tar: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
-        f = tar.extractfile(member)
-        return f.read() if f else b""
+    def _map_manifest(raw_id: str, meta: Optional[dict]) -> Optional[dict]:
+        """umbrel-app.yml → config-словарь в формате, ожидаемом _build_fields."""
+        if not isinstance(meta, dict):
+            return None
+        cat = meta.get("category")
+        categories = [str(cat)] if cat else []
+        port = meta.get("port")
+        return {
+            "name": meta.get("name") or raw_id,
+            "version": str(meta.get("version")) if meta.get("version") is not None else None,
+            # у Umbrel нет целочисленной версии рецепта — update_available по
+            # tipi_version для umbrel-приложений не вычисляется (см. _refresh_update_flags).
+            "tipi_version": None,
+            "categories": categories,
+            "short_desc": meta.get("tagline"),
+            "description": meta.get("description"),
+            "port": port if isinstance(port, int) else None,
+            "form_fields": [],  # Umbrel не описывает поля формы декларативно
+            "supported_architectures": [],  # обычно multi-arch — не ограничиваем
+            "available": True,
+            "deprecated": False,
+            "dynamic_config": False,
+            "source": meta.get("repo") or meta.get("website"),
+            "author": meta.get("developer") or meta.get("submitter"),
+        }
 
 
 # ── Синхронизация ─────────────────────────────────────────────────────────────
@@ -171,6 +295,7 @@ def _build_fields(app_id: str, raw: AppRaw) -> Optional[dict]:
         reason = f"нет поддержки арх. {_host_arch()}"
 
     return {
+        "source": raw.source or "runtipi",
         "name": cfg.get("name") or app_id,
         "version": str(cfg.get("version")) if cfg.get("version") is not None else None,
         "tipi_version": cfg.get("tipi_version") if isinstance(cfg.get("tipi_version"), int) else None,
@@ -190,55 +315,90 @@ def _build_fields(app_id: str, raw: AppRaw) -> Optional[dict]:
     }
 
 
+def _enabled_providers(ref: Optional[str] = None) -> List[CatalogProvider]:
+    """Список провайдеров по настройке APPSTORE_SOURCES."""
+    raw = (settings.APPSTORE_SOURCES or "runtipi")
+    names = [s.strip().lower() for s in raw.split(",") if s.strip()]
+    providers: List[CatalogProvider] = []
+    for n in names:
+        if n == "runtipi":
+            providers.append(RuntipiCatalogProvider(ref=ref))
+        elif n == "umbrel":
+            # ref относится к runtipi (совместимость со старой сигнатурой) — Umbrel
+            # берёт собственный UMBREL_APPSTORE_REF.
+            providers.append(UmbrelCatalogProvider())
+        else:
+            logger.warning(f"[appstore] unknown catalog source '{n}', пропущен")
+    if not providers:
+        providers.append(RuntipiCatalogProvider(ref=ref))
+    return providers
+
+
 def sync_catalog(db: Session, ref: Optional[str] = None,
                  provider: Optional[CatalogProvider] = None) -> dict:
-    """Идемпотентная синхронизация каталога. Возвращает статистику."""
-    provider = provider or RuntipiCatalogProvider(ref=ref)
+    """Идемпотентная синхронизация каталога из всех активных источников.
+
+    Каждый источник синхронизируется независимо: сетевой сбой одного не отменяет
+    остальные, а пометка «исчезнувших» приложений scoped'ится по source, чтобы
+    синк runtipi не задел записи umbrel и наоборот.
+    """
+    providers = [provider] if provider is not None else _enabled_providers(ref)
     started = _utcnow()
-    apps = provider.fetch()  # может бросить сетевую ошибку — обрабатывает вызывающий
 
-    created = updated = skipped = errors = 0
-    seen: List[str] = []
+    created = updated = skipped = errors = disappeared = 0
+    source_errors: List[str] = []
 
-    for app_id, raw in apps.items():
+    for prov in providers:
         try:
-            fields = _build_fields(app_id, raw)
-            if fields is None:
-                skipped += 1
-                continue
-            fields["logo_path"] = _save_logo(app_id, raw)
-            fields["synced_at"] = _utcnow()
+            apps = prov.fetch()
+        except Exception as e:  # NF-4 — источник недоступен, не роняем остальные
+            source_errors.append(f"{prov.source}: {e}")
+            logger.warning(f"[appstore] fetch source '{prov.source}' failed: {e}")
+            continue
 
-            existing = db.query(CatalogApp).filter(CatalogApp.app_id == app_id).first()
-            if existing:
-                for k, v in fields.items():
-                    if k == "logo_path" and v is None:
-                        continue  # не затирать существующий логотип, если в этот раз не пришёл
-                    setattr(existing, k, v)
-                updated += 1
-            else:
-                db.add(CatalogApp(app_id=app_id, **fields))
-                created += 1
-            seen.append(app_id)
-            db.commit()
-        except Exception as e:  # F-CAT-5 — не роняем весь синк
-            errors += 1
-            db.rollback()
-            logger.warning(f"[appstore] sync {app_id} failed: {e}")
+        seen: List[str] = []
+        for app_id, raw in apps.items():
+            try:
+                fields = _build_fields(app_id, raw)
+                if fields is None:
+                    skipped += 1
+                    continue
+                fields["logo_path"] = _save_logo(app_id, raw)
+                fields["synced_at"] = _utcnow()
 
-    # Приложения, исчезнувшие из источника → пометить недоступными (не удаляем — M2 installed_apps)
-    disappeared = 0
-    if seen:
-        disappeared = (
-            db.query(CatalogApp)
-            .filter(~CatalogApp.app_id.in_(seen), CatalogApp.available.is_(True))
-            .update(
-                {CatalogApp.available: False,
-                 CatalogApp.unavailable_reason: "удалено из источника"},
-                synchronize_session=False,
+                existing = db.query(CatalogApp).filter(CatalogApp.app_id == app_id).first()
+                if existing:
+                    for k, v in fields.items():
+                        if k == "logo_path" and v is None:
+                            continue  # не затирать существующий логотип
+                        setattr(existing, k, v)
+                    updated += 1
+                else:
+                    db.add(CatalogApp(app_id=app_id, **fields))
+                    created += 1
+                seen.append(app_id)
+                db.commit()
+            except Exception as e:  # F-CAT-5 — не роняем весь синк
+                errors += 1
+                db.rollback()
+                logger.warning(f"[appstore] sync {app_id} failed: {e}")
+
+        # Исчезнувшие из ЭТОГО источника → недоступны (scoped по source).
+        if seen:
+            disappeared += (
+                db.query(CatalogApp)
+                .filter(
+                    CatalogApp.source == prov.source,
+                    ~CatalogApp.app_id.in_(seen),
+                    CatalogApp.available.is_(True),
+                )
+                .update(
+                    {CatalogApp.available: False,
+                     CatalogApp.unavailable_reason: "удалено из источника"},
+                    synchronize_session=False,
+                )
             )
-        )
-        db.commit()
+            db.commit()
 
     # F-CAT-4: выставить update_available для установленных приложений
     flagged = _refresh_update_flags(db)
@@ -247,6 +407,8 @@ def sync_catalog(db: Session, ref: Optional[str] = None,
     stats = {
         "created": created, "updated": updated, "skipped": skipped,
         "errors": errors, "disappeared": disappeared, "flagged": flagged, "total": total,
+        "sources": [p.source for p in providers if p is not None],
+        "source_errors": source_errors,
         "ref": (ref or settings.RUNTIPI_APPSTORE_REF),
         "duration_sec": round((_utcnow() - started).total_seconds(), 1),
         "synced_at": _utcnow().isoformat(),
@@ -284,12 +446,16 @@ def get_catalog_meta(db: Session) -> dict:
     for (arr,) in db.query(CatalogApp.categories).all():
         for c in (arr or []):
             cats.add(c)
+    sources = sorted(
+        s for (s,) in db.query(CatalogApp.source).distinct().all() if s
+    )
     return {
         "total": total,
         "last_synced_at": last[0].isoformat() if last and last[0] else None,
         "repo": settings.RUNTIPI_APPSTORE_REPO,
         "ref": settings.RUNTIPI_APPSTORE_REF,
         "categories": sorted(cats),
+        "sources": sources,
     }
 
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ...auth import PermissionChecker
@@ -39,6 +39,9 @@ class InstallRequest(BaseModel):
     storage: str = "local-lvm"
     bridge: str = "vmbr0"
     ostemplate: Optional[str] = None  # переопределение золотого шаблона
+    # Кастомный рабочий порт приложения (переопределяет порт из каталога).
+    # None — использовать порт по умолчанию из config.json приложения.
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
     # IPAM (опционально): если задан network — IP выделяется из пула IPAM,
     # иначе контейнер получает адрес по DHCP.
     ipam_network_id: Optional[int] = None
@@ -70,7 +73,7 @@ def install_app(
             app_id=req.app_id, name=req.name, form_answers=req.form_answers,
             server_id=req.server_id, node=req.node, cores=req.cores,
             memory=req.memory, disk=req.disk, storage=req.storage,
-            bridge=req.bridge, ostemplate=req.ostemplate,
+            bridge=req.bridge, ostemplate=req.ostemplate, port=req.port,
             ipam_network_id=req.ipam_network_id, ipam_pool_id=req.ipam_pool_id,
         )
     except engine.EngineError as e:

@@ -8,7 +8,8 @@ import type {
 } from '@/types/appstore';
 
 export const appstoreKeys = {
-  catalog: (q?: string, category?: string) => ['appstore-catalog', q ?? '', category ?? ''] as const,
+  catalog: (q?: string, category?: string, source?: string) =>
+    ['appstore-catalog', q ?? '', category ?? '', source ?? ''] as const,
   catalogMeta: ['appstore-catalog-meta'] as const,
   catalogApp: (id: string) => ['appstore-catalog-app', id] as const,
   installed: ['appstore-installed'] as const,
@@ -18,14 +19,15 @@ export const appstoreKeys = {
 
 // ── Каталог ────────────────────────────────────────────────────────────────
 
-export function useCatalog(q?: string, category?: string, availableOnly = false) {
+export function useCatalog(q?: string, category?: string, source?: string, availableOnly = false) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (category) params.set('category', category);
+  if (source) params.set('source', source);
   if (availableOnly) params.set('available_only', 'true');
   const qs = params.toString();
   return useQuery({
-    queryKey: appstoreKeys.catalog(q, category),
+    queryKey: appstoreKeys.catalog(q, category, source),
     queryFn: () => apiClient.get<CatalogListResponse>(`/api/appstore/catalog${qs ? `?${qs}` : ''}`),
   });
 }
@@ -94,6 +96,7 @@ export interface InstallArgs {
   disk: number;
   storage: string;
   bridge: string;
+  port?: number;
   ipam_network_id?: number;
   ipam_pool_id?: number;
 }

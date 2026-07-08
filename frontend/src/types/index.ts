@@ -340,6 +340,8 @@ export interface IPAMNetwork {
   proxmox_server_id?: number;
   proxmox_node?: string;
   proxmox_bridge?: string;
+  workspace_id?: number | null;
+  is_default?: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -348,6 +350,7 @@ export interface IPAMNetwork {
   available_ips?: number;
   utilization_percent?: number;
   server_name?: string;
+  workspace_name?: string;
 }
 
 export interface IPAMPool {

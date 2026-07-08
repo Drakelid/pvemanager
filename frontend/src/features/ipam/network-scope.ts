@@ -1,44 +1,37 @@
 import type { IPAMNetwork } from '@/types';
 
 /**
- * Сети, релевантные выбранным серверу/ноде (для выпадающих списков в визардах).
- * Показываем активные сети, которые:
- *  - привязаны к выбранному серверу ИЛИ глобальные (без привязки к серверу);
- *  - привязаны к выбранной ноде ИЛИ без привязки к конкретной ноде.
+ * Сети, релевантные для выпадающих списков в мастерах.
+ * Список сетей уже отфильтрован бэкендом по активной рабочей области
+ * (заголовок X-Active-Workspace), поэтому здесь достаточно отсеять неактивные.
+ * Если явно передан workspaceId — дополнительно оставляем только сети этой
+ * области плюс глобальные (без привязки).
  */
 export function scopedNetworks(
   networks: IPAMNetwork[],
-  serverId?: number | null,
-  node?: string | null,
+  workspaceId?: number | null,
 ): IPAMNetwork[] {
   return networks.filter((n) =>
     n.is_active &&
-    (!n.proxmox_server_id || !serverId || n.proxmox_server_id === serverId) &&
-    (!n.proxmox_node || !node || n.proxmox_node === node),
+    (!workspaceId || !n.workspace_id || n.workspace_id === workspaceId),
   );
 }
 
 /**
- * Автовыбор сети исходя из выбранной ноды: возвращает id IPAM-сети, из пула
- * которой нужно выдать IP, либо null (тогда fallback на DHCP/ручной ввод).
+ * Автовыбор сети для активной рабочей области: возвращает id IPAM-сети, из пула
+ * которой выдаётся IP, либо null (тогда fallback на DHCP/ручной ввод).
  *
- * Правило (детерминированное):
- *  1. сеть, привязанная именно к этой ноде выбранного сервера;
- *  2. иначе — сеть, привязанная к серверу без привязки к ноде;
- *  3. иначе — null (глобальные сети автоматически НЕ выбираем, чтобы не выдать
- *     адрес из чужой подсети).
+ * Правило: среди сетей области — сеть с флагом «по умолчанию», иначе первая
+ * сеть области. Глобальные сети (без области) автоматически не выбираем.
  */
 export function autoPickNetworkId(
   networks: IPAMNetwork[],
-  serverId?: number | null,
-  node?: string | null,
+  workspaceId?: number | null,
 ): number | null {
-  if (!serverId) return null;
-  const active = networks.filter((n) => n.is_active && n.proxmox_server_id === serverId);
-  if (node) {
-    const nodeBound = active.find((n) => n.proxmox_node === node);
-    if (nodeBound) return nodeBound.id;
-  }
-  const serverOnly = active.find((n) => !n.proxmox_node);
-  return serverOnly ? serverOnly.id : null;
+  const inWs = networks.filter((n) =>
+    n.is_active && (workspaceId ? n.workspace_id === workspaceId : !!n.workspace_id),
+  );
+  if (!inWs.length) return null;
+  const def = inWs.find((n) => n.is_default);
+  return (def ?? inWs[0]).id;
 }

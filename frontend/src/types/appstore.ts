@@ -20,6 +20,7 @@ export interface FormField {
 export interface CatalogAppLight {
   app_id: string;
   name: string;
+  source: 'runtipi' | 'umbrel' | string;
   version: string | null;
   tipi_version: number | null;
   categories: string[];
@@ -55,6 +56,7 @@ export interface CatalogMeta {
   repo: string;
   ref: string;
   categories: string[];
+  sources?: string[];
 }
 
 export type InstalledStatus =

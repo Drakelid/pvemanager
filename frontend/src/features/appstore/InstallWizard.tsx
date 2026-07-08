@@ -17,6 +17,7 @@ import { useServers, useNodes } from '@/hooks/use-nodes';
 import { useLXCStorages } from '@/hooks/use-lxc-templates';
 import { useIPAMNetworks, useIPAMPools } from '@/hooks/use-ipam';
 import { scopedNetworks, autoPickNetworkId } from '@/features/ipam/network-scope';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useInstallApp, useInstalledApp, useOperationProgress, useAppOperations } from '@/hooks/use-appstore';
 import type { AppOperation, CatalogApp } from '@/types/appstore';
 
@@ -44,6 +45,8 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
   const [disk, setDisk] = useState(8);
   const [storage, setStorage] = useState('local-lvm');
   const [bridge, setBridge] = useState('vmbr0');
+  // Кастомный рабочий порт: по умолчанию берём из каталога (app.port).
+  const [port, setPort] = useState<string>(app.port ? String(app.port) : '');
   const [ipamNetworkId, setIpamNetworkId] = useState<string>('');
   const [ipamPoolId, setIpamPoolId] = useState<string>('');
 
@@ -53,28 +56,24 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
   const serverIdNum = serverId ? Number(serverId) : undefined;
   const { data: nodesData } = useNodes(serverIdNum ?? 0);
   const nodes = nodesData?.nodes ?? [];
-  // Сети, релевантные выбранным серверу/ноде (для выпадающего списка).
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  // Сети активной рабочей области (для выпадающего списка).
   const availableNetworks = useMemo(
-    () => scopedNetworks(ipamNetworks, serverIdNum, node || undefined),
-    [ipamNetworks, serverIdNum, node],
+    () => scopedNetworks(ipamNetworks, activeWorkspaceId),
+    [ipamNetworks, activeWorkspaceId],
   );
 
-  // Смена сервера: сбрасываем ноду и выбираем сеть, привязанную к серверу (если есть).
+  // Смена сервера: сбрасываем ноду и подставляем сеть по умолчанию активной области.
   const handleServerChange = (v: string) => {
     setServerId(v ?? '');
     setNode('');
-    const nid = autoPickNetworkId(ipamNetworks, v ? Number(v) : undefined, undefined);
+    const nid = autoPickNetworkId(ipamNetworks, activeWorkspaceId);
     setIpamNetworkId(nid ? String(nid) : '');
     setIpamPoolId('');
   };
 
-  // Смена ноды: автоматически выбираем сеть, из пула которой выдаётся IP.
-  const handleNodeChange = (v: string) => {
-    setNode(v);
-    const nid = autoPickNetworkId(ipamNetworks, serverIdNum, v || undefined);
-    setIpamNetworkId(nid ? String(nid) : '');
-    setIpamPoolId('');
-  };
+  // Нода нужна только для размещения контейнера; на выбор сети больше не влияет.
+  const handleNodeChange = (v: string) => setNode(v);
 
   // Хранилища ноды под rootfs LXC (для выбора вместо ручного ввода).
   const { data: storages = [] } = useLXCStorages(
@@ -128,6 +127,7 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
     setName(app.app_id); setServerId(''); setNode(''); setAnswers({});
     setAdvanced(false); setCores(2); setMemory(2048); setDisk(8);
     setStorage('local-lvm'); setBridge('vmbr0');
+    setPort(app.port ? String(app.port) : '');
     setIpamNetworkId(''); setIpamPoolId('');
   };
 
@@ -142,6 +142,7 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
       {
         app_id: app.app_id, name, server_id: Number(serverId), node: node || undefined,
         form_answers: answers, cores, memory, disk, storage, bridge,
+        port: port ? Number(port) : undefined,
         ipam_network_id: ipamNetworkId ? Number(ipamNetworkId) : undefined,
         ipam_pool_id: ipamPoolId ? Number(ipamPoolId) : undefined,
       },
@@ -270,6 +271,15 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
                   <div className="space-y-1.5">
                     <Label>{t('appstore.bridge')}</Label>
                     <Input value={bridge} onChange={(e) => setBridge(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>{t('appstore.port')}</Label>
+                    <Input
+                      type="number"
+                      value={port}
+                      placeholder={app.port ? String(app.port) : t('appstore.port_auto')}
+                      onChange={(e) => setPort(e.target.value)}
+                    />
                   </div>
                   <div className="col-span-2 space-y-1.5">
                     <Label>{t('appstore.ipam_network')}</Label>

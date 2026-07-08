@@ -15,8 +15,9 @@ export default function AppStorePage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('');
+  const [source, setSource] = useState<string>('');
 
-  const { data: catalog, isLoading } = useCatalog(search, category);
+  const { data: catalog, isLoading } = useCatalog(search, category, source);
   const { data: meta } = useCatalogMeta();
   const { data: installed = [] } = useInstalledApps();
   const sync = useSyncCatalog();
@@ -82,6 +83,19 @@ export default function AppStorePage() {
             ))}
           </SelectContent>
         </Select>
+        {(meta?.sources?.length ?? 0) > 1 && (
+          <Select value={source} onValueChange={(v) => setSource(v ?? '')}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder={t('appstore.all_sources')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">{t('appstore.all_sources')}</SelectItem>
+              {(meta?.sources ?? []).map((s) => (
+                <SelectItem key={s} value={s}>{t(`appstore.sources.${s}`, s)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         {meta?.last_synced_at && (
           <span className="text-xs text-muted-foreground">
             {t('appstore.last_synced')}: {new Date(meta.last_synced_at).toLocaleString()}
@@ -124,6 +138,11 @@ export default function AppStorePage() {
                 </div>
               </div>
               <div className="mt-auto flex flex-wrap items-center gap-1">
+                {(meta?.sources?.length ?? 0) > 1 && app.source && (
+                  <Badge variant="secondary" className="text-2xs capitalize">
+                    {t(`appstore.sources.${app.source}`, app.source)}
+                  </Badge>
+                )}
                 {(app.categories ?? []).slice(0, 2).map((c) => (
                   <Badge key={c} variant="outline" className="text-2xs">{t(`appstore.categories.${c}`, c)}</Badge>
                 ))}

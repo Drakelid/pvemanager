@@ -77,6 +77,18 @@ class Settings(BaseSettings):
     # (митигация риска смены формата Runtipi, ТЗ п.13); дефолт master — «всегда свежий».
     RUNTIPI_APPSTORE_REPO: str = Field(default="runtipi/runtipi-appstore", env="RUNTIPI_APPSTORE_REPO")
     RUNTIPI_APPSTORE_REF: str = Field(default="master", env="RUNTIPI_APPSTORE_REF")
+    # Дополнительный источник каталога — Umbrel (getumbrel/umbrel-apps). Формат
+    # манифеста иной (umbrel-app.yml + docker-compose.yml), поэтому подключается
+    # отдельным провайдером; см. UmbrelCatalogProvider.
+    UMBREL_APPSTORE_REPO: str = Field(default="getumbrel/umbrel-apps", env="UMBREL_APPSTORE_REPO")
+    UMBREL_APPSTORE_REF: str = Field(default="master", env="UMBREL_APPSTORE_REF")
+    # Иконки Umbrel-приложений лежат не в umbrel-apps, а в отдельном репозитории
+    # галереи (<app-id>/icon.svg). Скачивается одним tarball при синхронизации.
+    UMBREL_APPSTORE_GALLERY_REPO: str = Field(
+        default="getumbrel/umbrel-apps-gallery", env="UMBREL_APPSTORE_GALLERY_REPO")
+    # Активные источники каталога (через запятую): "runtipi", "umbrel" или оба.
+    # По умолчанию только runtipi — Umbrel включается явно.
+    APPSTORE_SOURCES: str = Field(default="runtipi", env="APPSTORE_SOURCES")
     # Каталог для кэша логотипов/данных App Store (монтируемый volume — переживает пересборку).
     APPSTORE_DATA_DIR: str = Field(default="/app/data/appstore", env="APPSTORE_DATA_DIR")
     # Периодичность авто-синхронизации каталога (ТЗ F-CAT-1).

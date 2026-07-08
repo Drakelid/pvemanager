@@ -19,9 +19,15 @@ class CatalogApp(Base):
     """
     __tablename__ = "catalog_apps"
 
-    # id приложения из runtipi (config.json → "id"), напр. "uptime-kuma"
+    # id приложения из runtipi (config.json → "id"), напр. "uptime-kuma".
+    # Для источников кроме runtipi app_id префиксуется ("umbrel-<id>"), чтобы
+    # не было коллизий PK между каталогами разных источников.
     app_id = Column(String(100), primary_key=True, index=True)
     name = Column(String(200), nullable=False)
+
+    # источник каталога: "runtipi" | "umbrel". Определяет адаптацию compose
+    # при установке (публикация порта, вырезание рантайм-сервисов источника).
+    source = Column(String(50), nullable=False, default="runtipi", index=True)
 
     # version — строка тега docker-образа ("2", "1.23.1"); tipi_version — целочисленный
     # инкремент версии рецепта (используется для update_available в M2).
@@ -57,6 +63,7 @@ class CatalogApp(Base):
         data = {
             "app_id": self.app_id,
             "name": self.name,
+            "source": self.source or "runtipi",
             "version": self.version,
             "tipi_version": self.tipi_version,
             "categories": self.categories or [],

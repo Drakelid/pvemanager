@@ -15,7 +15,7 @@ import {
   useUpdateNetwork, useDeleteNetwork, useCreatePool, useUpdatePool, useDeletePool, useIPAMIPMap,
 } from '@/hooks/use-ipam';
 import type { IPAMNetwork, IPAMPool } from '@/types';
-import { ServerNodeSelect } from './ServerNodeSelect';
+import { WorkspaceSelect } from './WorkspaceSelect';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
 
@@ -73,8 +73,8 @@ export default function IPAMNetworkDetailPage() {
           <InfoRow label={t('common.gateway')} value={network.gateway || '—'} />
           <InfoRow label={t('common.vlan')} value={network.vlan_id ? String(network.vlan_id) : '—'} />
           <InfoRow label={t('common.dns')} value={network.dns_primary || '—'} />
-          <InfoRow label={t('ipam.server')} value={network.server_name || '—'} />
-          <InfoRow label={t('appstore.node')} value={network.proxmox_node || '—'} />
+          <InfoRow label={t('ipam.workspace', 'Рабочая область')} value={network.workspace_name || t('ipam.workspace_global', '— глобальная —')} />
+          <InfoRow label={t('ipam.default', 'по умолчанию')} value={network.is_default ? t('common.yes') : t('common.no')} />
           <InfoRow label={t('ipam.bridge')} value={network.proxmox_bridge || '—'} />
           {network.description && <InfoRow label={t('ipam.description')} value={network.description} />}
         </CardContent>
@@ -140,8 +140,8 @@ function NetworkActions({ network }: { network: IPAMNetwork }) {
     dns_secondary: network.dns_secondary ?? '',
     dns_domain: network.dns_domain ?? '',
     proxmox_bridge: network.proxmox_bridge ?? '',
-    proxmox_server_id: network.proxmox_server_id as number | undefined,
-    proxmox_node: network.proxmox_node as string | undefined,
+    workspace_id: network.workspace_id ?? undefined,
+    is_default: !!network.is_default,
     is_active: network.is_active,
     description: network.description ?? '',
   });
@@ -157,9 +157,9 @@ function NetworkActions({ network }: { network: IPAMNetwork }) {
         dns_secondary: form.dns_secondary || undefined,
         dns_domain: form.dns_domain || undefined,
         proxmox_bridge: form.proxmox_bridge || undefined,
-        // null явно очищает привязку на бэкенде (undefined был бы исключён из update)
-        proxmox_server_id: (form.proxmox_server_id ?? null) as number | undefined,
-        proxmox_node: (form.proxmox_node ?? null) as string | undefined,
+        // null явно очищает привязку области на бэкенде (undefined был бы исключён из update)
+        workspace_id: (form.workspace_id ?? null) as number | undefined,
+        is_default: form.is_default,
         is_active: form.is_active,
         description: form.description || undefined,
       },
@@ -197,12 +197,12 @@ function NetworkActions({ network }: { network: IPAMNetwork }) {
             <Field label={`${t('common.dns')} 2`}><Input value={form.dns_secondary} onChange={e => setForm(p => ({ ...p, dns_secondary: e.target.value }))} /></Field>
             <Field label={t('ipam.dns_domain')}><Input value={form.dns_domain} onChange={e => setForm(p => ({ ...p, dns_domain: e.target.value }))} /></Field>
             <Field label={t('ipam.bridge')}><Input value={form.proxmox_bridge} onChange={e => setForm(p => ({ ...p, proxmox_bridge: e.target.value }))} placeholder="vmbr0" /></Field>
-            <ServerNodeSelect
-              serverId={form.proxmox_server_id}
-              node={form.proxmox_node}
-              onChange={({ serverId, node }) => setForm(p => ({ ...p, proxmox_server_id: serverId, proxmox_node: node }))}
-            />
+            <WorkspaceSelect value={form.workspace_id} onChange={(id) => setForm(p => ({ ...p, workspace_id: id }))} />
             <Field label={t('ipam.description')} full><Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></Field>
+            <label className="flex items-center gap-2 text-sm sm:col-span-2">
+              <input type="checkbox" checked={form.is_default} onChange={e => setForm(p => ({ ...p, is_default: e.target.checked }))} />
+              {t('ipam.is_default', 'Сеть по умолчанию для области')}
+            </label>
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
               <input type="checkbox" checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} />
               {t('ipam.is_active')}

@@ -25,7 +25,7 @@ from ..appstore.pipeline import (
     APP_DIR, APP_DATA_DIR, InstallSpec, PocError, _NAME_RE, _node_ssh, _shq,
     poc_install, poc_teardown, poc_update,
 )
-from ..api.proxmox._helpers import _get_proxmox_client, get_next_vmid
+from ..api.proxmox._helpers import _get_proxmox_client, get_next_vmid, soft_delete_vm_instance
 from ..config import settings
 from ..db import SessionLocal
 from ..ipam_service import IPAMService
@@ -175,6 +175,7 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
             server_id: int, node: Optional[str] = None, cores: int = 2,
             memory: int = 2048, disk: int = 8, storage: str = "local-lvm",
             bridge: str = "vmbr0", ostemplate: Optional[str] = None,
+            port: Optional[int] = None,
             ipam_network_id: Optional[int] = None,
             ipam_pool_id: Optional[int] = None) -> dict:
     """Синхронная часть: валидация + запись в БД. Пайплайн — в пуле потоков."""
@@ -196,7 +197,15 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
     if not server:
         raise EngineError("Proxmox сервер не найден")
 
+    # Кастомный порт из формы имеет приоритет над портом каталога (app.port).
+    if port is not None and not (1 <= port <= 65535):
+        raise EngineError("Порт должен быть в диапазоне 1..65535")
+    effective_port = port if port else app.port
+
     env, secrets_shown = build_env(app, form_answers)
+    # APP_PORT в окружении должен соответствовать выбранному порту.
+    if port:
+        env["APP_PORT"] = str(port)
     vmid = get_next_vmid(db, server_id)
 
     # IPAM (опционально): выделяем адрес до старта пайплайна, чтобы ошибка
@@ -214,7 +223,7 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
         app_id=app_id, server_id=server_id, vmid=vmid, node=node, name=name,
         version_installed=str(app.version) if app.version is not None else None,
         tipi_version_installed=app.tipi_version,
-        env_encrypted=json.dumps(env), ip=static_ip, port=app.port, status="installing",
+        env_encrypted=json.dumps(env), ip=static_ip, port=effective_port, status="installing",
         owner_id=user.id,
     )
     db.add(ia)
@@ -225,8 +234,8 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
 
     _engine_executor.submit(
         _run_install, ia.id, op.id, user.id, app.compose_yaml, env, golden,
-        cores, memory, disk, server_id, node, name, app.port, ia.version_installed, vmid,
-        storage, bridge, ip_config, static_ip,
+        cores, memory, disk, server_id, node, name, effective_port, ia.version_installed, vmid,
+        storage, bridge, ip_config, static_ip, app.source or "runtipi",
     )
     return {"installed_app_id": ia.id, "operation_id": op.id, "vmid": vmid, "secrets": secrets_shown}
 
@@ -244,7 +253,7 @@ def _new_operation(db, installed_app_id: int, op_type: str, user_id: int) -> App
 
 def _run_install(installed_app_id, operation_id, user_id, compose_yaml, env, ostemplate,
                  cores, memory, disk, server_id, node, name, port, version, vmid,
-                 storage, bridge, ip_config=None, static_ip=None):
+                 storage, bridge, ip_config=None, static_ip=None, source="runtipi"):
     """Тело установки в пуле потоков."""
     db = SessionLocal()
     try:
@@ -253,6 +262,7 @@ def _run_install(installed_app_id, operation_id, user_id, compose_yaml, env, ost
             compose_yaml=compose_yaml, port=port or 80, env_vars=env,
             node=node, vmid=vmid, cores=cores, memory=memory, disk=disk,
             storage=storage, bridge=bridge, ip_config=ip_config, static_ip=static_ip,
+            source=source or "runtipi",
         )
 
         def on_step(step: str, progress: int) -> None:
@@ -321,7 +331,7 @@ def retry_install(db, user, installed_app_id: int) -> dict:
     _engine_executor.submit(
         _run_install, ia.id, op.id, user.id, compose, env, golden,
         2, 2048, 8, ia.server_id, ia.node, ia.name, ia.port, ia.version_installed, ia.vmid,
-        "local-lvm", "vmbr0", None, ia.ip,
+        "local-lvm", "vmbr0", None, ia.ip, (app.source or "runtipi"),
     )
     return {"installed_app_id": ia.id, "operation_id": op.id}
 
@@ -359,6 +369,12 @@ def _run_delete(installed_app_id, operation_id, user_id, server_id, vmid, node):
                     reason=f"App Store: удаление приложения #{installed_app_id}")
             except Exception as e:
                 logger.warning(f"[appstore-engine] IPAM release vmid={vmid}: {e}")
+            # Помечаем кэш-запись инстанса удалённой сразу, чтобы контейнер
+            # исчез из списка Инстансов немедленно, не дожидаясь фонового воркера.
+            try:
+                soft_delete_vm_instance(db, server_id, vmid)
+            except Exception as e:
+                logger.warning(f"[appstore-engine] soft-delete vm_instance vmid={vmid}: {e}")
 
         # финальное событие ДО удаления записи (каскад удалит app_operations)
         _finish_op(operation_id, user_id, "completed")
@@ -428,13 +444,13 @@ def update(db, user, installed_app_id: int, form_answers: Optional[dict] = None)
     _engine_executor.submit(
         _run_update, ia.id, op.id, user.id, app.compose_yaml,
         str(app.version) if app.version is not None else None, app.tipi_version,
-        form_answers or {},
+        form_answers or {}, (app.source or "runtipi"),
     )
     return {"installed_app_id": ia.id, "operation_id": op.id}
 
 
 def _run_update(installed_app_id, operation_id, user_id, compose_yaml,
-                new_version, new_tipi, form_answers):
+                new_version, new_tipi, form_answers, source="runtipi"):
     db = SessionLocal()
     try:
         ia = db.get(InstalledApp, installed_app_id)
@@ -471,7 +487,7 @@ def _run_update(installed_app_id, operation_id, user_id, compose_yaml,
 
         # 3-4. push нового compose → pull && up → health
         status = poc_update(server, client, ia.vmid, ia.node, compose_yaml,
-                            env, ia.port or 80, ia.ip, on_step)
+                            env, ia.port or 80, ia.ip, on_step, source=source or "runtipi")
 
         if status == "running":
             ia.status = "running"

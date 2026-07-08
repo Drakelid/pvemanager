@@ -32,6 +32,7 @@ router = APIRouter()
 def list_catalog(
     q: Optional[str] = None,
     category: Optional[str] = None,
+    source: Optional[str] = None,
     available_only: bool = False,
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
@@ -41,6 +42,8 @@ def list_catalog(
     query = db.query(CatalogApp)
     if available_only:
         query = query.filter(CatalogApp.available.is_(True))
+    if source:
+        query = query.filter(CatalogApp.source == source.strip().lower())
     if q:
         like = f"%{q.strip().lower()}%"
         query = query.filter(or_(

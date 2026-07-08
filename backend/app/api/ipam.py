@@ -8,6 +8,7 @@ import ipaddress as ipaddress_module
 from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -30,29 +31,61 @@ router = APIRouter()
 
 @router.get("/api/networks", response_model=List[IPAMNetworkResponse])
 def get_networks(
+    request: Request,
     is_active: Optional[bool] = None,
     proxmox_server_id: Optional[int] = None,
+    workspace_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("ipam:view"))
 ):
-    """Get all IPAM networks"""
+    """Get all IPAM networks.
+
+    Filtered by the active workspace (X-Active-Workspace header): networks bound to
+    that workspace plus global networks (workspace_id IS NULL). Admin "All workspaces"
+    (header 0/absent) shows everything. An explicit ?workspace_id= query param overrides.
+    """
+    from ..models import Workspace
+
     query = db.query(IPAMNetwork)
-    
+
     if is_active is not None:
         query = query.filter(IPAMNetwork.is_active == is_active)
-    
+
     if proxmox_server_id:
         query = query.filter(IPAMNetwork.proxmox_server_id == proxmox_server_id)
-    
+
+    # Resolve workspace scope: explicit query param wins, else the active-workspace header.
+    ws_filter = workspace_id
+    if ws_filter is None:
+        raw = request.headers.get("X-Active-Workspace")
+        if raw is not None:
+            try:
+                parsed = int(raw)
+                ws_filter = parsed if parsed != 0 else None
+            except ValueError:
+                ws_filter = None
+    if ws_filter:
+        # Networks of this workspace + global (unassigned) networks.
+        query = query.filter(
+            or_(IPAMNetwork.workspace_id == ws_filter, IPAMNetwork.workspace_id.is_(None))
+        )
+
     networks = query.order_by(IPAMNetwork.name).all()
-    
+
     # Get server names for networks
     server_ids = [n.proxmox_server_id for n in networks if n.proxmox_server_id]
     servers = {}
     if server_ids:
         server_records = db.query(ProxmoxServer).filter(ProxmoxServer.id.in_(server_ids)).all()
         servers = {s.id: s.name for s in server_records}
-    
+
+    # Get workspace names for networks
+    ws_ids = [n.workspace_id for n in networks if n.workspace_id]
+    workspaces = {}
+    if ws_ids:
+        ws_records = db.query(Workspace.id, Workspace.name).filter(Workspace.id.in_(ws_ids)).all()
+        workspaces = {w.id: w.name for w in ws_records}
+
     # Add computed stats to each network
     ipam = IPAMService(db)
     result = []
@@ -64,10 +97,11 @@ def get_networks(
             'used_ips': stats.get('allocated_ips', 0) + stats.get('reserved_ips', 0),
             'available_ips': stats.get('available_ips', 0),
             'utilization_percent': stats.get('utilization_percent', 0),
-            'server_name': servers.get(network.proxmox_server_id) if network.proxmox_server_id else None
+            'server_name': servers.get(network.proxmox_server_id) if network.proxmox_server_id else None,
+            'workspace_name': workspaces.get(network.workspace_id) if network.workspace_id else None,
         }
         result.append(network_dict)
-    
+
     return result
 
 
@@ -142,9 +176,11 @@ def create_network(
     
     network = IPAMNetwork(**network_data.model_dump())
     db.add(network)
+    db.flush()  # assign id before clearing other defaults
+    _enforce_single_default(db, network)
     db.commit()
     db.refresh(network)
-    
+
     logger.info(f"User {current_user.username} created network {network.name} ({network.network})")
     return network
 
@@ -164,12 +200,25 @@ def update_network(
     update_data = network_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(network, field, value)
-    
+
+    _enforce_single_default(db, network)
     db.commit()
     db.refresh(network)
-    
+
     logger.info(f"User {current_user.username} updated network {network.name}")
     return network
+
+
+def _enforce_single_default(db: Session, network: IPAMNetwork) -> None:
+    """Keep at most one default network per workspace: if this one is marked
+    default, clear the flag on siblings in the same workspace."""
+    if not network.is_default or network.workspace_id is None:
+        return
+    db.query(IPAMNetwork).filter(
+        IPAMNetwork.workspace_id == network.workspace_id,
+        IPAMNetwork.id != network.id,
+        IPAMNetwork.is_default == True,  # noqa: E712
+    ).update({IPAMNetwork.is_default: False}, synchronize_session=False)
 
 
 @router.delete("/api/networks/{network_id}")
