@@ -4,6 +4,35 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.9.0] - 2026-07-09
+
+### 🌐 IPAM
+
+- **Networks bound to server/node and workspace** — an IPAM network can now be tied to a specific Proxmox server/node and to a workspace; each workspace uses one subnet, and the network is auto-selected by the active workspace in the Create Instance and App Store install wizards, so users no longer pick a network manually in the common case
+- **Auto-selection in wizards** — the deploy wizards resolve the target network/pool from the current scope and pre-fill it; a missing binding falls back to manual selection
+- Migration: IPAM network workspace-binding columns + default flag added via `backend/migrations/migrations.py`
+
+### 🔧 Nodes
+
+- **FQDN/domain accepted in the Proxmox host field** — the Add/Edit Proxmox server form now accepts a domain name or FQDN (not only an IP), resolved when connecting
+
+---
+
+## [v1.8.1] - 2026-07-09
+
+### 🛒 App Store
+
+- **Umbrel as a second catalog source** — the catalog is now multi-source: alongside `runtipi/runtipi-appstore` you can enable `getumbrel/umbrel-apps` (~380 apps). Sources are configured via `APPSTORE_SOURCES` (comma-separated, default `runtipi`); Umbrel app ids are namespaced (`umbrel-<id>`) so catalogs never collide
+- **Umbrel compose adapter** — install understands Umbrel manifests: the container port is taken from the `app_proxy` service (`APP_PORT`), the Umbrel runtime services (`app_proxy`, `tor`) are stripped, dangling `depends_on` are cleaned, and the main service port is published on the LXC host so the health-check passes; Runtipi behaviour is unchanged
+- **Umbrel icons** — icons are fetched from the separate `getumbrel/umbrel-apps-gallery` repository (`<app-id>/icon.svg`) during sync and cached like Runtipi logos; a gallery fetch failure never fails the catalog sync
+- **Multi-source sync** — each source syncs independently (a network failure of one doesn't cancel the others), and the *disappeared → unavailable* pass is scoped per source so a Runtipi sync never touches Umbrel rows
+- **Source filter & badge (UI)** — the App Store adds a source filter and a per-card source badge, shown only when more than one source is enabled; catalog metadata now exposes the available `sources`
+- **Custom install port** — the install wizard accepts a custom host port (validated 1..65535), overriding the catalog default
+- **Instant instance cleanup** — deleting an app soft-deletes the linked VM instance immediately for a snappier UI
+- **Data model & settings** — `catalog_apps.source` column (migration 34); new env settings `APPSTORE_SOURCES`, `UMBREL_APPSTORE_REPO`, `UMBREL_APPSTORE_REF`, `UMBREL_APPSTORE_GALLERY_REPO`
+
+---
+
 ## [v1.8.0] - 2026-07-07
 
 ### 🛒 App Store

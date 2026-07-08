@@ -35,7 +35,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **Networks page** — unified UI for SDN and node interface management
 
 ### App Store
-- **Self-hosted app catalog** — one-click install of self-hosted apps, each into its own unprivileged LXC running Docker Compose (1 app = 1 LXC); catalog imported from `runtipi/runtipi-appstore` (~265 apps)
+- **Self-hosted app catalog** — one-click install of self-hosted apps, each into its own unprivileged LXC running Docker Compose (1 app = 1 LXC); multi-source catalog — `runtipi/runtipi-appstore` (~265 apps) plus optional `getumbrel/umbrel-apps` (~380 apps), selectable via `APPSTORE_SOURCES`
 - **Install wizard** — dynamic app parameters (form fields), advanced LXC resources, auto-generated secrets, live install progress over WebSocket, and one-time credential display
 - **My Apps lifecycle** — start / stop / restart / logs / delete, with background reconciliation (orphan detection) and per-app status
 - **Update & Rollback** — snapshot-backed updates (`docker compose pull`) with health-check and one-click rollback to the pre-update snapshot

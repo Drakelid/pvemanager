@@ -770,7 +770,7 @@ Containers created from CT templates support reinstall:
 
 ## 🛒 App Store
 
-Catalog of self-hosted applications with one-click install. Each app runs in its own **unprivileged LXC** container with **Docker Compose** (1 app = 1 LXC). The catalog is imported from the [`runtipi/runtipi-appstore`](https://github.com/runtipi/runtipi-appstore) repository.
+Catalog of self-hosted applications with one-click install. Each app runs in its own **unprivileged LXC** container with **Docker Compose** (1 app = 1 LXC). The catalog is **multi-source**: [`runtipi/runtipi-appstore`](https://github.com/runtipi/runtipi-appstore) (~265 apps) and, optionally, [`getumbrel/umbrel-apps`](https://github.com/getumbrel/umbrel-apps) (~380 apps). Sources are selected via `APPSTORE_SOURCES`; Umbrel app ids are namespaced (`umbrel-<id>`) to avoid collisions.
 
 ### Prerequisites
 
@@ -783,16 +783,21 @@ Catalog of self-hosted applications with one-click install. Each app runs in its
 | Variable | Default | Purpose |
 |---|---|---|
 | `APPSTORE_GOLDEN_TEMPLATE` | — | golden vztmpl volid (required for install) |
-| `RUNTIPI_APPSTORE_REPO` | `runtipi/runtipi-appstore` | catalog source |
+| `APPSTORE_SOURCES` | `runtipi` | active catalog sources, comma-separated (`runtipi`, `umbrel`) |
+| `RUNTIPI_APPSTORE_REPO` | `runtipi/runtipi-appstore` | Runtipi catalog source |
 | `RUNTIPI_APPSTORE_REF` | `master` | branch/tag/commit (pin recommended) |
+| `UMBREL_APPSTORE_REPO` | `getumbrel/umbrel-apps` | Umbrel catalog source (used when `umbrel` is enabled) |
+| `UMBREL_APPSTORE_REF` | `master` | Umbrel branch/tag/commit |
+| `UMBREL_APPSTORE_GALLERY_REPO` | `getumbrel/umbrel-apps-gallery` | Umbrel icons source (`<app-id>/icon.svg`) |
 | `APPSTORE_DATA_DIR` | `/app/data/appstore` | logo cache (mounted volume) |
 | `CATALOG_SYNC_INTERVAL_HOURS` | `24` | auto catalog sync interval |
 | `APPSTORE_HOST_ARCH` | `amd64` | target node arch (marks unsupported apps) |
 
 ### Catalog
 
-- **App Store** screen: card grid with search and category filters; **Refresh catalog** button + last-sync timestamp.
-- Automatic sync every 24 h; a broken app entry is skipped without failing the whole sync.
+- **App Store** screen: card grid with search and category filters; **Refresh catalog** button + last-sync timestamp. When more than one source is enabled, a **source filter** and a per-card **source badge** (Runtipi / Umbrel) appear.
+- Automatic sync every 24 h; a broken app entry is skipped without failing the whole sync. Each source syncs independently and the *disappeared → unavailable* pass is scoped per source.
+- Umbrel apps: metadata comes from `umbrel-app.yml`, icons from the gallery repo; on install the Umbrel `app_proxy`/`tor` runtime services are stripped and the container port (`app_proxy → APP_PORT`) is published on the LXC host.
 - App page: description, version, source link, install disclaimer, and a compose preview.
 
 ### Install
@@ -823,7 +828,7 @@ Manage installed apps: **Start / Stop / Restart / Logs / Delete**, live status, 
 ### REST API
 
 ```
-GET    /api/appstore/catalog                      # list (q, category)
+GET    /api/appstore/catalog                      # list (q, category, source)
 GET    /api/appstore/catalog/{app_id}             # detail
 GET    /api/appstore/catalog/{app_id}/logo        # logo (public)
 POST   /api/appstore/catalog/sync                 # manual sync (admin)
