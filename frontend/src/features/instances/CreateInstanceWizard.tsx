@@ -9,9 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useServers } from '@/hooks/use-nodes';
+import { useServers, useNodes } from '@/hooks/use-nodes';
 import { useTemplates, useTemplateGroups } from '@/hooks/use-templates';
 import { useIPAMNetworks } from '@/hooks/use-ipam';
+import { autoPickNetworkId } from '@/features/ipam/network-scope';
 import { useLXCTemplates, useLXCStorages, useDeployLXC } from '@/hooks/use-lxc-templates';
 import { useMySSHKeys, useUserSSHKeys } from '@/hooks/use-ssh-keys';
 import { useProfile, useMyQuota } from '@/hooks/use-settings';
@@ -100,6 +101,15 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   const { data: lxcTemplates = [], isLoading: lxcLoading } = useLXCTemplates(selectedServer?.id);
   const { data: lxcStorages = [] } = useLXCStorages(selectedServer?.id, undefined, 'rootdir');
   const { data: vmStorages = [] } = useLXCStorages(selectedServer?.id, undefined, 'images');
+  const { data: nodesData } = useNodes(selectedServer?.id ?? 0);
+  const nodes = nodesData?.nodes ?? [];
+
+  // Смена ноды (VM): выбираем ноду и авто-подбираем IPAM-сеть, привязанную к ней.
+  const handleVMNodeChange = (node: string) => {
+    setSelectedNode(node);
+    const nid = autoPickNetworkId(networks, selectedServer?.id, node || undefined);
+    setConfig(p => ({ ...p, ipam_network_id: nid }));
+  };
 
   // ── SSH Keys & ownership ──────────────────────────────────────────────────
   const { data: profile } = useProfile();
@@ -277,7 +287,12 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               <Card
                 key={srv.id}
                 className={`cursor-pointer transition-colors hover:border-primary/50 ${selectedServer?.id === srv.id ? 'border-primary bg-primary/5' : ''}`}
-                onClick={() => { setSelectedServer(srv); setSelectedLXCTemplate(null); setSelectedTemplate(null); }}
+                onClick={() => {
+                  setSelectedServer(srv); setSelectedLXCTemplate(null); setSelectedTemplate(null);
+                  setSelectedNode('');
+                  setConfig(p => ({ ...p, ipam_network_id: null }));
+                  setLxcConfig(p => ({ ...p, ipam_network_id: null }));
+                }}
               >
                 <CardContent className="flex items-center gap-3 p-4">
                   <Server className="h-8 w-8 text-muted-foreground" />
@@ -393,7 +408,11 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 <Card
                   key={tpl.volid}
                   className={`cursor-pointer transition-colors hover:border-success/50 ${selectedLXCTemplate?.volid === tpl.volid ? 'border-success bg-success/5' : ''}`}
-                  onClick={() => setSelectedLXCTemplate(tpl)}
+                  onClick={() => {
+                    setSelectedLXCTemplate(tpl);
+                    const nid = autoPickNetworkId(networks, selectedServer?.id, tpl.node || undefined);
+                    setLxcConfig(p => ({ ...p, ipam_network_id: nid }));
+                  }}
                 >
                   <CardContent className="p-3">
                     <div className="flex items-center gap-2">
@@ -432,7 +451,15 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 </div>
                 <div>
                   <Label>{t('wizard.target_node')}</Label>
-                  <Input value={selectedNode} onChange={e => setSelectedNode(e.target.value)} placeholder={t('wizard.auto_select')} />
+                  <Select value={selectedNode || '__auto__'} onValueChange={v => handleVMNodeChange(v && v !== '__auto__' ? v : '')}>
+                    <SelectTrigger><SelectValue placeholder={t('wizard.auto_select')} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__auto__">{t('wizard.auto_select')}</SelectItem>
+                      {nodes.map(n => (
+                        <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex items-center gap-2">
                   <input

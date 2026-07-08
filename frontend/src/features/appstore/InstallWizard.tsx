@@ -13,9 +13,10 @@ import { Badge } from '@/components/ui/badge';
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select';
-import { useServers } from '@/hooks/use-nodes';
+import { useServers, useNodes } from '@/hooks/use-nodes';
 import { useLXCStorages } from '@/hooks/use-lxc-templates';
 import { useIPAMNetworks, useIPAMPools } from '@/hooks/use-ipam';
+import { scopedNetworks, autoPickNetworkId } from '@/features/ipam/network-scope';
 import { useInstallApp, useInstalledApp, useOperationProgress, useAppOperations } from '@/hooks/use-appstore';
 import type { AppOperation, CatalogApp } from '@/types/appstore';
 
@@ -48,6 +49,32 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
 
   const { data: ipamNetworks = [] } = useIPAMNetworks();
   const { data: ipamPools = [] } = useIPAMPools(ipamNetworkId ? Number(ipamNetworkId) : undefined);
+
+  const serverIdNum = serverId ? Number(serverId) : undefined;
+  const { data: nodesData } = useNodes(serverIdNum ?? 0);
+  const nodes = nodesData?.nodes ?? [];
+  // Сети, релевантные выбранным серверу/ноде (для выпадающего списка).
+  const availableNetworks = useMemo(
+    () => scopedNetworks(ipamNetworks, serverIdNum, node || undefined),
+    [ipamNetworks, serverIdNum, node],
+  );
+
+  // Смена сервера: сбрасываем ноду и выбираем сеть, привязанную к серверу (если есть).
+  const handleServerChange = (v: string) => {
+    setServerId(v ?? '');
+    setNode('');
+    const nid = autoPickNetworkId(ipamNetworks, v ? Number(v) : undefined, undefined);
+    setIpamNetworkId(nid ? String(nid) : '');
+    setIpamPoolId('');
+  };
+
+  // Смена ноды: автоматически выбираем сеть, из пула которой выдаётся IP.
+  const handleNodeChange = (v: string) => {
+    setNode(v);
+    const nid = autoPickNetworkId(ipamNetworks, serverIdNum, v || undefined);
+    setIpamNetworkId(nid ? String(nid) : '');
+    setIpamPoolId('');
+  };
 
   // Хранилища ноды под rootfs LXC (для выбора вместо ручного ввода).
   const { data: storages = [] } = useLXCStorages(
@@ -160,7 +187,7 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
 
             <div className="space-y-1.5">
               <Label>{t('appstore.server')}</Label>
-              <Select value={serverId} onValueChange={(v) => setServerId(v ?? '')}>
+              <Select value={serverId} onValueChange={(v) => handleServerChange(v ?? '')}>
                 <SelectTrigger><SelectValue placeholder={t('appstore.select_server')} /></SelectTrigger>
                 <SelectContent>
                   {servers.map((s) => (
@@ -218,7 +245,15 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
                   <NumField label={t('appstore.disk')} value={disk} onChange={setDisk} />
                   <div className="space-y-1.5">
                     <Label>{t('appstore.node')}</Label>
-                    <Input value={node} onChange={(e) => setNode(e.target.value)} />
+                    <Select value={node || '__auto__'} onValueChange={(v) => handleNodeChange(v && v !== '__auto__' ? v : '')} disabled={!serverId}>
+                      <SelectTrigger><SelectValue placeholder={t('wizard.auto_select', 'Авто')} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__auto__">{t('wizard.auto_select', 'Авто')}</SelectItem>
+                        {nodes.map((n) => (
+                          <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1.5">
                     <Label>{t('appstore.storage')}</Label>
@@ -249,7 +284,7 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="dhcp">{t('appstore.ipam_dhcp')}</SelectItem>
-                        {ipamNetworks.map((n) => (
+                        {availableNetworks.map((n) => (
                           <SelectItem key={n.id} value={String(n.id)}>
                             {n.name} ({n.network})
                           </SelectItem>
