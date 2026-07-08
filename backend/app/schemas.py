@@ -1,8 +1,34 @@
 from datetime import datetime
 from typing import Optional, List
 import ipaddress
+import re
 
 from pydantic import BaseModel, Field, field_validator, model_validator, EmailStr
+
+
+_HOSTNAME_LABEL_RE = re.compile(r'^(?!-)[A-Za-z0-9-]{1,63}(?<!-)$')
+
+
+def validate_host(v: str) -> str:
+    """Validate that value is a valid IP address or hostname/FQDN."""
+    if v is None:
+        raise ValueError('Host is required')
+    v = v.strip()
+    if not v:
+        raise ValueError('Host cannot be empty')
+    # Accept valid IP address (v4 or v6)
+    try:
+        ipaddress.ip_address(v)
+        return v
+    except ValueError:
+        pass
+    # Otherwise validate as hostname / FQDN
+    host = v.rstrip('.')
+    if len(host) > 253 or not host:
+        raise ValueError('Invalid host: must be a valid IP address or hostname')
+    if all(_HOSTNAME_LABEL_RE.match(label) for label in host.split('.')):
+        return v
+    raise ValueError('Invalid host: must be a valid IP address or hostname')
 
 
 # ==================== User Schemas ====================
@@ -116,12 +142,8 @@ class ProxmoxServerBase(BaseModel):
     @field_validator('ip_address')
     @classmethod
     def validate_ip_address(cls, v):
-        """Validate IP address format"""
-        try:
-            ipaddress.ip_address(v)
-            return v
-        except ValueError:
-            raise ValueError('Invalid IP address format')
+        """Validate IP address or hostname/FQDN"""
+        return validate_host(v)
 
     @field_validator('name')
     @classmethod
@@ -168,12 +190,8 @@ class ProxmoxServerCreate(BaseModel):
     @field_validator('ip_address')
     @classmethod
     def validate_ip_address(cls, v):
-        """Validate IP address format"""
-        try:
-            ipaddress.ip_address(v)
-            return v
-        except ValueError:
-            raise ValueError('Invalid IP address format')
+        """Validate IP address or hostname/FQDN"""
+        return validate_host(v)
 
     @field_validator('name')
     @classmethod
@@ -423,6 +441,8 @@ class IPAMNetworkBase(BaseModel):
     proxmox_server_id: Optional[int] = Field(None, description="Associated Proxmox server ID")
     proxmox_node: Optional[str] = Field(None, max_length=100, description="Proxmox node name (e.g., pve1)")
     proxmox_bridge: Optional[str] = Field(None, max_length=20, description="Proxmox bridge (e.g., vmbr0)")
+    workspace_id: Optional[int] = Field(None, description="Workspace this network belongs to")
+    is_default: bool = Field(default=False, description="Default network within its workspace")
     is_active: bool = Field(default=True, description="Is network active")
 
     @field_validator('network')
@@ -465,6 +485,8 @@ class IPAMNetworkUpdate(BaseModel):
     proxmox_server_id: Optional[int] = None
     proxmox_node: Optional[str] = Field(None, max_length=100)
     proxmox_bridge: Optional[str] = Field(None, max_length=20)
+    workspace_id: Optional[int] = None
+    is_default: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
@@ -479,6 +501,7 @@ class IPAMNetworkResponse(IPAMNetworkBase):
     available_ips: Optional[int] = None
     utilization_percent: Optional[float] = None
     server_name: Optional[str] = None
+    workspace_name: Optional[str] = None
 
     model_config = {
         "from_attributes": True
