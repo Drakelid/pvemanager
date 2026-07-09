@@ -93,11 +93,16 @@ def run_async(coro):
 class MonitoringWorker:
     """Background worker for monitoring and generating notifications"""
     
+    # Сколько подряд неудачных опросов статуса UPID терпим, прежде чем пометить
+    # задачу failed. Транзитный сетевой сбой не должен «убивать» живую задачу.
+    UPID_FAIL_THRESHOLD = 3
+
     def __init__(self):
         self.last_vm_states: Dict[str, str] = {}  # vm_id -> status
         self.last_resource_alerts: Dict[str, float] = {}  # resource_id -> last_alert_time
         self.last_server_states: Dict[int, bool] = {}  # server_id -> is_online
         self.last_server_alerts: Dict[int, float] = {}  # server_id -> last_alert_time
+        self.upid_fail_counts: Dict[int, int] = {}  # ProxmoxTask.id -> consecutive fetch failures
     
     def _create_proxmox_client(self, server: ProxmoxServer) -> ProxmoxClient:
         """Create ProxmoxClient from server model, raising if auth is missing."""
@@ -964,19 +969,42 @@ class MonitoringWorker:
                         continue
 
                     # --- status -----------------------------------------------
-                    proxmox_status = client.get_task_status(task.node, task.upid)
-                    # If status is empty, it means Proxmox API rejected the UPID
+                    # Транзитный сбой (сеть, перезагрузка ноды) не должен
+                    # помечать живую задачу как failed: считаем ПОДРЯД идущие
+                    # неудачи и финализируем только после UPID_FAIL_THRESHOLD.
+                    try:
+                        proxmox_status = client.get_task_status(task.node, task.upid, raise_on_error=True)
+                        fetch_error = None
+                    except Exception as fe:
+                        proxmox_status = None
+                        fetch_error = str(fe)
+
                     if not proxmox_status:
-                        logger.warning(f"[UPID SYNC] Cannot fetch status for task #{task.id} (UPID={task.upid[:30]}...) — marking as failed")
+                        fails = self.upid_fail_counts.get(task.id, 0) + 1
+                        self.upid_fail_counts[task.id] = fails
+                        if fails < self.UPID_FAIL_THRESHOLD:
+                            logger.debug(
+                                f"[UPID SYNC] Task #{task.id}: status fetch failed "
+                                f"({fails}/{self.UPID_FAIL_THRESHOLD}), will retry: {fetch_error}"
+                            )
+                            continue
+                        logger.warning(
+                            f"[UPID SYNC] Cannot fetch status for task #{task.id} "
+                            f"(UPID={task.upid[:30]}...) after {fails} attempts — marking as failed: {fetch_error}"
+                        )
                         task.status = "failed"
-                        task.exit_status = "Invalid UPID"
+                        task.exit_status = (fetch_error or "Invalid UPID")[:200]
                         task.completed_at = utcnow()
                         db.commit()
+                        self.upid_fail_counts.pop(task.id, None)
                         try:
                             broadcast_task_update(task.user_id, "task_update", task.to_dict())
                         except Exception:
                             pass
                         continue
+
+                    # Успешный опрос — сбрасываем счётчик неудач
+                    self.upid_fail_counts.pop(task.id, None)
 
                     pve_status = proxmox_status.get("status", "running")
 

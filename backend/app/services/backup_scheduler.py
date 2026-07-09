@@ -152,7 +152,9 @@ async def run_backup_job(job_id: int) -> None:
             try:
                 result = client.create_backup(
                     node=job.node,
-                    vmid=vmid if vmid != "all" else 0,
+                    # "all" пробрасываем как есть: create_backup превратит его в
+                    # параметр vzdump all=1 (vmid=0 PVE отвергает с ошибкой)
+                    vmid=vmid,
                     storage=job.storage,
                     mode=job.mode,
                     compress=job.compress,
@@ -196,21 +198,13 @@ async def run_backup_job(job_id: int) -> None:
 
 
 def _build_client(server: ProxmoxServer) -> ProxmoxClient:
-    """Build a ProxmoxClient from a ProxmoxServer model"""
-    if server.use_password:
-        return ProxmoxClient(
-            host=server.ip_address,
-            user=server.api_user,
-            password=server.password,
-            verify_ssl=server.verify_ssl,
-        )
-    return ProxmoxClient(
-        host=server.ip_address,
-        user=server.api_user,
-        token_name=server.api_token_name,
-        token_value=server.api_token_value,
-        verify_ssl=server.verify_ssl,
-    )
+    """Build a ProxmoxClient from a ProxmoxServer model.
+
+    Идём через from_server — он учитывает нестандартный порт (!= 8006) и
+    корректно выбирает token/password. Ручная сборка по ip_address ломала
+    бэкапы для серверов на кастомном порту.
+    """
+    return ProxmoxClient.from_server(server)
 
 
 def _update_job_status(db, job: BackupJob, status: str,

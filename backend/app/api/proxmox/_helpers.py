@@ -74,7 +74,22 @@ def require_vm_access(db: Session, current_user: User, server_id: int, vmid: int
 
 
 def _get_proxmox_client(server: ProxmoxServer) -> ProxmoxClient:
-    """Build a ProxmoxClient from a ProxmoxServer model (password or token auth)."""
+    """Build a ProxmoxClient from a ProxmoxServer model (password or token auth).
+
+    Raises HTTPException 503, если у сервера нет валидных кредов: раньше
+    from_server молча создавал клиент с proxmox=None, и все методы возвращали
+    пустые списки — пользователь видел «пустой сервер» вместо ошибки настройки.
+    """
+    has_password = bool(getattr(server, "use_password", False) and getattr(server, "password", ""))
+    has_token = bool(getattr(server, "api_token_name", "") and getattr(server, "api_token_value", ""))
+    if not (has_password or has_token):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Server '{server.name}' has no valid Proxmox credentials configured "
+                f"(API token or password). Edit the server settings."
+            ),
+        )
     return ProxmoxClient.from_server(server)
 
 

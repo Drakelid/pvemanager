@@ -1187,14 +1187,24 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             except Exception as e:
                 return str(e)
 
-        def get_task_status(self, node: str, upid: str) -> Dict:
-            """Get status of a Proxmox task by UPID"""
+        def get_task_status(self, node: str, upid: str, raise_on_error: bool = False) -> Dict:
+            """Get status of a Proxmox task by UPID.
+
+            raise_on_error=True — пробросить исключение вместо возврата {}.
+            Нужно вызывающим, которым важно отличать «задача не найдена» от
+            транзитной сетевой ошибки (см. run_upid_task_sync): пустой словарь
+            эту разницу стирает.
+            """
             if not self.proxmox:
+                if raise_on_error:
+                    raise RuntimeError(f"Proxmox client for {self.host} is not connected")
                 return {}
             try:
                 status = self.proxmox.nodes(node).tasks(upid).status.get()
                 return status
             except Exception as e:
+                if raise_on_error:
+                    raise
                 logger.error(f"Error getting task status {upid}: {e}")
                 return {}
 
@@ -2726,12 +2736,16 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 return {"success": False, "error": "Not connected"}
             try:
                 params = {
-                    "vmid": vmid,
                     "storage": storage,
                     "mode": mode,
                     "compress": compress,
                     "remove": int(bool(remove)),
                 }
+                # «Все VM»: vzdump требует all=1, а не vmid (vmid=0 — ошибка PVE)
+                if vmid in (None, 0, "all"):
+                    params["all"] = 1
+                else:
+                    params["vmid"] = vmid
                 if keep_last and int(keep_last) > 0:
                     params["prune-backups"] = f"keep-last={int(keep_last)}"
                 if notes:

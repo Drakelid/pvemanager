@@ -97,7 +97,6 @@ def _fetch_server_resources_with_nodes(server) -> dict:
     Pull VMs + containers + per-node CPU/RAM/Disk status + cached RRD slices.
     Runs in a thread pool — safe to block.
     """
-    from ..proxmox import get_proxmox_resources
     from ..api.proxmox._helpers import _get_proxmox_client
 
     base: dict = {
@@ -111,23 +110,18 @@ def _fetch_server_resources_with_nodes(server) -> dict:
         "nodes": [],
     }
 
+    # Клиент строим через from_server — учитывает нестандартный порт (!= 8006)
+    # и выбор token/password. Ручная сборка по ip_address ломала дашборд для
+    # серверов на кастомном порту.
+    try:
+        client = _get_proxmox_client(server)
+    except Exception as exc:
+        base["error"] = str(exc)
+        return _merge_server_cache(server.id, base)
+
     # ── VMs + containers ──────────────────────────────────────────────────
     try:
-        if server.use_password:
-            resources = get_proxmox_resources(
-                host=server.ip_address,
-                user=server.api_user,
-                password=server.password,
-                verify_ssl=server.verify_ssl,
-            )
-        else:
-            resources = get_proxmox_resources(
-                host=server.ip_address,
-                user=server.api_user,
-                token_name=server.api_token_name,
-                token_value=server.api_token_value,
-                verify_ssl=server.verify_ssl,
-            )
+        resources = client.get_all_resources()
         vms = resources.get("vms", [])
         containers = resources.get("containers", [])
         base["vms"] = vms
@@ -141,7 +135,6 @@ def _fetch_server_resources_with_nodes(server) -> dict:
 
     # ── Node status + RRD mini-slices ─────────────────────────────────────
     try:
-        client = _get_proxmox_client(server)
         if not client.is_connected():
             return _merge_server_cache(server.id, base)
         nodes_raw = client.get_nodes()
@@ -457,8 +450,15 @@ def _enumerate_instances_for_list(db_factory):
     db = db_factory()
     try:
         servers = db.query(ProxmoxServer).filter(ProxmoxServer.is_online == True).all()
-        # Build clients while the session is open (from_server reads server attrs)
-        server_clients = [(s.id, _get_proxmox_client(s)) for s in servers]
+        # Build clients while the session is open (from_server reads server attrs).
+        # Per-server guard: один сервер с битой конфигурацией не должен
+        # останавливать метрики для всех остальных.
+        server_clients = []
+        for s in servers:
+            try:
+                server_clients.append((s.id, _get_proxmox_client(s)))
+            except Exception as exc:
+                logger.debug(f"[metrics_broadcaster] skip server {s.id} ({s.name}): {exc}")
     finally:
         db.close()
 

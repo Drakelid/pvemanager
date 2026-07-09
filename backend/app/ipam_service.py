@@ -186,26 +186,27 @@ class IPAMService:
         # Also exclude gateway
         gateway_ip = network.gateway if network.gateway else None
 
-        # Search through pools for available IP — query only per-pool allocated IPs
+        # Занятые IP собираем ГЛОБАЛЬНО (без фильтра по pool_id/статусу) —
+        # ровно так же проверяет allocate_ip (ip_address уникален на всю БД).
+        # Фильтр по pool_id пропускал аллокации с pool_id=NULL или из
+        # пересекающегося пула: сервис предлагал занятый IP, allocate_ip
+        # отвечал "already allocated", и создание инстанса срывалось,
+        # хотя свободные адреса были.
+        occupied = set(
+            row[0] for row in self.db.query(IPAMAllocation.ip_address).all()
+        )
+        if gateway_ip:
+            occupied.add(gateway_ip)
+
+        # Search through pools for available IP
         for pool in pools:
             try:
                 start_ip = ipaddress.ip_address(pool.range_start)
                 end_ip = ipaddress.ip_address(pool.range_end)
 
-                # Load only allocated IPs for this specific pool (much smaller set)
-                pool_allocated = set(
-                    a.ip_address for a in
-                    self.db.query(IPAMAllocation.ip_address).filter(
-                        IPAMAllocation.pool_id == pool.id,
-                        IPAMAllocation.status.in_(['allocated', 'reserved'])
-                    ).all()
-                )
-                if gateway_ip:
-                    pool_allocated.add(gateway_ip)
-
                 for ip_int in range(int(start_ip), int(end_ip) + 1):
                     ip = str(ipaddress.ip_address(ip_int))
-                    if ip not in pool_allocated:
+                    if ip not in occupied:
                         logger.info(f"Found available IP: {ip} in pool {pool.name}")
                         return ip
 
@@ -450,10 +451,14 @@ class IPAMService:
         # First try to find by proxmox_server_id and proxmox_vmid
         allocation = self.find_allocation_by_resource(proxmox_server_id, proxmox_vmid)
         
-        # Fallback: search by resource_id if proxmox fields are not set
+        # Fallback: search by resource_id if proxmox fields are not set.
+        # ВАЖНО: только среди записей БЕЗ proxmox_server_id — иначе удаление
+        # VM с vmid=100 на сервере A освобождало IP виртуалки с тем же vmid
+        # на сервере B (записи с заполненным server_id находит основной поиск).
         if not allocation:
             allocation = self.db.query(IPAMAllocation).filter(
                 IPAMAllocation.resource_id == proxmox_vmid,
+                IPAMAllocation.proxmox_server_id.is_(None),
                 IPAMAllocation.status.in_(['allocated', 'reserved'])
             ).first()
             if allocation:
