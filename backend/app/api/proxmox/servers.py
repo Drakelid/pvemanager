@@ -69,7 +69,7 @@ def list_proxmox_servers(
     if is_privileged:
         # Privileged: use workspace filter only
         server_ids = get_workspace_server_ids(request, db, current_user)
-        query = db.query(ProxmoxServer)
+        query = db.query(ProxmoxServer).order_by(ProxmoxServer.id)
         if server_ids is not None:
             query = query.filter(ProxmoxServer.id.in_(server_ids))
         servers = query.all()
@@ -105,7 +105,7 @@ def list_proxmox_servers(
     if not effective_ids:
         return []
 
-    servers = db.query(ProxmoxServer).filter(ProxmoxServer.id.in_(effective_ids)).all()
+    servers = db.query(ProxmoxServer).filter(ProxmoxServer.id.in_(effective_ids)).order_by(ProxmoxServer.id).all()
     _attach_workspaces(db, servers)
     return servers
 
