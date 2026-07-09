@@ -125,9 +125,18 @@ class ApiClient {
     });
 
     if (res.status === 401) {
-      this.setToken(null);
-      window.location.href = '/login';
-      throw new Error('Unauthorized');
+      // 401 от самого логина — это «неверный логин/пароль»: отдаём ошибку в
+      // форму, а не перезагружаем страницу (иначе сообщение теряется).
+      const isLoginRequest = path.startsWith('/api/auth/login');
+      if (!isLoginRequest) {
+        this.setToken(null);
+        // Не дёргаем навигацию, если уже на /login — присваивание location.href
+        // на тот же URL вызывает полную перезагрузку и стирает состояние формы.
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+        throw new Error('Unauthorized');
+      }
     }
 
     if (!res.ok) {

@@ -183,8 +183,8 @@ class TaskQueueProcessor:
                 elif action == 'restart':
                     client.restart_container(node, vmid)
                 elif action == 'shutdown':
-                    # Shutdown = graceful stop
-                    client.stop_container(node, vmid)
+                    # Graceful shutdown через ACPI/init внутри контейнера
+                    client.shutdown_container(node, vmid)
                 elif action == 'delete':
                     client.delete_container(node, vmid)
                 elif action == 'migrate':
@@ -201,8 +201,8 @@ class TaskQueueProcessor:
                 elif action == 'restart':
                     client.restart_vm(node, vmid)
                 elif action == 'shutdown':
-                    # Shutdown = graceful stop
-                    client.stop_vm(node, vmid)
+                    # Graceful shutdown через ACPI — гостевая ОС завершается штатно
+                    client.shutdown_vm(node, vmid)
                 elif action == 'delete':
                     client.delete_vm(node, vmid)
                 elif action == 'migrate':
@@ -344,6 +344,44 @@ class TaskQueueProcessor:
                 db.close()
             except Exception:
                 pass
+
+
+def recover_interrupted_tasks() -> int:
+    """Пометить задачи, зависшие в статусе 'running' после рестарта бэкенда.
+
+    process_pending_tasks() пропускает обработку, пока существует running-задача,
+    поэтому без этой очистки одна прерванная рестартом задача навсегда блокирует
+    всю очередь bulk-операций. Вызывается один раз при старте приложения —
+    в этот момент никакой задачи выполняться не может.
+
+    Returns:
+        Количество восстановленных (помеченных failed) задач.
+    """
+    db = SessionLocal()
+    try:
+        stuck = db.query(TaskQueue).filter(TaskQueue.status == 'running').all()
+        for task in stuck:
+            task.status = 'failed'
+            task.error_message = 'Interrupted by backend restart'
+            task.completed_at = utcnow()
+        if stuck:
+            db.commit()
+            for task in stuck:
+                _ws_broadcast(task, "task_update")
+                logger.warning(
+                    f"[TASK QUEUE] Task #{task.id} ({task.task_type}) was interrupted "
+                    f"by restart — marked as failed"
+                )
+        return len(stuck)
+    except Exception as e:
+        logger.error(f"[TASK QUEUE] Failed to recover interrupted tasks: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return 0
+    finally:
+        db.close()
 
 
 # Global processor instance

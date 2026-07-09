@@ -1190,7 +1190,15 @@ def start_monitoring_worker():
     
     # Task queue processing - every 5 seconds
     try:
-        from app.services.task_queue_service import process_task_queue
+        from app.services.task_queue_service import process_task_queue, recover_interrupted_tasks
+        # Восстановление задач, прерванных рестартом: без этого зависшая
+        # 'running'-задача навсегда блокирует обработку очереди.
+        try:
+            recovered = recover_interrupted_tasks()
+            if recovered:
+                logger.info(f"Recovered {recovered} interrupted bulk task(s) after restart")
+        except Exception as e:
+            logger.warning(f"Interrupted task recovery failed: {e}")
         scheduler.add_job(
             process_task_queue,
             trigger=IntervalTrigger(seconds=5),

@@ -712,157 +712,6 @@ def change_container_password_endpoint(
 
 # ==================== Generic VM/Container Action Handler ====================
 
-@router.post("/api/{server_id}/vm/{vmid}/{action}")
-def control_vm(
-    server_id: int, 
-    vmid: int, 
-    action: str, 
-    node: str,
-    force: int = 0,
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user)
-):
-    """Управление VM (start/stop/restart/shutdown)"""
-    if action not in ['start', 'stop', 'restart', 'shutdown']:
-        raise HTTPException(status_code=400, detail="Invalid action")
-    
-    # Проверка прав в зависимости от действия
-    permission_map = {
-        'start': 'vm:start',
-        'stop': 'vm:stop',
-        'shutdown': 'vm:stop',
-        'restart': 'vm:restart',
-    }
-    if not current_user.has_permission(permission_map[action]):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Permission denied: {permission_map[action]}"
-        )
-    
-    # VPS-style user isolation: check VM ownership for limited users
-    require_vm_access(db, current_user, server_id, vmid)
-    
-    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Proxmox server not found")
-    
-    try:
-        client = _get_proxmox_client(server)
-        
-        if not client.is_connected():
-            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
-        
-        # Get VM name for logging
-        vm_name = None
-        try:
-            vm_status = client.get_vm_status(node, vmid)
-            vm_name = vm_status.get('name') if isinstance(vm_status, dict) else None
-        except Exception:
-            pass
-        
-        upid = None
-        if action == 'start':
-            upid = client.start_vm(node, vmid)
-            success = bool(upid)
-        elif action == 'stop':
-            if force:
-                success = client.force_stop_vm(node, vmid)
-            else:
-                upid = client.stop_vm(node, vmid, force=False)
-                success = bool(upid)
-        elif action == 'shutdown':
-            upid = client.shutdown_vm(node, vmid)
-            success = bool(upid)
-        else:  # restart
-            upid = client.restart_vm(node, vmid)
-            success = bool(upid)
-
-        action_name = 'kill' if action == 'stop' and force else action
-        if success:
-            # Immediately update vm_instances cache so page refresh returns correct status
-            expected_status = 'running' if action in ('start', 'restart') else 'stopped'
-            try:
-                cached_vm = db.query(VMInstance).filter(
-                    VMInstance.server_id == server_id,
-                    VMInstance.vmid == vmid,
-                    VMInstance.deleted_at.is_(None)
-                ).first()
-                if cached_vm:
-                    cached_vm.status = expected_status
-                    db.commit()
-            except Exception as _ce:
-                logger.warning(f"Failed to update VM {vmid} status cache: {_ce}")
-                db.rollback()
-            # Register ProxmoxTask for UPID-based tracking
-            if upid:
-                _desc_map = {
-                    'start': f"Запуск VM {vm_name or vmid}",
-                    'stop': f"Остановка VM {vm_name or vmid}",
-                    'restart': f"Перезапуск VM {vm_name or vmid}",
-                }
-                try:
-                    ProxmoxTaskService.register(
-                        db=db, upid=upid, server_id=server_id,
-                        user_id=current_user.id, action=action_name,
-                        node=node, vmid=vmid, vm_type='qemu',
-                        description=_desc_map.get(action, action_name),
-                    )
-                except Exception as _te:
-                    logger.warning(f"Failed to register ProxmoxTask for VM {vmid} {action_name}: {_te}")
-            # Log successful action
-            LoggingService.log_proxmox_action(
-                db=db,
-                action=action_name,
-                resource_type="vm",
-                resource_id=vmid,
-                username=current_user.username,
-                resource_name=vm_name,
-                server_id=server_id,
-                server_name=server.name,
-                node_name=node,
-                details={"force": force},
-                success=True
-            )
-            logger.info(f"User {current_user.username} executed {action_name} on VM {vmid} at {server.name}")
-            return JSONResponse(content={"status": "success", "action": action_name, "vmid": vmid, "node": node, "upid": upid})
-        else:
-            # Log failed action
-            LoggingService.log_proxmox_action(
-                db=db,
-                action=action_name,
-                resource_type="vm",
-                resource_id=vmid,
-                username=current_user.username,
-                resource_name=vm_name,
-                server_id=server_id,
-                server_name=server.name,
-                node_name=node,
-                details={"force": force},
-                success=False,
-                error_message="Failed to execute action"
-            )
-            raise HTTPException(status_code=500, detail="Failed to execute action")
-    except HTTPException:
-        raise
-    except Exception as e:
-        # Log error
-        LoggingService.log_proxmox_action(
-            db=db,
-            action=action,
-            resource_type="vm",
-            resource_id=vmid,
-            username=current_user.username,
-            server_id=server_id if server else None,
-            server_name=server.name if server else None,
-            node_name=node,
-            details={"force": force},
-            success=False,
-            error_message=str(e)
-        )
-        logger.error(f"Error controlling VM {vmid} on {server.name}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.delete("/api/{server_id}/vm/{vmid}")
 async def delete_vm(
     request: Request,
@@ -1984,100 +1833,6 @@ async def update_container_config(
         raise
     except Exception as e:
         logger.error(f"Error updating container {vmid} config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/api/{server_id}/container/{vmid}/{action}")
-def control_container(
-    server_id: int, 
-    vmid: int, 
-    action: str, 
-    node: str,
-    force: int = 0,
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user)
-):
-    """Управление LXC контейнером (start/stop/restart/shutdown)"""
-    if action not in ['start', 'stop', 'restart', 'shutdown']:
-        raise HTTPException(status_code=400, detail="Invalid action")
-    
-    # Проверка прав в зависимости от действия
-    permission_map = {
-        'start': 'vm:start',
-        'stop': 'vm:stop',
-        'shutdown': 'vm:stop',
-        'restart': 'vm:restart',
-    }
-    require_permission(current_user, permission_map[action])
-    
-    # VPS-style user isolation: check container ownership for limited users
-    require_vm_access(db, current_user, server_id, vmid)
-    
-    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Proxmox server not found")
-    
-    try:
-        client = _get_proxmox_client(server)
-        
-        if not client.is_connected():
-            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
-        
-        upid = None
-        if action == 'start':
-            upid = client.start_container(node, vmid)
-            success = bool(upid)
-        elif action == 'stop':
-            if force:
-                success = client.force_stop_container(node, vmid)
-            else:
-                upid = client.stop_container(node, vmid, force=False)
-                success = bool(upid)
-        elif action == 'shutdown':
-            upid = client.shutdown_container(node, vmid)
-            success = bool(upid)
-        else:  # restart
-            upid = client.restart_container(node, vmid)
-            success = bool(upid)
-
-        action_name = 'kill' if action == 'stop' and force else action
-        if success:
-            # Immediately update vm_instances cache so page refresh returns correct status
-            expected_status = 'running' if action in ('start', 'restart') else 'stopped'
-            try:
-                cached_ct = db.query(VMInstance).filter(
-                    VMInstance.server_id == server_id,
-                    VMInstance.vmid == vmid,
-                    VMInstance.deleted_at.is_(None)
-                ).first()
-                if cached_ct:
-                    cached_ct.status = expected_status
-                    db.commit()
-            except Exception as _ce:
-                logger.warning(f"Failed to update LXC {vmid} status cache: {_ce}")
-                db.rollback()
-            # Register ProxmoxTask for UPID-based tracking
-            if upid:
-                _desc_map = {
-                    'start': f"Запуск LXC {vmid}",
-                    'stop': f"Остановка LXC {vmid}",
-                    'restart': f"Перезапуск LXC {vmid}",
-                }
-                try:
-                    ProxmoxTaskService.register(
-                        db=db, upid=upid, server_id=server_id,
-                        user_id=current_user.id, action=action_name,
-                        node=node, vmid=vmid, vm_type='lxc',
-                        description=_desc_map.get(action, action_name),
-                    )
-                except Exception as _te:
-                    logger.warning(f"Failed to register ProxmoxTask for LXC {vmid} {action_name}: {_te}")
-            logger.info(f"User {current_user.username} executed {action_name} on container {vmid} at {server.name}")
-            return JSONResponse(content={"status": "success", "action": action_name, "vmid": vmid, "node": node, "upid": upid})
-        else:
-            raise HTTPException(status_code=500, detail="Failed to execute action")
-    except Exception as e:
-        logger.error(f"Error controlling container {vmid} on {server.name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3877,3 +3632,255 @@ def detach_iso_endpoint(
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to detach ISO")
     return {"status": "success"}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Catch-all маршруты управления VM/LXC (start/stop/restart/shutdown).
+# ВАЖНО: регистрируются ПОСЛЕДНИМИ. Шаблон /{action} перехватывает любой
+# одно-сегментный POST (например /unlock, /cloud-init, /exec), поэтому все
+# конкретные POST-маршруты должны быть объявлены выше по файлу.
+# ══════════════════════════════════════════════════════════════════════════
+
+@router.post("/api/{server_id}/vm/{vmid}/{action}")
+def control_vm(
+    server_id: int, 
+    vmid: int, 
+    action: str, 
+    node: str,
+    force: int = 0,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Управление VM (start/stop/restart/shutdown)"""
+    if action not in ['start', 'stop', 'restart', 'shutdown']:
+        raise HTTPException(status_code=400, detail="Invalid action")
+    
+    # Проверка прав в зависимости от действия
+    permission_map = {
+        'start': 'vm:start',
+        'stop': 'vm:stop',
+        'shutdown': 'vm:stop',
+        'restart': 'vm:restart',
+    }
+    if not current_user.has_permission(permission_map[action]):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Permission denied: {permission_map[action]}"
+        )
+    
+    # VPS-style user isolation: check VM ownership for limited users
+    require_vm_access(db, current_user, server_id, vmid)
+    
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+    
+    try:
+        client = _get_proxmox_client(server)
+        
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+        
+        # Get VM name for logging
+        vm_name = None
+        try:
+            vm_status = client.get_vm_status(node, vmid)
+            vm_name = vm_status.get('name') if isinstance(vm_status, dict) else None
+        except Exception:
+            pass
+        
+        upid = None
+        if action == 'start':
+            upid = client.start_vm(node, vmid)
+            success = bool(upid)
+        elif action == 'stop':
+            if force:
+                success = client.force_stop_vm(node, vmid)
+            else:
+                upid = client.stop_vm(node, vmid, force=False)
+                success = bool(upid)
+        elif action == 'shutdown':
+            upid = client.shutdown_vm(node, vmid)
+            success = bool(upid)
+        else:  # restart
+            upid = client.restart_vm(node, vmid)
+            success = bool(upid)
+
+        action_name = 'kill' if action == 'stop' and force else action
+        if success:
+            # Immediately update vm_instances cache so page refresh returns correct status
+            expected_status = 'running' if action in ('start', 'restart') else 'stopped'
+            try:
+                cached_vm = db.query(VMInstance).filter(
+                    VMInstance.server_id == server_id,
+                    VMInstance.vmid == vmid,
+                    VMInstance.deleted_at.is_(None)
+                ).first()
+                if cached_vm:
+                    cached_vm.status = expected_status
+                    db.commit()
+            except Exception as _ce:
+                logger.warning(f"Failed to update VM {vmid} status cache: {_ce}")
+                db.rollback()
+            # Register ProxmoxTask for UPID-based tracking
+            if upid:
+                _desc_map = {
+                    'start': f"Запуск VM {vm_name or vmid}",
+                    'stop': f"Остановка VM {vm_name or vmid}",
+                    'restart': f"Перезапуск VM {vm_name or vmid}",
+                }
+                try:
+                    ProxmoxTaskService.register(
+                        db=db, upid=upid, server_id=server_id,
+                        user_id=current_user.id, action=action_name,
+                        node=node, vmid=vmid, vm_type='qemu',
+                        description=_desc_map.get(action, action_name),
+                    )
+                except Exception as _te:
+                    logger.warning(f"Failed to register ProxmoxTask for VM {vmid} {action_name}: {_te}")
+            # Log successful action
+            LoggingService.log_proxmox_action(
+                db=db,
+                action=action_name,
+                resource_type="vm",
+                resource_id=vmid,
+                username=current_user.username,
+                resource_name=vm_name,
+                server_id=server_id,
+                server_name=server.name,
+                node_name=node,
+                details={"force": force},
+                success=True
+            )
+            logger.info(f"User {current_user.username} executed {action_name} on VM {vmid} at {server.name}")
+            return JSONResponse(content={"status": "success", "action": action_name, "vmid": vmid, "node": node, "upid": upid})
+        else:
+            # Log failed action
+            LoggingService.log_proxmox_action(
+                db=db,
+                action=action_name,
+                resource_type="vm",
+                resource_id=vmid,
+                username=current_user.username,
+                resource_name=vm_name,
+                server_id=server_id,
+                server_name=server.name,
+                node_name=node,
+                details={"force": force},
+                success=False,
+                error_message="Failed to execute action"
+            )
+            raise HTTPException(status_code=500, detail="Failed to execute action")
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log error
+        LoggingService.log_proxmox_action(
+            db=db,
+            action=action,
+            resource_type="vm",
+            resource_id=vmid,
+            username=current_user.username,
+            server_id=server_id if server else None,
+            server_name=server.name if server else None,
+            node_name=node,
+            details={"force": force},
+            success=False,
+            error_message=str(e)
+        )
+        logger.error(f"Error controlling VM {vmid} on {server.name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/{server_id}/container/{vmid}/{action}")
+def control_container(
+    server_id: int, 
+    vmid: int, 
+    action: str, 
+    node: str,
+    force: int = 0,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Управление LXC контейнером (start/stop/restart/shutdown)"""
+    if action not in ['start', 'stop', 'restart', 'shutdown']:
+        raise HTTPException(status_code=400, detail="Invalid action")
+    
+    # Проверка прав в зависимости от действия
+    permission_map = {
+        'start': 'vm:start',
+        'stop': 'vm:stop',
+        'shutdown': 'vm:stop',
+        'restart': 'vm:restart',
+    }
+    require_permission(current_user, permission_map[action])
+    
+    # VPS-style user isolation: check container ownership for limited users
+    require_vm_access(db, current_user, server_id, vmid)
+    
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+    
+    try:
+        client = _get_proxmox_client(server)
+        
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+        
+        upid = None
+        if action == 'start':
+            upid = client.start_container(node, vmid)
+            success = bool(upid)
+        elif action == 'stop':
+            if force:
+                success = client.force_stop_container(node, vmid)
+            else:
+                upid = client.stop_container(node, vmid, force=False)
+                success = bool(upid)
+        elif action == 'shutdown':
+            upid = client.shutdown_container(node, vmid)
+            success = bool(upid)
+        else:  # restart
+            upid = client.restart_container(node, vmid)
+            success = bool(upid)
+
+        action_name = 'kill' if action == 'stop' and force else action
+        if success:
+            # Immediately update vm_instances cache so page refresh returns correct status
+            expected_status = 'running' if action in ('start', 'restart') else 'stopped'
+            try:
+                cached_ct = db.query(VMInstance).filter(
+                    VMInstance.server_id == server_id,
+                    VMInstance.vmid == vmid,
+                    VMInstance.deleted_at.is_(None)
+                ).first()
+                if cached_ct:
+                    cached_ct.status = expected_status
+                    db.commit()
+            except Exception as _ce:
+                logger.warning(f"Failed to update LXC {vmid} status cache: {_ce}")
+                db.rollback()
+            # Register ProxmoxTask for UPID-based tracking
+            if upid:
+                _desc_map = {
+                    'start': f"Запуск LXC {vmid}",
+                    'stop': f"Остановка LXC {vmid}",
+                    'restart': f"Перезапуск LXC {vmid}",
+                }
+                try:
+                    ProxmoxTaskService.register(
+                        db=db, upid=upid, server_id=server_id,
+                        user_id=current_user.id, action=action_name,
+                        node=node, vmid=vmid, vm_type='lxc',
+                        description=_desc_map.get(action, action_name),
+                    )
+                except Exception as _te:
+                    logger.warning(f"Failed to register ProxmoxTask for LXC {vmid} {action_name}: {_te}")
+            logger.info(f"User {current_user.username} executed {action_name} on container {vmid} at {server.name}")
+            return JSONResponse(content={"status": "success", "action": action_name, "vmid": vmid, "node": node, "upid": upid})
+        else:
+            raise HTTPException(status_code=500, detail="Failed to execute action")
+    except Exception as e:
+        logger.error(f"Error controlling container {vmid} on {server.name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
