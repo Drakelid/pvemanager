@@ -14,6 +14,7 @@ import type { ProxmoxServer, ProxmoxServerCreate } from '@/types';
 import { formatUptime } from '@/lib/format';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
+import { StatusDot } from '@/components/shared/status-dot';
 import ServerUpdatesBadge from './ServerUpdatesBadge';
 
 /**
@@ -370,14 +371,15 @@ export default function NodesPage() {
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <div className="flex items-center gap-1.5">
                       <Monitor className="h-3.5 w-3.5" />
-                      <span>{srvVMs.length} VM</span>
+                      <span className="font-mono tabular-nums">{srvVMs.length} VM</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Container className="h-3.5 w-3.5" />
-                      <span>{srvCTs.length} LXC</span>
+                      <span className="font-mono tabular-nums">{srvCTs.length} LXC</span>
                     </div>
                   </div>
-                  <Badge variant={srv.is_online ? 'default' : 'destructive'}>
+                  <Badge variant={srv.is_online ? 'default' : 'destructive'} className="gap-1.5">
+                    <StatusDot status={srv.is_online ? 'online' : 'offline'} pulse className="h-1.5 w-1.5" />
                     {srv.is_online ? t('common.online') : t('common.offline')}
                   </Badge>
                 </div>

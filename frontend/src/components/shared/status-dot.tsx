@@ -27,7 +27,7 @@ export function StatusDot({ status, className, pulse }: StatusDotProps) {
       title={status}
       className={cn('relative inline-block h-2 w-2 rounded-full', color, className)}
     >
-      {pulse && status === 'running' && (
+      {pulse && (status === 'running' || status === 'online') && (
         <span className={cn('absolute inset-0 animate-ping rounded-full opacity-75', color)} />
       )}
     </span>

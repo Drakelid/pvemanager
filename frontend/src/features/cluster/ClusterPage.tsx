@@ -497,7 +497,7 @@ export default function ClusterPage() {
             <div className="flex items-center gap-2">
               <Network className="h-5 w-5 text-primary" />
               <h2 className="font-semibold">{name}</h2>
-              <Badge variant="secondary">{members.length} {t('cluster.nodes', 'nodes')}</Badge>
+              <Badge variant="secondary" className="font-mono">{members.length} {t('cluster.nodes', 'nodes')}</Badge>
             </div>
 
             {members.length === 2 && (
@@ -521,7 +521,7 @@ export default function ClusterPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <StatusDot status={m.is_online ? 'online' : 'offline'} />
+                      <StatusDot status={m.is_online ? 'online' : 'offline'} pulse />
                       {m.is_online ? t('common.online', 'Online') : t('common.offline', 'Offline')}
                     </span>
                     <Button
@@ -548,7 +548,7 @@ export default function ClusterPage() {
           <div className="flex items-center gap-2">
             <Boxes className="h-5 w-5 text-muted-foreground" />
             <h2 className="font-semibold">{t('cluster.standalone', 'Standalone servers')}</h2>
-            <Badge variant="outline">{standalone.length}</Badge>
+            <Badge variant="outline" className="font-mono">{standalone.length}</Badge>
           </div>
           {standalone.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t('cluster.no_standalone', 'No standalone servers.')}</p>
@@ -566,7 +566,7 @@ export default function ClusterPage() {
                     </div>
                   </div>
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <StatusDot status={s.is_online ? 'online' : 'offline'} />
+                    <StatusDot status={s.is_online ? 'online' : 'offline'} pulse />
                     {s.is_online ? t('common.online', 'Online') : t('common.offline', 'Offline')}
                   </span>
                 </div>

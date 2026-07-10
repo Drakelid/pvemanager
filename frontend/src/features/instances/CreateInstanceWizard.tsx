@@ -100,8 +100,8 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   const { data: templates = [] } = useTemplates(undefined, selectedServer?.id);
   const { data: networks = [] } = useIPAMNetworks();
   const { data: lxcTemplates = [], isLoading: lxcLoading } = useLXCTemplates(selectedServer?.id);
-  const { data: lxcStorages = [] } = useLXCStorages(selectedServer?.id, undefined, 'rootdir');
-  const { data: vmStorages = [] } = useLXCStorages(selectedServer?.id, undefined, 'images');
+  const { data: lxcStorages = [] } = useLXCStorages(selectedServer?.id, selectedNode || undefined, 'rootdir');
+  const { data: vmStorages = [] } = useLXCStorages(selectedServer?.id, selectedNode || undefined, 'images');
   const { data: nodesData } = useNodes(selectedServer?.id ?? 0);
   const nodes = nodesData?.nodes ?? [];
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);

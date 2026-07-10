@@ -31,7 +31,7 @@ function ResourceBar({ label, percent }: { label: string; percent: number }) {
     <div>
       <div className="flex justify-between text-xs mb-1">
         <span className="text-muted-foreground">{label}</span>
-        <span className="tabular-nums font-medium">{percent.toFixed(1)}%</span>
+        <span className="font-mono tabular-nums font-medium">{percent.toFixed(1)}%</span>
       </div>
       <div className="h-1.5 rounded-full bg-track overflow-hidden">
         <div
@@ -41,6 +41,12 @@ function ResourceBar({ label, percent }: { label: string; percent: number }) {
       </div>
     </div>
   )
+}
+
+// Worst-case health across a set of percentages — drives status accent bars.
+function healthColor(...percents: number[]) {
+  const worst = Math.max(...percents)
+  return worst >= 90 ? 'bg-danger' : worst >= 70 ? 'bg-warning' : 'bg-success'
 }
 
 // ==================== SVG Circular Gauge ====================
@@ -64,10 +70,10 @@ function CircularGauge({ label, value }: { label: string; value: number }) {
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-[13px] font-bold tabular-nums">{Math.round(clamped)}</span>
+          <span className="font-mono text-[13px] font-bold tabular-nums">{Math.round(clamped)}</span>
         </div>
       </div>
-      <span className="text-2xs text-muted-foreground tracking-wide">{label}</span>
+      <span className="text-2xs font-mono text-muted-foreground tracking-wide uppercase">{label}</span>
     </div>
   )
 }
@@ -90,8 +96,9 @@ function ClusterOverviewCard({ serverList, nodeStats, allVMs, memPercent, diskPe
   const cols = availableIPs > 0 ? 'grid-cols-3' : 'grid-cols-2'
 
   return (
-    <Card className="h-full">
-      <CardContent className="p-5 flex flex-col gap-4 h-full">
+    <Card className="h-full gap-0 py-0 overflow-hidden">
+      <div className={`h-[3px] w-full ${healthColor(memPercent, diskPercent)}`} />
+      <CardContent className="p-5 pt-4 flex flex-col gap-4 h-full">
         <div className="flex items-center gap-1.5">
           <button className="flex items-center gap-1.5 group text-left rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <span className="text-base font-semibold group-hover:text-primary transition-colors">{clusterName}</span>
@@ -103,16 +110,16 @@ function ClusterOverviewCard({ serverList, nodeStats, allVMs, memPercent, diskPe
           {availableIPs > 0 && (
             <div>
               <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">IPv4 доступно</p>
-              <p className="text-3xl font-bold tabular-nums text-success">{availableIPs.toLocaleString()}</p>
+              <p className="font-mono text-3xl font-bold tabular-nums text-success">{availableIPs.toLocaleString()}</p>
             </div>
           )}
           <div>
             <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Узлов</p>
-            <p className="text-3xl font-bold tabular-nums">{nodeStats.length}</p>
+            <p className="font-mono text-3xl font-bold tabular-nums">{nodeStats.length}</p>
           </div>
           <div>
             <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">VM</p>
-            <p className="text-3xl font-bold tabular-nums">{totalVMs + totalCTs}</p>
+            <p className="font-mono text-3xl font-bold tabular-nums">{totalVMs + totalCTs}</p>
           </div>
         </div>
 
@@ -123,7 +130,7 @@ function ClusterOverviewCard({ serverList, nodeStats, allVMs, memPercent, diskPe
 
         <div className="flex items-center justify-between text-xs pt-1">
           <span className="text-muted-foreground">
-            Оверселлинг RAM = <span className="text-foreground font-medium">{overselling}</span>
+            Оверселлинг RAM = <span className="font-mono text-foreground font-medium">{overselling}</span>
           </span>
           <span className="flex items-center gap-1 text-muted-foreground">
             <ExternalLink className="h-3 w-3" /> Grafana
@@ -175,12 +182,12 @@ function TasksTodayCard() {
         {rows.map(({ label, value, red }) => (
           <div key={label} className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">{label}</span>
-            <span className={`text-sm font-semibold tabular-nums ${red ? 'text-danger' : ''}`}>{value}</span>
+            <span className={`font-mono text-sm font-semibold tabular-nums ${red ? 'text-danger' : ''}`}>{value}</span>
           </div>
         ))}
         <div className="border-t border-border pt-2.5 flex items-center justify-between">
           <span className="text-sm font-medium">Всего</span>
-          <span className="text-sm font-bold tabular-nums">{today.length}</span>
+          <span className="font-mono text-sm font-bold tabular-nums">{today.length}</span>
         </div>
       </CardContent>
     </Card>
@@ -192,8 +199,9 @@ function NodeStatsCard({ cpuPercent, memPercent, serverName, serverCount }: {
   cpuPercent: number; memPercent: number; serverName: string; serverCount: number
 }) {
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2 pt-5 px-5">
+    <Card className="h-full gap-0 py-0 overflow-hidden">
+      <div className={`h-[3px] w-full ${healthColor(cpuPercent, memPercent)}`} />
+      <CardHeader className="pb-2 pt-4 px-5">
         <CardTitle className="text-sm font-semibold truncate">{serverName || 'Сервер'}</CardTitle>
       </CardHeader>
       <CardContent className="px-5 pb-5 space-y-4">
@@ -204,7 +212,7 @@ function NodeStatsCard({ cpuPercent, memPercent, serverName, serverCount }: {
         <div className="space-y-1.5 text-xs">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Серверов:</span>
-            <span className="font-medium">{serverCount}</span>
+            <span className="font-mono font-medium">{serverCount}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Платформа:</span>
@@ -293,13 +301,13 @@ function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
                       </span>
                     )}
                   </div>
-                  <span className={`text-right tabular-nums text-xs font-medium ${cpu >= 90 ? 'text-danger' : cpu >= 70 ? 'text-warning' : ''}`}>
+                  <span className={`font-mono text-right tabular-nums text-xs font-medium ${cpu >= 90 ? 'text-danger' : cpu >= 70 ? 'text-warning' : ''}`}>
                     {cpu.toFixed(0)}
                   </span>
-                  <span className={`text-right tabular-nums text-xs ${ram >= 90 ? 'text-danger' : ram >= 70 ? 'text-warning' : ''}`}>
+                  <span className={`font-mono text-right tabular-nums text-xs ${ram >= 90 ? 'text-danger' : ram >= 70 ? 'text-warning' : ''}`}>
                     {ram.toFixed(0)}
                   </span>
-                  <span className="text-right tabular-nums text-xs text-muted-foreground">{disk.toFixed(0)}</span>
+                  <span className="font-mono text-right tabular-nums text-xs text-muted-foreground">{disk.toFixed(0)}</span>
                 </div>
               )
             })
@@ -469,7 +477,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4">
       {/* Top row: cluster overview | tasks | node stats */}
-      <div className="grid gap-4 lg:grid-cols-[1fr_220px_210px]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_220px_210px] animate-fade-up">
         <ClusterOverviewCard
           serverList={serverList}
           nodeStats={nodeStats}
@@ -488,7 +496,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Bottom row: nodes table + disk chart */}
-      <ClusterNodesSection nodeStats={nodeStats} />
+      <div className="animate-fade-up" style={{ animationDelay: '80ms' }}>
+        <ClusterNodesSection nodeStats={nodeStats} />
+      </div>
     </div>
   )
 }
