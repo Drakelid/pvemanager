@@ -10,7 +10,7 @@ import httpx
 import websockets
 
 from ...db import get_db
-from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive, ProxmoxTask, DeployTask, AppOperation, InstalledApp
+from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive, ProxmoxTask, DeployTask, AppOperation, InstalledApp, ScriptExecution
 from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
 from ...proxmox import ProxmoxClient, get_proxmox_resources
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
@@ -213,6 +213,7 @@ def get_all_tasks(
     proxmox_q = db.query(ProxmoxTask).filter(ProxmoxTask.user_id == current_user.id)
     deploy_q = db.query(DeployTask).filter(DeployTask.user_id == current_user.id)
     appstore_q = db.query(AppOperation).filter(AppOperation.user_id == current_user.id)
+    script_q = db.query(ScriptExecution).filter(ScriptExecution.user_id == current_user.id)
 
     if status_filter:
         # Normalise statuses: proxmox uses running/completed/failed; bulk uses the same + pending/cancelled
@@ -220,11 +221,13 @@ def get_all_tasks(
         proxmox_q = proxmox_q.filter(ProxmoxTask.status == status_filter)
         deploy_q = deploy_q.filter(DeployTask.status == status_filter)
         appstore_q = appstore_q.filter(AppOperation.status == status_filter)
+        script_q = script_q.filter(ScriptExecution.status == status_filter)
 
     bulk_tasks = bulk_q.order_by(TaskQueue.created_at.desc()).limit(limit).all()
     proxmox_tasks = proxmox_q.order_by(ProxmoxTask.created_at.desc()).limit(limit).all()
     deploy_tasks = deploy_q.order_by(DeployTask.created_at.desc()).limit(limit).all()
     appstore_ops = appstore_q.order_by(AppOperation.started_at.desc()).limit(limit).all()
+    script_executions = script_q.order_by(ScriptExecution.started_at.desc()).limit(limit).all()
 
     # App Store operations carry only installed_app_id; resolve app name/node/server.
     ia_ids = {o.installed_app_id for o in appstore_ops if o.installed_app_id}
@@ -246,6 +249,7 @@ def get_all_tasks(
         {t.server_id for t in proxmox_tasks if t.server_id}
         | {t.server_id for t in deploy_tasks if t.server_id}
         | {t.get("server_id") for t in appstore_tasks if t.get("server_id")}
+        | {e.server_id for e in script_executions if e.server_id}
     )
     server_names = {}
     if server_ids:
@@ -267,7 +271,8 @@ def get_all_tasks(
         [_enrich(t.to_dict()) for t in bulk_tasks]
         + [_enrich(t.to_dict()) for t in proxmox_tasks]
         + [_enrich(t.to_dict()) for t in deploy_tasks]
-        + [_enrich(t) for t in appstore_tasks],
+        + [_enrich(t) for t in appstore_tasks]
+        + [_enrich(e.to_task_dict()) for e in script_executions],
         key=lambda t: t.get("created_at") or "",
         reverse=True,
     )[:limit]
@@ -301,7 +306,12 @@ def get_active_count(
         AppOperation.status == "running",
     ).scalar() or 0
 
-    return {"count": bulk_count + proxmox_count + deploy_count + appstore_count}
+    script_count = db.query(func.count(ScriptExecution.id)).filter(
+        ScriptExecution.user_id == current_user.id,
+        ScriptExecution.status == "running",
+    ).scalar() or 0
+
+    return {"count": bulk_count + proxmox_count + deploy_count + appstore_count + script_count}
 
 
 # ─── Proxmox UPID task log from DB ──────────────────────────────────────────
@@ -357,6 +367,10 @@ def clear_completed_tasks(
         AppOperation.user_id == current_user.id,
         AppOperation.status.in_(done_statuses),
     ).delete(synchronize_session=False)
+    script_deleted = db.query(ScriptExecution).filter(
+        ScriptExecution.user_id == current_user.id,
+        ScriptExecution.status.in_(["success", "failed"]),
+    ).delete(synchronize_session=False)
     db.commit()
-    return {"deleted": bulk_deleted + proxmox_deleted + deploy_deleted + appstore_deleted}
+    return {"deleted": bulk_deleted + proxmox_deleted + deploy_deleted + appstore_deleted + script_deleted}
 

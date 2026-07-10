@@ -23,6 +23,7 @@ import {
   Check,
   Store,
   Package,
+  Terminal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -81,6 +82,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'App Store', icon: Store, path: '/appstore', permission: 'app:view' },
       { label: 'My Apps', icon: Package, path: '/my-apps', permission: 'app:view' },
+      { label: 'Scripts', icon: Terminal, path: '/scripts', permission: 'script:view' },
     ],
   },
   {

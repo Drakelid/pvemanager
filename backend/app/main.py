@@ -25,6 +25,7 @@ from .api import users as users_router
 from .api import workspaces as workspaces_router
 from .api import ssh_keys as ssh_keys_router
 from .api import appstore as appstore_router
+from .api import scripts as scripts_router
 from .logging_middleware import RequestLoggingMiddleware
 from .language_middleware import LanguageMiddleware
 from .i18n import I18nService
@@ -447,6 +448,7 @@ def create_app() -> FastAPI:
     app.include_router(workspaces_router.router, tags=["workspaces"])
     app.include_router(ssh_keys_router.router, tags=["ssh-keys"])
     app.include_router(appstore_router.router, tags=["appstore"])
+    app.include_router(scripts_router.router, tags=["scripts"])
 
     return app
 

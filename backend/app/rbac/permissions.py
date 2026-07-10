@@ -735,6 +735,28 @@ def _create_permissions() -> PermissionRegistry:
         requires=["app:view"]
     ))
 
+    # Script catalog permissions (bash-скрипты на нодах/гостях)
+    registry.register(Permission(
+        resource="script", action="view",
+        display_name="View Scripts",
+        description="Просмотр каталога скриптов и истории запусков",
+        category="Scripts"
+    ))
+    registry.register(Permission(
+        resource="script", action="execute",
+        display_name="Execute Scripts",
+        description="Запуск скриптов из каталога на нодах/ВМ/LXC",
+        category="Scripts",
+        requires=["script:view"]
+    ))
+    registry.register(Permission(
+        resource="script", action="manage",
+        display_name="Manage Scripts",
+        description="Создание/редактирование скриптов и git-источников каталога",
+        category="Scripts",
+        requires=["script:view"]
+    ))
+
     # PVE access permissions (authentication realms & API tokens)
     registry.register(Permission(
         resource="access", action="view",

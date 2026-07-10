@@ -8,6 +8,7 @@ from .settings import PanelSettings, SecuritySetting, Workspace, WorkspaceServer
 from .misc import Notification, NotificationPreference, BackupJob, AuditLog
 from .catalog import ImageMirror
 from .appstore import CatalogApp, InstalledApp, AppOperation
+from .scripts import ScriptCatalog, ScriptGitRepo, ScriptExecution
 
 __all__ = [
     'Base', 'utcnow',
@@ -19,5 +20,6 @@ __all__ = [
     'PanelSettings', 'SecuritySetting', 'Workspace', 'WorkspaceServer', 'WorkspaceUser',
     'Notification', 'NotificationPreference', 'BackupJob', 'AuditLog',
     'ImageMirror',
-    'CatalogApp', 'InstalledApp', 'AppOperation'
+    'CatalogApp', 'InstalledApp', 'AppOperation',
+    'ScriptCatalog', 'ScriptGitRepo', 'ScriptExecution',
 ]
