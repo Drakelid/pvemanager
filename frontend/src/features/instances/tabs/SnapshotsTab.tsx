@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, RotateCcw, Loader2, Camera, Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -209,12 +210,10 @@ export default function SnapshotsTab({ serverId, vmid, type, node }: Props) {
             </div>
             {type === 'qemu' && (
               <div className="flex items-center gap-2">
-                <input
+                <Checkbox
                   id="snap-ram"
-                  type="checkbox"
                   checked={includeRAM}
                   onChange={(e) => setIncludeRAM(e.target.checked)}
-                  className="rounded border-border"
                 />
                 <Label htmlFor="snap-ram" className="text-sm">Include VM memory (RAM state)</Label>
               </div>

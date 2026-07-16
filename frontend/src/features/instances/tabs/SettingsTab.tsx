@@ -1,16 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings, Loader2, Power, Cpu, HardDrive, Trash2, SlidersHorizontal, LockOpen, ListOrdered, ArrowUp, ArrowDown, Cloud, Eye, EyeOff } from 'lucide-react';
+import { Settings, Loader2, Power, SlidersHorizontal, LockOpen, ListOrdered, ArrowUp, ArrowDown, Cloud, Eye, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useVMConfig, useUpdateConfig, useResizeDisk, useVMOwner, useSetVMOwner, useExecuteScript, useSavedConfig, useMoveDisk, useAddDisk, useDetachDisk, useUnlockInstance, useUpdateCloudInit } from '@/hooks/use-instances';
-import { useLXCStorages } from '@/hooks/use-lxc-templates';
+import { useVMConfig, useUpdateConfig, useVMOwner, useSetVMOwner, useExecuteScript, useSavedConfig, useUnlockInstance, useUpdateCloudInit } from '@/hooks/use-instances';
 import { useProfile } from '@/hooks/use-settings';
-import { useConfirm } from '@/components/shared/ConfirmDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { ComputeResourcesCard, DiskResizeCard } from './ResourceCards';
 
 interface Props {
   serverId: number;
@@ -20,17 +20,6 @@ interface Props {
 }
 
 const OWNER_NONE = '__none__';
-
-/** Достать текущий размер диска в ГБ из строки конфига Proxmox
- *  (напр. "local-nvme:vm-106-disk-0.qcow2,...,size=51712M,ssd=1"). */
-function parseDiskSizeGb(spec: unknown): number | null {
-  if (typeof spec !== 'string') return null;
-  const m = spec.match(/(?:^|,)size=(\d+(?:\.\d+)?)([KMGT])?/i);
-  if (!m) return null;
-  const value = parseFloat(m[1]);
-  const factor: Record<string, number> = { K: 1 / 1048576, M: 1 / 1024, G: 1, T: 1024 };
-  return value * (factor[(m[2] || 'G').toUpperCase()] ?? 1);
-}
 
 function OwnerCard({ serverId, vmid }: { serverId: number; vmid: number }) {
   const { t } = useTranslation();
@@ -213,11 +202,9 @@ function AutostartCard({ serverId, vmid, type, node }: { serverId: number; vmid:
       </CardHeader>
       <CardContent className="space-y-4">
         <label className="flex items-center gap-2.5 cursor-pointer">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={onboot}
             onChange={e => setOnboot(e.target.checked)}
-            className="h-4 w-4 rounded border-input accent-primary"
           />
           <span className="text-sm">{t('instances.start_on_boot')}</span>
         </label>
@@ -243,11 +230,9 @@ function AutostartCard({ serverId, vmid, type, node }: { serverId: number; vmid:
         <p className="text-xs text-muted-foreground">{t('instances.startup_order_hint')}</p>
 
         <label className="flex items-center gap-2.5 cursor-pointer">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={protection}
             onChange={e => setProtection(e.target.checked)}
-            className="h-4 w-4 rounded border-input accent-primary"
           />
           <span className="text-sm">{t('instances.protection')}</span>
         </label>
@@ -638,8 +623,8 @@ function OptionToggle({ label, hint, checked, onChange }: {
         <span className="text-sm">{label}</span>
         {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       </div>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 rounded border-input accent-primary" />
+      <Checkbox checked={checked} onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5" />
     </label>
   );
 }
@@ -724,364 +709,9 @@ function VmOptionsCard({ serverId, vmid, type, node }: { serverId: number; vmid:
   );
 }
 
-// ==================== CPU options ====================
-
-const CPU_TYPES = ['default', 'host', 'x86-64-v2', 'x86-64-v2-AES', 'x86-64-v3', 'x86-64-v4', 'kvm64', 'qemu64'];
-
-function CpuOptionsCard({ serverId, vmid, type, node }: { serverId: number; vmid: number; type: string; node: string }) {
-  const { t } = useTranslation();
-  const { data: config } = useVMConfig(serverId, vmid, type, node);
-  const updateConfig = useUpdateConfig(serverId, vmid, type, node);
-
-  const [cpuType, setCpuType] = useState('default');
-  const [sockets, setSockets] = useState('');
-  const [cpulimit, setCpulimit] = useState('');
-  const [cpuunits, setCpuunits] = useState('');
-  const [numa, setNuma] = useState(false);
-
-  useEffect(() => {
-    if (!config) return;
-    // cpu из конфига может быть "host" или "cputype=host,flags=..."
-    const raw = typeof config.cpu === 'string' ? config.cpu : '';
-    const parsed = raw.includes('cputype=') ? (raw.match(/cputype=([^,]+)/)?.[1] ?? '') : raw;
-    setCpuType(parsed && CPU_TYPES.includes(parsed) ? parsed : (parsed ? parsed : 'default'));
-    setSockets(config.sockets != null ? String(config.sockets) : '');
-    setCpulimit(config.cpulimit != null ? String(config.cpulimit) : '');
-    setCpuunits(config.cpuunits != null ? String(config.cpuunits) : '');
-    setNuma(Number(config.numa) === 1);
-  }, [config]);
-
-  const save = () => {
-    const updates: Record<string, unknown> = {
-      sockets: sockets ? Number(sockets) : 1,
-      numa: numa ? 1 : 0,
-    };
-    if (cpuType && cpuType !== 'default') updates.cpu = cpuType;
-    else updates.delete = 'cpu';
-    // cpulimit: 0 = без лимита; cpuunits: вес планировщика
-    updates.cpulimit = cpulimit ? Number(cpulimit) : 0;
-    if (cpuunits) updates.cpuunits = Number(cpuunits);
-
-    updateConfig.mutate(updates, {
-      onSuccess: () => toast.success(t('instances.cpu_saved')),
-      onError: (e: Error) => toast.error(e.message),
-    });
-  };
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Cpu className="h-4 w-4" />{t('instances.cpu_options')}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>{t('instances.cpu_type')}</Label>
-            <Select value={cpuType} onValueChange={(v) => v && setCpuType(v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {CPU_TYPES.map((c) => (
-                  <SelectItem key={c} value={c}>{c === 'default' ? `default (kvm64)` : c}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">{t('instances.cpu_type_hint')}</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t('instances.sockets')}</Label>
-            <Input type="number" min={1} max={8} value={sockets} onChange={(e) => setSockets(e.target.value)} placeholder="1" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t('instances.cpulimit')}</Label>
-            <Input type="number" min={0} max={128} step="0.1" value={cpulimit} onChange={(e) => setCpulimit(e.target.value)} placeholder="0" />
-            <p className="text-xs text-muted-foreground">{t('instances.cpulimit_hint')}</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t('instances.cpuunits')}</Label>
-            <Input type="number" min={1} max={262144} value={cpuunits} onChange={(e) => setCpuunits(e.target.value)} placeholder="100" />
-            <p className="text-xs text-muted-foreground">{t('instances.cpuunits_hint')}</p>
-          </div>
-        </div>
-        <label className="flex items-center gap-2.5 cursor-pointer">
-          <input type="checkbox" checked={numa} onChange={(e) => setNuma(e.target.checked)} className="h-4 w-4 rounded border-input accent-primary" />
-          <span className="text-sm">{t('instances.numa')}</span>
-        </label>
-        <Button size="sm" onClick={save} disabled={updateConfig.isPending}>
-          {updateConfig.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('common.save')}
-        </Button>
-        <p className="text-xs text-muted-foreground">{t('instances.apply_changes_note')}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ==================== Disk management (move / add / detach) ====================
-
-/** Достать имя хранилища из спецификации диска ("local-lvm:vm-100-disk-0,size=32G"). */
-function parseDiskStorage(spec: unknown): string | null {
-  if (typeof spec !== 'string') return null;
-  return spec.split(':', 1)[0] || null;
-}
-
-/** Следующее свободное имя устройства для заданной шины (scsi/virtio/sata). */
-function nextFreeDevice(bus: string, existing: string[]): string {
-  for (let i = 0; i < 31; i++) {
-    const name = `${bus}${i}`;
-    if (!existing.includes(name)) return name;
-  }
-  return `${bus}0`;
-}
-
-function DiskManagementCard({ serverId, vmid, type, node }: { serverId: number; vmid: number; type: string; node: string }) {
-  const { t } = useTranslation();
-  const confirm = useConfirm();
-  const { data: config } = useVMConfig(serverId, vmid, type, node);
-  const { data: storages = [] } = useLXCStorages(serverId, node);
-  const moveDisk = useMoveDisk(serverId, vmid, node);
-  const addDisk = useAddDisk(serverId, vmid, node);
-  const detachDisk = useDetachDisk(serverId, vmid, node);
-
-  // Реальные дисковые устройства (без cd-rom и cloudinit)
-  const disks = useMemo(() => {
-    if (!config) return [] as string[];
-    const re = /^(scsi\d+|sata\d+|virtio\d+|ide\d+)$/;
-    return Object.entries(config)
-      .filter(([k, v]) => re.test(k) && typeof v === 'string'
-        && !v.includes('media=cdrom') && !v.includes('cloudinit')
-        && !v.startsWith('/dev/'))  // проброшенные физдиски — управляются во вкладке «Оборудование»
-      .map(([k]) => k);
-  }, [config]);
-
-  const [moveDiskDev, setMoveDiskDev] = useState('');
-  const [moveStorage, setMoveStorage] = useState('');
-  const [moveDelete, setMoveDelete] = useState(true);
-
-  const [addBus, setAddBus] = useState('scsi');
-  const [addStorage, setAddStorage] = useState('');
-  const [addSize, setAddSize] = useState('16');
-  const [addSsd, setAddSsd] = useState(false);
-  const [addDiscard, setAddDiscard] = useState(false);
-
-  useEffect(() => {
-    if (disks.length && !disks.includes(moveDiskDev)) setMoveDiskDev(disks[0]);
-  }, [disks, moveDiskDev]);
-
-  const doMove = () => {
-    if (!moveDiskDev || !moveStorage) return;
-    moveDisk.mutate(
-      { disk: moveDiskDev, target_storage: moveStorage, delete: moveDelete },
-      {
-        onSuccess: () => { toast.success(t('instances.disk_moved')); setMoveStorage(''); },
-        onError: (e: Error) => toast.error(e.message),
-      }
-    );
-  };
-
-  const doAdd = () => {
-    if (!addStorage || !addSize) return;
-    const dev = nextFreeDevice(addBus, disks);
-    addDisk.mutate(
-      { disk: dev, storage: addStorage, size_gb: Number(addSize), ssd: addSsd, discard: addDiscard },
-      {
-        onSuccess: () => { toast.success(t('instances.disk_added', { dev })); },
-        onError: (e: Error) => toast.error(e.message),
-      }
-    );
-  };
-
-  const doDetach = async (dev: string) => {
-    const destroy = await confirm(t('instances.disk_detach_confirm', { dev }));
-    if (!destroy) return;
-    detachDisk.mutate(
-      { disk: dev, destroy: true },
-      {
-        onSuccess: () => toast.success(t('instances.disk_detached')),
-        onError: (e: Error) => toast.error(e.message),
-      }
-    );
-  };
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <HardDrive className="h-4 w-4" />{t('instances.disk_management')}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        {/* Список дисков */}
-        <div className="space-y-1.5">
-          {disks.length === 0 ? (
-            <p className="text-xs text-muted-foreground">{t('instances.no_disks')}</p>
-          ) : disks.map((d) => (
-            <div key={d} className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm">
-              <span className="font-mono">{d}</span>
-              <span className="text-xs text-muted-foreground">{parseDiskStorage(config?.[d]) ?? '—'}</span>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title={t('common.delete')} onClick={() => doDetach(d)}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          ))}
-        </div>
-
-        {/* Move disk */}
-        <div className="space-y-2 border-t pt-3">
-          <Label className="text-xs font-medium">{t('instances.disk_move')}</Label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Select value={moveDiskDev} onValueChange={(v) => v && setMoveDiskDev(v)}>
-              <SelectTrigger><SelectValue placeholder={t('instances.disk_device')} /></SelectTrigger>
-              <SelectContent>{disks.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={moveStorage} onValueChange={(v) => v && setMoveStorage(v)}>
-              <SelectTrigger><SelectValue placeholder={t('instances.migrate_target_storage')} /></SelectTrigger>
-              <SelectContent>{storages.map((s) => <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <label className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={moveDelete} onChange={(e) => setMoveDelete(e.target.checked)} />
-            <span>{t('instances.disk_move_delete')}</span>
-          </label>
-          <Button size="sm" variant="outline" onClick={doMove} disabled={!moveStorage || moveDisk.isPending}>
-            {moveDisk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('instances.disk_move')}
-          </Button>
-        </div>
-
-        {/* Add disk */}
-        <div className="space-y-2 border-t pt-3">
-          <Label className="text-xs font-medium">{t('instances.disk_add')}</Label>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1"><Label className="text-2xs">{t('instances.disk_bus')}</Label>
-              <Select value={addBus} onValueChange={(v) => v && setAddBus(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="scsi">scsi</SelectItem>
-                  <SelectItem value="virtio">virtio</SelectItem>
-                  <SelectItem value="sata">sata</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1"><Label className="text-2xs">{t('instances.migrate_target_storage')}</Label>
-              <Select value={addStorage} onValueChange={(v) => v && setAddStorage(v)}>
-                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
-                <SelectContent>{storages.map((s) => <SelectItem key={s.storage} value={s.storage}>{s.storage}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1"><Label className="text-2xs">{t('instances.new_size_gb')}</Label>
-              <Input type="number" min={1} value={addSize} onChange={(e) => setAddSize(e.target.value)} />
-            </div>
-          </div>
-          <div className="flex gap-4">
-            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={addSsd} onChange={(e) => setAddSsd(e.target.checked)} /><span>SSD</span></label>
-            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={addDiscard} onChange={(e) => setAddDiscard(e.target.checked)} /><span>Discard</span></label>
-          </div>
-          <Button size="sm" variant="outline" onClick={doAdd} disabled={!addStorage || !addSize || addDisk.isPending}>
-            {addDisk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('instances.disk_add')}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function SettingsTab({ serverId, vmid, type, node }: Props) {
   const { t } = useTranslation();
   const { data: config } = useVMConfig(serverId, vmid, type, node);
-  const updateConfig = useUpdateConfig(serverId, vmid, type, node);
-  const resizeDisk = useResizeDisk(serverId, vmid, type, node);
-
-  const [cores, setCores] = useState('');
-  const [memory, setMemory] = useState('');
-  const [diskSize, setDiskSize] = useState('');
-  const [diskDevice, setDiskDevice] = useState('');
-  const [growResult, setGrowResult] = useState<{ grown: boolean; output: string } | null>(null);
-
-  // Initialize from config
-  const currentCores = config?.cores || 0;
-  const currentMemory = config?.memory || 0;
-
-  // Реальные дисковые устройства из конфига Proxmox (исключая cd-rom).
-  // Захардкоженный scsi0 ломал ресайз на VM с другим диском (напр. sata0).
-  const diskDevices = useMemo(() => {
-    if (!config) return [] as string[];
-    const re = /^(rootfs|mp\d+|scsi\d+|sata\d+|virtio\d+|ide\d+)$/;
-    return Object.entries(config)
-      .filter(([k, v]) => re.test(k) && typeof v === 'string' && !v.includes('media=cdrom'))
-      .map(([k]) => k);
-  }, [config]);
-
-  // Загрузочный диск из boot=order=... — выбираем по умолчанию.
-  const bootDisk = useMemo(() => {
-    const order = typeof config?.boot === 'string' ? config.boot : '';
-    const first = order.match(/order=([^;]+)/)?.[1]?.split(';')[0]?.trim();
-    return first && diskDevices.includes(first) ? first : undefined;
-  }, [config?.boot, diskDevices]);
-
-  useEffect(() => {
-    if (diskDevices.length === 0) return;
-    setDiskDevice((cur) => (diskDevices.includes(cur) ? cur : bootDisk ?? diskDevices[0]));
-  }, [diskDevices, bootDisk]);
-
-  // Текущий размер выбранного диска (ГБ). Proxmox не умеет уменьшать диск,
-  // поэтому показываем его и не даём ввести значение меньше текущего.
-  const currentDiskGb = useMemo(
-    () => (diskDevice ? parseDiskSizeGb(config?.[diskDevice]) : null),
-    [config, diskDevice]
-  );
-  const minDiskGb = currentDiskGb != null ? Math.ceil(currentDiskGb) : 1;
-
-  // При смене диска подставляем текущий размер как стартовое значение,
-  // чтобы пользователь увеличивал его, а не угадывал.
-  useEffect(() => {
-    if (currentDiskGb != null) setDiskSize(String(Math.ceil(currentDiskGb)));
-  }, [currentDiskGb]);
-
-  const handleConfigUpdate = () => {
-    const updates: Record<string, unknown> = {};
-    if (cores && Number(cores) !== currentCores) updates.cores = Number(cores);
-    if (memory && Number(memory) !== currentMemory) updates.memory = Number(memory);
-
-    if (Object.keys(updates).length === 0) {
-      toast.info('No changes to apply');
-      return;
-    }
-
-    updateConfig.mutate(updates, {
-      onSuccess: () => {
-        toast.success('Configuration updated');
-        setCores('');
-        setMemory('');
-      },
-      onError: (err) => toast.error(err.message),
-    });
-  };
-
-  const handleDiskResize = () => {
-    if (!diskSize || !diskDevice) return;
-    if (currentDiskGb != null && Number(diskSize) <= currentDiskGb) {
-      toast.error(
-        `Новый размер должен быть больше текущего (${currentDiskGb.toFixed(1)} ГБ). Уменьшение диска Proxmox не поддерживает.`
-      );
-      return;
-    }
-    resizeDisk.mutate(
-      { disk: diskDevice, size: `${diskSize}G` },
-      {
-        onSuccess: (data) => {
-          const res = data as { message?: string; filesystem_grown?: boolean; grow_output?: string };
-          const grown = !!res?.filesystem_grown;
-          setGrowResult({ grown, output: res?.grow_output ?? '' });
-          if (grown) toast.success(res?.message ?? `Disk resized to ${diskSize}G`);
-          else toast.warning(res?.message ?? `Диск увеличен до ${diskSize}G, но ФС не расширена`);
-        },
-        onError: (err) => toast.error(err.message),
-      }
-    );
-  };
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -1093,52 +723,10 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
 
       {type !== 'lxc' && <ExecuteScriptCard serverId={serverId} vmid={vmid} node={node} />}
 
-      {/* CPU & Memory */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            {t('instances.compute_resources')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="cores">{t('instances.vcpu_cores')}</Label>
-              <Input
-                id="cores"
-                type="number"
-                min={1}
-                max={128}
-                placeholder={String(currentCores)}
-                value={cores}
-                onChange={(e) => setCores(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">{t('instances.current_cores', { count: currentCores })}</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="memory">{t('instances.memory_mb')}</Label>
-              <Input
-                id="memory"
-                type="number"
-                min={128}
-                step={128}
-                placeholder={String(currentMemory)}
-                value={memory}
-                onChange={(e) => setMemory(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">{t('instances.current_memory', { count: currentMemory })}</p>
-            </div>
-          </div>
-          <Button onClick={handleConfigUpdate} disabled={updateConfig.isPending} size="sm">
-            {updateConfig.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('instances.apply_changes')}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            {t('instances.apply_changes_note')}
-          </p>
-        </CardContent>
-      </Card>
+      {/* Для QEMU вычислительные ресурсы, опции CPU, управление дисками и ресайз
+          диска живут на вкладке «Оборудование» (которой у LXC нет — поэтому
+          здесь эти карточки остаются только для контейнеров). */}
+      {type === 'lxc' && <ComputeResourcesCard serverId={serverId} vmid={vmid} type={type} node={node} />}
 
       {type !== 'lxc' && <CloudInitCard serverId={serverId} vmid={vmid} type={type} node={node} />}
 
@@ -1146,87 +734,7 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
 
       {type !== 'lxc' && <VmOptionsCard serverId={serverId} vmid={vmid} type={type} node={node} />}
 
-      {type !== 'lxc' && <CpuOptionsCard serverId={serverId} vmid={vmid} type={type} node={node} />}
-
-      {type !== 'lxc' && <DiskManagementCard serverId={serverId} vmid={vmid} type={type} node={node} />}
-
-      {/* Disk Resize */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold">{t('instances.disk_resize')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="disk-device">{t('instances.disk_device')}</Label>
-              {diskDevices.length > 0 ? (
-                <Select value={diskDevice} onValueChange={(v) => setDiskDevice(v ?? "")}>
-                  <SelectTrigger id="disk-device">
-                    <SelectValue placeholder={t('common.placeholder_disk')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {diskDevices.map((dev) => (
-                      <SelectItem key={dev} value={dev}>
-                        {dev}
-                        {dev === bootDisk ? ' (boot)' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  id="disk-device"
-                  value={diskDevice}
-                  onChange={(e) => setDiskDevice(e.target.value)}
-                  placeholder={t('common.placeholder_disk')}
-                />
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="disk-size">{t('instances.new_size_gb')}</Label>
-              <Input
-                id="disk-size"
-                type="number"
-                min={minDiskGb}
-                value={diskSize}
-                onChange={(e) => setDiskSize(e.target.value)}
-                placeholder={t('common.placeholder_disk_size')}
-              />
-              {currentDiskGb != null && (
-                <p className="text-xs text-muted-foreground">
-                  Текущий размер: {currentDiskGb.toFixed(1)} ГБ
-                </p>
-              )}
-            </div>
-          </div>
-          <Button
-            onClick={handleDiskResize}
-            disabled={!diskSize || !diskDevice || resizeDisk.isPending}
-            size="sm"
-            variant="outline"
-          >
-            {resizeDisk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('instances.resize_disk')}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            {t('instances.resize_disk_hint')}
-          </p>
-          {growResult && (
-            <div className="space-y-1.5">
-              <p className={`text-xs font-medium ${growResult.grown ? 'text-success' : 'text-warning'}`}>
-                {growResult.grown
-                  ? 'Файловая система расширена внутри ОС'
-                  : 'Файловая система не расширена — вывод growpart ниже'}
-              </p>
-              {growResult.output && (
-                <pre className="max-h-48 overflow-auto rounded bg-muted p-2 text-xs font-mono whitespace-pre-wrap">
-                  {growResult.output}
-                </pre>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {type === 'lxc' && <DiskResizeCard serverId={serverId} vmid={vmid} type={type} node={node} />}
 
       <SavedConfigCard serverId={serverId} vmid={vmid} />
 

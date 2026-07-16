@@ -4,6 +4,7 @@ import { Cpu, Usb, HardDrive, Plus, Trash2, MemoryStick, Loader2, AlertTriangle 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -21,12 +22,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { useVMConfig, useUpdateConfig, useVMStatus } from '@/hooks/use-instances';
+import { useVMConfig, useUpdateConfig, useVMStatus, useMoveDisk, useAddDisk, useDetachDisk } from '@/hooks/use-instances';
 import { useImageStorages } from '@/hooks/use-image-catalog';
+import { useLXCStorages } from '@/hooks/use-lxc-templates';
+import { useConfirm } from '@/components/shared/ConfirmDialog';
 import { toast } from 'sonner';
 import AddPciDeviceDialog from '../AddPciDeviceDialog';
 import AddUsbDeviceDialog from '../AddUsbDeviceDialog';
 import AddPhysicalDiskDialog from '../AddPhysicalDiskDialog';
+import { ComputeResourcesCard, DiskResizeCard } from './ResourceCards';
 
 interface Props {
   serverId: number;
@@ -207,6 +211,270 @@ function PlatformCard({
   );
 }
 
+// ==================== CPU options ====================
+
+const CPU_TYPES = ['default', 'host', 'x86-64-v2', 'x86-64-v2-AES', 'x86-64-v3', 'x86-64-v4', 'kvm64', 'qemu64'];
+
+function CpuOptionsCard({ serverId, vmid, type, node }: Props) {
+  const { t } = useTranslation();
+  const { data: config } = useVMConfig(serverId, vmid, type, node);
+  const updateConfig = useUpdateConfig(serverId, vmid, type, node);
+
+  const [cpuType, setCpuType] = useState('default');
+  const [sockets, setSockets] = useState('');
+  const [cpulimit, setCpulimit] = useState('');
+  const [cpuunits, setCpuunits] = useState('');
+  const [numa, setNuma] = useState(false);
+
+  useEffect(() => {
+    if (!config) return;
+    // cpu из конфига может быть "host" или "cputype=host,flags=..."
+    const raw = typeof config.cpu === 'string' ? config.cpu : '';
+    const parsed = raw.includes('cputype=') ? (raw.match(/cputype=([^,]+)/)?.[1] ?? '') : raw;
+    setCpuType(parsed && CPU_TYPES.includes(parsed) ? parsed : (parsed ? parsed : 'default'));
+    setSockets(config.sockets != null ? String(config.sockets) : '');
+    setCpulimit(config.cpulimit != null ? String(config.cpulimit) : '');
+    setCpuunits(config.cpuunits != null ? String(config.cpuunits) : '');
+    setNuma(Number(config.numa) === 1);
+  }, [config]);
+
+  const save = () => {
+    const updates: Record<string, unknown> = {
+      sockets: sockets ? Number(sockets) : 1,
+      numa: numa ? 1 : 0,
+    };
+    if (cpuType && cpuType !== 'default') updates.cpu = cpuType;
+    else updates.delete = 'cpu';
+    // cpulimit: 0 = без лимита; cpuunits: вес планировщика
+    updates.cpulimit = cpulimit ? Number(cpulimit) : 0;
+    if (cpuunits) updates.cpuunits = Number(cpuunits);
+
+    updateConfig.mutate(updates, {
+      onSuccess: () => toast.success(t('instances.cpu_saved')),
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Cpu className="h-4 w-4" />{t('instances.cpu_options')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>{t('instances.cpu_type')}</Label>
+            <Select value={cpuType} onValueChange={(v) => v && setCpuType(v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CPU_TYPES.map((c) => (
+                  <SelectItem key={c} value={c}>{c === 'default' ? `default (kvm64)` : c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('instances.cpu_type_hint')}</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('instances.sockets')}</Label>
+            <Input type="number" min={1} max={8} value={sockets} onChange={(e) => setSockets(e.target.value)} placeholder="1" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('instances.cpulimit')}</Label>
+            <Input type="number" min={0} max={128} step="0.1" value={cpulimit} onChange={(e) => setCpulimit(e.target.value)} placeholder="0" />
+            <p className="text-xs text-muted-foreground">{t('instances.cpulimit_hint')}</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('instances.cpuunits')}</Label>
+            <Input type="number" min={1} max={262144} value={cpuunits} onChange={(e) => setCpuunits(e.target.value)} placeholder="100" />
+            <p className="text-xs text-muted-foreground">{t('instances.cpuunits_hint')}</p>
+          </div>
+        </div>
+        <label className="flex items-center gap-2.5 cursor-pointer">
+          <Checkbox checked={numa} onChange={(e) => setNuma(e.target.checked)} />
+          <span className="text-sm">{t('instances.numa')}</span>
+        </label>
+        <Button size="sm" onClick={save} disabled={updateConfig.isPending}>
+          {updateConfig.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {t('common.save')}
+        </Button>
+        <p className="text-xs text-muted-foreground">{t('instances.apply_changes_note')}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ==================== Disk management (move / add / detach) ====================
+
+/** Достать имя хранилища из спецификации диска ("local-lvm:vm-100-disk-0,size=32G"). */
+function parseDiskStorage(spec: unknown): string | null {
+  if (typeof spec !== 'string') return null;
+  return spec.split(':', 1)[0] || null;
+}
+
+/** Следующее свободное имя устройства для заданной шины (scsi/virtio/sata). */
+function nextFreeDevice(bus: string, existing: string[]): string {
+  for (let i = 0; i < 31; i++) {
+    const name = `${bus}${i}`;
+    if (!existing.includes(name)) return name;
+  }
+  return `${bus}0`;
+}
+
+function DiskManagementCard({ serverId, vmid, type, node }: Props) {
+  const { t } = useTranslation();
+  const confirm = useConfirm();
+  const { data: config } = useVMConfig(serverId, vmid, type, node);
+  const { data: storages = [] } = useLXCStorages(serverId, node);
+  const moveDisk = useMoveDisk(serverId, vmid, node);
+  const addDisk = useAddDisk(serverId, vmid, node);
+  const detachDisk = useDetachDisk(serverId, vmid, node);
+
+  // Реальные дисковые устройства (без cd-rom и cloudinit)
+  const disks = useMemo(() => {
+    if (!config) return [] as string[];
+    const re = /^(scsi\d+|sata\d+|virtio\d+|ide\d+)$/;
+    return Object.entries(config)
+      .filter(([k, v]) => re.test(k) && typeof v === 'string'
+        && !v.includes('media=cdrom') && !v.includes('cloudinit')
+        && !v.startsWith('/dev/'))  // проброшенные физдиски — управляются в блоке «Проброс устройств»
+      .map(([k]) => k);
+  }, [config]);
+
+  const [moveDiskDev, setMoveDiskDev] = useState('');
+  const [moveStorage, setMoveStorage] = useState('');
+  const [moveDelete, setMoveDelete] = useState(true);
+
+  const [addBus, setAddBus] = useState('scsi');
+  const [addStorage, setAddStorage] = useState('');
+  const [addSize, setAddSize] = useState('16');
+  const [addSsd, setAddSsd] = useState(false);
+  const [addDiscard, setAddDiscard] = useState(false);
+
+  useEffect(() => {
+    if (disks.length && !disks.includes(moveDiskDev)) setMoveDiskDev(disks[0]);
+  }, [disks, moveDiskDev]);
+
+  const doMove = () => {
+    if (!moveDiskDev || !moveStorage) return;
+    moveDisk.mutate(
+      { disk: moveDiskDev, target_storage: moveStorage, delete: moveDelete },
+      {
+        onSuccess: () => { toast.success(t('instances.disk_moved')); setMoveStorage(''); },
+        onError: (e: Error) => toast.error(e.message),
+      }
+    );
+  };
+
+  const doAdd = () => {
+    if (!addStorage || !addSize) return;
+    const dev = nextFreeDevice(addBus, disks);
+    addDisk.mutate(
+      { disk: dev, storage: addStorage, size_gb: Number(addSize), ssd: addSsd, discard: addDiscard },
+      {
+        onSuccess: () => { toast.success(t('instances.disk_added', { dev })); },
+        onError: (e: Error) => toast.error(e.message),
+      }
+    );
+  };
+
+  const doDetach = async (dev: string) => {
+    const destroy = await confirm(t('instances.disk_detach_confirm', { dev }));
+    if (!destroy) return;
+    detachDisk.mutate(
+      { disk: dev, destroy: true },
+      {
+        onSuccess: () => toast.success(t('instances.disk_detached')),
+        onError: (e: Error) => toast.error(e.message),
+      }
+    );
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <HardDrive className="h-4 w-4" />{t('instances.disk_management')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {/* Список дисков */}
+        <div className="space-y-1.5">
+          {disks.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t('instances.no_disks')}</p>
+          ) : disks.map((d) => (
+            <div key={d} className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm">
+              <span className="font-mono">{d}</span>
+              <span className="text-xs text-muted-foreground">{parseDiskStorage(config?.[d]) ?? '—'}</span>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title={t('common.delete')} onClick={() => doDetach(d)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {/* Move disk */}
+        <div className="space-y-2 border-t pt-3">
+          <Label className="text-xs font-medium">{t('instances.disk_move')}</Label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select value={moveDiskDev} onValueChange={(v) => v && setMoveDiskDev(v)}>
+              <SelectTrigger><SelectValue placeholder={t('instances.disk_device')} /></SelectTrigger>
+              <SelectContent>{disks.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={moveStorage} onValueChange={(v) => v && setMoveStorage(v)}>
+              <SelectTrigger><SelectValue placeholder={t('instances.migrate_target_storage')} /></SelectTrigger>
+              <SelectContent>{storages.map((s) => <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <label className="flex items-center gap-2 text-xs">
+            <Checkbox checked={moveDelete} onChange={(e) => setMoveDelete(e.target.checked)} />
+            <span>{t('instances.disk_move_delete')}</span>
+          </label>
+          <Button size="sm" variant="outline" onClick={doMove} disabled={!moveStorage || moveDisk.isPending}>
+            {moveDisk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('instances.disk_move')}
+          </Button>
+        </div>
+
+        {/* Add disk */}
+        <div className="space-y-2 border-t pt-3">
+          <Label className="text-xs font-medium">{t('instances.disk_add')}</Label>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1"><Label className="text-2xs">{t('instances.disk_bus')}</Label>
+              <Select value={addBus} onValueChange={(v) => v && setAddBus(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="scsi">scsi</SelectItem>
+                  <SelectItem value="virtio">virtio</SelectItem>
+                  <SelectItem value="sata">sata</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1"><Label className="text-2xs">{t('instances.migrate_target_storage')}</Label>
+              <Select value={addStorage} onValueChange={(v) => v && setAddStorage(v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>{storages.map((s) => <SelectItem key={s.storage} value={s.storage}>{s.storage}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1"><Label className="text-2xs">{t('instances.new_size_gb')}</Label>
+              <Input type="number" min={1} value={addSize} onChange={(e) => setAddSize(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 text-xs"><Checkbox checked={addSsd} onChange={(e) => setAddSsd(e.target.checked)} /><span>SSD</span></label>
+            <label className="flex items-center gap-2 text-xs"><Checkbox checked={addDiscard} onChange={(e) => setAddDiscard(e.target.checked)} /><span>Discard</span></label>
+          </div>
+          <Button size="sm" variant="outline" onClick={doAdd} disabled={!addStorage || !addSize || addDisk.isPending}>
+            {addDisk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('instances.disk_add')}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function HardwareTab({ serverId, vmid, type, node }: Props) {
   const { t } = useTranslation();
   const { data: config } = useVMConfig(serverId, vmid, type, node);
@@ -258,7 +526,15 @@ export default function HardwareTab({ serverId, vmid, type, node }: Props) {
 
   return (
     <div className="space-y-4 max-w-2xl">
+      <ComputeResourcesCard serverId={serverId} vmid={vmid} type={type} node={node} />
+
+      <CpuOptionsCard serverId={serverId} vmid={vmid} type={type} node={node} />
+
       <PlatformCard serverId={serverId} vmid={vmid} type={type} node={node} config={cfg} />
+
+      <DiskManagementCard serverId={serverId} vmid={vmid} type={type} node={node} />
+
+      <DiskResizeCard serverId={serverId} vmid={vmid} type={type} node={node} />
 
       {/* Passthrough devices */}
       <Card>

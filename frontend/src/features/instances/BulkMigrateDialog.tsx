@@ -5,6 +5,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useNodes } from '@/hooks/use-nodes';
 
@@ -69,11 +70,9 @@ export default function BulkMigrateDialog({
           </div>
 
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={online}
               onChange={(e) => setOnline(e.target.checked)}
-              className="h-4 w-4 rounded border-input accent-primary"
             />
             {t('instances.online_migration', 'Онлайн-миграция запущенных (live)')}
           </label>

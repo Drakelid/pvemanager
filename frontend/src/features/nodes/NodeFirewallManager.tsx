@@ -4,6 +4,7 @@ import { Plus, RefreshCw, ShieldCheck, Power } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -76,8 +77,7 @@ export default function NodeFirewallManager({ serverId, nodeNames }: { serverId:
 
   const boolOption = (key: string, label: string) => (
     <label className="flex items-center gap-2 text-sm">
-      <input
-        type="checkbox"
+      <Checkbox
         checked={Number(options[key]) === 1}
         onChange={(e) => saveOption({ [key]: e.target.checked ? 1 : 0 })}
       />
@@ -157,7 +157,7 @@ export default function NodeFirewallManager({ serverId, nodeNames }: { serverId:
             {/* Options */}
             <TabsContent value="options" className="mt-4 space-y-4 max-w-md">
               <label className="flex items-center gap-2.5 cursor-pointer">
-                <input type="checkbox" checked={enabled} onChange={(e) => saveOption({ enable: e.target.checked ? 1 : 0 })} className="h-4 w-4 accent-primary" />
+                <Checkbox checked={enabled} onChange={(e) => saveOption({ enable: e.target.checked ? 1 : 0 })} />
                 <span className="text-sm">{t('fw.enable_node', 'Включить фаервол ноды')}</span>
               </label>
               <div className="grid grid-cols-2 gap-3">

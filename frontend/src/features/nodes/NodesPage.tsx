@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestServerCredentials, useNodes } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
@@ -200,12 +201,10 @@ function ServerFormDialog({
           </div>
 
           <div className="flex items-center gap-2">
-            <input
+            <Checkbox
               id="use_password"
-              type="checkbox"
               checked={form.use_password}
               onChange={e => set('use_password', e.target.checked)}
-              className="h-4 w-4"
             />
             <Label htmlFor="use_password" className="cursor-pointer">{t('nodes.use_password')}</Label>
           </div>
@@ -229,12 +228,10 @@ function ServerFormDialog({
           )}
 
           <div className="flex items-center gap-2">
-            <input
+            <Checkbox
               id="verify_ssl"
-              type="checkbox"
               checked={form.verify_ssl}
               onChange={e => set('verify_ssl', e.target.checked)}
-              className="h-4 w-4"
             />
             <Label htmlFor="verify_ssl" className="cursor-pointer">{t('nodes.verify_ssl')}</Label>
           </div>

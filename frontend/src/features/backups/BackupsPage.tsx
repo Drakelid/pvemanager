@@ -4,6 +4,7 @@ import { Archive, Play, Calendar, RotateCcw, Trash2, Loader2, Plus, Pencil } fro
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -508,9 +509,7 @@ export default function BackupsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
+                      <Checkbox
                         checked={allVmidsSelected}
                         title={t('backups.select_all_one_per_vmid')}
                         onChange={() =>
@@ -536,9 +535,7 @@ export default function BackupsPage() {
                     return (
                       <TableRow key={i} data-selected={isSelected}>
                         <TableCell>
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4"
+                          <Checkbox
                             checked={isSelected}
                             onChange={() => toggleBackupSelected(b)}
                           />
@@ -713,8 +710,7 @@ export default function BackupsPage() {
                 <p className="mt-1 text-xs text-muted-foreground">{t('backups.new_vmid_hint')}</p>
               </div>
               <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={restoreStart}
                   onChange={(e) => setRestoreStart(e.target.checked)}
                 />
@@ -722,8 +718,7 @@ export default function BackupsPage() {
               </label>
               {detectVmType(restoreTarget.volid) === 'qemu' && (
                 <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={restoreUnique}
                     onChange={(e) => setRestoreUnique(e.target.checked)}
                   />
@@ -819,7 +814,7 @@ export default function BackupsPage() {
             </div>
 
             <label className="flex items-center gap-2">
-              <input type="checkbox" className="h-4 w-4" checked={bulkStart} onChange={(e) => setBulkStart(e.target.checked)} />
+              <Checkbox checked={bulkStart} onChange={(e) => setBulkStart(e.target.checked)} />
               <span>{t('backups.start_after_restore')}</span>
             </label>
 
@@ -828,7 +823,7 @@ export default function BackupsPage() {
               <div className="space-y-2 rounded-md bg-destructive/10 p-3">
                 <p className="text-xs">{t('backups.bulk_in_place_warning')}</p>
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" className="h-4 w-4" checked={bulkConfirm} onChange={(e) => setBulkConfirm(e.target.checked)} />
+                  <Checkbox checked={bulkConfirm} onChange={(e) => setBulkConfirm(e.target.checked)} />
                   <span>{t('backups.confirm_overwrite')}</span>
                 </label>
               </div>
@@ -921,8 +916,7 @@ export default function BackupsPage() {
               <div className="flex items-center justify-between mb-1">
                 <Label>{t('backups.vmids')}</Label>
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     className="accent-amber-500"
                     checked={selectAllVmids}
                     onChange={(e) => { setSelectAllVmids(e.target.checked); if (e.target.checked) setSelectedVmids(new Set()); }}
@@ -972,8 +966,7 @@ export default function BackupsPage() {
                             key={`${vm.server_id}-${vm.vmid}`}
                             className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer text-sm"
                           >
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               className="accent-amber-500"
                               checked={checked}
                               disabled={selectAllVmids}
@@ -1054,8 +1047,7 @@ export default function BackupsPage() {
             </div>
 
             <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={!!jobForm.enabled}
                 onChange={(e) => setJobForm({ ...jobForm, enabled: e.target.checked })}
               />

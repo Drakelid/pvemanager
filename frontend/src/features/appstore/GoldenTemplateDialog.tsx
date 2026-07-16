@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Loader2, HardDriveDownload, CheckCircle2, XCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
@@ -127,7 +128,7 @@ export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
               <Input value={rootfsStorage} onChange={(e) => setRootfsStorage(e.target.value)} placeholder="local-lvm" />
             </div>
             <label className="flex items-end gap-2 pb-2 text-sm">
-              <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} className="h-4 w-4" />
+              <Checkbox checked={force} onChange={(e) => setForce(e.target.checked)} />
               {t('appstore.golden.force', 'Пересобрать')}
             </label>
           </div>

@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -33,6 +34,7 @@ import {
   useVMConfig,
 } from '@/hooks/use-instances';
 import { useNodes } from '@/hooks/use-nodes';
+import { useBackupStorages, useCreateBackup } from '@/hooks/use-backups';
 import { useLXCStorages } from '@/hooks/use-lxc-templates';
 import { useUsers } from '@/hooks/use-users';
 import { useProfile } from '@/hooks/use-settings';
@@ -49,6 +51,7 @@ export type InstanceAction =
   | 'notes'
   | 'execute'
   | 'iso'
+  | 'backup'
   | null;
 
 interface Props {
@@ -76,6 +79,7 @@ export default function InstanceActionDialogs(props: Props) {
       <NotesDialog open={open === 'notes'} onClose={close} {...shared} />
       <ExecuteCommandDialog open={open === 'execute'} onClose={close} {...shared} />
       <IsoDialog open={open === 'iso'} onClose={close} {...shared} />
+      <BackupDialog open={open === 'backup'} onClose={close} {...shared} />
     </>
   );
 }
@@ -211,7 +215,7 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
           </div>
 
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} />
+            <Checkbox checked={full} onChange={(e) => setFull(e.target.checked)} />
             <span>Полный клон (full clone)</span>
           </label>
         </div>
@@ -321,7 +325,7 @@ function MigrateDialog({ open, onClose, serverId, vmid, type, node, name }: Omit
           </div>
 
           <label className="flex items-center gap-2.5 cursor-pointer">
-            <input type="checkbox" checked={online} onChange={(e) => setOnline(e.target.checked)} className="h-4 w-4 rounded border-input accent-primary" />
+            <Checkbox checked={online} onChange={(e) => setOnline(e.target.checked)} />
             <span className="text-sm">{t('instances.migrate_online')}</span>
           </label>
           <p className="text-xs text-muted-foreground -mt-2">
@@ -736,6 +740,112 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
           >
             {attach.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Подключить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ==================== Backup Now ====================
+function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { data: storagesData } = useBackupStorages(open ? serverId : 0);
+  const createBackup = useCreateBackup();
+  const [storage, setStorage] = useState('');
+  const [mode, setMode] = useState('snapshot');
+  const [compress, setCompress] = useState('zstd');
+
+  // Only storages that accept backups and are visible from this VM's node
+  // (`nodes` empty/absent => storage is available on all nodes).
+  const storages = useMemo(() => {
+    const list = (storagesData?.storages || []) as { storage: string; type: string; content?: string; nodes?: string }[];
+    return list
+      .filter((s) => (s.content || '').includes('backup'))
+      .filter((s) => !s.nodes || s.nodes.split(',').includes(node));
+  }, [storagesData, node]);
+
+  useEffect(() => {
+    if (open && storages.length > 0 && !storages.some((s) => s.storage === storage)) {
+      setStorage(storages[0].storage);
+    }
+  }, [open, storages, storage]);
+
+  const submit = () => {
+    if (!storage) return;
+    createBackup.mutate(
+      { server_id: serverId, node, vmid, storage, mode, compress },
+      {
+        onSuccess: () => {
+          toast.success(t('instances.backup_started', 'Бэкап запущен в фоне'));
+          onClose();
+        },
+        onError: (e) => toast.error(e.message),
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t('instances.backup_now', 'Создать резервную копию')}</DialogTitle>
+          <DialogDescription>
+            {name || `${type === 'qemu' ? 'VM' : 'CT'} ${vmid}`} · {node}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>{t('backups.storage', 'Хранилище')}</Label>
+            <Select value={storage} onValueChange={setStorage}>
+              <SelectTrigger>
+                <SelectValue placeholder={t('backups.select_storage', 'Выберите хранилище')} />
+              </SelectTrigger>
+              <SelectContent>
+                {storages.map((s) => (
+                  <SelectItem key={s.storage} value={s.storage}>
+                    {s.storage} <span className="text-muted-foreground">({s.type})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {storages.length === 0 && (
+              <p className="text-xs text-warning">
+                {t('instances.backup_no_storages', 'Нет хранилищ с поддержкой бэкапов на этой ноде')}
+              </p>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>{t('backups.mode', 'Режим')}</Label>
+              <Select value={mode} onValueChange={setMode}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="snapshot">Snapshot</SelectItem>
+                  <SelectItem value="suspend">Suspend</SelectItem>
+                  <SelectItem value="stop">Stop</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{t('backups.compression', 'Сжатие')}</Label>
+              <Select value={compress} onValueChange={setCompress}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="zstd">ZSTD</SelectItem>
+                  <SelectItem value="gzip">GZIP</SelectItem>
+                  <SelectItem value="lzo">LZO</SelectItem>
+                  <SelectItem value="0">{t('backups.no_compression', 'Без сжатия')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Отмена')}</Button>
+          <Button onClick={submit} disabled={!storage || createBackup.isPending}>
+            {createBackup.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('instances.backup_create', 'Создать бэкап')}
           </Button>
         </DialogFooter>
       </DialogContent>

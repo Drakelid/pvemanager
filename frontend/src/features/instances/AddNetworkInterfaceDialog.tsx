@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -274,7 +275,7 @@ export default function AddNetworkInterfaceDialog({ open, onClose, serverId, vmi
           )}
 
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={firewall} onChange={(e) => setFirewall(e.target.checked)} />
+            <Checkbox checked={firewall} onChange={(e) => setFirewall(e.target.checked)} />
             {t('netif.firewall', 'Firewall')}
           </label>
         </div>

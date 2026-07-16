@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -163,7 +164,7 @@ function CreateZfsDialog({ serverId, node, disks, open, onClose }: {
                 ? <p className="py-2 text-center text-xs text-muted-foreground">{t('disks.no_free_disks', 'Нет свободных дисков')}</p>
                 : available.map(d => (
                   <label key={d.devpath} className="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-muted/50">
-                    <input type="checkbox" checked={selected.has(d.devpath)} onChange={() => toggle(d.devpath)} />
+                    <Checkbox checked={selected.has(d.devpath)} onChange={() => toggle(d.devpath)} />
                     <span className="font-mono text-xs">{d.devpath}</span>
                     <span className="text-xs text-muted-foreground">{formatBytes(d.size || 0)}</span>
                     {d.model && <span className="text-xs text-muted-foreground truncate">{d.model}</span>}

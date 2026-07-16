@@ -1,18 +1,6 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router';
 import {
-  LayoutDashboard,
-  Server,
-  Monitor,
-  Network,
-  HardDrive,
-  HardDriveDownload,
-  Archive,
-  Globe,
   Settings,
-  Users,
-  FileText,
-  ClipboardList,
-  FolderKanban,
   Sun,
   Moon,
   Menu,
@@ -21,9 +9,8 @@ import {
   ChevronDown,
   Building2,
   Check,
-  Store,
-  Package,
-  Terminal,
+  Search,
+  FolderKanban,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -38,81 +25,15 @@ import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/auth-store';
 import { useThemeStore } from '@/stores/theme-store';
+import { useCommandPaletteStore } from '@/stores/command-palette-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useWorkspaces } from '@/hooks/use-workspaces';
 import { useGlobalRealtimeSync } from '@/hooks/use-realtime-sync';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import NotificationsDropdown from '@/components/shared/NotificationsDropdown';
-
-interface NavItem {
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  path: string;
-  // Permission ("resource:action") the destination page requires. When set, the
-  // item is hidden unless the user is an admin or has that permission granted.
-  // When omitted, the item is admin-only.
-  permission?: string;
-}
-
-interface NavGroup {
-  title: string;
-  items: NavItem[];
-}
-
-// Each item is gated by the permission its page's API actually requires, so a
-// menu only appears when the user can use the page behind it. Admins bypass all
-// checks. Items without a `permission` are admin-only (no user-facing API).
-const navGroups: NavGroup[] = [
-  {
-    title: 'Infrastructure',
-    items: [
-      { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: 'dashboard:view' },
-      { label: 'Instances', icon: Monitor, path: '/instances', permission: 'vm:view' },
-      { label: 'Nodes', icon: Server, path: '/nodes', permission: 'server:view' },
-      { label: 'Cluster', icon: Network, path: '/cluster', permission: 'cluster:manage' },
-      { label: 'Templates', icon: HardDrive, path: '/templates', permission: 'template:view' },
-      { label: 'Images', icon: HardDriveDownload, path: '/images', permission: 'template:manage' },
-      { label: 'Backups', icon: Archive, path: '/backups', permission: 'backup:view' },
-      { label: 'Tasks', icon: ClipboardList, path: '/tasks', permission: 'vm:view' },
-    ],
-  },
-  {
-    title: 'Applications',
-    items: [
-      { label: 'App Store', icon: Store, path: '/appstore', permission: 'app:view' },
-      { label: 'My Apps', icon: Package, path: '/my-apps', permission: 'app:view' },
-      { label: 'Scripts', icon: Terminal, path: '/scripts', permission: 'script:view' },
-    ],
-  },
-  {
-    title: 'Network',
-    items: [
-      { label: 'IPAM', icon: Globe, path: '/ipam', permission: 'ipam:view' },
-      { label: 'Networks', icon: Network, path: '/networks', permission: 'server:manage' },
-    ],
-  },
-  {
-    title: 'Management',
-    items: [
-      { label: 'Users', icon: Users, path: '/users', permission: 'user:view' },
-      { label: 'Workspaces', icon: FolderKanban, path: '/workspaces' }, // admin-only
-      { label: 'Logs', icon: FileText, path: '/logs', permission: 'log:view' },
-      { label: 'Settings', icon: Settings, path: '/settings', permission: 'setting:view' },
-    ],
-  },
-];
-
-/** Whether the current user may see a given nav item. Admins see everything. */
-function canSeeNavItem(
-  item: NavItem,
-  isAdmin: boolean,
-  permissions: Record<string, boolean> | undefined,
-): boolean {
-  if (isAdmin) return true;
-  if (!item.permission) return false; // admin-only item
-  return !!permissions?.[item.permission];
-}
+import CommandPalette from '@/components/shared/CommandPalette';
+import { navGroups, canSeeNavItem } from '@/lib/nav-items';
 
 function SidebarContent() {
   const location = useLocation();
@@ -263,7 +184,9 @@ function WorkspaceSwitcher() {
 
 function TopBar() {
   const { theme, toggleTheme } = useThemeStore();
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
+  const setPaletteOpen = useCommandPaletteStore((s) => s.setOpen);
+  const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
 
   const toggleLanguage = () => {
     const next = i18n.language === 'ru' ? 'en' : 'ru';
@@ -271,7 +194,7 @@ function TopBar() {
   };
 
   return (
-    <header className="flex h-14 items-center justify-between border-b px-4 lg:px-6">
+    <header className="flex h-14 items-center justify-between gap-3 border-b px-4 lg:px-6">
       {/* Mobile menu */}
       <Sheet>
         <SheetTrigger render={<Button variant="ghost" size="icon" className="lg:hidden" />}>
@@ -282,9 +205,22 @@ function TopBar() {
         </SheetContent>
       </Sheet>
 
-      <div className="hidden lg:block">
+      <div className="hidden items-center gap-3 lg:flex">
         <WorkspaceSwitcher />
       </div>
+
+      {/* Search / command palette trigger */}
+      <button
+        type="button"
+        onClick={() => setPaletteOpen(true)}
+        className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-input bg-transparent px-2.5 text-sm text-muted-foreground transition-colors outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:max-w-72"
+      >
+        <Search className="h-4 w-4 shrink-0" />
+        <span className="hidden truncate sm:inline">{t('nav.searchPlaceholder', 'Jump to a section...')}</span>
+        <kbd className="ml-auto hidden shrink-0 rounded border border-border px-1.5 py-0.5 font-mono text-2xs sm:block">
+          {isMac ? '⌘K' : 'Ctrl+K'}
+        </kbd>
+      </button>
 
       {/* Right side */}
       <div className="flex items-center gap-1">
@@ -316,6 +252,8 @@ export default function AppLayout() {
 
   return (
     <div className="flex h-dvh overflow-hidden">
+      <CommandPalette />
+
       {/* Desktop sidebar */}
       <aside className="hidden w-[var(--sidebar-width)] shrink-0 border-r bg-card lg:block">
         <SidebarContent />

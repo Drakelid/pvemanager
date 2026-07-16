@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useServers, useNodes, useStorages } from '@/hooks/use-nodes';
@@ -71,7 +72,7 @@ export function DeployDialog({ template, onClose }: { template: OSTemplate | nul
           </div>
           {min && <p className="text-xs text-muted-foreground">{t('templates.minimums')}: {min.min_cores} vCPU / {min.min_memory} MB / {min.min_disk} GB</p>}
           <div className="flex items-center gap-2">
-            <input id="deploy_start" type="checkbox" checked={start} onChange={e => setStart(e.target.checked)} className="h-4 w-4" />
+            <Checkbox id="deploy_start" checked={start} onChange={e => setStart(e.target.checked)} />
             <Label htmlFor="deploy_start" className="cursor-pointer">{t('templates.start_after')}</Label>
           </div>
         </div>

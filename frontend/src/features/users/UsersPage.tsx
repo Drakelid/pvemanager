@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -368,11 +369,11 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           </div>
           <div className="flex gap-4 pt-1">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} className="h-4 w-4" />
+              <Checkbox checked={isActive} onChange={e => setIsActive(e.target.checked)} />
               {t('users.is_active')}
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={isAdmin} onChange={e => setIsAdmin(e.target.checked)} className="h-4 w-4" />
+              <Checkbox checked={isAdmin} onChange={e => setIsAdmin(e.target.checked)} />
               {t('users.is_admin')}
             </label>
           </div>
@@ -459,15 +460,15 @@ function EditUserDialog({
           </div>
           <div className="grid grid-cols-2 gap-2 pt-1">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} className="h-4 w-4" />
+              <Checkbox checked={isActive} onChange={e => setIsActive(e.target.checked)} />
               {t('users.is_active')}
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={isAdmin} onChange={e => setIsAdmin(e.target.checked)} className="h-4 w-4" />
+              <Checkbox checked={isAdmin} onChange={e => setIsAdmin(e.target.checked)} />
               {t('users.is_admin')}
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer col-span-2">
-              <input type="checkbox" checked={requirePwdChange} onChange={e => setRequirePwdChange(e.target.checked)} className="h-4 w-4" />
+              <Checkbox checked={requirePwdChange} onChange={e => setRequirePwdChange(e.target.checked)} />
               {t('users.require_password_change')}
             </label>
           </div>
@@ -597,12 +598,10 @@ function UserServersForm({
                 srv.compatible ? 'cursor-pointer hover:bg-accent' : 'opacity-60 cursor-not-allowed'
               }`}
             >
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={selected.includes(srv.id)}
                 onChange={() => srv.compatible && toggle(srv.id)}
                 disabled={!srv.compatible}
-                className="h-4 w-4"
               />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{srv.name}</p>
@@ -972,7 +971,7 @@ function RoleDialog({
           </div>
           {mode === 'edit' && (
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} className="h-4 w-4" />
+              <Checkbox checked={isActive} onChange={e => setIsActive(e.target.checked)} />
               {t('users.is_active')}
             </label>
           )}
@@ -993,11 +992,9 @@ function RoleDialog({
                   <div className="grid grid-cols-2 gap-1">
                     {Object.entries(items).map(([code, label]) => (
                       <label key={code} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent rounded px-2 py-1">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={!!perms[code]}
                           onChange={() => togglePerm(code)}
-                          className="h-4 w-4"
                         />
                         <span className="flex-1 truncate" title={code}>
                           {t(`perms.label.${code.replace(/:/g, '_')}`, label as string)}
@@ -1184,19 +1181,19 @@ function SecuritySettingsForm({ initial }: { initial: SecuritySettings }) {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4 pt-3 border-t">
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={draft.password_require_uppercase} onChange={e => setBool('password_require_uppercase', e.target.checked)} className="h-4 w-4" />
+            <Checkbox checked={draft.password_require_uppercase} onChange={e => setBool('password_require_uppercase', e.target.checked)} />
             {t('users.password_require_uppercase')}
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={draft.password_require_lowercase} onChange={e => setBool('password_require_lowercase', e.target.checked)} className="h-4 w-4" />
+            <Checkbox checked={draft.password_require_lowercase} onChange={e => setBool('password_require_lowercase', e.target.checked)} />
             {t('users.password_require_lowercase')}
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={draft.password_require_numbers} onChange={e => setBool('password_require_numbers', e.target.checked)} className="h-4 w-4" />
+            <Checkbox checked={draft.password_require_numbers} onChange={e => setBool('password_require_numbers', e.target.checked)} />
             {t('users.password_require_numbers')}
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={draft.password_require_special} onChange={e => setBool('password_require_special', e.target.checked)} className="h-4 w-4" />
+            <Checkbox checked={draft.password_require_special} onChange={e => setBool('password_require_special', e.target.checked)} />
             {t('users.password_require_special')}
           </label>
         </div>

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -193,11 +194,9 @@ function EditWorkspaceDialog({
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {allServers.map(srv => (
                   <label key={srv.id} className="flex items-center gap-3 rounded-md border p-2.5 cursor-pointer hover:bg-accent">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selectedServerIds.includes(srv.id)}
                       onChange={() => toggleServer(srv.id)}
-                      className="h-4 w-4"
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-medium">{srv.name}</p>
@@ -219,11 +218,9 @@ function EditWorkspaceDialog({
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {allUsers.map((u: any) => (
                   <label key={u.id} className="flex items-center gap-3 rounded-md border p-2.5 cursor-pointer hover:bg-accent">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selectedUserIds.includes(u.id)}
                       onChange={() => toggleUser(u.id)}
-                      className="h-4 w-4"
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-medium">{u.username}</p>

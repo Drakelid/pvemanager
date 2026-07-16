@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -42,12 +42,16 @@ import {
   HardDrive,
   Lock,
   ArrowRightLeft,
+  Settings2,
+  Archive,
+  Cpu,
 } from 'lucide-react';
 import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
 import BulkMigrateDialog from './BulkMigrateDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -120,6 +124,12 @@ function CircularProgress({ value }: { value: number }) {
   );
 }
 
+// Stable row identity: real VMs keyed by server:vmid, ghost rows by task id.
+// Without this row.id falls back to the array index, so live data updates
+// re-assign selection checkboxes and row menus to a different VM.
+const vmRowId = (vm: VMInstance) =>
+  vm._deployTaskId ? `ghost:${vm._deployTaskId}` : `${vm.server_id}:${vm.vmid}`;
+
 // ==================== Row Action Menu ====================
 function RowActionMenu({ vm }: { vm: VMInstance }) {
   const { t } = useTranslation();
@@ -157,6 +167,9 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
         <MoreHorizontal className="h-4 w-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=settings`} />}>
+            <Settings2 className="mr-2 h-4 w-4" /> {t('instances.parameters', 'Параметры')}
+        </DropdownMenuItem>
         <DropdownMenuItem render={<Link to={`/console/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`} target="_blank" rel="noopener noreferrer" />}>
             <Terminal className="mr-2 h-4 w-4" /> {t('common.console', 'Console')}
         </DropdownMenuItem>
@@ -179,8 +192,14 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
           </>
         )}
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setDialog('migrate')}>
+          <ArrowRightLeft className="mr-2 h-4 w-4" /> {t('instances.migrate', 'Мигрировать')}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setDialog('clone')}>
           <Copy className="mr-2 h-4 w-4" /> {t('common.clone', 'Клонировать')}
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=${isQemu ? 'hardware' : 'settings'}`} />}>
+            <Cpu className="mr-2 h-4 w-4" /> {t('instances.edit_resources', 'Изменить ресурсы')}
         </DropdownMenuItem>
         {isQemu && (
           <DropdownMenuItem onClick={() => setDialog('iso')}>
@@ -199,11 +218,21 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setDialog('backup')}>
+          <Archive className="mr-2 h-4 w-4" /> {t('instances.backup_now', 'Создать резервную копию')}
+        </DropdownMenuItem>
         <DropdownMenuItem render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=snapshots`} />}>
             <Camera className="mr-2 h-4 w-4" /> {t('common.snapshots', 'Snapshots')}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setDialog('reinstall')}>
           <Sparkles className="mr-2 h-4 w-4" /> {t('common.reinstall', 'Переустановить')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=destroy`} />}
+        >
+            <Trash2 className="mr-2 h-4 w-4" /> {t('common.delete', 'Удалить')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -494,10 +523,11 @@ export default function InstancesPage() {
 
   // Selected real VMs (skip ghost rows by checking _deployTaskId)
   const selectedVMs = useMemo(() => {
+    const byId = new Map(allRows.map((vm) => [vmRowId(vm), vm]));
     return Object.keys(rowSelection)
       .filter((k) => rowSelection[k])
-      .map((idx) => allRows[Number(idx)])
-      .filter((vm) => vm && !vm._deployTaskId);
+      .map((id) => byId.get(id))
+      .filter((vm): vm is VMInstance => !!vm && !vm._deployTaskId);
   }, [rowSelection, allRows]);
 
   const handleBulk = (action: string) => {
@@ -588,14 +618,21 @@ export default function InstancesPage() {
   };
 
   // ==================== Table Columns ====================
+  // Volatile lookups are read inside cells through a ref so the `columns`
+  // identity stays stable. flexRender treats inline `cell` functions as React
+  // component types, so a new columns array remounts EVERY cell — which closes
+  // an open row dropdown menu the moment vms/servers/tasks data refreshes.
+  // Cells still see fresh values: any store/query update re-renders the table.
+  const cellCtx = { deployTasks, overlayByVm, bulkOverlayByVm, serverNameById, nodeLabel };
+  const cellCtxRef = useRef(cellCtx);
+  cellCtxRef.current = cellCtx;
+
   const columns = useMemo<ColumnDef<VMInstance>[]>(
     () => [
       {
         id: 'select',
         header: ({ table }) => (
-          <input
-            type="checkbox"
-            className="rounded border-border"
+          <Checkbox
             checked={table.getIsAllPageRowsSelected()}
             onChange={table.getToggleAllPageRowsSelectedHandler()}
           />
@@ -604,9 +641,7 @@ export default function InstancesPage() {
           const isGhost = !!row.original._deployTaskId;
           if (isGhost) return null;
           return (
-            <input
-              type="checkbox"
-              className="rounded border-border"
+            <Checkbox
               checked={row.getIsSelected()}
               onChange={row.getToggleSelectedHandler()}
             />
@@ -634,7 +669,7 @@ export default function InstancesPage() {
           const vm = row.original;
           const isGhost = !!vm._deployTaskId;
           if (isGhost) {
-            const task = deployTasks.find((t) => t.id === vm._deployTaskId);
+            const task = cellCtxRef.current.deployTasks.find((t) => t.id === vm._deployTaskId);
             return (
               <div className="flex items-center gap-2">
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
@@ -672,7 +707,7 @@ export default function InstancesPage() {
           const vm = row.original;
           const isGhost = !!vm._deployTaskId;
           if (isGhost) {
-            const task = deployTasks.find((t) => t.id === vm._deployTaskId);
+            const task = cellCtxRef.current.deployTasks.find((t) => t.id === vm._deployTaskId);
             const progress = task?.progress ?? 0;
             return (
               <div className="flex items-center gap-2">
@@ -685,7 +720,7 @@ export default function InstancesPage() {
             );
           }
           const status = vm.status;
-          const bulkOv = vm.server_id != null ? bulkOverlayByVm.get(`${vm.server_id}:${vm.vmid}`) : undefined;
+          const bulkOv = vm.server_id != null ? cellCtxRef.current.bulkOverlayByVm.get(`${vm.server_id}:${vm.vmid}`) : undefined;
           if (bulkOv) {
             return (
               <div className="flex items-center gap-2">
@@ -696,7 +731,7 @@ export default function InstancesPage() {
               </div>
             );
           }
-          const overlay = vm.server_id != null ? overlayByVm.get(`${vm.server_id}:${vm.vmid}`) : undefined;
+          const overlay = vm.server_id != null ? cellCtxRef.current.overlayByVm.get(`${vm.server_id}:${vm.vmid}`) : undefined;
           if (overlay) {
             const label = overlay.kind === 'reinstall'
               ? t('instances.status_reinstalling', 'Reinstalling')
@@ -736,12 +771,12 @@ export default function InstancesPage() {
       {
         accessorKey: 'node',
         filterFn: multiSelectFilter,
-        meta: { filter: 'select', formatOption: (v: string) => nodeLabel.get(v) ?? v },
+        meta: { filter: 'select', formatOption: (v: string) => cellCtxRef.current.nodeLabel.get(v) ?? v },
         header: t('common.node', 'Node'),
         cell: ({ row }) => {
           const vm = row.original;
           const label =
-            (vm.server_id != null ? serverNameById.get(vm.server_id) : undefined) ?? vm.node;
+            (vm.server_id != null ? cellCtxRef.current.serverNameById.get(vm.server_id) : undefined) ?? vm.node;
           return <span className="text-muted-foreground">{label}</span>;
         },
         size: 100,
@@ -953,8 +988,9 @@ export default function InstancesPage() {
         enableSorting: false,
       },
     ],
+    // Volatile data is read via cellCtxRef (see above) — only l10n identities here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, deployTasks, overlayByVm, bulkOverlayByVm, bulkActionLabel, serverNameById, nodeLabel]
+    [t, bulkActionLabel]
   );
 
   // ==================== TanStack Table ====================
@@ -972,6 +1008,9 @@ export default function InstancesPage() {
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
     initialState: { pagination: { pageSize: 25 } },
+    // Stable row identity across live data updates: keeps selection and open
+    // row menus attached to the same VM when rows are re-sorted or refreshed.
+    getRowId: vmRowId,
     // Live WS metrics replace `data` every second; without this the table
     // would snap back to page 1 on every tick.
     autoResetPageIndex: false,

@@ -11,7 +11,9 @@ import { useInstancesMetricsSync } from '@/hooks/use-instances'
 import { useAllTasks, useActiveTaskCount } from '@/hooks/use-tasks'
 import { useIPAMNetworks } from '@/hooks/use-ipam'
 
-const CHART_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#ec4899', '#84cc16']
+// Theme-aware — pulls from the --chart-1..5 tokens in index.css so pie slices
+// stay in sync with light/dark instead of a second, hardcoded hex palette.
+const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
 
 type Rec = Record<string, unknown>
 

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
@@ -469,7 +470,7 @@ function NotificationsTab() {
 function Toggle({ id, checked, onChange, label }: { id: string; checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <div className="flex items-center gap-2">
-      <input id={id} type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-4 w-4" />
+      <Checkbox id={id} checked={checked} onChange={e => onChange(e.target.checked)} />
       <Label htmlFor={id} className="cursor-pointer">{label}</Label>
     </div>
   );

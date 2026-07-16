@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -128,7 +129,7 @@ export default function AddUsbDeviceDialog({ open, onClose, serverId, vmid, node
           </div>
 
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={usb3} onChange={(e) => setUsb3(e.target.checked)} />
+            <Checkbox checked={usb3} onChange={(e) => setUsb3(e.target.checked)} />
             {t('hw.usb3', 'USB 3.0')}
           </label>
         </div>

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
 import { Server, Cpu, CheckCircle, ChevronLeft, ChevronRight, Loader2, Monitor, Container, HardDrive, KeyRound, Gauge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -451,12 +452,10 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   </Select>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     id="start_after"
                     checked={config.start_after_create}
                     onChange={e => setConfig(p => ({ ...p, start_after_create: e.target.checked }))}
-                    className="rounded"
                   />
                   <Label htmlFor="start_after">{t('wizard.start_after_create')}</Label>
                 </div>
@@ -612,22 +611,18 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   </Select>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     id="lxc_start_after"
                     checked={lxcConfig.start_after_create}
                     onChange={e => setLxcConfig(p => ({ ...p, start_after_create: e.target.checked }))}
-                    className="rounded"
                   />
                   <Label htmlFor="lxc_start_after">{t('wizard.start_after_create')}</Label>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     id="lxc_unprivileged"
                     checked={lxcConfig.unprivileged}
                     onChange={e => setLxcConfig(p => ({ ...p, unprivileged: e.target.checked }))}
-                    className="rounded"
                   />
                   <Label htmlFor="lxc_unprivileged">{t('wizard.unprivileged')}</Label>
                 </div>
@@ -899,9 +894,8 @@ function SSHKeyPicker({
               key={k.id}
               className="flex items-start gap-2 text-xs cursor-pointer hover:bg-accent rounded px-2 py-1"
             >
-              <input
-                type="checkbox"
-                className="h-4 w-4 mt-0.5"
+              <Checkbox
+                className="mt-0.5"
                 checked={selected.includes(k.id)}
                 onChange={() => onToggle(k.id)}
               />

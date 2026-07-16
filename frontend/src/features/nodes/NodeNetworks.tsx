@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -335,7 +336,7 @@ export default function NodeNetworks({ serverId, nodeNames }: { serverId: number
             </div>
 
             <div className="flex items-center gap-2">
-              <input id="netif_autostart" type="checkbox" checked={form.autostart} onChange={e => set('autostart', e.target.checked)} className="h-4 w-4" />
+              <Checkbox id="netif_autostart" checked={form.autostart} onChange={e => set('autostart', e.target.checked)} />
               <Label htmlFor="netif_autostart" className="cursor-pointer">{t('netif.autostart')}</Label>
             </div>
           </div>

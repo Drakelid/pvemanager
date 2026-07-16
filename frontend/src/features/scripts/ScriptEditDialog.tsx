@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { useCreateScript, useUpdateScript } from '@/hooks/use-scripts';
 import type { ScriptCatalogItem, ScriptParamField } from '@/types/scripts';
@@ -161,8 +162,8 @@ export default function ScriptEditDialog({ open, onOpenChange, script }: Props) 
                   </SelectContent>
                 </Select>
                 <label className="flex items-center justify-center gap-1 text-xs">
-                  <input
-                    type="checkbox" checked={p.required}
+                  <Checkbox
+                    checked={p.required}
                     onChange={(e) => setParams(params.map((x, j) => j === i ? { ...x, required: e.target.checked } : x))}
                   />
                   {t('scripts.required', 'обяз.')}

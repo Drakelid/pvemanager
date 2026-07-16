@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -166,12 +167,12 @@ export function RuleDialog({
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.enable} onChange={(e) => set('enable', e.target.checked)} />
+              <Checkbox checked={form.enable} onChange={(e) => set('enable', e.target.checked)} />
               {t('fw.enabled', 'Включено')}
             </label>
             {!isGroup && (
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={form.log} onChange={(e) => set('log', e.target.checked)} />
+                <Checkbox checked={form.log} onChange={(e) => set('log', e.target.checked)} />
                 {t('fw.log', 'Логировать')}
               </label>
             )}
@@ -562,7 +563,7 @@ export default function FirewallManager({ serverId }: { serverId: number }) {
             {/* Options */}
             <TabsContent value="options" className="mt-4 space-y-4 max-w-md">
               <label className="flex items-center gap-2.5 cursor-pointer">
-                <input type="checkbox" checked={enabled} onChange={toggleEnable} className="h-4 w-4 accent-primary" />
+                <Checkbox checked={enabled} onChange={toggleEnable} />
                 <span className="text-sm">{t('fw.enable_dc', 'Включить фаервол датацентра')}</span>
               </label>
               <div className="grid grid-cols-2 gap-3">

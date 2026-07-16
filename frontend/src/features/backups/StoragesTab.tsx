@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Trash2, Database, CalendarClock, Power, PowerOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -216,7 +217,7 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
             <div className="grid grid-cols-2 gap-3">
               <div><Label>{t('storages.zfs_pool')}</Label><Input value={form.pool} onChange={e => set('pool', e.target.value)} className="mt-1 font-mono" placeholder="rpool/data" /></div>
               <label className="flex items-end gap-2 pb-1.5 text-sm">
-                <input type="checkbox" checked={form.sparse} onChange={e => set('sparse', e.target.checked)} />
+                <Checkbox checked={form.sparse} onChange={e => set('sparse', e.target.checked)} />
                 {t('storages.sparse')}
               </label>
             </div>
@@ -436,7 +437,7 @@ function NativeJobDialog({ serverId, open, onOpenChange, editing, backupStorages
           </div>
 
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={form.enabled} onChange={e => set('enabled', e.target.checked)} />
+            <Checkbox checked={form.enabled} onChange={e => set('enabled', e.target.checked)} />
             <span>{t('storages.enabled')}</span>
           </label>
         </div>

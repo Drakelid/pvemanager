@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { Column, FilterFn, RowData } from '@tanstack/react-table';
 import { ListFilter, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -110,9 +111,7 @@ export function ColumnFilter<TData>({ column, variant = 'text', formatOption }: 
                   key={value}
                   className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-accent"
                 >
-                  <input
-                    type="checkbox"
-                    className="rounded border-border"
+                  <Checkbox
                     checked={selected.includes(value)}
                     onChange={() => toggle(value)}
                   />

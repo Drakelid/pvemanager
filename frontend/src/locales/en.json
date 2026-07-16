@@ -18,7 +18,10 @@
     "settings": "Settings",
     "applications": "Applications",
     "app store": "App Store",
-    "my apps": "My Apps"
+    "my apps": "My Apps",
+    "search": "Search sections",
+    "searchPlaceholder": "Jump to a section...",
+    "searchEmpty": "No results found"
   },
   "appstore": {
     "title": "App Store",
@@ -123,7 +126,6 @@
     "node": "Node (optional)",
     "storage": "Storage",
     "bridge": "Bridge",
-    "port": "Port",
     "port_auto": "Default",
     "ipam_network": "IPAM network (IP address)",
     "ipam_dhcp": "DHCP (default)",
@@ -492,7 +494,13 @@
     "rollback": "Rollback",
     "delete_snapshot": "Delete",
     "snapshot_storage_hint": "Snapshots require storage that supports them (qcow2, ZFS, Ceph/RBD, LVM-thin, BTRFS). They are not available on raw disks or plain LVM/iSCSI. The \"Snapshots as Volume-Chain\" option on LVM only enables snapshots for qcow2-format disks — an existing raw disk must first be moved to qcow2.",
-    "snapshot_unsupported_storage": "This VM's storage does not support snapshots. Use a disk on qcow2, ZFS, Ceph, LVM-thin or BTRFS — or use a backup instead."
+    "snapshot_unsupported_storage": "This VM's storage does not support snapshots. Use a disk on qcow2, ZFS, Ceph, LVM-thin or BTRFS — or use a backup instead.",
+    "parameters": "Settings",
+    "edit_resources": "Edit resources",
+    "backup_now": "Create backup",
+    "backup_started": "Backup started in background",
+    "backup_create": "Create backup",
+    "backup_no_storages": "No backup-capable storages on this node"
   },
   "wizard": {
     "title": "Create Instance",
@@ -1148,7 +1156,9 @@
       "every_6h": "Every 6 hours",
       "weekly_sunday": "Weekly (Sunday 03:00)",
       "monthly_1st": "Monthly (1st at 04:00)"
-    }
+    },
+    "compression": "Compression",
+    "no_compression": "No compression"
   },
   "ipam": {
     "tools": "Tools",

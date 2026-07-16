@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Pencil, Trash2, Plus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -200,11 +201,11 @@ function NetworkActions({ network }: { network: IPAMNetwork }) {
             <WorkspaceSelect value={form.workspace_id} onChange={(id) => setForm(p => ({ ...p, workspace_id: id }))} />
             <Field label={t('ipam.description')} full><Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></Field>
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <input type="checkbox" checked={form.is_default} onChange={e => setForm(p => ({ ...p, is_default: e.target.checked }))} />
+              <Checkbox checked={form.is_default} onChange={e => setForm(p => ({ ...p, is_default: e.target.checked }))} />
               {t('ipam.is_default', 'Сеть по умолчанию для области')}
             </label>
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <input type="checkbox" checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} />
+              <Checkbox checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} />
               {t('ipam.is_active')}
             </label>
           </div>
@@ -219,7 +220,7 @@ function NetworkActions({ network }: { network: IPAMNetwork }) {
           <DialogHeader><DialogTitle>{t('ipam.delete_network')}</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">{t('ipam.delete_network_confirm', { name: network.name })}</p>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={force} onChange={e => setForce(e.target.checked)} />
+            <Checkbox checked={force} onChange={e => setForce(e.target.checked)} />
             {t('ipam.force_delete')}
           </label>
           <DialogFooter>
@@ -339,7 +340,7 @@ function PoolsCard({ networkId, pools }: { networkId: number; pools: IPAMPool[] 
             <Field label={`${t('ipam.range')} (end)`}><Input value={form.range_end} onChange={e => setForm(p => ({ ...p, range_end: e.target.value }))} placeholder="10.0.0.250" /></Field>
             <Field label={t('ipam.description')} full><Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></Field>
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <input type="checkbox" checked={form.auto_assign} onChange={e => setForm(p => ({ ...p, auto_assign: e.target.checked }))} />
+              <Checkbox checked={form.auto_assign} onChange={e => setForm(p => ({ ...p, auto_assign: e.target.checked }))} />
               {t('ipam.auto_assign')}
             </label>
           </div>

@@ -7,6 +7,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -362,7 +363,7 @@ function JoinWizard({
             </div>
 
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="h-4 w-4" />
+              <Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
               {t('cluster.confirm_understand', 'I understand this is irreversible')}
             </label>
 
@@ -435,7 +436,7 @@ function EjectDialog({
             <Input type="password" value={rootpw} onChange={(e) => setRootpw(e.target.value)} className="mt-1" disabled={panelOnly} />
           </div>
           <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" checked={panelOnly} onChange={(e) => setPanelOnly(e.target.checked)} className="mt-0.5 h-4 w-4" />
+            <Checkbox checked={panelOnly} onChange={(e) => setPanelOnly(e.target.checked)} className="mt-0.5" />
             <span>
               {t('cluster.eject_panel_only', 'Only detach the panel entry (do not touch Proxmox)')}
               <span className="block text-xs text-muted-foreground">

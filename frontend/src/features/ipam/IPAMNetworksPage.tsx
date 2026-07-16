@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Globe, Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -104,7 +105,7 @@ export default function IPAMNetworksPage() {
             <div><Label>Gateway</Label><Input value={form.gateway} onChange={e => setForm(p => ({ ...p, gateway: e.target.value }))} placeholder="10.0.0.1" /></div>
             <WorkspaceSelect value={form.workspace_id} onChange={(id) => setForm(p => ({ ...p, workspace_id: id }))} />
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.is_default} onChange={e => setForm(p => ({ ...p, is_default: e.target.checked }))} />
+              <Checkbox checked={form.is_default} onChange={e => setForm(p => ({ ...p, is_default: e.target.checked }))} />
               {t('ipam.is_default', 'Сеть по умолчанию для области')}
             </label>
             <div><Label>{t('ipam.bridge')}</Label><Input value={form.proxmox_bridge} onChange={e => setForm(p => ({ ...p, proxmox_bridge: e.target.value }))} placeholder="vmbr0" /></div>

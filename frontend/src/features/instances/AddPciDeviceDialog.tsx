@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -141,19 +142,19 @@ export default function AddPciDeviceDialog({ open, onClose, serverId, vmid, node
 
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={pcie} onChange={(e) => setPcie(e.target.checked)} />
+              <Checkbox checked={pcie} onChange={(e) => setPcie(e.target.checked)} />
               {t('hw.pci_pcie', 'PCI-Express (только для q35)')}
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={allFunctions} onChange={(e) => setAllFunctions(e.target.checked)} />
+              <Checkbox checked={allFunctions} onChange={(e) => setAllFunctions(e.target.checked)} />
               {t('hw.pci_all_functions', 'Все функции устройства')}
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={primaryGpu} onChange={(e) => setPrimaryGpu(e.target.checked)} />
+              <Checkbox checked={primaryGpu} onChange={(e) => setPrimaryGpu(e.target.checked)} />
               {t('hw.pci_primary_gpu', 'Основная видеокарта (x-vga)')}
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={romBar} onChange={(e) => setRomBar(e.target.checked)} />
+              <Checkbox checked={romBar} onChange={(e) => setRomBar(e.target.checked)} />
               {t('hw.pci_rombar', 'ROM-Bar')}
             </label>
           </div>

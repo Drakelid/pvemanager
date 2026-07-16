@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, RefreshCw, KeyRound, ShieldQuestion, Copy } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -99,7 +100,7 @@ function RealmDialog({ serverId, open, onClose }: { serverId: number; open: bool
                 <div className="space-y-1.5"><Label>{t('access.domain', 'Домен')}</Label><Input value={domain} onChange={(e) => setDomain(e.target.value)} className="font-mono" placeholder="example.com" /></div>
               )}
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={secure} onChange={(e) => setSecure(e.target.checked)} />
+                <Checkbox checked={secure} onChange={(e) => setSecure(e.target.checked)} />
                 {t('access.secure', 'SSL/TLS (secure)')}
               </label>
             </div>
@@ -193,7 +194,7 @@ function TokenDialog({ serverId, userid, open, onClose }: { serverId: number; us
               <div className="space-y-1.5"><Label>{t('access.token_id', 'ID токена')}</Label><Input value={tokenid} onChange={(e) => setTokenid(e.target.value)} className="font-mono" placeholder="automation" /></div>
               <div className="space-y-1.5"><Label>{t('common.comment', 'Комментарий')}</Label><Input value={comment} onChange={(e) => setComment(e.target.value)} /></div>
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={privsep} onChange={(e) => setPrivsep(e.target.checked)} />
+                <Checkbox checked={privsep} onChange={(e) => setPrivsep(e.target.checked)} />
                 {t('access.privsep', 'Privilege separation (отдельные права токена)')}
               </label>
             </div>

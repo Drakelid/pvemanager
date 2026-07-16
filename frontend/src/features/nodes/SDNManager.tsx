@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -207,7 +208,7 @@ function VNetDialog({ serverId, open, onOpenChange, editing, zones }: {
             <div><Label>{t('sdn.alias')}</Label><Input value={form.alias} onChange={e => set('alias', e.target.value)} className="mt-1" /></div>
           </div>
           <div className="flex items-center gap-2">
-            <input id="sdn_vlanaware" type="checkbox" checked={form.vlanaware} onChange={e => set('vlanaware', e.target.checked)} className="h-4 w-4" />
+            <Checkbox id="sdn_vlanaware" checked={form.vlanaware} onChange={e => set('vlanaware', e.target.checked)} />
             <Label htmlFor="sdn_vlanaware" className="cursor-pointer">{t('sdn.vlanaware')}</Label>
           </div>
         </div>
@@ -319,11 +320,11 @@ function SubnetSection({ serverId, vnet }: { serverId: number; vnet: string }) {
             <div><Label>{t('sdn.gateway')}</Label><Input value={form.gateway} onChange={e => set('gateway', e.target.value)} className="mt-1" placeholder="10.0.0.1" /></div>
             <div><Label>{t('sdn.dnszoneprefix')}</Label><Input value={form.dnszoneprefix} onChange={e => set('dnszoneprefix', e.target.value)} className="mt-1" /></div>
             <div className="flex items-center gap-2">
-              <input id="sdn_snat" type="checkbox" checked={form.snat} onChange={e => set('snat', e.target.checked)} className="h-4 w-4" />
+              <Checkbox id="sdn_snat" checked={form.snat} onChange={e => set('snat', e.target.checked)} />
               <Label htmlFor="sdn_snat" className="cursor-pointer">{t('sdn.snat')}</Label>
             </div>
             <div className="flex items-center gap-2">
-              <input id="sdn_ipam" type="checkbox" checked={form.create_ipam_network} onChange={e => set('create_ipam_network', e.target.checked)} className="h-4 w-4" />
+              <Checkbox id="sdn_ipam" checked={form.create_ipam_network} onChange={e => set('create_ipam_network', e.target.checked)} />
               <Label htmlFor="sdn_ipam" className="cursor-pointer">{t('sdn.create_ipam')}</Label>
             </div>
           </div>

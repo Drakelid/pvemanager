@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -165,7 +166,7 @@ function MirrorFormDialog({
             <Input id="m-desc" value={form.description} onChange={(e) => set('description', e.target.value)} />
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={form.enabled} onChange={(e) => set('enabled', e.target.checked)} />
+            <Checkbox checked={form.enabled} onChange={(e) => set('enabled', e.target.checked)} />
             <span>Включено (показывать в каталоге)</span>
           </label>
         </div>
