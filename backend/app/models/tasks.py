@@ -121,6 +121,7 @@ class DeployTask(Base):
     name = Column(String(100), nullable=False)
     template_id = Column(Integer, nullable=True)
     server_id = Column(Integer, nullable=True)
+    target_server_id = Column(Integer, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     vmid = Column(Integer, nullable=True)
@@ -145,6 +146,7 @@ class DeployTask(Base):
             'change_password': f"Смена пароля: {self.name}",
             'image_download': f"Загрузка образа: {self.name}",
             'image_template': f"Шаблон из образа: {self.name}",
+            'remote_migrate': f"Remote-миграция: {self.name}",
         }
         return {
             'id': self.id,
@@ -158,6 +160,7 @@ class DeployTask(Base):
             'name': self.name,
             'template_id': self.template_id,
             'server_id': self.server_id,
+            'target_server_id': self.target_server_id,
             'vmid': self.vmid,
             'node': self.node,
             'error_message': self.error_message,

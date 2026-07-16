@@ -23,6 +23,7 @@ import {
 import {
   useCloneInstance,
   useMigrateInstance,
+  useRemoteMigrateInstance,
   useVMStatus,
   useReinstallInstance,
   useChangePassword,
@@ -33,7 +34,7 @@ import {
   useDetachIso,
   useVMConfig,
 } from '@/hooks/use-instances';
-import { useNodes } from '@/hooks/use-nodes';
+import { useNodes, useServers, useNodeNetworks } from '@/hooks/use-nodes';
 import { useBackupStorages, useCreateBackup } from '@/hooks/use-backups';
 import { useLXCStorages } from '@/hooks/use-lxc-templates';
 import { useUsers } from '@/hooks/use-users';
@@ -46,6 +47,7 @@ export type PowerAction = 'start' | 'stop' | 'restart' | 'shutdown';
 export type InstanceAction =
   | 'clone'
   | 'migrate'
+  | 'remote-migrate'
   | 'reinstall'
   | 'change-password'
   | 'notes'
@@ -74,6 +76,7 @@ export default function InstanceActionDialogs(props: Props) {
     <>
       <CloneDialog open={open === 'clone'} onClose={close} {...shared} />
       <MigrateDialog open={open === 'migrate'} onClose={close} {...shared} />
+      <RemoteMigrateDialog open={open === 'remote-migrate'} onClose={close} {...shared} />
       <ReinstallDialog open={open === 'reinstall'} onClose={close} {...shared} />
       <ChangePasswordDialog open={open === 'change-password'} onClose={close} {...shared} />
       <NotesDialog open={open === 'notes'} onClose={close} {...shared} />
@@ -337,6 +340,173 @@ function MigrateDialog({ open, onClose, serverId, vmid, type, node, name }: Omit
           <Button onClick={submit} disabled={!targetNode || migrate.isPending}>
             {migrate.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t('instances.migrate')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ==================== Remote Migrate (to a different cluster) ====================
+
+const REMOTE_MIGRATE_SAME = '__same__';
+
+function RemoteMigrateDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
+  const [targetServerId, setTargetServerId] = useState<number | null>(null);
+  const [targetNode, setTargetNode] = useState('');
+  const [targetStorage, setTargetStorage] = useState('');
+  const [targetBridge, setTargetBridge] = useState('');
+  const [online, setOnline] = useState(false);
+  const [deleteSource, setDeleteSource] = useState(true);
+  const migrate = useRemoteMigrateInstance(serverId, vmid, type, node);
+  const addDeployTask = useDeployTasksStore((s) => s.addTask);
+
+  const { data: allServers = [] } = useServers();
+  // Только другие кластеры, настроенные через API-токен — remote_migrate не принимает пароль.
+  const targetServers = allServers.filter((s) => s.id !== serverId && !s.use_password);
+
+  const { data: nodesResp } = useNodes(targetServerId ?? 0);
+  const nodes = nodesResp?.nodes ?? [];
+  const { data: status } = useVMStatus(serverId, vmid, type, node, open);
+  const isRunning = status?.status === 'running';
+  const { data: storages = [] } = useLXCStorages(targetServerId ?? undefined, targetNode || undefined);
+  const { data: networksResp } = useNodeNetworks(targetServerId ?? 0, targetNode);
+  const bridges = (networksResp?.interfaces ?? []).filter((i) => i.type === 'bridge');
+
+  useEffect(() => {
+    if (open) {
+      setTargetServerId(null);
+      setTargetNode('');
+      setTargetStorage('');
+      setTargetBridge('');
+      setOnline(isRunning);
+      setDeleteSource(true);
+    }
+  }, [open, isRunning]);
+
+  const submit = () => {
+    if (!targetServerId || !targetNode) return;
+    migrate.mutate(
+      {
+        target_server_id: targetServerId,
+        target_node: targetNode,
+        target_storage: targetStorage || undefined,
+        target_bridge: targetBridge || undefined,
+        online,
+        delete_source: deleteSource,
+      },
+      {
+        onSuccess: (data) => {
+          addDeployTask({
+            id: data.task_id,
+            name: data.name,
+            status: 'pending',
+            step: 'В очереди...',
+            progress: 0,
+            vmid,
+            node: targetNode,
+            error_message: null,
+            kind: 'remote_migrate',
+            server_id: serverId,
+          });
+          toast.success(t('instances.remote_migrate_started', 'Миграция на другой кластер запущена в фоне'));
+          onClose();
+        },
+        onError: (e) => toast.error(e.message),
+      }
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ArrowRightLeft className="h-4 w-4" /> {t('instances.remote_migrate', 'Миграция на другой кластер')}
+          </DialogTitle>
+          <DialogDescription>
+            {t('instances.remote_migrate_desc', 'Перенести на независимый Proxmox-кластер (не ноду текущего)')} <strong>{name ?? `#${vmid}`}</strong>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>{t('instances.remote_migrate_target_server', 'Целевой кластер')}</Label>
+            <Select
+              value={targetServerId ? String(targetServerId) : ''}
+              onValueChange={(v) => { if (v) { setTargetServerId(Number(v)); setTargetNode(''); setTargetStorage(''); setTargetBridge(''); } }}
+            >
+              <SelectTrigger><SelectValue placeholder={t('instances.remote_migrate_select_server', 'Выберите сервер')} /></SelectTrigger>
+              <SelectContent>
+                {targetServers.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {targetServers.length === 0 && (
+              <p className="text-xs text-warning">
+                {t('instances.remote_migrate_no_targets', 'Нет других серверов с API-токеном. Remote-миграция требует, чтобы у целевого сервера была настроена авторизация по API-токену (не по паролю).')}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>{t('instances.migrate_target_node')}</Label>
+            <Select value={targetNode} onValueChange={(v) => { if (v) { setTargetNode(v); setTargetStorage(''); setTargetBridge(''); } }}>
+              <SelectTrigger><SelectValue placeholder={t('instances.migrate_select_node')} /></SelectTrigger>
+              <SelectContent>
+                {nodes.map((n) => (
+                  <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>{t('instances.migrate_target_storage')}</Label>
+              <Select value={targetStorage || REMOTE_MIGRATE_SAME} onValueChange={(v) => setTargetStorage(!v || v === REMOTE_MIGRATE_SAME ? '' : v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={REMOTE_MIGRATE_SAME}>{t('instances.migrate_same_storage')}</SelectItem>
+                  {storages.map((s) => (
+                    <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('instances.remote_migrate_target_bridge', 'Сетевой мост')}</Label>
+              <Select value={targetBridge || REMOTE_MIGRATE_SAME} onValueChange={(v) => setTargetBridge(!v || v === REMOTE_MIGRATE_SAME ? '' : v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={REMOTE_MIGRATE_SAME}>{t('instances.remote_migrate_same_bridge', 'Как на источнике')}</SelectItem>
+                  {bridges.map((b) => (
+                    <SelectItem key={b.iface} value={b.iface}>{b.iface}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <Checkbox checked={online} onChange={(e) => setOnline(e.target.checked)} />
+            <span className="text-sm">{t('instances.migrate_online')}</span>
+          </label>
+          <p className="text-xs text-muted-foreground -mt-2">
+            {isRunning ? t('instances.migrate_online_hint_running') : t('instances.migrate_online_hint_stopped')}
+          </p>
+
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <Checkbox checked={deleteSource} onChange={(e) => setDeleteSource(e.target.checked)} />
+            <span className="text-sm">{t('instances.remote_migrate_delete_source', 'Удалить с исходного кластера после успешного переноса')}</span>
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button onClick={submit} disabled={!targetServerId || !targetNode || migrate.isPending}>
+            {migrate.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('instances.remote_migrate', 'Миграция на другой кластер')}
           </Button>
         </DialogFooter>
       </DialogContent>

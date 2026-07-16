@@ -1328,6 +1328,12 @@ def migrate_deploy_tasks_kind(conn):
     logger.info("✓ deploy_tasks.kind column added")
 
 
+def migrate_deploy_tasks_target_server(conn):
+    """Migration 36: Add 'target_server_id' column to deploy_tasks (remote-migrate destination cluster)"""
+    add_column_if_not_exists(conn, 'deploy_tasks', 'target_server_id', 'INTEGER')
+    logger.info("✓ deploy_tasks.target_server_id column added")
+
+
 def migrate_user_ssh_keys_table(conn):
     """Migration 24: Create user_ssh_keys table for SSH key library per user."""
     if table_exists(conn, 'user_ssh_keys'):
@@ -1536,6 +1542,15 @@ def migrate_appstore_catalog_source(conn):
     logger.info("✓ App Store catalog_apps.source column added")
 
 
+def migrate_script_repo_metadata_format(conn):
+    """Add metadata_format column to script_git_repos (header-comment | community-scripts-ct)."""
+    if not table_exists(conn, 'script_git_repos'):
+        return
+    if add_column_if_not_exists(conn, 'script_git_repos', 'metadata_format',
+                                 "VARCHAR(30) NOT NULL DEFAULT 'header-comment'"):
+        logger.info("✓ Added metadata_format column to script_git_repos")
+
+
 def migrate_appstore_installed(conn):
     """Create installed_apps and app_operations tables for the App Engine (M2)."""
     if not table_exists(conn, 'installed_apps'):
@@ -1627,6 +1642,29 @@ def migrate_ipam_network_workspace(conn):
         logger.info("✓ Added workspace_id/is_default to ipam_networks")
     else:
         logger.info("✓ ipam_networks.workspace_id/is_default already exist")
+
+
+def migrate_app_operations_server_id(conn):
+    """Migration 37: app_operations.server_id (per-server golden-template tracking).
+
+    Нужен только для операций без installed_app_id (golden_template) — чтобы
+    прогресс/история сборки золотого шаблона различались по серверам Proxmox,
+    а не показывали последнюю сборку глобально независимо от того, для
+    какого сервера она запускалась.
+    """
+    if not table_exists(conn, 'app_operations'):
+        logger.info("Table app_operations does not exist, skipping server_id migration")
+        return
+    if add_column_if_not_exists(
+        conn, 'app_operations', 'server_id',
+        'INTEGER REFERENCES proxmox_servers(id) ON DELETE CASCADE'
+    ):
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_app_operations_server ON app_operations(server_id)"
+        ))
+        logger.info("✓ Added app_operations.server_id")
+    else:
+        logger.info("✓ app_operations.server_id already exists")
 
 
 def run_all_migrations(engine, db_session=None):
@@ -1913,6 +1951,30 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"App Store catalog source migration: {e}")
+                conn.rollback()
+
+            # Migration 35: script_git_repos metadata_format column (header-comment | community-scripts-ct)
+            try:
+                migrate_script_repo_metadata_format(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Script repo metadata_format migration: {e}")
+                conn.rollback()
+
+            # Migration 36: deploy_tasks.target_server_id column (remote-migrate destination cluster)
+            try:
+                migrate_deploy_tasks_target_server(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Deploy tasks target_server_id migration: {e}")
+                conn.rollback()
+
+            # Migration 37: app_operations.server_id column (per-server golden template)
+            try:
+                migrate_app_operations_server_id(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"App operations server_id migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

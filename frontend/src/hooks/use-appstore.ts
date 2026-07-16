@@ -76,10 +76,15 @@ export interface GoldenBuildArgs {
   force?: boolean;
 }
 
-export function useGoldenTemplateStatus(pollMs?: number) {
+// vztmpl — файл на storage конкретного Proxmox-сервера: шаблон сервера A не
+// существует на сервере B, поэтому статус всегда запрашивается по serverId.
+export function useGoldenTemplateStatus(serverId?: number, pollMs?: number) {
   return useQuery({
-    queryKey: ['appstore-golden-status'],
-    queryFn: () => apiClient.get<GoldenTemplateStatus>('/api/appstore/golden-template/status'),
+    queryKey: ['appstore-golden-status', serverId],
+    queryFn: () => apiClient.get<GoldenTemplateStatus>(
+      `/api/appstore/golden-template/status?server_id=${serverId}`,
+    ),
+    enabled: !!serverId,
     refetchInterval: pollMs && pollMs > 0 ? pollMs : false,
   });
 }
@@ -89,7 +94,8 @@ export function useBuildGoldenTemplate() {
   return useMutation({
     mutationFn: (data: GoldenBuildArgs) =>
       apiClient.post<{ success: boolean; operation_id: number }>('/api/appstore/golden-template', data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['appstore-golden-status'] }),
+    onSuccess: (_data, variables) =>
+      qc.invalidateQueries({ queryKey: ['appstore-golden-status', variables.server_id] }),
   });
 }
 

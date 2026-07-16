@@ -94,6 +94,7 @@ export interface AppOperation {
   id: number;
   kind: 'appstore';
   installed_app_id: number | null;
+  server_id?: number | null;
   type: string;
   status: 'running' | 'completed' | 'failed';
   progress: number;

@@ -687,6 +687,25 @@ export function useMigrateInstance(serverId: number, vmid: number, type: string,
   });
 }
 
+// ==================== Remote migrate (to a different cluster) ====================
+export interface RemoteMigrateRequest {
+  target_server_id: number;
+  target_node: string;
+  target_vmid?: number;
+  target_storage?: string;
+  target_bridge?: string;
+  online?: boolean;
+  delete_source?: boolean;
+}
+
+export function useRemoteMigrateInstance(serverId: number, vmid: number, type: string, node: string) {
+  const prefix = type === 'lxc' ? 'container' : 'vm';
+  return useMutation<AsyncTaskResponse, Error, RemoteMigrateRequest>({
+    mutationFn: (body) =>
+      apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/remote-migrate?node=${node}`, body),
+  });
+}
+
 // ==================== Change Password ====================
 export function useChangePassword(serverId: number, vmid: number, type: string, node: string) {
   const prefix = type === 'lxc' ? 'container' : 'vm';

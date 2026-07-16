@@ -178,6 +178,9 @@ class AppOperation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     installed_app_id = Column(Integer, ForeignKey("installed_apps.id", ondelete="CASCADE"), index=True, nullable=True)
+    # Только для операций без installed_app_id (напр. golden_template) — чтобы
+    # различать прогресс/историю сборки шаблона по серверам Proxmox.
+    server_id = Column(Integer, ForeignKey("proxmox_servers.id", ondelete="CASCADE"), index=True, nullable=True)
     type = Column(String(20), nullable=False)          # install/update/rollback/delete/start/stop/restart
     status = Column(String(20), nullable=False, default="running")  # running/completed/failed
     progress = Column(Integer, nullable=False, default=0)
@@ -192,6 +195,7 @@ class AppOperation(Base):
             "id": self.id,
             "kind": "appstore",
             "installed_app_id": self.installed_app_id,
+            "server_id": self.server_id,
             "type": self.type,
             "status": self.status,
             "progress": self.progress,

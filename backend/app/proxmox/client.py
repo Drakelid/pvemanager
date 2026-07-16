@@ -2025,13 +2025,31 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
     
                 if nameserver:
                     params['nameserver'] = nameserver
-    
+
                 if searchdomain:
                     params['searchdomain'] = searchdomain
-    
-                result = self.proxmox.nodes(node).lxc.post(**params)
-                logger.info(f"Запущено создание LXC контейнера {vmid} ({hostname}) на {node}")
-                return result
+
+                # Ретрай на транзиентную гонку блокировки конфига (частый случай:
+                # тот же VMID пересоздаётся сразу после удаления, пока нода ещё
+                # держит pve-config-<vmid>.lock — напр. фоновая очистка диска).
+                import time as _time
+                attempts = 3
+                for attempt in range(1, attempts + 1):
+                    try:
+                        result = self.proxmox.nodes(node).lxc.post(**params)
+                        logger.info(f"Запущено создание LXC контейнера {vmid} ({hostname}) на {node}")
+                        return result
+                    except Exception as e:
+                        msg = str(e)
+                        is_lock_race = "got lock" in msg or "can't lock file" in msg
+                        if is_lock_race and attempt < attempts:
+                            logger.warning(
+                                f"Создание LXC {vmid}: блокировка конфига (попытка "
+                                f"{attempt}/{attempts}), повтор через 5с: {msg}"
+                            )
+                            _time.sleep(5)
+                            continue
+                        raise
             except Exception as e:
                 logger.error(f"Ошибка создания LXC контейнера {vmid}: {e}")
                 return None
@@ -2167,6 +2185,111 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 return result if isinstance(result, str) else None
             except Exception as e:
                 logger.error(f"Ошибка миграции LXC {vmid}: {e}")
+                raise RuntimeError(f"Proxmox: {e}") from e
+
+        def remote_migrate_vm(
+            self,
+            node: str,
+            vmid: int,
+            target_endpoint: str,
+            target_vmid: int,
+            target_storage: str = None,
+            target_bridge: str = None,
+            online: bool = False,
+            delete_source: bool = True,
+            bwlimit: int = None,
+        ) -> Optional[str]:
+            """
+            Мигрировать VM (qemu) на другой (независимый) кластер через remote_migrate
+            API (PVE >= 8.0). В отличие от migrate_vm, авторизация на целевой стороне
+            идёт по API-токену из target_endpoint, а не по членству в corosync.
+
+            Args:
+                node: Текущая нода VM
+                vmid: ID виртуальной машины на источнике
+                target_endpoint: Строка `apitoken=...,host=...,fingerprint=...` целевого кластера
+                target_vmid: ID виртуальной машины на цели
+                target_storage: Целевое хранилище (применяется ко всем дискам)
+                target_bridge: Целевой сетевой мост (применяется ко всем интерфейсам)
+                online: Live-миграция запущенной VM
+                delete_source: Удалить VM с источника после успешного переноса
+                bwlimit: Ограничение полосы (KiB/s)
+
+            Returns:
+                UPID задачи (на источнике) или None
+            """
+            if not self.proxmox:
+                return None
+
+            try:
+                params = {
+                    'target-endpoint': target_endpoint,
+                    'target-vmid': target_vmid,
+                    'delete': 1 if delete_source else 0,
+                }
+                if target_storage:
+                    params['target-storage'] = target_storage
+                if target_bridge:
+                    params['target-bridge'] = target_bridge
+                if online:
+                    params['online'] = 1
+                if bwlimit:
+                    params['bwlimit'] = bwlimit
+
+                result = self.proxmox.nodes(node).qemu(vmid).remote_migrate.post(**params)
+                logger.info(f"Remote-миграция VM {vmid} с {node} на {target_vmid}@{target_endpoint.split(',')[1] if ',' in target_endpoint else target_endpoint}")
+                return result if isinstance(result, str) else None
+            except Exception as e:
+                logger.error(f"Ошибка remote-миграции VM {vmid}: {e}")
+                raise RuntimeError(f"Proxmox: {e}") from e
+
+        def remote_migrate_container(
+            self,
+            node: str,
+            vmid: int,
+            target_endpoint: str,
+            target_vmid: int,
+            target_storage: str = None,
+            target_bridge: str = None,
+            online: bool = False,
+            delete_source: bool = True,
+            bwlimit: int = None,
+            restart: bool = False,
+        ) -> Optional[str]:
+            """
+            Мигрировать LXC контейнер на другой (независимый) кластер через
+            remote_migrate API (PVE >= 8.0). См. remote_migrate_vm.
+
+            Args:
+                restart: Перезапустить контейнер на источнике перед переносом
+                    (аналог pct remote-migrate --restart, нужен, если online=False,
+                    но контейнер запущен)
+            """
+            if not self.proxmox:
+                return None
+
+            try:
+                params = {
+                    'target-endpoint': target_endpoint,
+                    'target-vmid': target_vmid,
+                    'delete': 1 if delete_source else 0,
+                }
+                if target_storage:
+                    params['target-storage'] = target_storage
+                if target_bridge:
+                    params['target-bridge'] = target_bridge
+                if online:
+                    params['online'] = 1
+                if restart:
+                    params['restart'] = 1
+                if bwlimit:
+                    params['bwlimit'] = bwlimit
+
+                result = self.proxmox.nodes(node).lxc(vmid).remote_migrate.post(**params)
+                logger.info(f"Remote-миграция LXC {vmid} с {node} на {target_vmid}")
+                return result if isinstance(result, str) else None
+            except Exception as e:
+                logger.error(f"Ошибка remote-миграции LXC {vmid}: {e}")
                 raise RuntimeError(f"Proxmox: {e}") from e
 
         def get_vm_termproxy(self, node: str, vmid: int) -> Dict:

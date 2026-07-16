@@ -35,6 +35,9 @@ from ..models import ScriptCatalog, ScriptGitRepo
 _META_RE = re.compile(r"^#\s*(name|description|target|category)\s*:\s*(.*)$", re.IGNORECASE)
 _PARAM_RE = re.compile(r"^#\s*param\s*:\s*(.*)$", re.IGNORECASE)
 
+_CS_APP_RE = re.compile(r'^APP="([^"]+)"')
+_CS_VAR_RE = re.compile(r'^(var_\w+)="\$\{var_\w+:-([^}]*)\}"$')
+
 
 def _parse_script_metadata(text: str, fallback_name: str) -> dict:
     name = fallback_name
@@ -85,6 +88,46 @@ def _parse_script_metadata(text: str, fallback_name: str) -> dict:
     }
 
 
+def _parse_community_scripts_metadata(text: str, fallback_name: str) -> dict:
+    """Метаданные ct/*.sh из community-scripts/ProxmoxVE: APP="..." + var_X="${var_X:-default}".
+
+    В самих ct-скриптах нет полей name/description в привычном виде: имя
+    приложения берётся из `APP=`, а параметры — из строк `var_X="${var_X:-DEF}"`
+    (тот самый bash-паттерн "переменная окружения с дефолтом", который upstream
+    читает при headless-запуске). Эти var_X переносятся в params_schema один в
+    один по имени, чтобы существующий execute-движок (export VAR=value перед
+    телом скрипта) сработал без изменений.
+    """
+    name = fallback_name
+    params: List[dict] = []
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        m = _CS_APP_RE.match(stripped)
+        if m:
+            name = m.group(1)
+            continue
+        pm = _CS_VAR_RE.match(stripped)
+        if pm:
+            p_name, default = pm.group(1), pm.group(2)
+            label = p_name.removeprefix("var_").replace("_", " ").capitalize()
+            params.append({
+                "name": p_name,
+                "label": label,
+                "type": "number" if default.lstrip("-").isdigit() else "string",
+                "required": False,
+                "default": default,
+            })
+
+    return {
+        "name": name,
+        "description": f"Community-Scripts LXC installer: {name}",
+        "target_type": "node",
+        "category": "LXC (community-scripts)",
+        "params_schema": params,
+    }
+
+
 def _clone_repo(repo: ScriptGitRepo, dest: str) -> None:
     subprocess.run(
         ["git", "clone", "--depth", "1", "--branch", repo.branch, repo.url, dest],
@@ -112,6 +155,9 @@ def sync_git_repo(db: Session, repo: ScriptGitRepo) -> dict:
         pattern = os.path.join(tmp_dir, repo.path_glob)
         files = _glob.glob(pattern, recursive=True)
 
+        is_community_scripts = repo.metadata_format == "community-scripts-ct"
+        record_source = "community-scripts" if is_community_scripts else "git"
+
         seen_slugs: List[str] = []
         for path in files:
             rel_path = os.path.relpath(path, tmp_dir)
@@ -124,7 +170,10 @@ def sync_git_repo(db: Session, repo: ScriptGitRepo) -> dict:
                 logger.warning(f"[script-sync] read {rel_path} failed: {e}")
                 continue
 
-            meta = _parse_script_metadata(content, fallback_name=os.path.basename(rel_path))
+            if is_community_scripts:
+                meta = _parse_community_scripts_metadata(content, fallback_name=os.path.basename(rel_path))
+            else:
+                meta = _parse_script_metadata(content, fallback_name=os.path.basename(rel_path))
 
             existing = db.query(ScriptCatalog).filter(ScriptCatalog.slug == slug).first()
             if existing:
@@ -135,13 +184,14 @@ def sync_git_repo(db: Session, repo: ScriptGitRepo) -> dict:
                 existing.params_schema = meta["params_schema"]
                 existing.content = content
                 existing.git_path = rel_path
+                existing.source = record_source
                 updated += 1
             else:
                 db.add(ScriptCatalog(
                     slug=slug, name=meta["name"], description=meta["description"],
                     target_type=meta["target_type"], category=meta["category"],
                     params_schema=meta["params_schema"], content=content,
-                    source="git", git_repo_id=repo.id, git_path=rel_path,
+                    source=record_source, git_repo_id=repo.id, git_path=rel_path,
                 ))
                 created += 1
             seen_slugs.append(slug)

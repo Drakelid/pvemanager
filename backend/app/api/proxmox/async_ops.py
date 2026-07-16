@@ -17,7 +17,8 @@ from ...db import SessionLocal
 from ...models import ProxmoxServer, VMInstance, OSTemplate, OSTemplateGroup, DeployTask, User
 from ...proxmox import ProxmoxClient
 from ...logging_service import LoggingService
-from ._helpers import _get_proxmox_client, get_next_vmid, save_vm_instance, save_vm_instance
+from ._helpers import (_get_proxmox_client, get_next_vmid, save_vm_instance,
+                       soft_delete_vm_instance, _build_remote_endpoint)
 
 
 # Re-use deploy executor and update helper
@@ -598,6 +599,116 @@ def _do_migrate_sync(task_id: int, server_id: int, vmid: int, node: str, vm_type
     except Exception as e:
         err = str(e)
         logger.error(f"[MIGRATE #{task_id}] failed: {err}")
+        _update_deploy_task(task_id, 'failed', f'Ошибка: {err[:150]}', 0, error=err)
+    finally:
+        db.close()
+
+
+def _do_remote_migrate_sync(task_id: int, server_id: int, vmid: int, node: str, vm_type: str,
+                            target_server_id: int, target_node: str, target_vmid: int,
+                            target_storage: Optional[str], target_bridge: Optional[str],
+                            online: bool, delete_source: bool,
+                            user_id: int, username: str):
+    """Мигрировать VM/LXC на другой (независимый) Proxmox-кластер через remote_migrate
+    API (фоновая задача с прогрессом). В отличие от _do_migrate_sync, источник и цель —
+    разные ProxmoxServer с разными кредами; UPID задачи живёт на источнике."""
+    db = SessionLocal()
+    server = None
+    is_lxc = (vm_type == 'lxc')
+    try:
+        _update_deploy_task(task_id, 'running', 'Подключение к Proxmox...', 10,
+                            vmid=vmid, node=node)
+        server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+        target_server = db.query(ProxmoxServer).filter(ProxmoxServer.id == target_server_id).first()
+        if not server or not target_server:
+            _update_deploy_task(task_id, 'failed', 'Сервер не найден', 0, error='Proxmox сервер не найден')
+            return
+        client = _connect(server)
+        if not client:
+            _update_deploy_task(task_id, 'failed', 'Ошибка подключения к Proxmox', 10,
+                                error='Не удалось подключиться к исходному Proxmox серверу')
+            return
+
+        _update_deploy_task(task_id, 'running', 'Подготовка remote-endpoint...', 20,
+                            vmid=vmid, node=node)
+        try:
+            target_endpoint = _build_remote_endpoint(target_server, target_node)
+        except ValueError as e:
+            _update_deploy_task(task_id, 'failed', 'Ошибка конфигурации цели', 20, error=str(e))
+            return
+
+        _update_deploy_task(task_id, 'running', f'Миграция → {target_server.name}/{target_node}...', 30,
+                            vmid=vmid, node=node)
+        try:
+            if is_lxc:
+                upid = client.remote_migrate_container(
+                    node, vmid, target_endpoint, target_vmid,
+                    target_storage=target_storage or None, target_bridge=target_bridge or None,
+                    online=online, delete_source=delete_source,
+                )
+            else:
+                upid = client.remote_migrate_vm(
+                    node, vmid, target_endpoint, target_vmid,
+                    target_storage=target_storage or None, target_bridge=target_bridge or None,
+                    online=online, delete_source=delete_source,
+                )
+        except Exception as e:
+            _update_deploy_task(task_id, 'failed', 'Ошибка миграции', 30, error=f'Remote migrate failed: {e}')
+            return
+        if not upid:
+            _update_deploy_task(task_id, 'failed', 'Ошибка миграции', 30,
+                                error='Proxmox не вернул UPID задачи миграции')
+            return
+
+        # Прогресс переноса маппится в 30..95 из лога задачи на источнике
+        _update_deploy_task(task_id, 'running', 'Перенос данных...', 50, vmid=vmid, node=node)
+        ok = _wait_migrate_with_progress(client, task_id, node, upid, timeout=3600)
+        if not ok:
+            _update_deploy_task(task_id, 'failed', 'Миграция не удалась', 50,
+                                error=f'Задача миграции завершилась с ошибкой. {_task_log_tail(client, node, upid)}'[:300])
+            return
+
+        # Переносим локальную запись инстанса (владелец, метаданные) на целевой сервер
+        try:
+            cached = db.query(VMInstance).filter(
+                VMInstance.server_id == server_id,
+                VMInstance.vmid == vmid,
+                VMInstance.deleted_at.is_(None),
+            ).first()
+            if cached:
+                save_vm_instance(
+                    db, target_server_id, target_vmid, target_node, vm_type, cached.name,
+                    cores=cached.cores, memory=cached.memory, disk_size=cached.disk_size,
+                    ip_address=cached.ip_address, ip_prefix=cached.ip_prefix, gateway=cached.gateway,
+                    nameserver=cached.nameserver, template_id=cached.template_id,
+                    template_name=cached.template_name, description=cached.description,
+                    extra_config=cached.extra_config, owner_id=cached.owner_id,
+                )
+                if delete_source:
+                    soft_delete_vm_instance(db, server_id, vmid)
+        except Exception as reg_err:
+            logger.warning(f"[REMOTE MIGRATE #{task_id}] failed to move instance cache record: {reg_err}")
+
+        LoggingService.log_proxmox_action(
+            db=db, action='remote_migrate',
+            resource_type='lxc' if is_lxc else 'vm', resource_id=vmid,
+            username=username, server_id=server_id,
+            server_name=server.name, node_name=node,
+            details={
+                'target_server_id': target_server_id, 'target_server_name': target_server.name,
+                'target_node': target_node, 'target_vmid': target_vmid,
+                'target_storage': target_storage, 'target_bridge': target_bridge,
+                'online': online, 'delete_source': delete_source,
+            },
+            success=True,
+        )
+
+        _update_deploy_task(task_id, 'completed', f'Мигрировано на {target_server.name}/{target_node}', 100,
+                            vmid=target_vmid, node=target_node)
+        logger.info(f"[REMOTE MIGRATE #{task_id}] {vmid}@{server.name}/{node} -> {target_vmid}@{target_server.name}/{target_node} by {username}")
+    except Exception as e:
+        err = str(e)
+        logger.error(f"[REMOTE MIGRATE #{task_id}] failed: {err}")
         _update_deploy_task(task_id, 'failed', f'Ошибка: {err[:150]}', 0, error=err)
     finally:
         db.close()

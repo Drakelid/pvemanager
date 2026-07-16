@@ -100,6 +100,12 @@ class Settings(BaseSettings):
     # Золотой LXC-шаблон (vztmpl) с предустановленным Docker — из него клонируются приложения.
     # Напр. "local:vztmpl/golden-docker_12_amd64.tar.zst". Обязателен для установки (M2).
     APPSTORE_GOLDEN_TEMPLATE: Optional[str] = Field(default=None, env="APPSTORE_GOLDEN_TEMPLATE")
+    # DNS для LXC, создаваемых App Store (через пробел — несколько серверов).
+    # Явно задаём публичный резолвер: без этого контейнер наследует DNS ноды,
+    # который может указывать на адрес, недоступный из сети контейнера
+    # (напр. Tailscale-резолвер хоста) — тогда `docker compose up` падает на
+    # pull образов с "i/o timeout" при резолве registry-1.docker.io.
+    APPSTORE_NAMESERVER: str = Field(default="1.1.1.1 8.8.8.8", env="APPSTORE_NAMESERVER")
 
     model_config = {
         "env_file": ".env",

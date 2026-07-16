@@ -4,8 +4,12 @@ from .base import *
 # "node"  — на хосте Proxmox (root@node по SSH)
 # "guest" — внутри VM (QEMU guest agent) или LXC (pct exec через SSH ноды)
 SCRIPT_TARGET_TYPES = ("node", "guest")
-SCRIPT_SOURCES = ("manual", "git")
+SCRIPT_SOURCES = ("manual", "git", "community-scripts")
 SCRIPT_EXECUTION_STATUSES = ("running", "success", "failed")
+# Формат метаданных, по которому синкается git-источник:
+# "header-comment"       — заголовочные bash-комментарии (# name: / # param: ...)
+# "community-scripts-ct" — ct/*.sh из community-scripts/ProxmoxVE (APP=, var_*)
+SCRIPT_REPO_METADATA_FORMATS = ("header-comment", "community-scripts-ct")
 
 
 class ScriptGitRepo(Base):
@@ -17,6 +21,8 @@ class ScriptGitRepo(Base):
     branch = Column(String(100), nullable=False, default="main")
     # glob относительно корня репозитория, напр. "scripts/**/*.sh"
     path_glob = Column(String(300), nullable=False, default="**/*.sh")
+    # см. SCRIPT_REPO_METADATA_FORMATS
+    metadata_format = Column(String(30), nullable=False, default="header-comment")
     enabled = Column(Boolean, nullable=False, default=True)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     last_sync_error = Column(Text, nullable=True)
@@ -28,6 +34,7 @@ class ScriptGitRepo(Base):
             "url": self.url,
             "branch": self.branch,
             "path_glob": self.path_glob,
+            "metadata_format": self.metadata_format,
             "enabled": self.enabled,
             "last_synced_at": self.last_synced_at.isoformat() if self.last_synced_at else None,
             "last_sync_error": self.last_sync_error,

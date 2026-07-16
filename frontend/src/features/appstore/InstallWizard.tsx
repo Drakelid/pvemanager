@@ -345,9 +345,11 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
               {!op && <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />{t('appstore.installing')}</div>}
             </div>
             {phase === 'failed' && (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+              <div className="flex max-h-[35vh] items-start gap-2 overflow-y-auto rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
                 <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{op?.error_text || t('appstore.install_failed')}</span>
+                <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+                  {op?.error_text || t('appstore.install_failed')}
+                </span>
               </div>
             )}
           </div>

@@ -1,7 +1,8 @@
 // Типы модуля «Каталог скриптов» (bash-скрипты на нодах/ВМ/LXC).
 
 export type ScriptTargetType = 'node' | 'guest';
-export type ScriptSource = 'manual' | 'git';
+export type ScriptSource = 'manual' | 'git' | 'community-scripts';
+export type ScriptRepoMetadataFormat = 'header-comment' | 'community-scripts-ct';
 export type ScriptExecutionStatus = 'running' | 'success' | 'failed';
 
 export interface ScriptParamField {
@@ -35,6 +36,7 @@ export interface ScriptGitRepoItem {
   url: string;
   branch: string;
   path_glob: string;
+  metadata_format: ScriptRepoMetadataFormat;
   enabled: boolean;
   last_synced_at: string | null;
   last_sync_error: string | null;

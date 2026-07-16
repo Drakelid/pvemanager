@@ -11,7 +11,7 @@ export interface DeployTask {
   node: string | null;
   error_message: string | null;
   created_at: number;
-  kind?: 'deploy' | 'reinstall' | 'clone' | 'change_password' | 'image_download' | 'image_template' | 'migrate';
+  kind?: 'deploy' | 'reinstall' | 'clone' | 'change_password' | 'image_download' | 'image_template' | 'migrate' | 'remote_migrate';
   server_id?: number | null;
 }
 

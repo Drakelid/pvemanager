@@ -158,8 +158,14 @@ def build_golden_template(
 
 @router.get("/api/appstore/golden-template/status")
 def golden_template_status(
+    server_id: int = Query(...),
     db: Session = Depends(get_db),
     _: object = Depends(PermissionChecker("app:view")),
 ):
-    """Текущий шаблон (БД/env) и последняя операция сборки."""
-    return engine.golden_template_status(db)
+    """Текущий шаблон конкретного сервера (БД/env) и последняя операция сборки на нём.
+
+    vztmpl — файл на storage конкретного Proxmox-сервера, поэтому статус
+    обязательно скопирован по server_id (шаблон сервера A не существует и не
+    виден на сервере B).
+    """
+    return engine.golden_template_status(db, server_id)

@@ -147,10 +147,22 @@ def build_env(app: CatalogApp, form_answers: dict) -> tuple[dict, dict]:
 _GOLDEN_SETTING_KEY = "appstore_golden_template"
 
 
-def _resolve_golden_template(db, ostemplate: Optional[str] = None) -> Optional[str]:
-    """Определить golden vztmpl: явный override → сохранённый в БД → env-дефолт."""
+def _golden_key(server_id: int) -> str:
+    return f"{_GOLDEN_SETTING_KEY}:{server_id}"
+
+
+def _resolve_golden_template(db, server_id: int, ostemplate: Optional[str] = None) -> Optional[str]:
+    """Определить golden vztmpl для конкретного сервера.
+
+    Приоритет: явный override → сохранённый для ЭТОГО server_id → старый общий
+    ключ (обратная совместимость с настройкой до per-server хранения) →
+    env-дефолт. vztmpl — файл на storage конкретного Proxmox-сервера, поэтому
+    шаблон, собранный на сервере A, не существует на сервере B — нельзя просто
+    отдавать один и тот же сохранённый volid для всех серверов.
+    """
     return (
         ostemplate
+        or get_setting(db, _golden_key(server_id))
         or get_setting(db, _GOLDEN_SETTING_KEY)
         or settings.APPSTORE_GOLDEN_TEMPLATE
     )
@@ -165,7 +177,7 @@ def prepare_golden_template(db, user, *, server_id: int, node: Optional[str] = N
     if not server:
         raise EngineError("Proxmox сервер не найден")
 
-    op = _new_operation(db, None, "golden_template", user.id)
+    op = _new_operation(db, None, "golden_template", user.id, server_id=server_id)
     _engine_executor.submit(
         _run_golden_template, op.id, user.id, server_id, node,
         template_storage, rootfs_storage, bridge, force,
@@ -186,10 +198,11 @@ def _run_golden_template(operation_id, user_id, server_id, node,
         )
         result = build_golden_template(db, spec, on_step)
 
-        # Сохраняем volid в БД — install() будет предпочитать его env-дефолту.
+        # Сохраняем volid ПОД ЭТИМ СЕРВЕРОМ — install() на других серверах не
+        # должен получить чужой (недоступный на их storage) шаблон.
         try:
-            set_setting(db, _GOLDEN_SETTING_KEY, result.volid,
-                        description="App Store: собранный золотой LXC-шаблон")
+            set_setting(db, _golden_key(server_id), result.volid,
+                        description=f"App Store: золотой LXC-шаблон сервера #{server_id}")
         except Exception as e:
             logger.warning(f"[appstore-engine] save golden template setting: {e}")
 
@@ -197,7 +210,7 @@ def _run_golden_template(operation_id, user_id, server_id, node,
         try:
             broadcast_task_update(user_id, "appstore_golden_template_done",
                                   {"volid": result.volid, "node": result.node,
-                                   "status": result.status})
+                                   "status": result.status, "server_id": server_id})
         except Exception:
             pass
     except Exception as e:
@@ -207,18 +220,18 @@ def _run_golden_template(operation_id, user_id, server_id, node,
         db.close()
 
 
-def golden_template_status(db) -> dict:
-    """Текущий шаблон (из БД/env) + последняя операция сборки."""
+def golden_template_status(db, server_id: int) -> dict:
+    """Текущий шаблон конкретного сервера (БД/env) + последняя операция сборки на нём."""
     op = (
         db.query(AppOperation)
-        .filter(AppOperation.type == "golden_template")
+        .filter(AppOperation.type == "golden_template", AppOperation.server_id == server_id)
         .order_by(AppOperation.started_at.desc())
         .first()
     )
     return {
-        "configured_template": _resolve_golden_template(db),
+        "configured_template": _resolve_golden_template(db, server_id),
         "env_template": settings.APPSTORE_GOLDEN_TEMPLATE,
-        "saved_template": get_setting(db, _GOLDEN_SETTING_KEY),
+        "saved_template": get_setting(db, _golden_key(server_id)),
         "last_operation": op.to_dict() if op else None,
     }
 
@@ -273,7 +286,7 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
     if not _NAME_RE.match(name or ""):
         raise EngineError("Недопустимое имя приложения (a-z, 0-9, дефис, 1..63)")
 
-    golden = _resolve_golden_template(db, ostemplate)
+    golden = _resolve_golden_template(db, server_id, ostemplate)
     if not golden:
         raise EngineError("Не настроен золотой шаблон LXC — подготовьте его "
                           "(App Store → золотой шаблон) или задайте APPSTORE_GOLDEN_TEMPLATE")
@@ -325,9 +338,10 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
     return {"installed_app_id": ia.id, "operation_id": op.id, "vmid": vmid, "secrets": secrets_shown}
 
 
-def _new_operation(db, installed_app_id: int, op_type: str, user_id: int) -> AppOperation:
+def _new_operation(db, installed_app_id: int, op_type: str, user_id: int,
+                   server_id: Optional[int] = None) -> AppOperation:
     op = AppOperation(
-        installed_app_id=installed_app_id, type=op_type,
+        installed_app_id=installed_app_id, type=op_type, server_id=server_id,
         status="running", progress=0, steps_log=[], user_id=user_id,
     )
     db.add(op)
@@ -401,7 +415,7 @@ def retry_install(db, user, installed_app_id: int) -> dict:
     compose = app.compose_yaml if app else None
     if not compose:
         raise EngineError("compose приложения недоступен для повтора")
-    golden = _resolve_golden_template(db)
+    golden = _resolve_golden_template(db, ia.server_id)
     if not golden:
         raise EngineError("Не настроен золотой шаблон LXC — подготовьте его "
                           "(App Store → золотой шаблон) или задайте APPSTORE_GOLDEN_TEMPLATE")
@@ -444,10 +458,12 @@ def _run_delete(installed_app_id, operation_id, user_id, server_id, vmid, node):
             _record_step(operation_id, user_id, step, progress)
 
         if vmid and server_id:
-            try:
-                poc_teardown(db, server_id, vmid, node, on_step)
-            except Exception as e:
-                logger.warning(f"[appstore-engine] teardown vmid={vmid}: {e}")
+            # Не глотаем ошибку teardown: если Proxmox не подтвердил реальное
+            # завершение удаления (см. poc_teardown/_TEARDOWN_WAIT_TIMEOUT),
+            # ресурсы ноды могут быть ещё заняты — пробрасываем наверх, чтобы
+            # НЕ помечать установку удалённой раньше времени (иначе следующая
+            # установка того же приложения словит гонку блокировки VMID).
+            poc_teardown(db, server_id, vmid, node, on_step)
             # Освобождаем IP в IPAM (no-op, если приложение ставилось по DHCP).
             try:
                 IPAMService(db).release_ip_by_vmid(
@@ -476,6 +492,12 @@ def _run_delete(installed_app_id, operation_id, user_id, server_id, vmid, node):
     except Exception as e:
         logger.error(f"[appstore-engine] delete #{installed_app_id} failed: {e}")
         _finish_op(operation_id, user_id, "failed", error=str(e))
+        # Оставляем InstalledApp на месте (ресурсы ноды не подтверждены
+        # освобождёнными) — статус "error" позволяет повторить удаление позже.
+        ia = db.get(InstalledApp, installed_app_id)
+        if ia:
+            ia.status = "error"
+            db.commit()
     finally:
         db.close()
 

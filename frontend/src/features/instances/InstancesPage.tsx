@@ -137,6 +137,8 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
   const isRunning = vm.status === 'running';
   const isQemu = vm.type === 'qemu';
   const [dialog, setDialog] = useState<InstanceAction>(null);
+  const { data: allServers = [] } = useServers();
+  const hasRemoteMigrateTargets = allServers.some((s) => s.id !== vm.server_id && !s.use_password);
   const [pendingPower, setPendingPower] = useState<PowerAction | null>(null);
 
   const handleAction = (action: string) => {
@@ -195,6 +197,11 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
         <DropdownMenuItem onClick={() => setDialog('migrate')}>
           <ArrowRightLeft className="mr-2 h-4 w-4" /> {t('instances.migrate', 'Мигрировать')}
         </DropdownMenuItem>
+        {hasRemoteMigrateTargets && (
+          <DropdownMenuItem onClick={() => setDialog('remote-migrate')}>
+            <ArrowRightLeft className="mr-2 h-4 w-4" /> {t('instances.remote_migrate', 'Миграция на другой кластер')}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onClick={() => setDialog('clone')}>
           <Copy className="mr-2 h-4 w-4" /> {t('common.clone', 'Клонировать')}
         </DropdownMenuItem>

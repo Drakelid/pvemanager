@@ -254,6 +254,7 @@ class ProxmoxServerResponse(BaseModel):
     port: int
     api_user: str
     verify_ssl: bool
+    use_password: bool = False
     cluster_name: Optional[str] = None
     description: Optional[str] = None
     created_at: datetime

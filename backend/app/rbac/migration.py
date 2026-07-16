@@ -37,6 +37,7 @@ NEW_DEFAULT_ROLES = [
             "vm:restart": True,
             "vm:console": True,
             "vm:migrate": True,
+            "vm:remote_migrate": True,
             "vm:execute": True,
             "vm:manage": True,
             # LXC
@@ -49,6 +50,7 @@ NEW_DEFAULT_ROLES = [
             "lxc:restart": True,
             "lxc:console": True,
             "lxc:migrate": True,
+            "lxc:remote_migrate": True,
             # Templates
             "template:view": True,
             "template:create": True,

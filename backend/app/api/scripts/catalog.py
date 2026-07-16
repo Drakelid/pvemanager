@@ -64,6 +64,7 @@ class RepoCreateRequest(BaseModel):
     url: str
     branch: str = "main"
     path_glob: str = "**/*.sh"
+    metadata_format: str = Field(default="header-comment", pattern="^(header-comment|community-scripts-ct)$")
     enabled: bool = True
 
 
@@ -115,7 +116,10 @@ def create_repo(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("script:manage")),
 ):
-    repo = ScriptGitRepo(url=req.url, branch=req.branch, path_glob=req.path_glob, enabled=req.enabled)
+    repo = ScriptGitRepo(
+        url=req.url, branch=req.branch, path_glob=req.path_glob,
+        metadata_format=req.metadata_format, enabled=req.enabled,
+    )
     db.add(repo)
     db.commit()
     db.refresh(repo)

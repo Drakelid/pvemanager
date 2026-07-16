@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from loguru import logger
-from typing import List
+from typing import List, Optional
 import ssl
 import asyncio
 import httpx
@@ -91,6 +91,83 @@ def _get_proxmox_client(server: ProxmoxServer) -> ProxmoxClient:
             ),
         )
     return ProxmoxClient.from_server(server)
+
+
+def _extract_fingerprint(join_data: dict, target_ip: str = None) -> Optional[str]:
+    """
+    Достать SHA-256 fingerprint из ответа GET /cluster/config/join.
+
+    В Proxmox API нет поля `fingerprint` на верхнем уровне — оно лежит в
+    nodelist[].pve_fp у каждой ноды. Выбираем запись целевой кластерной ноды
+    по pve_addr/ring0_addr == target_ip, с фолбэком на preferred_node и на
+    первую ноду с непустым pve_fp.
+    """
+    if not isinstance(join_data, dict):
+        return None
+
+    # Совместимость: если провайдер всё же вернул fingerprint сверху — берём его.
+    top = join_data.get("fingerprint")
+    if top:
+        return top
+
+    nodelist = join_data.get("nodelist") or []
+
+    def _fp(entry: dict) -> Optional[str]:
+        return entry.get("pve_fp") if isinstance(entry, dict) else None
+
+    # 1) По IP целевой ноды
+    if target_ip:
+        for entry in nodelist:
+            if not isinstance(entry, dict):
+                continue
+            if target_ip in (entry.get("pve_addr"), entry.get("ring0_addr")) and _fp(entry):
+                return entry["pve_fp"]
+
+    # 2) По preferred_node
+    preferred = join_data.get("preferred_node")
+    if preferred:
+        for entry in nodelist:
+            if isinstance(entry, dict) and entry.get("name") == preferred and _fp(entry):
+                return entry["pve_fp"]
+
+    # 3) Первая нода с непустым pve_fp
+    for entry in nodelist:
+        if _fp(entry):
+            return entry["pve_fp"]
+
+    return None
+
+
+def _build_remote_endpoint(target_server: ProxmoxServer, target_node: str) -> str:
+    """
+    Собрать `target-endpoint` строку для PVE `remote_migrate` API.
+
+    Формат: apitoken=PVEAPIToken={user}!{token}={secret},host={ip}:{port},fingerprint={fp}
+    Требует API-токен у целевого сервера (remote_migrate не принимает пароль).
+    """
+    has_token = bool(getattr(target_server, "api_token_name", "") and getattr(target_server, "api_token_value", ""))
+    if not has_token or getattr(target_server, "use_password", False):
+        raise ValueError(
+            f"Server '{target_server.name}' must be configured with an API token "
+            f"(not password) for remote migration. Edit the target server settings."
+        )
+
+    client = _get_proxmox_client(target_server)
+    try:
+        join_data = client.proxmox.cluster.config.join.get()
+    except Exception as e:
+        raise ValueError(f"Failed to fetch target cluster fingerprint from '{target_server.name}': {e}") from e
+
+    fingerprint = _extract_fingerprint(join_data, target_ip=target_server.ip_address)
+    if not fingerprint:
+        raise ValueError(f"Could not determine SSL fingerprint of target server '{target_server.name}'")
+
+    token = f"{target_server.api_user}!{target_server.api_token_name}={target_server.api_token_value}"
+    return (
+        f"apitoken=PVEAPIToken={token},"
+        f"host={target_server.ip_address}:{target_server.port},"
+        f"fingerprint={fingerprint}"
+    )
 
 
 def get_next_vmid(db: Session, server_id: int) -> int:

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Terminal, Plus, RefreshCw, Loader2, Play, Pencil, Trash2, GitBranch } from 'lucide-react';
+import { Terminal, Plus, RefreshCw, Loader2, Play, Pencil, Trash2, GitBranch, Package } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,13 @@ import type { ScriptCatalogItem } from '@/types/scripts';
 import ScriptEditDialog from './ScriptEditDialog';
 import ScriptExecuteDialog from './ScriptExecuteDialog';
 import ExecutionDetailDialog from './ExecutionDetailDialog';
+
+const COMMUNITY_SCRIPTS_REPO = {
+  url: 'https://github.com/community-scripts/ProxmoxVE',
+  branch: 'main',
+  path_glob: 'ct/*.sh',
+  metadata_format: 'community-scripts-ct' as const,
+};
 
 export default function ScriptsPage() {
   const { t } = useTranslation();
@@ -39,6 +46,7 @@ export default function ScriptsPage() {
 
   const manualScripts = useMemo(() => scripts.filter((s) => s.source === 'manual'), [scripts]);
   const gitScripts = useMemo(() => scripts.filter((s) => s.source === 'git'), [scripts]);
+  const communityScripts = useMemo(() => scripts.filter((s) => s.source === 'community-scripts'), [scripts]);
 
   const handleDelete = (script: ScriptCatalogItem) => {
     if (!confirm(t('scripts.confirm_delete', 'Удалить скрипт "{{name}}"?', { name: script.name }))) return;
@@ -52,6 +60,13 @@ export default function ScriptsPage() {
     if (!repoUrl.trim()) return;
     createRepo.mutate({ url: repoUrl.trim() }, {
       onSuccess: () => { setRepoUrl(''); toast.success(t('scripts.repo_added', 'Источник добавлен')); },
+      onError: (e) => toast.error((e as Error).message),
+    });
+  };
+
+  const handleAddCommunityScriptsRepo = () => {
+    createRepo.mutate(COMMUNITY_SCRIPTS_REPO, {
+      onSuccess: () => toast.success(t('scripts.repo_added', 'Источник добавлен')),
       onError: (e) => toast.error((e as Error).message),
     });
   };
@@ -71,6 +86,11 @@ export default function ScriptsPage() {
         {script.category && <Badge variant="secondary" className="text-2xs">{script.category}</Badge>}
         {script.source === 'git' && (
           <Badge variant="outline" className="gap-1 text-2xs"><GitBranch className="h-3 w-3" />{script.git_path}</Badge>
+        )}
+        {script.source === 'community-scripts' && (
+          <Badge variant="outline" className="gap-1 text-2xs">
+            <Package className="h-3 w-3" />{t('scripts.source_community', 'Community Scripts')}
+          </Badge>
         )}
       </div>
       <div className="mt-auto flex items-center gap-2 pt-1">
@@ -135,6 +155,11 @@ export default function ScriptsPage() {
                   {gitScripts.map(renderScriptCard)}
                 </div>
               )}
+              {communityScripts.length > 0 && (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {communityScripts.map(renderScriptCard)}
+                </div>
+              )}
             </>
           )}
         </TabsContent>
@@ -149,6 +174,9 @@ export default function ScriptsPage() {
             />
             <Button size="sm" onClick={handleAddRepo} disabled={createRepo.isPending}>
               <Plus className="mr-1.5 h-4 w-4" />{t('scripts.add_repo', 'Добавить источник')}
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleAddCommunityScriptsRepo} disabled={createRepo.isPending}>
+              <Package className="mr-1.5 h-4 w-4" />{t('scripts.add_community_scripts', 'Community-Scripts (ProxmoxVE)')}
             </Button>
           </Card>
 

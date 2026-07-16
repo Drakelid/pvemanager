@@ -312,6 +312,13 @@ def _create_permissions() -> PermissionRegistry:
         requires=["vm:view"]
     ))
     registry.register(Permission(
+        resource="vm", action="remote_migrate",
+        display_name="Remote Migrate VMs",
+        description="Migrate VMs to a different, independently registered Proxmox cluster",
+        category="Virtual Machines",
+        requires=["vm:migrate"]
+    ))
+    registry.register(Permission(
         resource="vm", action="execute",
         display_name="Execute Commands",
         description="Execute commands on VMs via QEMU agent",
@@ -389,7 +396,14 @@ def _create_permissions() -> PermissionRegistry:
         category="Containers",
         requires=["lxc:view"]
     ))
-    
+    registry.register(Permission(
+        resource="lxc", action="remote_migrate",
+        display_name="Remote Migrate Containers",
+        description="Migrate containers to a different, independently registered Proxmox cluster",
+        category="Containers",
+        requires=["lxc:migrate"]
+    ))
+
     # Template permissions
     registry.register(Permission(
         resource="template", action="view",

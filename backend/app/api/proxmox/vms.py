@@ -421,6 +421,16 @@ class MigrateRequest(BaseModel):
     online: bool = False
 
 
+class RemoteMigrateRequest(BaseModel):
+    target_server_id: int
+    target_node: str
+    target_vmid: Optional[int] = None
+    target_storage: Optional[str] = None
+    target_bridge: Optional[str] = None
+    online: bool = False
+    delete_source: bool = True
+
+
 class ChangePasswordRequest(BaseModel):
     username: str = "root"
     password: str
@@ -571,6 +581,104 @@ def migrate_container_endpoint(
     _deploy_executor.submit(
         _do_migrate_sync, task.id, server_id, vmid, node, 'lxc',
         body.target_node, body.target_storage, body.online,
+        current_user.id, current_user.username,
+    )
+    return DeployTaskStartResponse(task_id=task.id, status='pending', name=task.name)
+
+
+# -------- Remote migrate (move VM/LXC to a different, independent cluster) --------
+
+def _require_pve8_plus(client, server_name: str):
+    """Remote_migrate API существует только в PVE >= 8.0 — проверяем до сабмита задачи."""
+    try:
+        version = (client.proxmox.version.get() or {}).get('version', '')
+        major = int(str(version).split('.')[0])
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Не удалось определить версию PVE сервера '{server_name}': {e}")
+    if major < 8:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Remote-миграция требует Proxmox VE >= 8.0 (сервер '{server_name}': версия {version})",
+        )
+
+
+@router.post("/api/{server_id}/vm/{vmid}/remote-migrate", status_code=202)
+def remote_migrate_vm_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: RemoteMigrateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("vm:remote_migrate"))
+):
+    """Мигрировать VM (qemu) на другой (независимый) Proxmox-кластер — фоновая задача."""
+    from ...models import DeployTask
+    from ..templates import _deploy_executor, DeployTaskStartResponse
+    from .async_ops import _do_remote_migrate_sync
+
+    require_vm_access(db, current_user, server_id, vmid)
+    source_server = _resolve_server(db, server_id)
+    if body.target_server_id == server_id:
+        raise HTTPException(status_code=400, detail="Для миграции внутри одного кластера используйте обычную миграцию")
+    target_server = _resolve_server(db, body.target_server_id)
+
+    _require_pve8_plus(_get_client_or_503(source_server), source_server.name)
+    _require_pve8_plus(_get_client_or_503(target_server), target_server.name)
+
+    task = DeployTask(
+        kind='remote_migrate',
+        name=f'remote migrate {vmid} → {target_server.name}/{body.target_node}',
+        status='pending', step='В очереди...', progress=0,
+        template_id=None, server_id=server_id, target_server_id=body.target_server_id,
+        user_id=current_user.id, node=node, vmid=vmid,
+    )
+    db.add(task); db.commit(); db.refresh(task)
+
+    _deploy_executor.submit(
+        _do_remote_migrate_sync, task.id, server_id, vmid, node, 'qemu',
+        body.target_server_id, body.target_node, body.target_vmid or vmid,
+        body.target_storage, body.target_bridge, body.online, body.delete_source,
+        current_user.id, current_user.username,
+    )
+    return DeployTaskStartResponse(task_id=task.id, status='pending', name=task.name)
+
+
+@router.post("/api/{server_id}/container/{vmid}/remote-migrate", status_code=202)
+def remote_migrate_container_endpoint(
+    server_id: int,
+    vmid: int,
+    node: str,
+    body: RemoteMigrateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("lxc:remote_migrate"))
+):
+    """Мигрировать LXC контейнер на другой (независимый) Proxmox-кластер — фоновая задача."""
+    from ...models import DeployTask
+    from ..templates import _deploy_executor, DeployTaskStartResponse
+    from .async_ops import _do_remote_migrate_sync
+
+    require_vm_access(db, current_user, server_id, vmid)
+    source_server = _resolve_server(db, server_id)
+    if body.target_server_id == server_id:
+        raise HTTPException(status_code=400, detail="Для миграции внутри одного кластера используйте обычную миграцию")
+    target_server = _resolve_server(db, body.target_server_id)
+
+    _require_pve8_plus(_get_client_or_503(source_server), source_server.name)
+    _require_pve8_plus(_get_client_or_503(target_server), target_server.name)
+
+    task = DeployTask(
+        kind='remote_migrate',
+        name=f'remote migrate {vmid} → {target_server.name}/{body.target_node}',
+        status='pending', step='В очереди...', progress=0,
+        template_id=None, server_id=server_id, target_server_id=body.target_server_id,
+        user_id=current_user.id, node=node, vmid=vmid,
+    )
+    db.add(task); db.commit(); db.refresh(task)
+
+    _deploy_executor.submit(
+        _do_remote_migrate_sync, task.id, server_id, vmid, node, 'lxc',
+        body.target_server_id, body.target_node, body.target_vmid or vmid,
+        body.target_storage, body.target_bridge, body.online, body.delete_source,
         current_user.id, current_user.username,
     )
     return DeployTaskStartResponse(task_id=task.id, status='pending', name=task.name)

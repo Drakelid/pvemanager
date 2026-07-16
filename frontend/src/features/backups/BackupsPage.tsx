@@ -231,6 +231,17 @@ export default function BackupsPage() {
     }
   }, [servers, selectedServer]);
 
+  // Drop a stale server selection when its server is not in the active
+  // workspace anymore (e.g. after switching workspaces) — otherwise the list
+  // silently empties and the Select shows the raw server id instead of a name.
+  useEffect(() => {
+    if (selectedServer && servers.length > 0 && !servers.some(s => String(s.id) === selectedServer)) {
+      setSelectedServer('');
+      setSelectedNode(ALL_NODES);
+      setSelectedStorage('');
+    }
+  }, [servers, selectedServer]);
+
   // Auto-select first backup-capable storage when none selected (or current is unavailable)
   useEffect(() => {
     if (!sid) return;

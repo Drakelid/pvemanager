@@ -774,7 +774,7 @@ Catalog of self-hosted applications with one-click install. Each app runs in its
 
 ### Prerequisites
 
-- A **golden LXC template** (Debian 12 + Docker + Compose) prepared once and referenced via `APPSTORE_GOLDEN_TEMPLATE` (e.g. `local:vztmpl/golden-docker_12_amd64.tar.zst`). See [docs/golden-template.md](docs/golden-template.md).
+- A **golden LXC template** (Debian 12 + Docker + Compose) per Proxmox server. Build it from **App Store → золотой шаблон** (`POST /api/appstore/golden-template`, picks server/node/storage) — this automates the manual procedure in [docs/golden-template.md](docs/golden-template.md). The resulting vztmpl volid is stored **per `server_id`** (a template built on server A lives on A's storage only and is never used to install on server B); `APPSTORE_GOLDEN_TEMPLATE` is just the last-resort fallback for servers that never got their own build.
 - **SSH access** from the panel to the Proxmox node (used for `pct exec` / `pct push`).
 - `FERNET_KEY` set (encrypts app secrets at rest).
 
@@ -782,7 +782,8 @@ Catalog of self-hosted applications with one-click install. Each app runs in its
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `APPSTORE_GOLDEN_TEMPLATE` | — | golden vztmpl volid (required for install) |
+| `APPSTORE_GOLDEN_TEMPLATE` | — | golden vztmpl volid fallback, used only if a server has no per-server template saved |
+| `APPSTORE_NAMESERVER` | `1.1.1.1 8.8.8.8` | DNS explicitly set on App Store LXCs (and the golden-template build CT) — without it, the container inherits the node's resolver, which can be unreachable from the LXC's network (e.g. a Tailscale-only DNS on the host) and break image pulls |
 | `APPSTORE_SOURCES` | `runtipi` | active catalog sources, comma-separated (`runtipi`, `umbrel`) |
 | `RUNTIPI_APPSTORE_REPO` | `runtipi/runtipi-appstore` | Runtipi catalog source |
 | `RUNTIPI_APPSTORE_REF` | `master` | branch/tag/commit (pin recommended) |
@@ -813,6 +814,11 @@ Pipeline (each step is journaled and streamed over WebSocket):
 
 A failed step sets status `error` with a step log; **Retry** does not recreate the LXC (idempotent by VMID), **Delete** removes the container and the record.
 
+**Reliability notes:**
+- Bind-mount host directories (`volumes:` in the app's compose, both `${APP_DATA_DIR}/...` and relative paths) are pre-created with permissive ownership before `up` — otherwise Docker auto-creates them as root and non-root container users (e.g. mariadb's `mysql`) get `Permission denied`.
+- `pct create` retries a few times on a transient config-lock error (common right after deleting the same VMID, while the node is still wiping the old disk).
+- **Delete** now waits for Proxmox to actually confirm the destroy task finished (up to 30 min, covers slow disk wipes) before marking the app removed — otherwise a VMID could be reused while still busy on the node.
+
 ### My Apps
 
 Manage installed apps: **Start / Stop / Restart / Logs / Delete**, live status, and a clickable `IP:port`.
@@ -840,6 +846,8 @@ POST   /api/appstore/apps/{id}/update
 POST   /api/appstore/apps/{id}/rollback
 POST   /api/appstore/apps/reconcile
 DELETE /api/appstore/apps/{id}
+POST   /api/appstore/golden-template                    # build golden vztmpl for a server
+GET    /api/appstore/golden-template/status?server_id=…  # per-server template + last build op
 ```
 
 ---

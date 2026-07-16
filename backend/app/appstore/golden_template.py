@@ -159,7 +159,8 @@ def build_golden_template(db: Session, spec: GoldenSpec,
             f"--features nesting=1,keyctl=1 "
             f"--cores {spec.cores} --memory {spec.memory} --swap {spec.swap} "
             f"--rootfs {spec.rootfs_storage}:{spec.disk} "
-            f"--net0 name=eth0,bridge={spec.bridge},ip=dhcp",
+            f"--net0 name=eth0,bridge={spec.bridge},ip=dhcp "
+            f"--nameserver \"{settings.APPSTORE_NAMESERVER}\"",
             what="pct create", timeout=300,
         )
         created_ct = True
@@ -191,7 +192,11 @@ def build_golden_template(db: Session, spec: GoldenSpec,
 
         # 7. Экспорт rootfs в vztmpl через vzdump в каталог кэша storage.
         on_step("Экспорт шаблона (vzdump)...", 90)
-        probe = _run(ssh, f"pvesm path {spec.template_storage}:vztmpl/probe",
+        # Используем реальное имя уже скачанного базового шаблона, а не
+        # выдуманное "probe": pvesm валидирует имя тома vztmpl по расширению
+        # (.tar.gz/.tar.xz/.tar.zst) и роняет "unable to parse directory
+        # volume name" на произвольной строке без такого расширения.
+        probe = _run(ssh, f"pvesm path {spec.template_storage}:vztmpl/{base_name}",
                      what="resolve vztmpl dir").strip()
         cache_dir = os.path.dirname(probe)
         if not cache_dir:

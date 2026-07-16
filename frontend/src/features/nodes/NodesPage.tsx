@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Server, Monitor, Container, Plus, Pencil, Trash2, Wifi, Loader2, Clock, Layers, LayoutGrid } from 'lucide-react';
+import { Server, Monitor, Container, Plus, Pencil, Trash2, Wifi, Loader2, Clock, Layers, LayoutGrid, ExternalLink } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -329,6 +329,22 @@ export default function NodesPage() {
                     </div>
                   </Link>
                   <div className="flex items-center gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      title={t('nodes.open_pve_ui')}
+                      render={
+                        <a
+                          href={`https://${srv.ip_address}:${srv.port || 8006}/`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      }
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import type { ScriptCatalogItem, ScriptExecution, ScriptGitRepoItem, ScriptParamField } from '@/types/scripts';
+import type { ScriptCatalogItem, ScriptExecution, ScriptGitRepoItem, ScriptParamField, ScriptRepoMetadataFormat } from '@/types/scripts';
 
 export const scriptKeys = {
   catalog: ['scripts-catalog'] as const,
@@ -78,6 +78,7 @@ export interface RepoCreateArgs {
   url: string;
   branch?: string;
   path_glob?: string;
+  metadata_format?: ScriptRepoMetadataFormat;
   enabled?: boolean;
 }
 

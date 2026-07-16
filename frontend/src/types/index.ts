@@ -49,6 +49,7 @@ export interface ProxmoxServer {
   port: number;
   api_user: string;
   verify_ssl: boolean;
+  use_password?: boolean;
   cluster_name?: string;
   description?: string;
   created_at: string;

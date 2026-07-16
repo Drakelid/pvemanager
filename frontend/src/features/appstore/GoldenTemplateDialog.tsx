@@ -32,8 +32,10 @@ export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
 
   const build = useBuildGoldenTemplate();
 
+  // Шаблон — файл на storage конкретного сервера, поэтому статус запрашиваем
+  // именно по выбранному serverId (иначе покажем шаблон/прогресс другого сервера).
   // Пока операция выполняется — опрашиваем статус каждые 2с для прогресса.
-  const { data: status } = useGoldenTemplateStatus(open ? 2000 : 0);
+  const { data: status } = useGoldenTemplateStatus(serverIdNum || undefined, open ? 2000 : 0);
   const op = status?.last_operation ?? null;
   const running = op?.status === 'running';
   const lastStep = op?.steps_log?.length ? op.steps_log[op.steps_log.length - 1].step : null;
@@ -81,13 +83,19 @@ export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
               'Автоматическая сборка golden-шаблона (Debian 12 + Docker + Compose) на выбранной ноде. Из него App Store клонирует контейнеры приложений.')}
           </p>
 
-          {/* Текущий шаблон */}
-          <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs">
-            <span className="text-muted-foreground">{t('appstore.golden.current', 'Текущий шаблон')}: </span>
-            {configured
-              ? <code className="break-all">{configured}</code>
-              : <span className="text-amber-600">{t('appstore.golden.none', 'не настроен')}</span>}
-          </div>
+          {/* Текущий шаблон — привязан к выбранному серверу (vztmpl лежит на его storage) */}
+          {serverIdNum ? (
+            <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs">
+              <span className="text-muted-foreground">{t('appstore.golden.current', 'Текущий шаблон')}: </span>
+              {configured
+                ? <code className="break-all">{configured}</code>
+                : <span className="text-amber-600">{t('appstore.golden.none', 'не настроен для этого сервера')}</span>}
+            </div>
+          ) : (
+            <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              {t('appstore.golden.pick_server_hint', 'Выберите сервер, чтобы увидеть его текущий шаблон')}
+            </div>
+          )}
 
           {/* Сервер */}
           <div className="space-y-1.5">

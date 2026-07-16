@@ -4,6 +4,21 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.9.1] - 2026-07-17
+
+### 🛒 App Store
+
+- **Per-server golden template** — the golden vztmpl is now stored and resolved per Proxmox `server_id` instead of one global pointer; building it on one server no longer overwrites/breaks the template configured for another. `APPSTORE_GOLDEN_TEMPLATE` is now only the last-resort fallback for servers without their own build. Migration 37 adds `app_operations.server_id`
+- **Golden template build fix** — the automated build (`App Store → золотой шаблон`) no longer fails at the final `vzdump` export step (`unable to parse directory volume name 'vztmpl/probe'`)
+- **DNS reliability** — App Store LXCs (and the golden-template build CT) now get an explicit `nameserver` (`APPSTORE_NAMESERVER`, default `1.1.1.1 8.8.8.8`) instead of inheriting the node's resolver, which fixed image-pull timeouts on nodes whose DNS is only reachable from the host (e.g. over Tailscale)
+- **Bind-mount permissions** — data directories referenced in an app's `volumes:` (`${APP_DATA_DIR}/...` or relative paths) are pre-created before `up`, fixing `Permission denied` for containers that write as a non-root user (e.g. MariaDB)
+- **Delete/reinstall race fixed** — deleting an app now waits for Proxmox to actually confirm the container is gone (up to 30 min, covers slow disk wipes) before freeing the VMID, instead of assuming success after a short timeout
+- **`pct create` lock retry** — transient "can't lock file ... got lock" errors right after a delete are retried a few times instead of failing the install immediately
+- **Full error output** — failed pipeline steps now surface the last 4000 characters of command output (previously the first 2000), so the actual failure reason isn't buried under `docker compose pull` progress noise
+- **Install error UI** — the error box in the install dialog now wraps long unbroken text (image digests, paths) and scrolls within its own bounded height instead of stretching the dialog
+
+---
+
 ## [v1.9.0] - 2026-07-09
 
 ### 🌐 IPAM

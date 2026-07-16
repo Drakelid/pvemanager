@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Loader2, Play, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, Play, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -130,6 +130,18 @@ export default function ScriptExecuteDialog({ script, onOpenChange }: Props) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          )}
+
+          {script.source === 'community-scripts' && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                {t(
+                  'scripts.community_scripts_warning',
+                  'Скрипт создаст новый LXC-контейнер на хосте Proxmox и во время выполнения сам обратится к GitHub за дополнительным кодом (misc/build.func) — это сторонний код, не проверяемый и не фиксируемый pvemanager.',
+                )}
+              </p>
             </div>
           )}
 

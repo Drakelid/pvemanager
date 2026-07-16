@@ -28,6 +28,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from ..api.proxmox._helpers import _get_proxmox_client, get_next_vmid
+from ..config import settings
 from ..models import ProxmoxServer
 from ..ssh_client import SSHClient
 
@@ -71,6 +72,10 @@ class InstallSpec:
     ip_config: Optional[str] = None       # напр. "ip=10.0.0.5/24,gw=10.0.0.1"
     static_ip: Optional[str] = None       # напр. "10.0.0.5"
     source: str = "runtipi"               # источник каталога: runtipi | umbrel
+    # Явный DNS для контейнера (через пробел). None → settings.APPSTORE_NAMESERVER —
+    # без этого CT наследует резолвер ноды, который может быть недоступен из сети
+    # контейнера (напр. Tailscale-адрес), и `docker compose up` падает на pull образов.
+    nameserver: Optional[str] = None
 
 
 @dataclass
@@ -102,6 +107,11 @@ def _node_ssh(server: ProxmoxServer, client) -> SSHClient:
 # Долгие шаги (docker compose pull/up) передают увеличенный таймаут явно.
 _CMD_TIMEOUT = 60
 _DOCKER_TIMEOUT = 600
+# Ожидание завершения задачи Proxmox на удаление CT. Долгий таймаут — при
+# wipe_after_delete на LVM-хранилищах затирание диска нулями может занимать
+# много минут; если сдаться раньше, VMID можно ошибочно счесть свободным и
+# словить гонку блокировки конфига при немедленном пересоздании.
+_TEARDOWN_WAIT_TIMEOUT = 1800
 
 
 def _run(ssh: SSHClient, cmd: str, *, what: str, timeout: int = _CMD_TIMEOUT) -> str:
@@ -114,7 +124,11 @@ def _run(ssh: SSHClient, cmd: str, *, what: str, timeout: int = _CMD_TIMEOUT) ->
     if exit_code == -1:
         raise PocError(f"{what}: таймаут (>{timeout}с) или обрыв SSH")
     if exit_code != 0:
-        raise PocError(f"{what}: exit={exit_code}: {(output or '').strip()[:2000]}")
+        # Хвост, а не голова: для многословных команд (docker compose pull/up)
+        # реальная причина падения — последние строки, а не progress-шум
+        # "Pulling/Downloading" в начале. Раньше срез [:2000] обрезал именно
+        # причину, оставляя в UI один прогресс-бар без объяснения.
+        raise PocError(f"{what}: exit={exit_code}: {(output or '').strip()[-4000:]}")
     return output or ""
 
 
@@ -366,6 +380,7 @@ def _platform_env(env: Dict[str, str], ip: str, source: str) -> Dict[str, str]:
     env.setdefault("APP_DOMAIN", ip)
     env.setdefault("APP_HOST", ip)
     env["APP_IP"] = ip
+    env.setdefault("APP_DATA_DIR", APP_DATA_DIR)  # некоторые compose ссылаются на неё в volumes:
     if source == "umbrel":
         env.setdefault("DEVICE_DOMAIN_NAME", f"{ip}.local")
         env.setdefault("DEVICE_HOSTNAME", "umbrel")
@@ -373,6 +388,71 @@ def _platform_env(env: Dict[str, str], ip: str, source: str) -> Dict[str, str]:
     else:
         env.setdefault("LOCAL_DOMAIN", "tipi.local")  # стандартная переменная Runtipi
     return env
+
+
+_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _subst_env(value: str, env: Dict[str, str]) -> str:
+    """Мини-версия подстановки переменных docker compose (${VAR}/$VAR → env[VAR] или '')."""
+    return _VAR_RE.sub(lambda m: env.get(m.group(1) or m.group(2), ""), value)
+
+
+def _bind_mount_hosts(compose_yaml: str, app_dir: str, env: Dict[str, str]) -> list:
+    """Хост-пути bind-mount'ов из `volumes:` всех сервисов (без именованных volume).
+
+    Официальные образы (mariadb, postgres и т.п.) в контейнере обычно пишут в
+    точку монтирования от имени непривилегированного пользователя (напр.
+    mysql, uid 999). Docker при первом `up` создаёт отсутствующую хост-директорию
+    сам — но от root, с 0755, поэтому такой пользователь получает Permission
+    denied. Возвращаем список путей, чтобы pre-create их с правами 777 (ТЗ:
+    изоляция на уровне LXC, разграничение владельца внутри контейнера не
+    требуется — важна лишь возможность писать).
+    """
+    try:
+        doc = yaml.safe_load(compose_yaml)
+    except Exception:
+        return []
+    if not isinstance(doc, dict):
+        return []
+    services = doc.get("services")
+    if not isinstance(services, dict):
+        return []
+
+    hosts: list = []
+    for svc in services.values():
+        if not isinstance(svc, dict):
+            continue
+        vols = svc.get("volumes")
+        if not isinstance(vols, list):
+            continue
+        for v in vols:
+            if not isinstance(v, str) or ":" not in v:
+                continue
+            source = v.split(":", 1)[0]
+            # Именованный volume ("dbdata:/var/lib/mysql") — без '/', '.', '~', '$'
+            # в начале; управляется Docker'ом, пропускаем.
+            if not (source.startswith(("/", ".", "~", "$"))):
+                continue
+            resolved = _subst_env(source, env)
+            if not resolved:
+                continue
+            if not resolved.startswith("/"):
+                resolved = f"{app_dir}/{resolved.lstrip('./')}"
+            hosts.append(resolved)
+    # uniq, сохраняя порядок
+    return list(dict.fromkeys(hosts))
+
+
+def _prepare_bind_mounts(ssh: SSHClient, vmid: int, compose_yaml: str,
+                         app_dir: str, env: Dict[str, str]) -> None:
+    """Pre-create хост-директорий bind-mount'ов с правами 777 (см. _bind_mount_hosts)."""
+    hosts = _bind_mount_hosts(compose_yaml, app_dir, env)
+    if not hosts:
+        return
+    quoted = " ".join(_shq(h) for h in hosts)
+    _run(ssh, _pct(vmid, f"mkdir -p {quoted} && chmod -R 777 {quoted}"),
+         what="prepare bind-mount dirs")
 
 
 def _push_file(ssh: SSHClient, vmid: int, content: str, dest: str) -> None:
@@ -463,6 +543,7 @@ def poc_install(db: Session, spec: InstallSpec, on_step: StepCb = _noop) -> Inst
             unprivileged=True,
             start_after_create=False,
             description=f"pvemanager-appstore: {spec.name}",
+            nameserver=spec.nameserver or settings.APPSTORE_NAMESERVER,
         )
         if not upid:
             raise PocError("Proxmox не вернул UPID создания контейнера")
@@ -507,6 +588,10 @@ def poc_install(db: Session, spec: InstallSpec, on_step: StepCb = _noop) -> Inst
         env_content = "".join(f"{k}={str(v).replace(chr(10), ' ').replace(chr(13), ' ')}\n"
                               for k, v in env.items())
         _push_file(ssh, vmid, env_content, f"{APP_DIR}/.env")
+        # Bind-mount директории заранее и с правами 777 — иначе Docker создаст
+        # их сам от root при первом `up`, и процессы в контейнере (напр.
+        # mariadb от uid mysql) получат Permission denied на запись.
+        _prepare_bind_mounts(ssh, vmid, normalized, APP_DIR, env)
 
         on_step("Запуск docker compose up -d...", 85)
         _run(
@@ -571,6 +656,7 @@ def poc_update(server, client, vmid: int, node: str, compose_yaml: str,
         env_content = "".join(f"{k}={str(v).replace(chr(10), ' ').replace(chr(13), ' ')}\n"
                               for k, v in env.items())
         _push_file(ssh, vmid, env_content, f"{APP_DIR}/.env")
+        _prepare_bind_mounts(ssh, vmid, normalized, APP_DIR, env)
 
         on_step("docker compose pull && up -d...", 65)
         _run(
@@ -607,5 +693,15 @@ def poc_teardown(db: Session, server_id: int, vmid: int, node: Optional[str] = N
     on_step(f"Удаление LXC {vmid}...", 70)
     upid = client.delete_container(node, vmid, force=True)
     if upid:
-        client.wait_for_task(node, upid, timeout=180)
+        # Ждём реального завершения задачи, а не просто отдаём таймаут наверх:
+        # иначе caller решит, что ресурсы освобождены, пока нода ещё занята
+        # (напр. wipe диска) — и следующая установка с тем же VMID словит
+        # "can't lock file ... got timeout" (см. инцидент с VMID 102).
+        done = client.wait_for_task(node, upid, timeout=_TEARDOWN_WAIT_TIMEOUT)
+        if not done:
+            raise PocError(
+                f"Удаление LXC {vmid}: Proxmox не подтвердил завершение задачи "
+                f"за {_TEARDOWN_WAIT_TIMEOUT}с (нода может ещё выполнять wipe "
+                f"диска) — ресурсы не считаются освобождёнными, повторите позже"
+            )
     on_step("Удалено", 100)
