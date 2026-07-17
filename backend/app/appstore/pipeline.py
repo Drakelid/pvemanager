@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import re
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional
@@ -54,6 +55,10 @@ class InstallSpec:
     name: str                             # hostname / имя приложения
     compose_yaml: str                     # содержимое docker-compose.yml
     port: int = 3001                      # порт для health-check
+    # Порт выбран пользователем явно (форма мастера), а не взят из каталога.
+    # Влияет на нормализацию compose: явный порт публикуется как есть (в т.ч.
+    # 80), а каталожные 0/80 считаются «не задано» → публикуем внутренний.
+    port_explicit: bool = False
     env_vars: Dict[str, str] = field(default_factory=dict)
     node: Optional[str] = None            # если None — выбирается автоматически
     vmid: Optional[int] = None            # если задан — использовать его (идемпотентный повтор)
@@ -76,6 +81,11 @@ class InstallSpec:
     # без этого CT наследует резолвер ноды, который может быть недоступен из сети
     # контейнера (напр. Tailscale-адрес), и `docker compose up` падает на pull образов.
     nameserver: Optional[str] = None
+    # Вспомогательные файлы приложения из репозитория каталога
+    # ({relpath: {"b64": ..., "exec": bool}}, см. CatalogApp.data_files) —
+    # доставляются в ${APP_DATA_DIR}/<relpath> ДО compose up, иначе bind-mount'ы
+    # на них получают пустышки и приложение падает (пустой entrypoint.sh/конфиг).
+    data_files: Dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass
@@ -114,6 +124,22 @@ _DOCKER_TIMEOUT = 600
 _TEARDOWN_WAIT_TIMEOUT = 1800
 
 
+_LAYER_PROGRESS_RE = re.compile(
+    r"^\s*[0-9a-f]{12}\s+(Pulling|Waiting|Downloading|Verifying Checksum|"
+    r"Download complete|Extracting|Pull complete|Already exists)\b"
+)
+
+
+def _strip_pull_noise(output: str) -> str:
+    """Убрать построчный progress-шум `docker compose pull/up` (на каждый слой
+    образа своя строка Downloading/Extracting и т.п., перерисовывающаяся много
+    раз). На тяжёлых многослойных образах этот шум может занять весь хвост
+    вывода, вытеснив из среза саму причину падения (см. _run).
+    """
+    lines = [ln for ln in output.splitlines() if not _LAYER_PROGRESS_RE.match(ln)]
+    return "\n".join(lines)
+
+
 def _run(ssh: SSHClient, cmd: str, *, what: str, timeout: int = _CMD_TIMEOUT) -> str:
     """Выполнить команду на ноде, вернуть stdout. Бросить PocError при exit!=0.
 
@@ -127,8 +153,14 @@ def _run(ssh: SSHClient, cmd: str, *, what: str, timeout: int = _CMD_TIMEOUT) ->
         # Хвост, а не голова: для многословных команд (docker compose pull/up)
         # реальная причина падения — последние строки, а не progress-шум
         # "Pulling/Downloading" в начале. Раньше срез [:2000] обрезал именно
-        # причину, оставляя в UI один прогресс-бар без объяснения.
-        raise PocError(f"{what}: exit={exit_code}: {(output or '').strip()[-4000:]}")
+        # причину, оставляя в UI один прогресс-бар без объяснения. Но и хвост
+        # может целиком утонуть в построчном progress-шуме на тяжёлых образах
+        # (много слоёв) — поэтому сначала вычищаем его, если после этого
+        # что-то остаётся.
+        text = (output or "").strip()
+        filtered = _strip_pull_noise(text).strip()
+        tail = filtered or text
+        raise PocError(f"{what}: exit={exit_code}: {tail[-4000:]}")
     return output or ""
 
 
@@ -274,8 +306,27 @@ def _resolve_main_and_port(doc: dict, services: Dict, source: str
     return main, internal, False
 
 
+def _published_host_port(entry, host_port: Optional[int]) -> Optional[int]:
+    """Хост-порт из записи `ports:` compose.
+
+    Понимает short-syntax ('8080:80', '${APP_PORT:-3001}:3001',
+    '127.0.0.1:8080:80') и long-syntax ({published: ..., target: ...}).
+    Переменную APP_PORT подставляем значением host_port — именно его кладём
+    в .env, т.е. так её раскроет и docker compose. Раньше '${APP_PORT...'
+    парсился как не-число → health-check шёл на внутренний порт, который
+    наружу не опубликован, и установка ложно помечалась unhealthy.
+    """
+    env = {"APP_PORT": str(host_port)} if host_port else {}
+    if isinstance(entry, dict):
+        pub = entry.get("published")
+        return _to_int(_subst_env(str(pub), env)) if pub is not None else None
+    parts = _subst_env(str(entry), env).split(":")
+    return _to_int(parts[-2]) if len(parts) >= 2 else None
+
+
 def _normalize_compose(compose_yaml: str, host_port: Optional[int] = None,
-                       *, source: str = "runtipi") -> tuple[str, Optional[int]]:
+                       *, source: str = "runtipi",
+                       port_explicit: bool = False) -> tuple[str, Optional[int]]:
     """Привести compose к самодостаточному виду для standalone-запуска в LXC.
 
     Делает то, что в родном рантайме (Runtipi/Umbrel) выполняет их оркестратор:
@@ -346,21 +397,22 @@ def _normalize_compose(compose_yaml: str, host_port: Optional[int] = None,
                 # Уважаем уже объявленную публикацию (не переопределяем).
                 if not svc.get("ports"):
                     # host_port из каталога, если задан и не дефолтные 80/0; иначе
-                    # публикуем на том же номере, что слушает контейнер.
-                    pub = host_port if (host_port and host_port not in (0, 80)) else internal
+                    # публикуем на том же номере, что слушает контейнер. Порт,
+                    # явно выбранный пользователем в мастере, уважаем всегда
+                    # (в т.ч. 80 — для каталога это «не задано», для юзера нет).
+                    pub = host_port if (host_port and (port_explicit or host_port not in (0, 80))) else internal
                     svc["ports"] = [f"{pub}:{internal}"]
                     published_port = pub
                     changed = True
                 else:
                     ports = svc.get("ports")
                     if isinstance(ports, list) and ports:
-                        first = str(ports[0])
-                        published_port = _to_int(first.split(":")[0]) or internal
+                        published_port = _published_host_port(ports[0], host_port) or internal
             elif svc.get("ports"):
                 # Внутренний порт неизвестен, но публикация уже есть в compose.
                 ports = svc.get("ports")
                 if isinstance(ports, list) and ports:
-                    published_port = _to_int(str(ports[0]).split(":")[0])
+                    published_port = _published_host_port(ports[0], host_port)
 
         if not changed:
             return compose_yaml, published_port
@@ -385,17 +437,32 @@ def _platform_env(env: Dict[str, str], ip: str, source: str) -> Dict[str, str]:
         env.setdefault("DEVICE_DOMAIN_NAME", f"{ip}.local")
         env.setdefault("DEVICE_HOSTNAME", "umbrel")
         env.setdefault("APP_SEED", "pvemanager")
+        # Umbrel генерирует APP_PASSWORD сам (deterministic app password) —
+        # compose-файлы ссылаются на неё для паролей/ключей. Обычно её задаёт
+        # build_env движка (чтобы значение сохранилось и показалось
+        # пользователю); здесь — страховка для standalone-запуска пайплайна.
+        env.setdefault("APP_PASSWORD", secrets.token_hex(16))
     else:
         env.setdefault("LOCAL_DOMAIN", "tipi.local")  # стандартная переменная Runtipi
     return env
 
 
-_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+_VAR_RE = re.compile(
+    r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::?-([^}]*))?\}|\$([A-Za-z_][A-Za-z0-9_]*)"
+)
 
 
 def _subst_env(value: str, env: Dict[str, str]) -> str:
-    """Мини-версия подстановки переменных docker compose (${VAR}/$VAR → env[VAR] или '')."""
-    return _VAR_RE.sub(lambda m: env.get(m.group(1) or m.group(2), ""), value)
+    """Мини-версия подстановки переменных docker compose:
+    ${VAR}, ${VAR-def}, ${VAR:-def}, $VAR → env[VAR] | default | ''.
+    """
+    def _rep(m: re.Match) -> str:
+        var = m.group(1) or m.group(3)
+        val = env.get(var)
+        if val:
+            return val
+        return m.group(2) or ""
+    return _VAR_RE.sub(_rep, value)
 
 
 def _bind_mount_hosts(compose_yaml: str, app_dir: str, env: Dict[str, str]) -> list:
@@ -429,12 +496,13 @@ def _bind_mount_hosts(compose_yaml: str, app_dir: str, env: Dict[str, str]) -> l
         for v in vols:
             if not isinstance(v, str) or ":" not in v:
                 continue
-            source = v.split(":", 1)[0]
             # Именованный volume ("dbdata:/var/lib/mysql") — без '/', '.', '~', '$'
             # в начале; управляется Docker'ом, пропускаем.
-            if not (source.startswith(("/", ".", "~", "$"))):
+            if not (v.startswith(("/", ".", "~", "$"))):
                 continue
-            resolved = _subst_env(source, env)
+            # Подстановка ДО split(':'): внутри ${VAR:-default} есть ':',
+            # который иначе рвёт строку не на границе source:target.
+            resolved = _subst_env(v, env).split(":", 1)[0]
             if not resolved:
                 continue
             if not resolved.startswith("/"):
@@ -450,8 +518,13 @@ def _is_file_mount(source: str) -> bool:
     создаёт директорию — для файловых bind-mount'ов (напр. AnythingLLM монтирует
     `.env` как файл) это ломает `docker compose up` ошибкой "not a directory:
     Are you trying to mount a directory onto a file?".
+
+    Скрытые имена (`.config`, `.n8n`, `.ssh`) — почти всегда ДИРЕКТОРИИ:
+    ведущая точка не считается расширением. Файлы среди них — только `.env*`.
     """
     name = source.rsplit("/", 1)[-1]
+    if name.startswith("."):
+        return name.lower().startswith(".env")
     return "." in name
 
 
@@ -474,26 +547,115 @@ def _prepare_bind_mounts(ssh: SSHClient, vmid: int, compose_yaml: str,
     for f in files:
         parent = f.rsplit("/", 1)[0] if "/" in f else "."
         qf, qp = _shq(f), _shq(parent)
-        # rm -rf — самовосстановление после старого бага: если source уже был
-        # ошибочно создан как директория в прошлой попытке (даже непустая —
-        # Docker ничего в неё не писал, падал раньше на самом mount), сносим
-        # её перед touch; иначе Docker потом не может смонтировать файл поверх
+        # rmdir — самовосстановление после старого бага: если source уже был
+        # ошибочно создан Docker'ом как ПУСТАЯ директория в прошлой попытке,
+        # убираем её перед touch; иначе Docker не может смонтировать файл поверх
         # директории ("not a directory: ... mount a directory onto a file").
+        # Непустую директорию не трогаем (там могут быть данные приложения —
+        # ошибка эвристики не должна приводить к потере данных).
+        # chmod 777, а не 666: доставленные из каталога скрипты (entrypoint.sh
+        # и т.п.) должны сохранить/получить exec-бит, иначе контейнер падает
+        # с "permission denied" на entrypoint.
         cmds.append(
-            f"mkdir -p {qp}; if [ -d {qf} ]; then rm -rf {qf}; fi; "
-            f"[ -e {qf} ] || touch {qf}; chmod 666 {qf}"
+            f"mkdir -p {qp}; if [ -d {qf} ]; then rmdir {qf} 2>/dev/null || true; fi; "
+            f"[ -e {qf} ] || touch {qf}; [ -d {qf} ] || chmod 777 {qf}"
         )
     _run(ssh, _pct(vmid, " && ".join(cmds)), what="prepare bind-mount dirs")
 
 
-def _push_file(ssh: SSHClient, vmid: int, content: str, dest: str) -> None:
-    """Доставить файл в контейнер без shell-инъекций: base64 → файл на ноде → pct push."""
-    b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+def _push_file(ssh: SSHClient, vmid: int, content, dest: str, *,
+               perms: Optional[str] = None) -> None:
+    """Доставить файл в контейнер без shell-инъекций: base64 → файл на ноде → pct push.
+
+    content — str (utf-8) или bytes (бинарные файлы каталога).
+    """
+    raw = content.encode("utf-8") if isinstance(content, str) else content
+    b64 = base64.b64encode(raw).decode("ascii")
     tmp = f"/tmp/appstore_{vmid}_{abs(hash(dest)) % 100000}"
     # b64 состоит из [A-Za-z0-9+/=], безопасно внутри одинарных кавычек.
     _run(ssh, f"printf '%s' '{b64}' | base64 -d > {tmp}", what=f"write {dest} on node")
-    _run(ssh, f"pct push {vmid} {tmp} {dest}", what=f"pct push {dest}")
+    perms_arg = f" --perms {perms}" if perms else ""
+    _run(ssh, f"pct push {vmid} {tmp} {dest}{perms_arg}", what=f"pct push {dest}")
     _run(ssh, f"rm -f {tmp}", what="cleanup temp")
+
+
+# Имя relpath data-файла: только безопасные символы (dest не квотируется в
+# `pct push`), без '..' и ведущих '/' — защита от path traversal и инъекций.
+_DATA_RELPATH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/\-@]*$")
+
+
+# Плейсхолдер Runtipi-шаблона: {{VAR}} / {{ VAR }} в файлах data/*.template.
+_TPL_VAR_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+
+
+def _render_template(blob: bytes, env: Dict[str, str]) -> bytes:
+    """Рендер Runtipi-шаблона: {{VAR}} → env[VAR] (отсутствующие → '')."""
+    text = blob.decode("utf-8", "replace")
+    text = _TPL_VAR_RE.sub(lambda m: str(env.get(m.group(1), "")), text)
+    return text.encode("utf-8")
+
+
+def _push_data_files(ssh: SSHClient, vmid: int, data_files: Dict[str, dict],
+                     env: Dict[str, str]) -> None:
+    """Доставить файлы приложения из каталога в ${APP_DATA_DIR}/<relpath>.
+
+    Compose bind-mount'ит их (напр. ${APP_DATA_DIR}/data/nginx.conf,
+    ${APP_DATA_DIR}/entrypoint.sh) — без доставки на их месте оказались бы
+    пустые файлы-заглушки, и приложение падает на старте. Exec-бит
+    сохраняется (скрипты); прочим файлам даём 666 (владелец внутри
+    контейнера не разграничивается — см. _bind_mount_hosts).
+
+    Файлы `*.template` (конвенция Runtipi) рендерятся ({{VAR}} → env) и
+    кладутся под именем без суффикса — именно его монтирует compose.
+    """
+    safe: Dict[str, bytes] = {}
+    execs: Dict[str, bool] = {}
+    for relpath, meta in (data_files or {}).items():
+        if not isinstance(meta, dict) or not meta.get("b64"):
+            continue
+        if not _DATA_RELPATH_RE.match(relpath) or ".." in relpath:
+            logger.warning(f"[appstore-poc] skip data file with unsafe path: {relpath!r}")
+            continue
+        try:
+            blob = base64.b64decode(meta["b64"])
+        except Exception:
+            logger.warning(f"[appstore-poc] skip data file {relpath}: битый base64")
+            continue
+        if relpath.endswith(".template"):
+            relpath = relpath[: -len(".template")]
+            blob = _render_template(blob, env)
+        safe[relpath] = blob
+        execs[relpath] = bool(meta.get("exec"))
+    if not safe:
+        return
+
+    # Заранее создаём все родительские директории одним pct exec.
+    dirs = sorted({f"{APP_DATA_DIR}/{rp}".rsplit("/", 1)[0] for rp in safe})
+    _run(ssh, _pct(vmid, "mkdir -p " + " ".join(_shq(d) for d in dirs)),
+         what="mkdir data-file dirs")
+
+    for relpath, blob in safe.items():
+        _push_file(ssh, vmid, blob, f"{APP_DATA_DIR}/{relpath}",
+                   perms="0777" if execs[relpath] else "0666")
+
+
+def _env_file_value(v) -> str:
+    """Значение для строки .env: одна строка на переменную + кавычение.
+
+    dotenv-парсер docker compose считает ` #` в незакавыченном значении началом
+    inline-комментария и обрезает хвост — пароль вида "pa#ss" молча превращался
+    в "pa". Такие значения (а также с ведущими/хвостовыми пробелами) оборачиваем
+    в двойные кавычки. Остальные оставляем как есть, чтобы не менять поведение
+    подстановки ($VAR) для существующих приложений.
+    """
+    s = str(v).replace("\r", " ").replace("\n", " ")
+    if "#" in s or s != s.strip():
+        return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return s
+
+
+def _env_file_content(env: Dict[str, str]) -> str:
+    return "".join(f"{k}={_env_file_value(v)}\n" for k, v in env.items())
 
 
 def _wait_ip(ssh: SSHClient, vmid: int, timeout: int) -> Optional[str]:
@@ -608,17 +770,18 @@ def poc_install(db: Session, spec: InstallSpec, on_step: StepCb = _noop) -> Inst
 
         on_step("Доставка docker-compose.yml и .env (pct push)...", 75)
         normalized, pub_port = _normalize_compose(spec.compose_yaml, spec.port,
-                                                  source=spec.source)
+                                                  source=spec.source,
+                                                  port_explicit=spec.port_explicit)
         if pub_port:
             # Порт, реально опубликованный на хосте LXC → на нём и проверяем/URL.
             spec.port = pub_port
         _push_file(ssh, vmid, normalized, f"{APP_DIR}/docker-compose.yml")
         # IP-зависимые платформенные переменные (ТЗ 5.3) заполняем здесь — IP уже известен.
         env = _platform_env(dict(spec.env_vars), ip, spec.source)
-        # значения .env: убираем переводы строк (одна строка на переменную)
-        env_content = "".join(f"{k}={str(v).replace(chr(10), ' ').replace(chr(13), ' ')}\n"
-                              for k, v in env.items())
-        _push_file(ssh, vmid, env_content, f"{APP_DIR}/.env")
+        _push_file(ssh, vmid, _env_file_content(env), f"{APP_DIR}/.env")
+        # Файлы приложения из репозитория каталога (конфиги/скрипты) — ДО
+        # подготовки bind-mount'ов, чтобы на их местах не появились пустышки.
+        _push_data_files(ssh, vmid, spec.data_files, env)
         # Bind-mount директории заранее и с правами 777 — иначе Docker создаст
         # их сам от root при первом `up`, и процессы в контейнере (напр.
         # mariadb от uid mysql) получат Permission denied на запись.
@@ -661,11 +824,15 @@ def _health_check(ip: str, port: int, timeout: int) -> bool:
 def poc_update(server, client, vmid: int, node: str, compose_yaml: str,
                env_vars: Dict[str, str], port: int, ip: str,
                on_step: StepCb = _noop, health_timeout: int = 300,
-               source: str = "runtipi") -> str:
+               source: str = "runtipi",
+               data_files: Optional[Dict[str, dict]] = None,
+               port_explicit: bool = False) -> tuple[str, int]:
     """Обновление приложения в существующем контейнере (M4): доставка нового
     docker-compose.yml → docker compose pull && up -d → health-check.
 
-    Возвращает 'running' (health OK) или 'unhealthy'.
+    Возвращает ('running' | 'unhealthy', эффективный_порт). Порт возвращаем,
+    потому что нормализация compose может опубликовать порт, отличный от
+    сохранённого в БД (ia.port), — иначе URL/health в БД укажут не туда.
     """
     ssh = _node_ssh(server, client)
     if not ssh.connect():
@@ -679,14 +846,14 @@ def poc_update(server, client, vmid: int, node: str, compose_yaml: str,
                        f"docker network create {TIPI_NETWORK}"),
             what="ensure docker network",
         )
-        normalized, pub_port = _normalize_compose(compose_yaml, port, source=source)
+        normalized, pub_port = _normalize_compose(compose_yaml, port, source=source,
+                                                  port_explicit=port_explicit)
         if pub_port:
             port = pub_port
         _push_file(ssh, vmid, normalized, f"{APP_DIR}/docker-compose.yml")
         env = _platform_env(dict(env_vars), ip, source)
-        env_content = "".join(f"{k}={str(v).replace(chr(10), ' ').replace(chr(13), ' ')}\n"
-                              for k, v in env.items())
-        _push_file(ssh, vmid, env_content, f"{APP_DIR}/.env")
+        _push_file(ssh, vmid, _env_file_content(env), f"{APP_DIR}/.env")
+        _push_data_files(ssh, vmid, data_files or {}, env)
         _prepare_bind_mounts(ssh, vmid, normalized, APP_DIR, env)
 
         on_step("docker compose pull && up -d...", 65)
@@ -699,7 +866,7 @@ def poc_update(server, client, vmid: int, node: str, compose_yaml: str,
         )
 
         on_step(f"Health-check http://{ip}:{port} ...", 88)
-        return "running" if _health_check(ip, port, health_timeout) else "unhealthy"
+        return ("running" if _health_check(ip, port, health_timeout) else "unhealthy"), port
     finally:
         ssh.close()
 
@@ -722,7 +889,17 @@ def poc_teardown(db: Session, server_id: int, vmid: int, node: Optional[str] = N
         logger.warning(f"stop_container: {e}")
 
     on_step(f"Удаление LXC {vmid}...", 70)
-    upid = client.delete_container(node, vmid, force=True)
+    try:
+        upid = client.delete_container(node, vmid, force=True)
+    except Exception as e:
+        # CT уже отсутствует (удалён вручную в Proxmox / статус orphaned) —
+        # считаем teardown успешным, иначе запись в БД нельзя удалить никогда:
+        # каждый повтор удаления падал бы на этом же месте.
+        msg = str(e).lower()
+        if "does not exist" in msg or "no such" in msg:
+            on_step(f"LXC {vmid} уже отсутствует в Proxmox — пропускаем", 100)
+            return
+        raise
     if upid:
         # Ждём реального завершения задачи, а не просто отдаём таймаут наверх:
         # иначе caller решит, что ресурсы освобождены, пока нода ещё занята

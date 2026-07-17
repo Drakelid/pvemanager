@@ -8,8 +8,8 @@ import type {
 } from '@/types/appstore';
 
 export const appstoreKeys = {
-  catalog: (q?: string, category?: string, source?: string) =>
-    ['appstore-catalog', q ?? '', category ?? '', source ?? ''] as const,
+  catalog: (q?: string, category?: string, source?: string, availableOnly = false) =>
+    ['appstore-catalog', q ?? '', category ?? '', source ?? '', availableOnly] as const,
   catalogMeta: ['appstore-catalog-meta'] as const,
   catalogApp: (id: string) => ['appstore-catalog-app', id] as const,
   installed: ['appstore-installed'] as const,
@@ -27,7 +27,7 @@ export function useCatalog(q?: string, category?: string, source?: string, avail
   if (availableOnly) params.set('available_only', 'true');
   const qs = params.toString();
   return useQuery({
-    queryKey: appstoreKeys.catalog(q, category, source),
+    queryKey: appstoreKeys.catalog(q, category, source, availableOnly),
     queryFn: () => apiClient.get<CatalogListResponse>(`/api/appstore/catalog${qs ? `?${qs}` : ''}`),
   });
 }
@@ -198,6 +198,17 @@ export function useReconcile() {
   return useMutation({
     mutationFn: () => apiClient.post<{ checked: number; changed: number }>('/api/appstore/apps/reconcile'),
     onSuccess: () => qc.invalidateQueries({ queryKey: appstoreKeys.installed }),
+  });
+}
+
+export function useAppCredentials(id: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['appstore-credentials', id],
+    queryFn: () =>
+      apiClient.get<{ credentials: Record<string, string> }>(`/api/appstore/apps/${id}/credentials`)
+        .then((r) => r.credentials),
+    enabled: enabled && id > 0,
+    refetchOnWindowFocus: false,
   });
 }
 

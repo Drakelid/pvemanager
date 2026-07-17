@@ -1542,6 +1542,26 @@ def migrate_appstore_catalog_source(conn):
     logger.info("✓ App Store catalog_apps.source column added")
 
 
+def migrate_appstore_catalog_data_files(conn):
+    """Add data_files column to catalog_apps (файлы приложения для bind-mount'ов)."""
+    if not table_exists(conn, 'catalog_apps'):
+        return
+    if column_exists(conn, 'catalog_apps', 'data_files'):
+        return
+    conn.execute(text("ALTER TABLE catalog_apps ADD COLUMN data_files JSONB"))
+    logger.info("✓ App Store catalog_apps.data_files column added")
+
+
+def migrate_appstore_default_credentials(conn):
+    """Add default_credentials column to catalog_apps (учётные данные из манифеста)."""
+    if not table_exists(conn, 'catalog_apps'):
+        return
+    if column_exists(conn, 'catalog_apps', 'default_credentials'):
+        return
+    conn.execute(text("ALTER TABLE catalog_apps ADD COLUMN default_credentials JSONB"))
+    logger.info("✓ App Store catalog_apps.default_credentials column added")
+
+
 def migrate_script_repo_metadata_format(conn):
     """Add metadata_format column to script_git_repos (header-comment | community-scripts-ct)."""
     if not table_exists(conn, 'script_git_repos'):
@@ -1601,6 +1621,8 @@ def migrate_appstore_installed(conn):
     # M4: версия, зафиксированная в pre-update снапшоте (для отката версии в БД)
     add_column_if_not_exists(conn, 'installed_apps', 'snapshot_version', 'VARCHAR(50)')
     add_column_if_not_exists(conn, 'installed_apps', 'snapshot_tipi_version', 'INTEGER')
+    # Параметры создания CT для корректного повтора установки (retry)
+    add_column_if_not_exists(conn, 'installed_apps', 'install_params', 'JSONB')
 
 
 def migrate_ipam_network_workspace(conn):
@@ -1975,6 +1997,22 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"App operations server_id migration: {e}")
+                conn.rollback()
+
+            # Migration 38: catalog_apps.data_files column (файлы приложения из репозитория)
+            try:
+                migrate_appstore_catalog_data_files(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"App Store catalog data_files migration: {e}")
+                conn.rollback()
+
+            # Migration 39: catalog_apps.default_credentials column (учётные данные из манифеста)
+            try:
+                migrate_appstore_default_credentials(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"App Store default_credentials migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

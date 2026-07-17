@@ -12,6 +12,7 @@ Catalog Service (M1) — конвертер runtipi/runtipi-appstore → таб�
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import tarfile
@@ -34,6 +35,12 @@ from ..models import CatalogApp, InstalledApp
 
 # Расширения логотипов в порядке предпочтения
 _LOGO_NAMES = ("logo.jpg", "logo.png", "logo.jpeg", "logo.webp", "logo.svg")
+
+# Лимиты на вспомогательные файлы приложения (data_files): защищаемся от
+# гигантских бинарей в репозитории каталога — они не нужны для bind-mount'ов
+# конфигов/скриптов, а раздули бы БД.
+_DATA_FILE_MAX = 512 * 1024        # на один файл
+_DATA_TOTAL_MAX = 4 * 1024 * 1024  # суммарно на приложение
 
 
 def _utcnow() -> datetime:
@@ -58,6 +65,27 @@ class AppRaw:
         self.description_md: Optional[str] = None
         self.logo_bytes: Optional[bytes] = None
         self.logo_ext: Optional[str] = None
+        # Файлы приложения, которые compose монтирует из ${APP_DATA_DIR}:
+        # {relpath: {"b64": <base64>, "exec": bool}}. Без них у ~60% приложений
+        # bind-mount'ы указывают на несуществующие конфиги/скрипты.
+        self.data_files: Dict[str, dict] = {}
+        self._data_total = 0
+
+    def add_data_file(self, relpath: str, data: bytes, mode: int) -> None:
+        """Добавить вспомогательный файл с учётом лимитов размера."""
+        if len(data) > _DATA_FILE_MAX:
+            logger.info(f"[appstore] skip data file {self.app_id}/{relpath}: "
+                        f"{len(data)} bytes > {_DATA_FILE_MAX}")
+            return
+        if self._data_total + len(data) > _DATA_TOTAL_MAX:
+            logger.info(f"[appstore] skip data file {self.app_id}/{relpath}: "
+                        f"превышен общий лимит {_DATA_TOTAL_MAX}")
+            return
+        self.data_files[relpath] = {
+            "b64": base64.b64encode(data).decode("ascii"),
+            "exec": bool(mode & 0o100),
+        }
+        self._data_total += len(data)
 
 
 # ── Провайдер источника (изоляция, риск п.13) ─────────────────────────────────
@@ -130,6 +158,12 @@ class RuntipiCatalogProvider(CatalogProvider):
                         elif len(rel) == 2 and rel[0] == "metadata" and fname in _LOGO_NAMES:
                             raw.logo_bytes = self._read(tar, member)
                             raw.logo_ext = os.path.splitext(fname)[1] or ".jpg"
+                        elif len(rel) >= 2 and rel[0] == "data":
+                            # apps/<id>/data/** — файлы, которые Runtipi копирует в
+                            # app-data и на которые compose ссылается как
+                            # ${APP_DATA_DIR}/data/<...> (конфиги, скрипты).
+                            raw.add_data_file("/".join(rel), self._read(tar, member),
+                                              member.mode)
                     except Exception as e:
                         logger.warning(f"[appstore] parse {app_id}/{'/'.join(rel)}: {e}")
         finally:
@@ -165,25 +199,33 @@ class UmbrelCatalogProvider(CatalogProvider):
                 for member in tar:
                     if not member.isfile():
                         continue
-                    # путь вида "<repo>-<ref>/<app-id>/<file>"
+                    # путь вида "<repo>-<ref>/<app-id>/<...>"
                     parts = member.name.split("/")
-                    if len(parts) != 3:
-                        continue  # интересуют только файлы в корне папки приложения
+                    if len(parts) < 3:
+                        continue
                     raw_id = parts[1]
                     if not raw_id or raw_id.startswith("."):
                         continue  # .github, .gitignore и т.п.
                     app_id = self.PREFIX + raw_id
                     fname = parts[-1].lower()
+                    rel = "/".join(parts[2:])  # путь внутри папки приложения
                     raw = apps.setdefault(app_id, AppRaw(app_id, source=self.source))
                     try:
-                        if fname == "umbrel-app.yml":
+                        if rel == "umbrel-app.yml":
                             raw.config = self._map_manifest(
                                 raw_id, yaml.safe_load(self._read(tar, member)))
-                        elif fname == "docker-compose.yml":
+                        elif rel == "docker-compose.yml":
                             raw.compose = self._read(tar, member).decode("utf-8", "replace")
-                        elif fname in _LOGO_NAMES:
+                        elif len(parts) == 3 and fname in _LOGO_NAMES:
                             raw.logo_bytes = self._read(tar, member)
                             raw.logo_ext = os.path.splitext(fname)[1] or ".jpg"
+                        elif len(parts) == 3 and fname.startswith(("icon.", "gallery")):
+                            pass  # ассеты витрины — не файлы приложения
+                        else:
+                            # Остальные файлы (включая вложенные, напр. data/**,
+                            # entrypoint.sh) Umbrel копирует в app-data приложения,
+                            # а compose монтирует их как ${APP_DATA_DIR}/<relpath>.
+                            raw.add_data_file(rel, self._read(tar, member), member.mode)
                     except Exception as e:
                         logger.warning(f"[appstore] parse umbrel {app_id}/{fname}: {e}")
         finally:
@@ -244,6 +286,17 @@ class UmbrelCatalogProvider(CatalogProvider):
         cat = meta.get("category")
         categories = [str(cat)] if cat else []
         port = meta.get("port")
+        # Учётные данные по умолчанию: без них пользователю после установки
+        # неоткуда узнать логин/пароль приложения (Umbrel показывает их в своём
+        # UI). deterministicPassword: true — пароль генерирует рантайм и
+        # передаёт через APP_PASSWORD (у нас — сгенерированный при установке).
+        default_creds = None
+        du = str(meta.get("defaultUsername") or "").strip()
+        dp = str(meta.get("defaultPassword") or "").strip()
+        deterministic = bool(meta.get("deterministicPassword"))
+        if du or dp or deterministic:
+            default_creds = {"username": du or None, "password": dp or None,
+                             "deterministic": deterministic}
         return {
             "name": meta.get("name") or raw_id,
             "version": str(meta.get("version")) if meta.get("version") is not None else None,
@@ -261,6 +314,7 @@ class UmbrelCatalogProvider(CatalogProvider):
             "dynamic_config": False,
             "source": meta.get("repo") or meta.get("website"),
             "author": meta.get("developer") or meta.get("submitter"),
+            "default_credentials": default_creds,
         }
 
 
@@ -316,6 +370,8 @@ def _build_fields(app_id: str, raw: AppRaw) -> Optional[dict]:
         "port": cfg.get("port") if isinstance(cfg.get("port"), int) else None,
         "form_fields": cfg.get("form_fields") or [],
         "compose_yaml": raw.compose,
+        "data_files": raw.data_files or None,
+        "default_credentials": cfg.get("default_credentials"),
         "architectures": archs,
         "available": available,
         "unavailable_reason": reason,

@@ -113,6 +113,15 @@ def build_env(app: CatalogApp, form_answers: dict) -> tuple[dict, dict]:
     }
     secrets_shown: dict = {}
 
+    # Umbrel: рантайм генерирует APP_PASSWORD (app password) сам, а compose
+    # ссылается на неё для паролей/ключей (ENCRYPTION_KEY, JWT_SECRET и т.п.).
+    # Без неё docker compose подставит пустую строку и приложение упадёт или
+    # останется без пароля. Генерируем здесь, чтобы значение сохранилось в
+    # env_encrypted и показалось пользователю один раз.
+    if (app.source or "runtipi") == "umbrel":
+        env["APP_PASSWORD"] = _generate_random(32)
+        secrets_shown["APP_PASSWORD"] = env["APP_PASSWORD"]
+
     for field in (app.form_fields or []):
         ev = field.get("env_variable")
         if not ev:
@@ -301,10 +310,31 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
     effective_port = port if port else app.port
 
     env, secrets_shown = build_env(app, form_answers)
+    # Учётные данные по умолчанию из манифеста (Umbrel) — показываем сразу
+    # после установки: у многих приложений это единственный способ узнать
+    # логин/пароль админа. deterministic → пароль = APP_PASSWORD (см. build_env).
+    creds = app.default_credentials or {}
+    if creds.get("username"):
+        secrets_shown["USERNAME"] = creds["username"]
+    default_pwd = env.get("APP_PASSWORD") if creds.get("deterministic") else creds.get("password")
+    if default_pwd:
+        secrets_shown["PASSWORD"] = default_pwd
     # APP_PORT в окружении должен соответствовать выбранному порту.
     if port:
         env["APP_PORT"] = str(port)
     vmid = get_next_vmid(db, server_id)
+    # Proxmox nextid не резервирует номер: пока предыдущая установка ещё не
+    # создала CT, nextid возвращает тот же VMID. Вторая установка тогда падает
+    # на create, а её retry (идемпотентность по vmid) «подхватывает» ЧУЖОЙ
+    # контейнер и заливает в него свой compose. Сдвигаемся мимо VMID, уже
+    # занятых записями installed_apps этого сервера.
+    taken = {
+        v for (v,) in db.query(InstalledApp.vmid)
+        .filter(InstalledApp.server_id == server_id, InstalledApp.vmid.isnot(None))
+        .all()
+    }
+    while vmid in taken:
+        vmid += 1
 
     # IPAM (опционально): выделяем адрес до старта пайплайна, чтобы ошибка
     # (нет свободных IP) вернулась пользователю синхронно.
@@ -323,6 +353,14 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
         tipi_version_installed=app.tipi_version,
         env_encrypted=json.dumps(env), ip=static_ip, port=effective_port, status="installing",
         owner_id=user.id,
+        # Параметры создания CT — для повтора установки: если контейнер так и
+        # не был создан, retry должен пересоздать его с ТЕМИ ЖЕ ресурсами,
+        # storage/bridge и статическим IP из IPAM, а не с дефолтами.
+        install_params={
+            "cores": cores, "memory": memory, "disk": disk,
+            "storage": storage, "bridge": bridge, "ip_config": ip_config,
+            "port_explicit": bool(port),
+        },
     )
     db.add(ia)
     db.commit()
@@ -334,6 +372,7 @@ def install(db, user, *, app_id: str, name: str, form_answers: dict,
         _run_install, ia.id, op.id, user.id, app.compose_yaml, env, golden,
         cores, memory, disk, server_id, node, name, effective_port, ia.version_installed, vmid,
         storage, bridge, ip_config, static_ip, app.source or "runtipi",
+        app.data_files or {}, bool(port),
     )
     return {"installed_app_id": ia.id, "operation_id": op.id, "vmid": vmid, "secrets": secrets_shown}
 
@@ -352,16 +391,18 @@ def _new_operation(db, installed_app_id: int, op_type: str, user_id: int,
 
 def _run_install(installed_app_id, operation_id, user_id, compose_yaml, env, ostemplate,
                  cores, memory, disk, server_id, node, name, port, version, vmid,
-                 storage, bridge, ip_config=None, static_ip=None, source="runtipi"):
+                 storage, bridge, ip_config=None, static_ip=None, source="runtipi",
+                 data_files=None, port_explicit=False):
     """Тело установки в пуле потоков."""
     db = SessionLocal()
     try:
         spec = InstallSpec(
             server_id=server_id, ostemplate=ostemplate, name=name,
-            compose_yaml=compose_yaml, port=port or 80, env_vars=env,
+            compose_yaml=compose_yaml, port=port or 80, port_explicit=port_explicit,
+            env_vars=env,
             node=node, vmid=vmid, cores=cores, memory=memory, disk=disk,
             storage=storage, bridge=bridge, ip_config=ip_config, static_ip=static_ip,
-            source=source or "runtipi",
+            source=source or "runtipi", data_files=data_files or {},
         )
 
         def on_step(step: str, progress: int) -> None:
@@ -425,13 +466,20 @@ def retry_install(db, user, installed_app_id: int) -> dict:
     db.commit()
 
     op = _new_operation(db, ia.id, "install", user.id)
-    # Контейнер уже создан (идемпотентный повтор): net0 не применяется заново,
-    # поэтому ip_config не нужен. Известный статический IP передаём, чтобы не
-    # ждать выдачи впустую (для DHCP он None → ожидание по-старому).
+    # Повтор идемпотентен по vmid: существующий контейнер не пересоздаётся
+    # (тогда params/ip_config игнорируются pайплайном). Если же CT так и не был
+    # создан — пересоздаём с исходными параметрами установки (install_params),
+    # включая статический IP из IPAM; для старых записей без install_params
+    # остаются прежние дефолты. Известный IP (ia.ip) передаём как static_ip,
+    # чтобы не ждать выдачи DHCP впустую.
+    params = ia.install_params or {}
     _engine_executor.submit(
         _run_install, ia.id, op.id, user.id, compose, env, golden,
-        2, 2048, 8, ia.server_id, ia.node, ia.name, ia.port, ia.version_installed, ia.vmid,
-        "local-lvm", "vmbr0", None, ia.ip, (app.source or "runtipi"),
+        params.get("cores", 2), params.get("memory", 2048), params.get("disk", 8),
+        ia.server_id, ia.node, ia.name, ia.port, ia.version_installed, ia.vmid,
+        params.get("storage", "local-lvm"), params.get("bridge", "vmbr0"),
+        params.get("ip_config"), ia.ip, (app.source or "runtipi"),
+        (app.data_files or {}), bool(params.get("port_explicit")),
     )
     return {"installed_app_id": ia.id, "operation_id": op.id}
 
@@ -552,13 +600,14 @@ def update(db, user, installed_app_id: int, form_answers: Optional[dict] = None)
     _engine_executor.submit(
         _run_update, ia.id, op.id, user.id, app.compose_yaml,
         str(app.version) if app.version is not None else None, app.tipi_version,
-        form_answers or {}, (app.source or "runtipi"),
+        form_answers or {}, (app.source or "runtipi"), (app.data_files or {}),
     )
     return {"installed_app_id": ia.id, "operation_id": op.id}
 
 
 def _run_update(installed_app_id, operation_id, user_id, compose_yaml,
-                new_version, new_tipi, form_answers, source="runtipi"):
+                new_version, new_tipi, form_answers, source="runtipi",
+                data_files=None):
     db = SessionLocal()
     try:
         ia = db.get(InstalledApp, installed_app_id)
@@ -594,8 +643,12 @@ def _run_update(installed_app_id, operation_id, user_id, compose_yaml,
             env[k] = str(v)
 
         # 3-4. push нового compose → pull && up → health
-        status = poc_update(server, client, ia.vmid, ia.node, compose_yaml,
-                            env, ia.port or 80, ia.ip, on_step, source=source or "runtipi")
+        status, eff_port = poc_update(
+            server, client, ia.vmid, ia.node, compose_yaml,
+            env, ia.port or 80, ia.ip, on_step,
+            source=source or "runtipi", data_files=data_files or {},
+            port_explicit=bool((ia.install_params or {}).get("port_explicit")),
+        )
 
         if status == "running":
             ia.status = "running"
@@ -603,6 +656,10 @@ def _run_update(installed_app_id, operation_id, user_id, compose_yaml,
             ia.tipi_version_installed = new_tipi
             ia.update_available = False
             ia.env_encrypted = json.dumps(env)
+            # Нормализация compose могла опубликовать другой порт — фиксируем
+            # его в БД, иначе url/health-check будут указывать не туда.
+            if eff_port:
+                ia.port = eff_port
             db.commit()
             _prune_snapshots(client, ia.node, ia.vmid, keep=snapname)  # хранить последний 1
             _finish_op(operation_id, user_id, "completed")
@@ -788,9 +845,13 @@ def reconcile(db) -> dict:
             continue
         try:
             _server, client = _client_for(db, ia.server_id)
+            if not client.is_connected():
+                # Сервер целиком недоступен (сеть/креды) — это ничего не говорит
+                # о судьбе контейнера; не помечать все приложения orphaned.
+                continue
             st = client.get_container_status(ia.node, ia.vmid)
         except Exception:
-            st = None
+            continue
 
         if not st:
             new_status = "orphaned"

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   Package, Store, ExternalLink, RotateCw, Trash2, Loader2,
-  Play, Square, RefreshCcw, FileText, ArrowUpCircle, Undo2,
+  Play, Square, RefreshCcw, FileText, ArrowUpCircle, Undo2, KeyRound, Copy,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,7 @@ import {
 import {
   useInstalledApps, useAppstoreRealtime, useRetryApp, useDeleteApp,
   useLifecycleAction, useReconcile, useAppLogs, useUpdateApp, useRollbackApp,
+  useAppCredentials,
 } from '@/hooks/use-appstore';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
 import type { InstalledApp } from '@/types/appstore';
@@ -32,6 +33,7 @@ export default function MyAppsPage() {
   const update = useUpdateApp();
   const rollback = useRollbackApp();
   const [logsApp, setLogsApp] = useState<InstalledApp | null>(null);
+  const [credsApp, setCredsApp] = useState<InstalledApp | null>(null);
 
   // ТЗ 6.6 — реконсиляция статусов при открытии экрана.
   useEffect(() => {
@@ -178,6 +180,9 @@ export default function MyAppsPage() {
                             <FileText className="h-3.5 w-3.5" />
                           </Button>
                         )}
+                        <Button size="icon-sm" variant="ghost" title={t('appstore.credentials_btn')} onClick={() => setCredsApp(a)}>
+                          <KeyRound className="h-3.5 w-3.5" />
+                        </Button>
                         {a.update_available && ['running', 'stopped', 'update_failed'].includes(a.status) && (
                           <Button size="icon-sm" variant="ghost" className="text-primary" title={t('appstore.update')} onClick={() => handleUpdate(a)} disabled={busy}>
                             <ArrowUpCircle className="h-3.5 w-3.5" />
@@ -208,7 +213,47 @@ export default function MyAppsPage() {
       )}
 
       <LogsDialog app={logsApp} onClose={() => setLogsApp(null)} />
+      <CredentialsDialog app={credsApp} onClose={() => setCredsApp(null)} />
     </div>
+  );
+}
+
+function CredentialsDialog({ app, onClose }: { app: InstalledApp | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { data: creds, isFetching } = useAppCredentials(app?.id ?? 0, !!app);
+  const entries = Object.entries(creds ?? {});
+
+  const copy = (v: string) => {
+    navigator.clipboard.writeText(v);
+    toast.success(t('appstore.copied'));
+  };
+
+  return (
+    <Dialog open={!!app} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t('appstore.credentials_title', { name: app?.name ?? '' })}</DialogTitle>
+        </DialogHeader>
+        {isFetching && !creds ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">{t('appstore.loading')}</div>
+        ) : entries.length === 0 ? (
+          <p className="py-4 text-sm text-muted-foreground">{t('appstore.no_credentials')}</p>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">{t('appstore.credentials_hint')}</p>
+            {entries.map(([k, v]) => (
+              <div key={k} className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                <span className="font-mono text-xs text-muted-foreground">{k}</span>
+                <span className="ml-auto truncate font-mono text-sm">{v}</span>
+                <Button size="icon-sm" variant="ghost" title={t('appstore.copy')} onClick={() => copy(v)}>
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

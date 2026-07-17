@@ -6,6 +6,9 @@ import { Loader2, CheckCircle2, XCircle, Copy, ExternalLink } from 'lucide-react
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  DialogMinimizeButton, MinimizedTaskPill, type MinimizedStatus,
+} from '@/components/shared/MinimizableDialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -92,6 +95,9 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
   }, [storages]);
 
   const [phase, setPhase] = useState<Phase>('form');
+  // Свёрнутое состояние: диалог скрыт, внизу справа — плашка прогресса.
+  // Компонент остаётся смонтированным, поэтому WS/опрос прогресса живут.
+  const [minimized, setMinimized] = useState(false);
   const [installedAppId, setInstalledAppId] = useState<number | null>(null);
   const [op, setOp] = useState<AppOperation | null>(null);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
@@ -124,7 +130,7 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
   );
 
   const reset = () => {
-    setPhase('form'); setOp(null); setInstalledAppId(null); setSecrets({});
+    setPhase('form'); setMinimized(false); setOp(null); setInstalledAppId(null); setSecrets({});
     setName(app.app_id); setServerId(''); setNode(''); setAnswers({});
     setAdvanced(false); setCores(2); setMemory(2048); setDisk(8);
     setStorage('local-lvm'); setBridge('vmbr0');
@@ -173,9 +179,21 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
 
   const progress = op?.progress ?? 0;
 
+  // Статус для свёрнутой плашки.
+  const pillStatus: MinimizedStatus =
+    phase === 'progress' ? 'running' : phase === 'done' ? 'done' : phase === 'failed' ? 'failed' : 'idle';
+  const lastStep = op?.steps_log?.length ? op.steps_log[op.steps_log.length - 1].step : null;
+  const pillSubtitle =
+    phase === 'progress' ? (lastStep || t('appstore.installing'))
+      : phase === 'done' ? t('appstore.done')
+        : phase === 'failed' ? t('appstore.install_failed')
+          : null;
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <>
+    <Dialog open={open && !minimized} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg">
+        <DialogMinimizeButton onClick={() => setMinimized(true)} title={t('appstore.minimize')} />
         <DialogHeader>
           <DialogTitle>{t('appstore.install_title', { name: app.name })}</DialogTitle>
         </DialogHeader>
@@ -403,6 +421,17 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {open && minimized && (
+      <MinimizedTaskPill
+        title={t('appstore.install_title', { name: app.name })}
+        subtitle={pillSubtitle}
+        progress={phase === 'progress' || phase === 'failed' ? progress : undefined}
+        status={pillStatus}
+        onRestore={() => setMinimized(false)}
+        onClose={() => handleClose(false)}
+      />
+    )}
+    </>
   );
 }
 

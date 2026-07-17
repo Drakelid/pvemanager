@@ -135,7 +135,12 @@ def app_credentials(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("app:view")),
 ):
-    """Секреты из формы (password/random) — расшифрованные. Только владелец/админ."""
+    """Секреты из формы (password/random) — расшифрованные. Только владелец/админ.
+
+    Дополнительно: учётные данные по умолчанию из манифеста источника
+    (umbrel-app.yml → default_credentials) и сгенерированный APP_PASSWORD —
+    для многих приложений это единственный способ узнать логин/пароль админа.
+    """
     ia = _get_owned(db, app_id, current_user)
     env = ia.env_dict()
     catalog = db.query(CatalogApp).filter(CatalogApp.app_id == ia.app_id).first()
@@ -143,7 +148,17 @@ def app_credentials(
     for f in (catalog.form_fields if catalog else []) or []:
         if (f.get("type") or "").lower() in ("password", "random") and f.get("env_variable"):
             secret_keys.add(f["env_variable"])
-    return {"credentials": {k: v for k, v in env.items() if k in secret_keys}}
+    creds = {k: v for k, v in env.items() if k in secret_keys}
+
+    dc = (catalog.default_credentials if catalog else None) or {}
+    if dc.get("username"):
+        creds.setdefault("USERNAME", dc["username"])
+    default_pwd = env.get("APP_PASSWORD") if dc.get("deterministic") else dc.get("password")
+    if default_pwd:
+        creds.setdefault("PASSWORD", default_pwd)
+    if env.get("APP_PASSWORD"):
+        creds.setdefault("APP_PASSWORD", env["APP_PASSWORD"])
+    return {"credentials": creds}
 
 
 @router.post("/api/appstore/apps/{app_id}/retry")

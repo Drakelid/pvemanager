@@ -45,6 +45,16 @@ class CatalogApp(Base):
     # массив объектов form_fields из config.json (см. ТЗ 6.2)
     form_fields = Column(JSON, nullable=False, default=list)
     compose_yaml = Column(Text, nullable=True)
+    # Вспомогательные файлы приложения из репозитория каталога, которые compose
+    # bind-mount'ит из ${APP_DATA_DIR} (runtipi: apps/<id>/data/**, umbrel: файлы
+    # папки приложения). Без них ~60% приложений получают пустые конфиги/скрипты
+    # и падают на старте. Формат: {relpath: {"b64": <содержимое>, "exec": bool}}.
+    data_files = Column(JSON, nullable=True)
+    # Учётные данные по умолчанию из манифеста источника (umbrel-app.yml:
+    # defaultUsername/defaultPassword/deterministicPassword). deterministic=true →
+    # реальный пароль — это сгенерированный при установке APP_PASSWORD.
+    # Формат: {"username": str|None, "password": str|None, "deterministic": bool}.
+    default_credentials = Column(JSON, nullable=True)
     architectures = Column(JSON, nullable=False, default=list)
 
     available = Column(Boolean, nullable=False, default=True, index=True)
@@ -118,6 +128,10 @@ class InstalledApp(Base):
     status = Column(String(20), nullable=False, default="installing", index=True)
     update_available = Column(Boolean, nullable=False, default=False)
     last_snapshot = Column(String(200), nullable=True)
+    # Параметры создания CT ({cores, memory, disk, storage, bridge, ip_config}) —
+    # чтобы повтор установки пересоздал контейнер с исходными настройками,
+    # а не с дефолтами (NULL у записей, созданных до появления колонки).
+    install_params = Column(JSON, nullable=True)
     # версия/tipi_version, зафиксированные в last_snapshot — для отката версии в БД (M4)
     snapshot_version = Column(String(50), nullable=True)
     snapshot_tipi_version = Column(Integer, nullable=True)

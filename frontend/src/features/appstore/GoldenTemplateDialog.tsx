@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Loader2, HardDriveDownload, CheckCircle2, XCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  DialogMinimizeButton, MinimizedTaskPill, type MinimizedStatus,
+} from '@/components/shared/MinimizableDialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -22,6 +25,9 @@ export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
 
   const [serverId, setServerId] = useState('');
   const [node, setNode] = useState('');
+  // Свёрнутое состояние: диалог скрыт, прогресс сборки — в плашке внизу справа.
+  // open остаётся true, поэтому опрос статуса (useGoldenTemplateStatus) продолжается.
+  const [minimized, setMinimized] = useState(false);
   const [templateStorage, setTemplateStorage] = useState('local');
   const [rootfsStorage, setRootfsStorage] = useState('local-lvm');
   const [force, setForce] = useState(false);
@@ -67,9 +73,19 @@ export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
     );
   };
 
+  const handleOpenChange = (o: boolean) => {
+    if (!o) setMinimized(false);
+    onOpenChange(o);
+  };
+
+  const pillStatus: MinimizedStatus =
+    running ? 'running' : op?.status === 'completed' ? 'done' : op?.status === 'failed' ? 'failed' : 'idle';
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog open={open && !minimized} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg">
+        <DialogMinimizeButton onClick={() => setMinimized(true)} title={t('appstore.minimize')} />
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HardDriveDownload className="h-5 w-5 text-primary" />
@@ -165,7 +181,7 @@ export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
             {t('common.close', 'Закрыть')}
           </Button>
           <Button onClick={handleBuild} disabled={!canSubmit}>
@@ -177,5 +193,18 @@ export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {open && minimized && (
+      <MinimizedTaskPill
+        title={t('appstore.golden.title', 'Золотой LXC-шаблон')}
+        subtitle={op?.status === 'failed'
+          ? (op.error_text || t('appstore.golden.failed', 'Ошибка сборки'))
+          : (lastStep || t('appstore.golden.working', 'Выполняется...'))}
+        progress={op ? op.progress : undefined}
+        status={pillStatus}
+        onRestore={() => setMinimized(false)}
+        onClose={() => handleOpenChange(false)}
+      />
+    )}
+    </>
   );
 }

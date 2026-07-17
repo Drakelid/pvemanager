@@ -93,6 +93,10 @@ class LxcMixin:
             """
             Сменить пароль пользователя в LXC через `pct exec` (chpasswd).
             Контейнер должен быть запущен.
+
+            REST-эндпоинта /nodes/{node}/lxc/{vmid}/exec в Proxmox нет (501),
+            поэтому выполняем pct exec по SSH (root@node) — тот же паттерн,
+            что в appstore/pipeline.py и _delete_cluster_node_via_ssh.
             """
             if not self.proxmox:
                 return {'success': False, 'error': 'Proxmox connection not initialized'}
@@ -100,16 +104,34 @@ class LxcMixin:
                 result = self.proxmox.nodes(node).lxc(vmid).status.current.get()
                 if result.get('status') != 'running':
                     return {'success': False, 'error': 'Container is not running'}
-                # Используем printf + chpasswd; shlex.quote защищает от shell-injection
-                # Proxmox exec API ожидает отдельные поля: command + args[N]
+            except Exception as e:
+                logger.error(f"Не удалось получить статус LXC {vmid}: {e}")
+                return {'success': False, 'error': str(e)}
+
+            from app.ssh_client import SSHClient
+            # self.host может содержать порт API ("1.2.3.4:8006"); SSH нужен голый хост.
+            ssh_host = self.host.split(':')[0] if self.host else self.host
+            ssh = SSHClient(
+                hostname=ssh_host,
+                username='root',
+                password=getattr(self, '_password', None),
+            )
+            try:
+                if not ssh.connect():
+                    return {'success': False, 'error': 'SSH connection to node failed'}
+                # printf + chpasswd; shlex.quote защищает от shell-injection
                 entry = shlex.quote(f'{username}:{password}')
-                cmd_str = f"printf '%s\\n' {entry} | chpasswd"
-                data = {'command': 'bash', 'args[0]': '-c', 'args[1]': cmd_str}
-                res = self.proxmox.nodes(node).lxc(vmid).exec.post(**data)
-                return {'success': True, 'result': res}
+                inner = f"printf '%s\\n' {entry} | chpasswd"
+                cmd = f"pct exec {vmid} -- bash -c {shlex.quote(inner)}"
+                output, exit_code = ssh.execute(cmd, return_exit_code=True)
+                if exit_code == 0:
+                    return {'success': True}
+                return {'success': False, 'error': output or f'chpasswd failed (exit {exit_code})'}
             except Exception as e:
                 logger.error(f"Не удалось сменить пароль в LXC {vmid}: {e}")
                 return {'success': False, 'error': str(e)}
+            finally:
+                ssh.close()
 
         def set_container_notes(self, node: str, vmid: int, description: str) -> bool:
             """Установить description (заметки) у LXC."""
