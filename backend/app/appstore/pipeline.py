@@ -444,15 +444,46 @@ def _bind_mount_hosts(compose_yaml: str, app_dir: str, env: Dict[str, str]) -> l
     return list(dict.fromkeys(hosts))
 
 
+def _is_file_mount(source: str) -> bool:
+    """Эвристика: source похож на файл, а не директорию (по имени — есть точка,
+    напр. `.env`, `config.yml`, `db.sqlite`). Docker при отсутствующем source
+    создаёт директорию — для файловых bind-mount'ов (напр. AnythingLLM монтирует
+    `.env` как файл) это ломает `docker compose up` ошибкой "not a directory:
+    Are you trying to mount a directory onto a file?".
+    """
+    name = source.rsplit("/", 1)[-1]
+    return "." in name
+
+
 def _prepare_bind_mounts(ssh: SSHClient, vmid: int, compose_yaml: str,
                          app_dir: str, env: Dict[str, str]) -> None:
-    """Pre-create хост-директорий bind-mount'ов с правами 777 (см. _bind_mount_hosts)."""
+    """Pre-create хост-путей bind-mount'ов с правами 777/666 (см. _bind_mount_hosts).
+
+    Директории — `mkdir -p`; файлоподобные source (см. _is_file_mount) — `touch`
+    родительский путь как файл, иначе Docker создаст там директорию сам.
+    """
     hosts = _bind_mount_hosts(compose_yaml, app_dir, env)
     if not hosts:
         return
-    quoted = " ".join(_shq(h) for h in hosts)
-    _run(ssh, _pct(vmid, f"mkdir -p {quoted} && chmod -R 777 {quoted}"),
-         what="prepare bind-mount dirs")
+    dirs = [h for h in hosts if not _is_file_mount(h)]
+    files = [h for h in hosts if _is_file_mount(h)]
+    cmds = []
+    if dirs:
+        q = " ".join(_shq(h) for h in dirs)
+        cmds.append(f"mkdir -p {q} && chmod -R 777 {q}")
+    for f in files:
+        parent = f.rsplit("/", 1)[0] if "/" in f else "."
+        qf, qp = _shq(f), _shq(parent)
+        # rm -rf — самовосстановление после старого бага: если source уже был
+        # ошибочно создан как директория в прошлой попытке (даже непустая —
+        # Docker ничего в неё не писал, падал раньше на самом mount), сносим
+        # её перед touch; иначе Docker потом не может смонтировать файл поверх
+        # директории ("not a directory: ... mount a directory onto a file").
+        cmds.append(
+            f"mkdir -p {qp}; if [ -d {qf} ]; then rm -rf {qf}; fi; "
+            f"[ -e {qf} ] || touch {qf}; chmod 666 {qf}"
+        )
+    _run(ssh, _pct(vmid, " && ".join(cmds)), what="prepare bind-mount dirs")
 
 
 def _push_file(ssh: SSHClient, vmid: int, content: str, dest: str) -> None:
