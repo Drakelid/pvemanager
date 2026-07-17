@@ -1,11 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Loader2, HardDriveDownload, CheckCircle2, XCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import {
-  DialogMinimizeButton, MinimizedTaskPill, type MinimizedStatus,
-} from '@/components/shared/MinimizableDialog';
+import { DialogMinimizeButton } from '@/components/shared/MinimizableDialog';
+import { useMinimizedOpsStore, goldenOpKey } from '@/stores/minimized-ops-store';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -17,17 +16,23 @@ import { useBuildGoldenTemplate, useGoldenTemplateStatus } from '@/hooks/use-app
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Предвыбор сервера при возврате из глобальной плашки (openGolden в
+  // navigation state) — чтобы диалог сразу показал прогресс нужной сборки.
+  initialServerId?: number | null;
 }
 
-export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
+export default function GoldenTemplateDialog({ open, onOpenChange, initialServerId }: Props) {
   const { t } = useTranslation();
   const { data: servers = [] } = useServers();
 
   const [serverId, setServerId] = useState('');
   const [node, setNode] = useState('');
-  // Свёрнутое состояние: диалог скрыт, прогресс сборки — в плашке внизу справа.
-  // open остаётся true, поэтому опрос статуса (useGoldenTemplateStatus) продолжается.
-  const [minimized, setMinimized] = useState(false);
+
+  // Возврат из глобальной плашки: предвыбираем сервер сборки.
+  useEffect(() => {
+    if (open && initialServerId && !serverId) setServerId(String(initialServerId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialServerId]);
   const [templateStorage, setTemplateStorage] = useState('local');
   const [rootfsStorage, setRootfsStorage] = useState('local-lvm');
   const [force, setForce] = useState(false);
@@ -73,19 +78,40 @@ export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
     );
   };
 
+  // Сворачивание — через глобальный стор: «Свернуть» добавляет сборку в
+  // MinimizedOpsTray (AppLayout) и закрывает диалог; плашка переживает
+  // навигацию, разворачивание — клик по плашке (openGolden в navigation state).
+  const addMinimized = useMinimizedOpsStore((s) => s.add);
+  const removeMinimized = useMinimizedOpsStore((s) => s.remove);
+  // true во время закрытия по «Свернуть» — чтобы handleOpenChange не снял плашку.
+  const minimizingRef = useRef(false);
+
+  const minimize = () => {
+    if (!serverIdNum) return;  // без сервера нечего отслеживать
+    addMinimized({
+      key: goldenOpKey(serverIdNum),
+      kind: 'golden-template',
+      title: t('appstore.golden.title', 'Золотой LXC-шаблон'),
+      serverId: serverIdNum,
+    });
+    minimizingRef.current = true;
+    handleOpenChange(false);
+  };
+
   const handleOpenChange = (o: boolean) => {
-    if (!o) setMinimized(false);
+    if (!o) {
+      if (!minimizingRef.current && serverIdNum) removeMinimized(goldenOpKey(serverIdNum));
+      minimizingRef.current = false;
+    }
     onOpenChange(o);
   };
 
-  const pillStatus: MinimizedStatus =
-    running ? 'running' : op?.status === 'completed' ? 'done' : op?.status === 'failed' ? 'failed' : 'idle';
-
   return (
-    <>
-    <Dialog open={open && !minimized} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg">
-        <DialogMinimizeButton onClick={() => setMinimized(true)} title={t('appstore.minimize')} />
+        {!!serverIdNum && (
+          <DialogMinimizeButton onClick={minimize} title={t('appstore.minimize')} />
+        )}
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HardDriveDownload className="h-5 w-5 text-primary" />
@@ -193,18 +219,5 @@ export default function GoldenTemplateDialog({ open, onOpenChange }: Props) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    {open && minimized && (
-      <MinimizedTaskPill
-        title={t('appstore.golden.title', 'Золотой LXC-шаблон')}
-        subtitle={op?.status === 'failed'
-          ? (op.error_text || t('appstore.golden.failed', 'Ошибка сборки'))
-          : (lastStep || t('appstore.golden.working', 'Выполняется...'))}
-        progress={op ? op.progress : undefined}
-        status={pillStatus}
-        onRestore={() => setMinimized(false)}
-        onClose={() => handleOpenChange(false)}
-      />
-    )}
-    </>
   );
 }

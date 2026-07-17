@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Package, ExternalLink, Download, AlertTriangle, Code } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,8 +14,22 @@ export default function AppDetailPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: app, isLoading } = useCatalogApp(appId);
+  const location = useLocation();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
+  // Возврат из глобальной плашки установки: мастер открывается сразу в фазе
+  // прогресса запущенной установки (resumeInstall в navigation state).
+  const [resumeId, setResumeId] = useState<number | null>(null);
+  useEffect(() => {
+    const rid = (location.state as { resumeInstall?: number } | null)?.resumeInstall;
+    if (rid) {
+      setResumeId(rid);
+      setWizardOpen(true);
+      // Очищаем state, чтобы повторное открытие мастера не «возобновляло» старую установку.
+      navigate('.', { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   if (isLoading) {
     return <div className="py-20 text-center text-sm text-muted-foreground">{t('appstore.loading')}</div>;
@@ -88,7 +102,12 @@ export default function AppDetailPage() {
         </Card>
       )}
 
-      <InstallWizard app={app} open={wizardOpen} onOpenChange={setWizardOpen} />
+      <InstallWizard
+        app={app}
+        open={wizardOpen}
+        onOpenChange={(o) => { setWizardOpen(o); if (!o) setResumeId(null); }}
+        resumeInstalledAppId={resumeId}
+      />
     </div>
   );
 }

@@ -33,6 +33,7 @@ import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import NotificationsDropdown from '@/components/shared/NotificationsDropdown';
 import CommandPalette from '@/components/shared/CommandPalette';
+import MinimizedOpsTray from '@/components/shared/MinimizedOpsTray';
 import { navGroups, canSeeNavItem } from '@/lib/nav-items';
 
 function SidebarContent() {
@@ -253,6 +254,7 @@ export default function AppLayout() {
   return (
     <div className="flex h-dvh overflow-hidden">
       <CommandPalette />
+      <MinimizedOpsTray />
 
       {/* Desktop sidebar */}
       <aside className="hidden w-[var(--sidebar-width)] shrink-0 border-r bg-card lg:block">

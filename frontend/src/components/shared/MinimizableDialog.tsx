@@ -4,10 +4,11 @@ import { cn } from '@/lib/utils';
 
 /**
  * Сворачивание модалок с долгими операциями (установка приложения, сборка
- * золотого шаблона и т.п.): кнопка «Свернуть» в шапке диалога + плавающая
- * плашка прогресса внизу справа. Родительский компонент диалога остаётся
- * смонтированным (сворачивание меняет только open у <Dialog>), поэтому
- * WS-подписки и опросы прогресса продолжают работать.
+ * золотого шаблона и т.п.): кнопка «Свернуть» в шапке диалога + плашка
+ * прогресса. Свёрнутые операции хранятся в глобальном сторе
+ * (stores/minimized-ops-store), а плашки рендерит MinimizedOpsTray в
+ * AppLayout — поэтому они переживают навигацию между страницами: прогресс
+ * опрашивает сам трей, независимо от смонтированности диалога.
  */
 
 export function DialogMinimizeButton({ onClick, title }: { onClick: () => void; title: string }) {
@@ -41,7 +42,7 @@ export function MinimizedTaskPill({ title, subtitle, progress, status, onRestore
     <div
       role="button"
       tabIndex={0}
-      className="fixed bottom-4 right-4 z-50 w-72 cursor-pointer rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg ring-1 ring-foreground/10 transition-colors hover:bg-accent/40"
+      className="w-72 cursor-pointer rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg ring-1 ring-foreground/10 transition-colors hover:bg-accent/40"
       onClick={onRestore}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onRestore(); }}
     >

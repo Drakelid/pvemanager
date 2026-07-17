@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -6,9 +6,8 @@ import { Loader2, CheckCircle2, XCircle, Copy, ExternalLink } from 'lucide-react
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  DialogMinimizeButton, MinimizedTaskPill, type MinimizedStatus,
-} from '@/components/shared/MinimizableDialog';
+import { DialogMinimizeButton } from '@/components/shared/MinimizableDialog';
+import { useMinimizedOpsStore, installOpKey } from '@/stores/minimized-ops-store';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -29,11 +28,14 @@ interface Props {
   app: CatalogApp;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Возобновление наблюдения за уже запущенной установкой (клик по глобальной
+  // плашке после навигации): мастер открывается сразу в фазе прогресса.
+  resumeInstalledAppId?: number | null;
 }
 
 type Phase = 'form' | 'progress' | 'done' | 'failed';
 
-export default function InstallWizard({ app, open, onOpenChange }: Props) {
+export default function InstallWizard({ app, open, onOpenChange, resumeInstalledAppId }: Props) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: servers = [] } = useServers();
@@ -95,10 +97,15 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
   }, [storages]);
 
   const [phase, setPhase] = useState<Phase>('form');
-  // Свёрнутое состояние: диалог скрыт, внизу справа — плашка прогресса.
-  // Компонент остаётся смонтированным, поэтому WS/опрос прогресса живут.
-  const [minimized, setMinimized] = useState(false);
   const [installedAppId, setInstalledAppId] = useState<number | null>(null);
+
+  // Сворачивание — через глобальный стор: «Свернуть» добавляет операцию в
+  // MinimizedOpsTray (AppLayout) и закрывает диалог; плашка переживает
+  // навигацию, разворачивание — клик по плашке (navigation state → resume).
+  const addMinimized = useMinimizedOpsStore((s) => s.add);
+  const removeMinimized = useMinimizedOpsStore((s) => s.remove);
+  // true во время закрытия по «Свернуть» — чтобы handleClose не снял плашку.
+  const minimizingRef = useRef(false);
   const [op, setOp] = useState<AppOperation | null>(null);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
 
@@ -129,8 +136,17 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
     [app.form_fields],
   );
 
+  // Возобновление после навигации (клик по глобальной плашке).
+  useEffect(() => {
+    if (open && resumeInstalledAppId && phase === 'form' && installedAppId == null) {
+      setInstalledAppId(resumeInstalledAppId);
+      setPhase('progress');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, resumeInstalledAppId]);
+
   const reset = () => {
-    setPhase('form'); setMinimized(false); setOp(null); setInstalledAppId(null); setSecrets({});
+    setPhase('form'); setOp(null); setInstalledAppId(null); setSecrets({});
     setName(app.app_id); setServerId(''); setNode(''); setAnswers({});
     setAdvanced(false); setCores(2); setMemory(2048); setDisk(8);
     setStorage('local-lvm'); setBridge('vmbr0');
@@ -139,7 +155,14 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
   };
 
   const handleClose = (o: boolean) => {
-    if (!o) reset();
+    if (!o) {
+      // Полное закрытие (не сворачивание) снимает плашку этой установки, если была.
+      if (!minimizingRef.current && installedAppId != null) {
+        removeMinimized(installOpKey(installedAppId));
+      }
+      minimizingRef.current = false;
+      reset();
+    }
     onOpenChange(o);
   };
 
@@ -179,21 +202,25 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
 
   const progress = op?.progress ?? 0;
 
-  // Статус для свёрнутой плашки.
-  const pillStatus: MinimizedStatus =
-    phase === 'progress' ? 'running' : phase === 'done' ? 'done' : phase === 'failed' ? 'failed' : 'idle';
-  const lastStep = op?.steps_log?.length ? op.steps_log[op.steps_log.length - 1].step : null;
-  const pillSubtitle =
-    phase === 'progress' ? (lastStep || t('appstore.installing'))
-      : phase === 'done' ? t('appstore.done')
-        : phase === 'failed' ? t('appstore.install_failed')
-          : null;
+  const minimize = () => {
+    if (installedAppId == null) return;  // до старта установки сворачивать нечего
+    addMinimized({
+      key: installOpKey(installedAppId),
+      kind: 'appstore-install',
+      title: t('appstore.install_title', { name: app.name }),
+      installedAppId,
+      appId: app.app_id,
+    });
+    minimizingRef.current = true;
+    handleClose(false);
+  };
 
   return (
-    <>
-    <Dialog open={open && !minimized} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg">
-        <DialogMinimizeButton onClick={() => setMinimized(true)} title={t('appstore.minimize')} />
+        {installedAppId != null && (
+          <DialogMinimizeButton onClick={minimize} title={t('appstore.minimize')} />
+        )}
         <DialogHeader>
           <DialogTitle>{t('appstore.install_title', { name: app.name })}</DialogTitle>
         </DialogHeader>
@@ -421,17 +448,6 @@ export default function InstallWizard({ app, open, onOpenChange }: Props) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    {open && minimized && (
-      <MinimizedTaskPill
-        title={t('appstore.install_title', { name: app.name })}
-        subtitle={pillSubtitle}
-        progress={phase === 'progress' || phase === 'failed' ? progress : undefined}
-        status={pillStatus}
-        onRestore={() => setMinimized(false)}
-        onClose={() => handleClose(false)}
-      />
-    )}
-    </>
   );
 }
 

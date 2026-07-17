@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Store, Search, RefreshCw, Loader2, Package, HardDriveDownload } from 'lucide-react';
@@ -20,6 +20,18 @@ export default function AppStorePage() {
   const [source, setSource] = useState<string>('');
   const [goldenOpen, setGoldenOpen] = useState(false);
   const isAdmin = useAuthStore((s) => s.user?.is_admin ?? false);
+  const location = useLocation();
+  // Возврат из глобальной плашки сборки шаблона: открываем диалог с нужным сервером.
+  const [goldenServerId, setGoldenServerId] = useState<number | null>(null);
+  useEffect(() => {
+    const sid = (location.state as { openGolden?: number } | null)?.openGolden;
+    if (sid) {
+      setGoldenServerId(sid);
+      setGoldenOpen(true);
+      navigate('.', { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const { data: catalog, isLoading } = useCatalog(search, category, source);
   const { data: meta } = useCatalogMeta();
@@ -175,7 +187,13 @@ export default function AppStorePage() {
         </a>
       </div>
 
-      {isAdmin && <GoldenTemplateDialog open={goldenOpen} onOpenChange={setGoldenOpen} />}
+      {isAdmin && (
+        <GoldenTemplateDialog
+          open={goldenOpen}
+          onOpenChange={(o) => { setGoldenOpen(o); if (!o) setGoldenServerId(null); }}
+          initialServerId={goldenServerId}
+        />
+      )}
     </div>
   );
 }
