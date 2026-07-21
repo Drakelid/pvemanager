@@ -73,6 +73,24 @@ def require_vm_access(db: Session, current_user: User, server_id: int, vmid: int
         )
 
 
+def get_owned_vmids(db: Session, current_user: User, server_id: Optional[int] = None) -> set:
+    """
+    Set of VMIDs the user owns (optionally scoped to a single Proxmox server).
+
+    Used to filter live Proxmox resource listings (which carry no owner
+    information) down to instances the tenant actually owns. Only meaningful for
+    non-privileged users — callers should skip filtering when
+    ``can_view_all_instances`` is True.
+    """
+    query = db.query(VMInstance.vmid).filter(
+        VMInstance.owner_id == current_user.id,
+        VMInstance.deleted_at.is_(None),
+    )
+    if server_id is not None:
+        query = query.filter(VMInstance.server_id == server_id)
+    return {row[0] for row in query.all()}
+
+
 def _get_proxmox_client(server: ProxmoxServer) -> ProxmoxClient:
     """Build a ProxmoxClient from a ProxmoxServer model (password or token auth).
 

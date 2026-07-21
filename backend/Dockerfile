@@ -54,6 +54,7 @@ COPY migrations ./migrations
 COPY alembic ./alembic
 COPY alembic.ini .
 COPY init_admin.py .
+COPY assign_instances_owner.py .
 
 HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=5 \
     CMD curl -fs http://localhost:8000/health || exit 1

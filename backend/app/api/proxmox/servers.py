@@ -18,7 +18,8 @@ from ...logging_service import LoggingService
 from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         get_next_vmid, archive_and_delete_snapshots,
-                        save_vm_instance, get_vm_instance, soft_delete_vm_instance)
+                        save_vm_instance, get_vm_instance, soft_delete_vm_instance,
+                        can_view_all_instances, get_owned_vmids)
 
 router = APIRouter()
 
@@ -510,7 +511,15 @@ def get_server_resources(
         # Фильтруем шаблоны - они не должны считаться как VM
         vms = [vm for vm in resources.get('vms', []) if not vm.get('template', 0)]
         containers = [ct for ct in resources.get('containers', []) if not ct.get('template', 0)]
-        
+
+        # Изоляция по владельцу: обычный пользователь видит на ноде только свои
+        # инстансы. Живые данные Proxmox не содержат owner_id, поэтому сверяемся
+        # с локальным кэшем vm_instances по vmid.
+        if not can_view_all_instances(current_user):
+            owned = get_owned_vmids(db, current_user, server_id)
+            vms = [vm for vm in vms if vm.get('vmid') in owned]
+            containers = [ct for ct in containers if ct.get('vmid') in owned]
+
         # Получаем uptime ноды
         node_uptime = None
         try:
@@ -550,13 +559,16 @@ def get_all_resources(
 ):
     """API для получения всех ресурсов со всех Proxmox серверов"""
     proxmox_servers = db.query(ProxmoxServer).all()
-    
+
+    # Обычный пользователь видит только свои инстансы во всех агрегатах.
+    is_privileged = can_view_all_instances(current_user)
+
     all_resources = {
         "servers": [],
         "total_vms": 0,
         "total_containers": 0
     }
-    
+
     for server in proxmox_servers:
         try:
             logger.info(f"Getting resources from server {server.name}, use_password={server.use_password}")
@@ -580,7 +592,13 @@ def get_all_resources(
             
             vms = resources.get('vms', [])
             containers = resources.get('containers', [])
-            
+
+            # Изоляция по владельцу (живые данные Proxmox не содержат owner_id).
+            if not is_privileged:
+                owned = get_owned_vmids(db, current_user, server.id)
+                vms = [vm for vm in vms if vm.get('vmid') in owned]
+                containers = [ct for ct in containers if ct.get('vmid') in owned]
+
             logger.info(f"Got {len(vms)} VMs and {len(containers)} containers from {server.name}")
             
             server.update_status(True)
