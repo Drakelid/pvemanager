@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { apiClient } from '@/lib/api-client';
+import { queryClient } from '@/lib/query-client';
 import type { User, LoginRequest, AuthResponse } from '@/types';
 
 interface AuthState {
@@ -34,6 +35,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       apiClient.setToken(data.access_token);
+      // Сбрасываем кэш React Query: иначе новый пользователь увидит
+      // закэшированные данные предыдущего (список инстансов и т.п.).
+      queryClient.clear();
       set({ token: data.access_token, isAuthenticated: true, isLoading: false });
 
       // Load user info
@@ -54,6 +58,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Ignore logout errors
     }
     apiClient.setToken(null);
+    // Полностью очищаем кэш запросов, чтобы данные не утекли следующему
+    // пользователю, который войдёт в этой же вкладке.
+    queryClient.clear();
     set({ user: null, token: null, isAuthenticated: false });
   },
 
