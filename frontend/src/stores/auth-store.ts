@@ -13,7 +13,23 @@ interface AuthState {
   login: (credentials: LoginRequest) => Promise<{ twoFactorRequired: boolean }>;
   logout: () => Promise<void>;
   loadUser: () => Promise<void>;
+  impersonate: (userId: number) => Promise<void>;
+  stopImpersonate: () => Promise<void>;
   clearError: () => void;
+}
+
+// Swap the active token for a freshly-issued one (impersonation start/stop),
+// resetting the React Query cache so the previous identity's data cannot leak,
+// then reload the current-user info under the new token.
+async function switchToken(
+  set: (partial: Partial<AuthState>) => void,
+  token: string,
+): Promise<void> {
+  apiClient.setToken(token);
+  queryClient.clear();
+  set({ token, isAuthenticated: true });
+  const user = await apiClient.get<User>('/api/auth/me');
+  set({ user });
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -79,6 +95,18 @@ export const useAuthStore = create<AuthState>((set) => ({
       apiClient.setToken(null);
       set({ user: null, token: null, isAuthenticated: false, isLoading: false });
     }
+  },
+
+  impersonate: async (userId: number) => {
+    const data = await apiClient.post<AuthResponse>(`/api/auth/impersonate/${userId}`);
+    if (!data.access_token) throw new Error('Impersonation failed');
+    await switchToken(set, data.access_token);
+  },
+
+  stopImpersonate: async () => {
+    const data = await apiClient.post<AuthResponse>('/api/auth/stop-impersonate');
+    if (!data.access_token) throw new Error('Failed to return to admin');
+    await switchToken(set, data.access_token);
   },
 
   clearError: () => set({ error: null }),

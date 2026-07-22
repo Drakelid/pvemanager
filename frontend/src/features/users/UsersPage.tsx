@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
-  Search, Plus, Shield, ShieldOff, Trash2, RotateCcw, Unlock, Pencil, Server, LogOut, Ban, KeyRound, Gauge,
+  Search, Plus, Shield, ShieldOff, Trash2, RotateCcw, Unlock, Pencil, Server, LogOut, Ban, KeyRound, Gauge, UserCog,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,6 +32,7 @@ import {
   type Role, type SecuritySettings,
 } from '@/hooks/use-users';
 import { SSHKeysManager } from '@/features/settings/SSHKeysManager';
+import { useAuthStore } from '@/stores/auth-store';
 
 // ==================== Helpers ====================
 
@@ -83,6 +85,9 @@ export default function UsersPage() {
 
 function UsersTab() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const currentUser = useAuthStore(s => s.user);
+  const impersonate = useAuthStore(s => s.impersonate);
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
@@ -96,6 +101,18 @@ function UsersTab() {
   const unlockUser = useUnlockUser();
   const disable2FA = useDisableUser2FA();
   const terminateSessions = useTerminateUserSessions();
+
+  const canImpersonate = !!currentUser?.is_admin && !currentUser?.impersonator;
+
+  const handleImpersonate = async (u: User) => {
+    try {
+      await impersonate(u.id);
+      toast.success(t('users.impersonate_started', { name: u.username }));
+      navigate('/dashboard');
+    } catch (e) {
+      toast.error(getErrMsg(e));
+    }
+  };
 
   const filtered = users.filter(u => {
     if (!search) return true;
@@ -193,6 +210,15 @@ function UsersTab() {
                       >
                         <KeyRound className="h-3.5 w-3.5" />
                       </Button>
+                      {canImpersonate && !u.is_admin && u.id !== currentUser?.id && u.is_active && (
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title={t('users.impersonate')}
+                          onClick={() => handleImpersonate(u)}
+                        >
+                          <UserCog className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost" size="icon" className="h-7 w-7"
                         title={t('users.reset_password')}

@@ -17,14 +17,17 @@ from ..schemas import (
 )
 from ..services import two_factor_service as tfa
 from ..auth import (
-    get_password_hash, 
-    verify_password, 
+    get_password_hash,
+    verify_password,
     create_access_token,
+    decode_access_token,
     get_current_user,
     get_current_active_admin,
     get_client_ip,
-    get_current_session_token
+    get_current_session_token,
+    security,
 )
+from fastapi.security import HTTPAuthorizationCredentials
 from ..config import settings, utcnow
 from ..logging_service import LoggingService
 from ..services.security_service import SecurityService
@@ -294,8 +297,138 @@ def logout(
     return {"message": "Successfully logged out"}
 
 
+# ==================== Impersonation ====================
+
+
+def _user_is_admin(user: User) -> bool:
+    """Whether the user has administrator privileges (flag or admin role)."""
+    return bool(user.is_admin or (user.role and user.role.name == "admin"))
+
+
+@router.post("/api/auth/impersonate/{user_id}", response_model=Token)
+def impersonate_user(
+    user_id: int,
+    request: Request,
+    admin: User = Depends(get_current_active_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    """Issue a token acting as another user, keeping a link back to the admin.
+
+    Only administrators may impersonate. The returned JWT carries an
+    ``impersonator`` claim (the admin's username) so ``/stop-impersonate`` can
+    restore the original admin session. Nested impersonation is rejected.
+    """
+    # Reject nested impersonation: the acting admin must not already be
+    # impersonating someone else.
+    payload = decode_access_token(credentials.credentials)
+    if payload.get("impersonator"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Already impersonating. Return to your admin account first.",
+        )
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if target.id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot impersonate yourself"
+        )
+    if not target.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot impersonate a disabled user"
+        )
+    if _user_is_admin(target):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Cannot impersonate another administrator"
+        )
+
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "")[:500]
+
+    session, _ = SecurityService.create_session(db, target, client_ip, user_agent)
+
+    session_timeout = SecurityService.get_setting_int(db, "session_timeout_minutes", 60)
+    access_token = create_access_token(
+        data={"sub": target.username, "impersonator": admin.username},
+        session_token=session.session_token,
+        expires_delta=timedelta(minutes=session_timeout),
+    )
+
+    LoggingService.log_auth(
+        db=db,
+        action="impersonate_start",
+        username=admin.username,
+        ip_address=client_ip,
+        success=True,
+        user_agent=user_agent,
+        user_id=admin.id,
+        details={"target_user_id": target.id, "target_username": target.username},
+    )
+    logger.warning(f"Admin {admin.username} started impersonating {target.username}")
+
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/api/auth/stop-impersonate", response_model=Token)
+def stop_impersonating(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    """Return to the original admin account after impersonating a user."""
+    payload = decode_access_token(credentials.credentials)
+    impersonator_username = payload.get("impersonator")
+    if not impersonator_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Not currently impersonating"
+        )
+
+    admin = db.query(User).filter(User.username == impersonator_username).first()
+    if not admin or not admin.is_active or not _user_is_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Original administrator account is no longer available",
+        )
+
+    # Terminate the impersonation session so it does not linger.
+    impersonation_session = payload.get("session")
+    if impersonation_session:
+        SecurityService.terminate_session(db, impersonation_session)
+
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "")[:500]
+
+    session, _ = SecurityService.create_session(db, admin, client_ip, user_agent)
+
+    session_timeout = SecurityService.get_setting_int(db, "session_timeout_minutes", 60)
+    access_token = create_access_token(
+        data={"sub": admin.username},
+        session_token=session.session_token,
+        expires_delta=timedelta(minutes=session_timeout),
+    )
+
+    LoggingService.log_auth(
+        db=db,
+        action="impersonate_stop",
+        username=admin.username,
+        ip_address=client_ip,
+        success=True,
+        user_agent=user_agent,
+        user_id=admin.id,
+        details={"impersonated_username": payload.get("sub")},
+    )
+    logger.warning(f"Admin {admin.username} stopped impersonating {payload.get('sub')}")
+
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
 @router.get("/api/auth/me")
-def get_current_user_info(current_user: User = Depends(get_current_user)):
+def get_current_user_info(
+    current_user: User = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
     """Get current user information with permissions"""
     permissions = {}
     if current_user.role:
@@ -308,6 +441,14 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
             for perm in perms:
                 permissions[perm] = True
     
+    # Expose the impersonator (original admin username) so the SPA can render a
+    # "return to admin" banner while acting as another user.
+    impersonator = None
+    try:
+        impersonator = decode_access_token(credentials.credentials).get("impersonator")
+    except HTTPException:
+        impersonator = None
+
     return {
         "id": current_user.id,
         "username": current_user.username,
@@ -315,6 +456,7 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         "full_name": current_user.full_name,
         "is_admin": current_user.is_admin,
         "is_active": current_user.is_active,
+        "impersonator": impersonator,
         "role": {
             "id": current_user.role.id if current_user.role else None,
             "name": current_user.role.name if current_user.role else ("admin" if current_user.is_admin else "user"),

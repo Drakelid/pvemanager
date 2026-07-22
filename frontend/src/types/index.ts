@@ -16,6 +16,9 @@ export interface User {
   locked_until?: string | null;
   require_password_change?: boolean;
   two_factor_enabled?: boolean;
+  // Set to the original admin's username while that admin is impersonating this
+  // user; null/undefined during a normal session.
+  impersonator?: string | null;
   // Map of "resource:action" -> granted. Admins receive every permission.
   permissions?: Record<string, boolean>;
 }

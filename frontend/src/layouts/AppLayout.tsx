@@ -11,7 +11,9 @@ import {
   Check,
   Search,
   FolderKanban,
+  UserCog,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import {
@@ -183,6 +185,41 @@ function WorkspaceSwitcher() {
   );
 }
 
+function ImpersonationBanner() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  const stopImpersonate = useAuthStore((s) => s.stopImpersonate);
+
+  if (!user?.impersonator) return null;
+
+  const handleReturn = async () => {
+    try {
+      await stopImpersonate();
+      toast.success(t('users.impersonate_stopped'));
+      navigate('/dashboard');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/15 px-4 py-2 text-sm text-amber-700 dark:text-amber-300 lg:px-6">
+      <div className="flex min-w-0 items-center gap-2">
+        <UserCog className="h-4 w-4 shrink-0" />
+        <span className="truncate">
+          {t('users.impersonating_as', { name: user.username })}
+          <span className="text-muted-foreground"> · {t('users.impersonated_by', { name: user.impersonator })}</span>
+        </span>
+      </div>
+      <Button size="sm" variant="outline" onClick={handleReturn} className="shrink-0">
+        <LogOut className="mr-1.5 h-3.5 w-3.5" />
+        {t('users.return_to_admin')}
+      </Button>
+    </div>
+  );
+}
+
 function TopBar() {
   const { theme, toggleTheme } = useThemeStore();
   const { i18n, t } = useTranslation();
@@ -263,6 +300,7 @@ export default function AppLayout() {
 
       {/* Main area */}
       <div className="flex flex-1 flex-col overflow-hidden">
+        <ImpersonationBanner />
         <TopBar />
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet />
