@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { apiClient } from '@/lib/api-client';
 import { queryClient } from '@/lib/query-client';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { User, LoginRequest, AuthResponse } from '@/types';
 
 interface AuthState {
@@ -27,6 +28,9 @@ async function switchToken(
 ): Promise<void> {
   apiClient.setToken(token);
   queryClient.clear();
+  // Reset the active workspace: the previous identity's selection (sent via the
+  // X-Active-Workspace header) may not belong to the new one.
+  useWorkspaceStore.getState().setActiveWorkspace(null);
   set({ token, isAuthenticated: true });
   const user = await apiClient.get<User>('/api/auth/me');
   set({ user });
