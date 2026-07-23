@@ -77,7 +77,11 @@ def list_proxmox_servers(
         _attach_workspaces(db, servers)
         return servers
 
-    # Non-privileged user: must be directly assigned AND server must be in one of their workspaces
+    # Non-privileged user: access is granted either by a direct server
+    # assignment OR by membership in a workspace that contains the server.
+    # Adding a user to a workspace is therefore sufficient to let them create
+    # instances on that workspace's servers — no separate direct assignment
+    # is required.
     assigned_ids = {s.id for s in current_user.assigned_servers}
 
     # Collect server IDs accessible through user's workspaces
@@ -95,8 +99,8 @@ def list_proxmox_servers(
     else:
         ws_server_ids = set()
 
-    # Intersect: directly assigned AND within user's workspaces
-    effective_ids = assigned_ids & ws_server_ids
+    # Union: directly assigned OR within user's workspaces
+    effective_ids = assigned_ids | ws_server_ids
 
     # Also apply active-workspace header filter on top
     ws_filter = get_workspace_server_ids(request, db, current_user)

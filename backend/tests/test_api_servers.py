@@ -60,16 +60,16 @@ class TestAPIServers:
         db_session.add(workspace)
         db_session.commit()
 
-        # Link the assigned server and the standard user to the workspace
+        # Link the assigned server and the standard user to the workspace.
+        # Note: no direct assigned_servers link — workspace membership alone
+        # must be enough to grant access (so the user can create instances).
         ws_server = WorkspaceServer(workspace_id=workspace.id, server_id=server_assigned.id)
         ws_user = WorkspaceUser(workspace_id=workspace.id, user_id=seed_users["user"].id)
         db_session.add_all([ws_server, ws_user])
-
-        # Directly assign the server to the user as well
-        seed_users["user"].assigned_servers.append(server_assigned)
         db_session.commit()
 
-        # Now standard user should see only the assigned server in their workspace
+        # Now standard user should see the workspace server without any direct
+        # assignment, but not the unassigned server outside their workspaces.
         response2 = client.get("/proxmox/api/servers", headers=user_headers)
         assert response2.status_code == 200
         servers = response2.json()
