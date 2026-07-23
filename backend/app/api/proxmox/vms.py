@@ -65,10 +65,12 @@ def _cleanup_installed_apps(db: Session, server_id: int, vmid: int) -> int:
 
 import time as time_lib
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _live_metrics_cache = {}
 _live_metrics_lock = threading.Lock()
 METRICS_TTL = 10  # seconds
+METRICS_MAX_WORKERS = 8  # parallel Proxmox fetches for the VM list
 
 from ...models import TaskQueue
 from ...services.task_queue_service import TaskQueueService, process_task_queue
@@ -199,35 +201,48 @@ def get_all_virtual_machines(
     # Map: (server_id_in_db, vmid) -> live data dict
     live_metrics: dict[tuple[int, int], dict] = {}
     
+    # Serve whatever the cache still covers and collect the servers to refresh.
+    # The lock guards the dict only — never a network call, otherwise concurrent
+    # requests queue up behind each other's Proxmox timeouts.
+    stale_servers = []
+    now = time_lib.time()
     with _live_metrics_lock:
-        now = time_lib.time()
         for server in servers:
-            cache_key = server.id
-            if cache_key in _live_metrics_cache and (now - _live_metrics_cache[cache_key]['time']) < METRICS_TTL:
-                # Use cached metrics
-                for vmid, res in _live_metrics_cache[cache_key]['data'].items():
+            cached = _live_metrics_cache.get(server.id)
+            if cached and (now - cached['time']) < METRICS_TTL:
+                for vmid, res in cached['data'].items():
                     live_metrics[(server.id, vmid)] = res
                 continue
-                
-            try:
-                client = _get_proxmox_client(server)
-                if not client.is_connected():
+            # An offline server contributes nothing but a connection timeout —
+            # the cached VM rows already carry its last known status.
+            if server.is_online is False:
+                continue
+            stale_servers.append(server)
+
+    def _fetch_live_metrics(server: ProxmoxServer) -> dict[int, dict]:
+        """One /cluster/resources call → {vmid: resource}. Runs off the request thread."""
+        client = _get_proxmox_client(server)
+        return {
+            res['vmid']: res
+            for res in client.get_cluster_resources(type_='vm')
+            if res.get('vmid') is not None
+        }
+
+    # Refresh in parallel: one unreachable cluster must not serialise the rest.
+    if stale_servers:
+        with ThreadPoolExecutor(max_workers=min(METRICS_MAX_WORKERS, len(stale_servers))) as pool:
+            futures = {pool.submit(_fetch_live_metrics, s): s for s in stale_servers}
+            for future in as_completed(futures):
+                server = futures[future]
+                try:
+                    server_metrics = future.result()
+                except Exception as e:
+                    logger.debug(f"Could not fetch live metrics from {server.name}: {e}")
                     continue
-                
-                server_metrics = {}
-                for res in client.get_cluster_resources(type_='vm'):
-                    vmid = res.get('vmid')
-                    if vmid is None:
-                        continue
+                for vmid, res in server_metrics.items():
                     live_metrics[(server.id, vmid)] = res
-                    server_metrics[vmid] = res
-                    
-                _live_metrics_cache[cache_key] = {
-                    'time': now,
-                    'data': server_metrics
-                }
-            except Exception as e:
-                logger.debug(f"Could not fetch live metrics from {server.name}: {e}")
+                with _live_metrics_lock:
+                    _live_metrics_cache[server.id] = {'time': time_lib.time(), 'data': server_metrics}
 
     result = []
     

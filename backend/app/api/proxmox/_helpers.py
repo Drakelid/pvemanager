@@ -41,6 +41,58 @@ def can_view_all_instances(current_user: User) -> bool:
     return bool(perms.get('vm:manage', False))
 
 
+def get_visible_server_ids(
+    request: Request, db: Session, current_user: User
+) -> Optional[set]:
+    """
+    Set of Proxmox server IDs the user may see, or ``None`` for "no restriction".
+
+    Two filters combine here:
+
+    * **Access** — privileged users (admin/moderator) see every server; everyone
+      else sees servers assigned to them directly OR reachable through a
+      workspace they belong to. Adding a user to a workspace is therefore
+      enough — no separate direct assignment is required.
+    * **Active workspace** — the ``X-Active-Workspace`` header narrows the result
+      further, for privileged and non-privileged users alike.
+
+    ``None`` means "everything" (privileged user with no active workspace) and is
+    deliberately distinct from an empty set, which means "nothing visible".
+    Callers must treat the two differently — that distinction is exactly what
+    ``/api/cluster/topology`` used to get wrong by skipping this check entirely.
+    """
+    from ...api.workspaces import get_workspace_server_ids
+    from ...models import WorkspaceUser, WorkspaceServer
+
+    ws_filter = get_workspace_server_ids(request, db, current_user)
+
+    is_privileged = current_user.is_admin or (
+        current_user.role and current_user.role.name in ('admin', 'moderator')
+    )
+    if is_privileged:
+        return None if ws_filter is None else set(ws_filter)
+
+    assigned_ids = {s.id for s in current_user.assigned_servers}
+
+    user_ws_ids = {
+        r.workspace_id for r in
+        db.query(WorkspaceUser.workspace_id).filter(WorkspaceUser.user_id == current_user.id).all()
+    }
+    ws_server_ids = set()
+    if user_ws_ids:
+        ws_server_ids = {
+            r.server_id for r in
+            db.query(WorkspaceServer.server_id).filter(
+                WorkspaceServer.workspace_id.in_(user_ws_ids)
+            ).all()
+        }
+
+    effective_ids = assigned_ids | ws_server_ids
+    if ws_filter is not None:
+        effective_ids &= set(ws_filter)
+    return effective_ids
+
+
 def check_vm_access(db: Session, current_user: User, server_id: int, vmid: int) -> bool:
     """
     Check if user has access to a specific VM instance.

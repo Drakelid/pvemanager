@@ -5,7 +5,7 @@ Endpoints for creating Proxmox clusters, joining nodes, ejecting nodes,
 and preparing nodes for join (backup + cleanup).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from loguru import logger
@@ -16,7 +16,7 @@ from ...db import get_db
 from ...models import ProxmoxServer, User
 from ...auth import PermissionChecker
 from ...proxmox import ProxmoxClient
-from ._helpers import _get_proxmox_client, _extract_fingerprint
+from ._helpers import _get_proxmox_client, _extract_fingerprint, get_visible_server_ids
 from ...proxmox import _run_in_executor
 
 router = APIRouter()
@@ -58,14 +58,25 @@ def _get_password_client(server: ProxmoxServer, override_password: str = None) -
 
 @router.get("/api/cluster/topology")
 def get_cluster_topology(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("server:view")),
 ):
     """
-    Получить все серверы, сгруппированные по кластеру.
+    Получить серверы, видимые пользователю, сгруппированные по кластеру.
     Standalone-серверы (cluster_name=NULL) — в отдельном списке.
+
+    Фильтруется так же, как GET /api/servers: по доступу пользователя и по
+    активной рабочей области (заголовок X-Active-Workspace).
     """
-    servers = db.query(ProxmoxServer).all()
+    visible_ids = get_visible_server_ids(request, db, current_user)
+    if visible_ids is not None and not visible_ids:
+        return {"clusters": {}, "standalone": []}
+
+    query = db.query(ProxmoxServer)
+    if visible_ids is not None:
+        query = query.filter(ProxmoxServer.id.in_(visible_ids))
+    servers = query.all()
 
     clusters: dict = {}
     standalone = []

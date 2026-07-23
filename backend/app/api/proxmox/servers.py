@@ -8,6 +8,9 @@ import ssl
 import asyncio
 import httpx
 import websockets
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+RESOURCES_MAX_WORKERS = 8  # parallel Proxmox fetches for /api/resources/all
 
 from ...db import get_db
 from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
@@ -19,7 +22,7 @@ from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         get_next_vmid, archive_and_delete_snapshots,
                         save_vm_instance, get_vm_instance, soft_delete_vm_instance,
-                        can_view_all_instances, get_owned_vmids)
+                        can_view_all_instances, get_owned_vmids, get_visible_server_ids)
 
 router = APIRouter()
 
@@ -59,58 +62,15 @@ def list_proxmox_servers(
     db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("server:view"))
 ):
-    """Получить список всех Proxmox серверов (фильтруется по активному workspace)"""
-    from ...api.workspaces import get_workspace_server_ids
-    from ...models import WorkspaceUser, WorkspaceServer
-
-    is_privileged = current_user.is_admin or (
-        current_user.role and current_user.role.name in ('admin', 'moderator')
-    )
-
-    if is_privileged:
-        # Privileged: use workspace filter only
-        server_ids = get_workspace_server_ids(request, db, current_user)
-        query = db.query(ProxmoxServer).order_by(ProxmoxServer.id)
-        if server_ids is not None:
-            query = query.filter(ProxmoxServer.id.in_(server_ids))
-        servers = query.all()
-        _attach_workspaces(db, servers)
-        return servers
-
-    # Non-privileged user: access is granted either by a direct server
-    # assignment OR by membership in a workspace that contains the server.
-    # Adding a user to a workspace is therefore sufficient to let them create
-    # instances on that workspace's servers — no separate direct assignment
-    # is required.
-    assigned_ids = {s.id for s in current_user.assigned_servers}
-
-    # Collect server IDs accessible through user's workspaces
-    user_ws_ids = {
-        r.workspace_id for r in
-        db.query(WorkspaceUser.workspace_id).filter(WorkspaceUser.user_id == current_user.id).all()
-    }
-    if user_ws_ids:
-        ws_server_ids = {
-            r.server_id for r in
-            db.query(WorkspaceServer.server_id).filter(
-                WorkspaceServer.workspace_id.in_(user_ws_ids)
-            ).all()
-        }
-    else:
-        ws_server_ids = set()
-
-    # Union: directly assigned OR within user's workspaces
-    effective_ids = assigned_ids | ws_server_ids
-
-    # Also apply active-workspace header filter on top
-    ws_filter = get_workspace_server_ids(request, db, current_user)
-    if ws_filter is not None:
-        effective_ids = effective_ids & set(ws_filter)
-
-    if not effective_ids:
+    """Получить список всех Proxmox серверов (фильтруется по доступу и активному workspace)"""
+    visible_ids = get_visible_server_ids(request, db, current_user)
+    if visible_ids is not None and not visible_ids:
         return []
 
-    servers = db.query(ProxmoxServer).filter(ProxmoxServer.id.in_(effective_ids)).order_by(ProxmoxServer.id).all()
+    query = db.query(ProxmoxServer).order_by(ProxmoxServer.id)
+    if visible_ids is not None:
+        query = query.filter(ProxmoxServer.id.in_(visible_ids))
+    servers = query.all()
     _attach_workspaces(db, servers)
     return servers
 
@@ -566,11 +526,26 @@ def get_server_resources(
 
 @router.get("/api/resources/all")
 def get_all_resources(
-    db: Session = Depends(get_db), 
+    request: Request,
+    db: Session = Depends(get_db),
     current_user: User = Depends(PermissionChecker("vm:view"))
 ):
-    """API для получения всех ресурсов со всех Proxmox серверов"""
-    proxmox_servers = db.query(ProxmoxServer).all()
+    """API для получения ресурсов со всех видимых пользователю Proxmox серверов.
+
+    Набор серверов фильтруется так же, как в GET /api/servers: по доступу
+    пользователя и по активной рабочей области. Иначе агрегаты (total_vms,
+    total_containers) считались бы по всей панели, а не по текущей области.
+    """
+    visible_ids = get_visible_server_ids(request, db, current_user)
+    if visible_ids is not None and not visible_ids:
+        return JSONResponse(content={"servers": [], "total_vms": 0, "total_containers": 0})
+
+    # order_by: without it Postgres returns heap order, which shifts every time
+    # update_status rewrites a row — the server list would reshuffle per request.
+    servers_q = db.query(ProxmoxServer).order_by(ProxmoxServer.id)
+    if visible_ids is not None:
+        servers_q = servers_q.filter(ProxmoxServer.id.in_(visible_ids))
+    proxmox_servers = servers_q.all()
 
     # Обычный пользователь видит только свои инстансы во всех агрегатах.
     is_privileged = can_view_all_instances(current_user)
@@ -581,71 +556,87 @@ def get_all_resources(
         "total_containers": 0
     }
 
+    # Credentials are read here, on the request thread — the worker threads get
+    # plain kwargs so they never touch the ORM (Session is not thread-safe and a
+    # lazy load from a worker would blow up mid-request).
+    fetch_args = {}
     for server in proxmox_servers:
-        try:
-            logger.info(f"Getting resources from server {server.name}, use_password={server.use_password}")
-            # Создаём клиента для каждого сервера независимо
-            if server.use_password:
-                resources = get_proxmox_resources(
-                    host=server.ip_address,
-                    user=server.api_user,
-                    password=server.password,
-                    verify_ssl=server.verify_ssl
-                )
-            else:
-                logger.info(f"Using API token for {server.name}: user={server.api_user}")
-                resources = get_proxmox_resources(
-                    host=server.ip_address,
-                    user=server.api_user,
-                    token_name=server.api_token_name,
-                    token_value=server.api_token_value,
-                    verify_ssl=server.verify_ssl
-                )
-            
-            vms = resources.get('vms', [])
-            containers = resources.get('containers', [])
+        logger.info(f"Getting resources from server {server.name}, use_password={server.use_password}")
+        common = dict(host=server.ip_address, user=server.api_user, verify_ssl=server.verify_ssl)
+        if server.use_password:
+            fetch_args[server.id] = {**common, 'password': server.password}
+        else:
+            logger.info(f"Using API token for {server.name}: user={server.api_user}")
+            fetch_args[server.id] = {
+                **common,
+                'token_name': server.api_token_name,
+                'token_value': server.api_token_value,
+            }
 
-            # Изоляция по владельцу (живые данные Proxmox не содержат owner_id).
-            if not is_privileged:
-                owned = get_owned_vmids(db, current_user, server.id)
-                vms = [vm for vm in vms if vm.get('vmid') in owned]
-                containers = [ct for ct in containers if ct.get('vmid') in owned]
+    # One slow or unreachable server must not hold up the rest: total wait is the
+    # slowest server, not the sum of all of them.
+    fetched: dict[int, dict] = {}
+    errors: dict[int, str] = {}
+    if proxmox_servers:
+        with ThreadPoolExecutor(max_workers=min(RESOURCES_MAX_WORKERS, len(proxmox_servers))) as pool:
+            futures = {
+                pool.submit(get_proxmox_resources, **fetch_args[s.id]): s
+                for s in proxmox_servers
+            }
+            for future in as_completed(futures):
+                server = futures[future]
+                try:
+                    fetched[server.id] = future.result()
+                except Exception as e:
+                    logger.error(f"Error getting resources from server {server.name} ({server.ip_address}): {e}")
+                    errors[server.id] = str(e)
 
-            logger.info(f"Got {len(vms)} VMs and {len(containers)} containers from {server.name}")
-            
-            server.update_status(True)
-            db.commit()
-            
+    # Assemble in the original server order — the response must not reshuffle
+    # depending on which cluster happened to answer first.
+    for server in proxmox_servers:
+        if server.id in errors:
+            server.update_status(False, errors[server.id])
             all_resources["servers"].append({
                 "id": server.id,
                 "name": server.name,
                 "ip": server.ip_address,
-                "vms": vms,
-                "containers": containers,
-                "vms_count": len(vms),
-                "containers_count": len(containers)
-            })
-            
-            all_resources["total_vms"] += len(vms)
-            all_resources["total_containers"] += len(containers)
-            
-        except Exception as e:
-            logger.error(f"Error getting resources from server {server.name} ({server.ip_address}): {e}")
-            server.update_status(False, str(e))
-            db.commit()
-            all_resources["servers"].append({
-                "id": server.id,
-                "name": server.name,
-                "ip": server.ip_address,
-                "error": str(e),
+                "error": errors[server.id],
                 "vms": [],
                 "containers": [],
                 "vms_count": 0,
                 "containers_count": 0
             })
-            # Продолжаем обработку следующего сервера
             continue
-    
+
+        resources = fetched.get(server.id) or {}
+        vms = resources.get('vms', [])
+        containers = resources.get('containers', [])
+
+        # Изоляция по владельцу (живые данные Proxmox не содержат owner_id).
+        if not is_privileged:
+            owned = get_owned_vmids(db, current_user, server.id)
+            vms = [vm for vm in vms if vm.get('vmid') in owned]
+            containers = [ct for ct in containers if ct.get('vmid') in owned]
+
+        logger.info(f"Got {len(vms)} VMs and {len(containers)} containers from {server.name}")
+
+        server.update_status(True)
+
+        all_resources["servers"].append({
+            "id": server.id,
+            "name": server.name,
+            "ip": server.ip_address,
+            "vms": vms,
+            "containers": containers,
+            "vms_count": len(vms),
+            "containers_count": len(containers)
+        })
+
+        all_resources["total_vms"] += len(vms)
+        all_resources["total_containers"] += len(containers)
+
+    db.commit()  # single commit for every status update, instead of one per server
+
     return JSONResponse(content=all_resources)
 
 
