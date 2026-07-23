@@ -15,10 +15,14 @@ export const nodeKeys = {
   networks: (serverId: number, node: string) => ['node-networks', serverId, node] as const,
 };
 
-export function useServers() {
+export function useServers(options?: { allWorkspaces?: boolean }) {
+  const allWorkspaces = options?.allWorkspaces ?? false;
   return useQuery({
-    queryKey: nodeKeys.servers,
-    queryFn: () => apiClient.get<ProxmoxServer[]>('/proxmox/api/servers'),
+    queryKey: allWorkspaces ? [...nodeKeys.servers, 'all-workspaces'] : nodeKeys.servers,
+    // '0' — просьба к бэкенду игнорировать фильтр активной рабочей области
+    // (актуально для админ-экранов вроде управления рабочими областями,
+    // где нужен полный список серверов, а не только текущей области).
+    queryFn: () => apiClient.get<ProxmoxServer[]>('/proxmox/api/servers', allWorkspaces ? { headers: { 'X-Active-Workspace': '0' } } : undefined),
     refetchInterval: 30000,
   });
 }

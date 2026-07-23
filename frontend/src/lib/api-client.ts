@@ -114,9 +114,13 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const wsId = getActiveWorkspaceId();
-    if (wsId) {
-      headers['X-Active-Workspace'] = String(wsId);
+    // Явно переданный заголовок (например, '0' — «показать все области») не
+    // должен перезатираться значением активной рабочей области по умолчанию.
+    if (!('X-Active-Workspace' in headers)) {
+      const wsId = getActiveWorkspaceId();
+      if (wsId) {
+        headers['X-Active-Workspace'] = String(wsId);
+      }
     }
 
     const res = await fetch(`${API_BASE}${path}`, {
@@ -150,8 +154,8 @@ class ApiClient {
     return res.json();
   }
 
-  get<T>(path: string) {
-    return this.request<T>(path);
+  get<T>(path: string, options?: { headers?: Record<string, string> }) {
+    return this.request<T>(path, options?.headers ? { headers: options.headers } : undefined);
   }
 
   post<T>(path: string, body?: unknown) {

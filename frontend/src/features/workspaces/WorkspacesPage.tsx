@@ -134,7 +134,9 @@ function EditWorkspaceDialog({
   const [description, setDescription] = useState(initialDescription);
 
   const { data: workspace } = useWorkspace(workspaceId);
-  const { data: allServers = [] } = useServers();
+  // allWorkspaces: этот диалог назначает серверы рабочей области, поэтому
+  // список не должен фильтроваться заголовком активной рабочей области.
+  const { data: allServers = [] } = useServers({ allWorkspaces: true });
   const { data: allUsers = [] } = useUsers();
   const updateServers = useUpdateWorkspaceServers();
   const updateUsers = useUpdateWorkspaceUsers();
