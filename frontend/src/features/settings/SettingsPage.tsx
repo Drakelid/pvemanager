@@ -668,11 +668,24 @@ function AboutTab() {
           </div>
         )}
 
-        {/* Update in progress banner */}
-        {status?.is_updating && (
-          <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-            <p className="font-medium">{t('settings.update_in_progress')}</p>
-            <p className="text-xs text-muted-foreground">{status.stage} — {status.progress}%</p>
+        {/* Update in progress / failed banner */}
+        {status && (status.is_updating || status.stage === 'failed' || status.error) && (
+          <div className={`rounded-md border p-3 text-sm ${
+            status.stage === 'failed' || status.error
+              ? 'border-destructive/40 bg-destructive/10'
+              : 'border-warning/40 bg-warning/10'
+          }`}>
+            {status.stage === 'failed' || status.error ? (
+              <>
+                <p className="font-medium text-destructive">{t('settings.update_failed')}</p>
+                {status.error && <p className="mt-1 text-xs text-muted-foreground">{status.error}</p>}
+              </>
+            ) : (
+              <>
+                <p className="font-medium">{t('settings.update_in_progress')}</p>
+                <p className="text-xs text-muted-foreground">{status.stage} — {status.progress}%</p>
+              </>
+            )}
             <Button size="sm" variant="ghost" className="mt-2" onClick={() => resetUpdate.mutate()} disabled={resetUpdate.isPending}>
               {t('settings.update_reset')}
             </Button>

@@ -217,7 +217,12 @@ export function useUpdateStatus(poll = false) {
   return useQuery({
     queryKey: settingsKeys.updateStatus,
     queryFn: () => apiClient.get<UpdateStatus>('/settings/api/updates/status'),
-    refetchInterval: poll ? 3000 : false,
+    // Poll while an update is actually running (server-driven), so a page reload
+    // on a stuck update keeps refreshing until it succeeds or times out — not
+    // only right after the user clicked "Update" in this tab. `poll` starts the
+    // loop immediately after clicking, before the first status arrives.
+    refetchInterval: (query) =>
+      poll || query.state.data?.is_updating ? 3000 : false,
   });
 }
 

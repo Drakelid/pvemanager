@@ -26,6 +26,13 @@ GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', None)
 # Отключить проверку обновлений (для приватных репозиториев без токена)
 DISABLE_UPDATE_CHECK = os.environ.get('DISABLE_UPDATE_CHECK', 'false').lower() == 'true'
 
+# Максимальное время «идёт обновление» (сек). Успешное обновление перезапускает
+# сам контейнер app, обнуляя in-memory статус, поэтому если процесс живёт с
+# is_updating=True дольше этого срока — хостовый watchdog не смог пересобрать/
+# перезапустить панель (OOM при сборке, ребут хоста, сервис лёг). По истечении
+# статус переводится в терминальный "failed", чтобы UI не висел на 80% вечно.
+UPDATE_TIMEOUT_SECONDS = int(os.environ.get('UPDATE_TIMEOUT_SECONDS', '900'))
+
 # Статус обновления (in-memory)
 update_status = {
     "is_updating": False,
@@ -353,7 +360,41 @@ async def check_for_updates() -> Dict[str, Any]:
 
 
 def get_update_status() -> Dict[str, Any]:
-    """Получить текущий статус обновления"""
+    """Получить текущий статус обновления.
+
+    Самовосстановление: если обновление «идёт» дольше UPDATE_TIMEOUT_SECONDS,
+    значит контейнер так и не был перезапущен (успешное обновление перезапускает
+    процесс и обнуляет статус). Переводим в терминальный "failed" с понятной
+    ошибкой — иначе UI застревает на «restarting — 80%» навсегда.
+    """
+    global update_status
+
+    if update_status["is_updating"] and update_status.get("started_at"):
+        try:
+            started = datetime.fromisoformat(update_status["started_at"])
+            elapsed = (datetime.now() - started).total_seconds()
+            if elapsed > UPDATE_TIMEOUT_SECONDS:
+                update_status = {
+                    "is_updating": False,
+                    "started_at": update_status["started_at"],
+                    "stage": "failed",
+                    "progress": update_status.get("progress", 0),
+                    "error": (
+                        f"Update timed out after {UPDATE_TIMEOUT_SECONDS // 60} min: "
+                        "the panel was not rebuilt/restarted. The host update service "
+                        "(pvemanager-update.service) likely failed — check "
+                        "logs/update_host.log on the host (a common cause is the build "
+                        "running out of memory when no swap is configured)."
+                    ),
+                    "completed": False,
+                }
+                logger.warning(
+                    "Update marked as failed: exceeded %ss timeout without restart",
+                    UPDATE_TIMEOUT_SECONDS,
+                )
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Could not parse update started_at: {e}")
+
     return update_status.copy()
 
 

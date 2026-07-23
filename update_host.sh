@@ -92,13 +92,23 @@ while true; do
         # пересобираются, но без повторного apt/pip/npm на каждый деплой.
         # --pull обновляет базовые образы. --no-cache НЕ используем: он молотил
         # сборку с нуля каждый пуш и за пару недель раздул build cache до десятков ГБ.
-        log "[2/4] docker compose build --pull app frontend..."
-        if $COMPOSE_CMD build --pull app frontend >> "$LOG_FILE" 2>&1; then
-            log "[2/4] build OK"
-        else
-            log "[2/4] ERROR: build failed — стек НЕ трогаем, остаётся на старой версии"
-            continue
-        fi
+        # Собираем ПОСЛЕДОВАТЕЛЬНО (по одному сервису), а не разом: параллельная
+        # сборка app (компиляция pydantic-core/pynacl) и frontend (vite/npm —
+        # главный пожиратель RAM) даёт пиковую нагрузку, которая на хостах без
+        # swap уводит машину в OOM/ребут посреди сборки. Один сервис за раз —
+        # заметно ниже пик памяти при том же кэшировании слоёв.
+        log "[2/4] docker compose build --pull (sequential: app, then frontend)..."
+        build_ok=1
+        for svc in app frontend; do
+            log "[2/4] building $svc..."
+            if ! $COMPOSE_CMD build --pull "$svc" >> "$LOG_FILE" 2>&1; then
+                log "[2/4] ERROR: build of $svc failed — стек НЕ трогаем, остаётся на старой версии"
+                build_ok=0
+                break
+            fi
+        done
+        [ "$build_ok" -eq 1 ] || continue
+        log "[2/4] build OK"
 
         # ── Step 3: docker compose down ───────────────────────────────────────
         # Быстрый: образы уже готовы, простой минимален.

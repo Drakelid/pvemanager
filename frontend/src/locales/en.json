@@ -1324,6 +1324,7 @@
     "update_confirm": "Start the update? The panel will pull the latest version, rebuild and restart — it will be briefly unavailable.",
     "update_started": "Update started",
     "update_in_progress": "Update in progress",
+    "update_failed": "Update failed",
     "update_reset": "Reset status",
     "send_test": "Send test",
     "test_email_placeholder": "test@example.com",
