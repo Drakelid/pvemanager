@@ -260,6 +260,14 @@ def update_proxmox_server(
     
     # Если изменились учётные данные - очищаем кеш
     update_data = server_data.model_dump(exclude_unset=True)
+
+    # Пустая строка в полях учётных данных означает "не менять" (клиент
+    # присылает их пустыми, т.к. секреты не возвращаются с бэкенда) —
+    # иначе она затирает реальный токен/пароль и сервер уходит в offline.
+    for cred_field in ('api_token_name', 'api_token_value', 'password'):
+        if update_data.get(cred_field) == '':
+            update_data.pop(cred_field)
+
     if any(key in update_data for key in ['password', 'api_token_name', 'api_token_value', 'api_user']):
         clear_server_cache(server.ip_address)
         logger.info(f"Cleared cache for server {server.ip_address} due to credential update")

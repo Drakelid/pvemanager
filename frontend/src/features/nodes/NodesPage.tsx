@@ -118,6 +118,7 @@ function ServerFormDialog({
   initialData,
   onSubmit,
   isPending,
+  serverId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -148,10 +149,17 @@ function ServerFormDialog({
       verify_ssl: form.verify_ssl,
       description: form.description || undefined,
     };
+    // При редактировании поля учётных данных приходят в форму пустыми
+    // (бэкенд не возвращает секреты), поэтому пустое значение здесь значит
+    // "не менять" — отправлять его нельзя, иначе бэкенд затрёт реальный
+    // токен/пароль пустой строкой и сервер уйдёт в offline.
+    const isEdit = serverId != null;
     if (form.use_password) {
-      payload.use_password = true;
-      payload.password = form.password;
-    } else {
+      if (!isEdit || form.password) {
+        payload.use_password = true;
+        payload.password = form.password;
+      }
+    } else if (!isEdit || form.api_token_name || form.api_token_value) {
       payload.api_token_name = form.api_token_name;
       payload.api_token_value = form.api_token_value;
     }
