@@ -2,6 +2,10 @@
 
 Git commit messages (`git commit -m`) must always be written in English, regardless of the language used elsewhere in the conversation.
 
+## No co-author trailer
+
+Do not add a `Co-Authored-By:` trailer (or any co-authorship line) to commit messages in this project.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
