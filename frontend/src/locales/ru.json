@@ -596,6 +596,7 @@
     "disk": "Диск",
     "uptime": "Аптайм",
     "cluster_nodes": "Узлы кластера",
+    "instances_on_server": "Инстансы на сервере",
     "tab_overview": "Обзор",
     "tab_network": "Сеть",
     "tab_ha": "HA",

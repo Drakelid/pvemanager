@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -83,7 +84,7 @@ export default function NodeDetailPage() {
   const { data: server } = useServer(sid);
   const { data: nodesData } = useNodes(sid);
   const { data: clusterInfo } = useClusterInfo(sid);
-  const { data: allVMs = [] } = useVirtualMachines();
+  const { data: allVMs = [], isLoading: vmsLoading } = useVirtualMachines();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const nodes = nodesData?.nodes || [];
@@ -166,9 +167,24 @@ export default function NodeDetailPage() {
           )}
 
           <div className="space-y-3">
-            <h2 className="text-lg font-semibold">{t('nodes.instances_on_server')} ({serverVMs.length})</h2>
+            <h2 className="text-lg font-semibold">
+              {t('nodes.instances_on_server', 'Инстансы на сервере')}{vmsLoading ? '' : ` (${serverVMs.length})`}
+            </h2>
             <div className="rounded-lg border divide-y">
-              {serverVMs.map(vm => (
+              {vmsLoading && (
+                <div className="space-y-3 p-4" aria-busy="true" aria-label={t('common.loading', 'Загрузка…')}>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <Skeleton className="h-2 w-2 rounded-full" />
+                      <Skeleton className="h-4 flex-1 max-w-[220px]" />
+                      <Skeleton className="h-4 w-10" />
+                      <Skeleton className="h-4 w-12" />
+                      <Skeleton className="h-4 w-16" />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!vmsLoading && serverVMs.map(vm => (
                 <Link
                   key={`${vm.server_id}-${vm.vmid}`}
                   to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`}
@@ -181,7 +197,7 @@ export default function NodeDetailPage() {
                   <span className="text-xs text-muted-foreground">{vm.node}</span>
                 </Link>
               ))}
-              {serverVMs.length === 0 && (
+              {!vmsLoading && serverVMs.length === 0 && (
                 <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t('common.no_data')}</p>
               )}
             </div>

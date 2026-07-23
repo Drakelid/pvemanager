@@ -596,6 +596,7 @@
     "disk": "Disk",
     "uptime": "Uptime",
     "cluster_nodes": "Cluster Nodes",
+    "instances_on_server": "Instances on server",
     "tab_overview": "Overview",
     "tab_network": "Network",
     "tab_ha": "HA",
