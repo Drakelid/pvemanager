@@ -73,6 +73,8 @@ export interface ProxmoxServerCreate {
   api_token_value?: string;
   use_password?: boolean;
   password?: string;
+  /** Authenticate once with the password, then let the panel create its own API token. */
+  auto_create_token?: boolean;
   verify_ssl?: boolean;
   description?: string;
 }

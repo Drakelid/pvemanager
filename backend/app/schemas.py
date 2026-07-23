@@ -126,53 +126,6 @@ class ResetPasswordRequest(BaseModel):
 
 # ==================== Proxmox Server Schemas ====================
 
-class ProxmoxServerBase(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100, description="Server name")
-    hostname: str = Field(..., min_length=1, max_length=255, description="Server hostname/FQDN")
-    ip_address: str = Field(..., min_length=7, max_length=50, description="IP address")
-    port: int = Field(default=8006, ge=1, le=65535, description="Proxmox API port")
-    api_user: str = Field(default="root@pam", max_length=100, description="API username (e.g., root@pam)")
-    api_token_name: Optional[str] = Field(None, max_length=100, description="API token name")
-    api_token_value: Optional[str] = Field(None, max_length=255, description="API token value")
-    use_password: bool = Field(default=False, description="Use password instead of token")
-    password: Optional[str] = Field(None, max_length=255, description="Password (if use_password=True)")
-    verify_ssl: bool = Field(default=False, description="Verify SSL certificate")
-    description: Optional[str] = Field(None, description="Server description")
-
-    @field_validator('ip_address')
-    @classmethod
-    def validate_ip_address(cls, v):
-        """Validate IP address or hostname/FQDN"""
-        return validate_host(v)
-
-    @field_validator('name')
-    @classmethod
-    def validate_name(cls, v):
-        """Validate server name"""
-        if not v or not v.strip():
-            raise ValueError('Server name cannot be empty')
-        return v.strip()
-
-    @field_validator('hostname')
-    @classmethod
-    def validate_hostname(cls, v):
-        """Validate hostname"""
-        if not v or not v.strip():
-            raise ValueError('Hostname cannot be empty')
-        return v.strip()
-
-    @model_validator(mode='after')
-    def validate_auth_config(self):
-        """Validate authentication configuration"""
-        if self.use_password:
-            if not self.password:
-                raise ValueError('Password is required when use_password=True')
-        else:
-            if not self.api_token_name or not self.api_token_value:
-                raise ValueError('API token name and value are required when using token auth')
-        return self
-
-
 class ProxmoxServerCreate(BaseModel):
     """Schema for creating a new Proxmox server"""
     name: str = Field(..., min_length=1, max_length=100, description="Server name")
@@ -184,6 +137,10 @@ class ProxmoxServerCreate(BaseModel):
     api_token_value: Optional[str] = Field(None, max_length=255, description="API token value")
     use_password: bool = Field(default=False, description="Use password instead of token")
     password: Optional[str] = Field(None, max_length=255, description="Password (if use_password=True)")
+    auto_create_token: bool = Field(
+        default=False,
+        description="Authenticate with the password once, then let the panel create its own API token",
+    )
     verify_ssl: bool = Field(default=False, description="Verify SSL certificate")
     description: Optional[str] = Field(None, description="Server description")
 
@@ -212,7 +169,12 @@ class ProxmoxServerCreate(BaseModel):
     @model_validator(mode='after')
     def validate_auth_config(self):
         """Validate authentication configuration"""
-        if self.use_password:
+        if self.auto_create_token:
+            # The token does not exist yet — it is created during registration
+            # using this password, so only the password is required here.
+            if not self.password:
+                raise ValueError('Password is required when auto_create_token=True')
+        elif self.use_password:
             if not self.password:
                 raise ValueError('Password is required when use_password=True')
         else:

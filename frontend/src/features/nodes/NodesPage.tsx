@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Server, Monitor, Container, Plus, Pencil, Trash2, Wifi, Loader2, Clock, Layers, LayoutGrid, ExternalLink } from 'lucide-react';
+import { Server, Monitor, Container, Plus, Pencil, Trash2, Wifi, Loader2, Clock, Layers, LayoutGrid, ExternalLink, KeyRound } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestServerCredentials, useNodes } from '@/hooks/use-nodes';
+import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestServerCredentials, useProvisionServerToken, useNodes } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
 import type { ProxmoxServer, ProxmoxServerCreate } from '@/types';
 import { formatUptime } from '@/lib/format';
@@ -83,15 +83,23 @@ function WorkspaceChips({ server }: { server: ProxmoxServer }) {
   );
 }
 
+/**
+ * How the panel authenticates to Proxmox:
+ * - auto     — log in with the password once, panel creates its own API token
+ * - token    — an API token created by hand in the PVE UI
+ * - password — password auth on every call (legacy)
+ */
+type AuthMode = 'auto' | 'token' | 'password';
+
 interface ServerFormData {
   name: string;
   hostname: string;
   ip_address: string;
   port: string;
   api_user: string;
+  auth_mode: AuthMode;
   api_token_name: string;
   api_token_value: string;
-  use_password: boolean;
   password: string;
   verify_ssl: boolean;
   description: string;
@@ -103,9 +111,9 @@ const emptyForm: ServerFormData = {
   ip_address: '',
   port: '8006',
   api_user: 'root@pam',
+  auth_mode: 'auto',
   api_token_name: '',
   api_token_value: '',
-  use_password: false,
   password: '',
   verify_ssl: false,
   description: '',
@@ -154,7 +162,11 @@ function ServerFormDialog({
     // "не менять" — отправлять его нельзя, иначе бэкенд затрёт реальный
     // токен/пароль пустой строкой и сервер уйдёт в offline.
     const isEdit = serverId != null;
-    if (form.use_password) {
+    if (form.auth_mode === 'auto') {
+      // Пароль уходит на бэкенд, тот подключается им один раз и создаёт токен.
+      payload.auto_create_token = true;
+      payload.password = form.password;
+    } else if (form.auth_mode === 'password') {
       if (!isEdit || form.password) {
         payload.use_password = true;
         payload.password = form.password;
@@ -170,8 +182,13 @@ function ServerFormDialog({
     onSubmit(buildPayload());
   };
 
+  const credentialsMissing =
+    form.auth_mode === 'token'
+      ? !form.api_token_name || !form.api_token_value
+      : !form.password;
+
   const handleTest = () => {
-    if (form.use_password ? !form.password : (!form.api_token_name || !form.api_token_value)) {
+    if (credentialsMissing) {
       toast.error(t('nodes.connection_failed'));
       return;
     }
@@ -208,21 +225,22 @@ function ServerFormDialog({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="use_password"
-              checked={form.use_password}
-              onChange={e => set('use_password', e.target.checked)}
-            />
-            <Label htmlFor="use_password" className="cursor-pointer">{t('nodes.use_password')}</Label>
+          <div>
+            <Label>{t('nodes.auth_mode')}</Label>
+            <select
+              value={form.auth_mode}
+              onChange={e => set('auth_mode', e.target.value as AuthMode)}
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none"
+            >
+              {/* Перевыпуск токена для существующего сервера — отдельным
+                  действием на карточке, а не через форму редактирования. */}
+              {serverId == null && <option value="auto">{t('nodes.auth_mode_auto')}</option>}
+              <option value="token">{t('nodes.auth_mode_token')}</option>
+              <option value="password">{t('nodes.auth_mode_password')}</option>
+            </select>
           </div>
 
-          {form.use_password ? (
-            <div>
-              <Label>{t('wizard.password')}</Label>
-              <Input type="password" value={form.password} onChange={e => set('password', e.target.value)} className="mt-1" />
-            </div>
-          ) : (
+          {form.auth_mode === 'token' ? (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t('nodes.api_token_name')}</Label>
@@ -232,6 +250,14 @@ function ServerFormDialog({
                 <Label>{t('nodes.api_token_value')}</Label>
                 <Input value={form.api_token_value} onChange={e => set('api_token_value', e.target.value)} className="mt-1" placeholder="xxxxxxxx-xxxx-..." />
               </div>
+            </div>
+          ) : (
+            <div>
+              <Label>{t('wizard.password')}</Label>
+              <Input type="password" value={form.password} onChange={e => set('password', e.target.value)} className="mt-1" />
+              {form.auth_mode === 'auto' && (
+                <p className="mt-1 text-xs text-muted-foreground">{t('nodes.auth_mode_auto_hint')}</p>
+              )}
             </div>
           )}
 
@@ -278,6 +304,7 @@ export default function NodesPage() {
   const createServer = useCreateServer();
   const updateServer = useUpdateServer();
   const deleteServer = useDeleteServer();
+  const provisionToken = useProvisionServerToken();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -306,6 +333,14 @@ export default function NodesPage() {
   const handleDelete = async (id: number, name: string) => {
     if (!await confirm(`${t('common.confirm_delete')} "${name}"?`)) return;
     deleteServer.mutate(id, {
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  const handleProvisionToken = async (id: number, name: string) => {
+    if (!await confirm(t('nodes.switch_to_token_confirm', { name }), { title: t('nodes.switch_to_token') })) return;
+    provisionToken.mutate(id, {
+      onSuccess: (res) => toast.success(t('nodes.switch_to_token_ok', { token: res.token_name })),
       onError: (err) => toast.error(err.message),
     });
   };
@@ -353,6 +388,18 @@ export default function NodesPage() {
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Button>
+                    {srv.use_password && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        title={t('nodes.switch_to_token')}
+                        disabled={provisionToken.isPending}
+                        onClick={() => handleProvisionToken(srv.id, srv.name)}
+                      >
+                        <KeyRound className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -365,9 +412,9 @@ export default function NodesPage() {
                           ip_address: srv.ip_address,
                           port: String(srv.port || 8006),
                           api_user: srv.api_user || 'root@pam',
+                          auth_mode: srv.use_password ? 'password' : 'token',
                           api_token_name: '',
                           api_token_value: '',
-                          use_password: false,
                           password: '',
                           verify_ssl: srv.verify_ssl || false,
                           description: srv.description || '',

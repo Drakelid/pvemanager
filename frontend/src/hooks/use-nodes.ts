@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import type { ProxmoxServer, ProxmoxNode, ProxmoxServerCreate, NodeNetworkInterface } from '@/types';
 import { vmKeys } from './use-instances';
@@ -53,11 +53,76 @@ export function useNodeStatus(serverId: number, node: string) {
   });
 }
 
-export function useNodeRrddata(serverId: number, node: string, timeframe = 'hour') {
-  return useQuery({
+/** One normalized sample of node RRD data — mirrors MetricPoint for instances. */
+export interface NodeMetricPoint {
+  time: number;
+  cpu: number | null;       // percent
+  iowait: number | null;    // percent
+  loadavg: number | null;
+  memused: number | null;   // bytes
+  memtotal: number | null;  // bytes
+  mempct: number | null;    // percent
+  swapused: number | null;  // bytes
+  rootused: number | null;  // bytes
+  rootpct: number | null;   // percent
+  netin: number | null;     // bytes/s
+  netout: number | null;    // bytes/s
+}
+
+/** Raw RRD rows report cpu/iowait as 0..1 fractions and may omit fields entirely. */
+function num(row: Record<string, unknown>, key: string): number | null {
+  const v = row[key];
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+function pct(used: number | null, total: number | null): number | null {
+  if (used == null || !total) return null;
+  return (used / total) * 100;
+}
+
+export function normalizeNodeRrd(rows: Array<Record<string, unknown>>): NodeMetricPoint[] {
+  return rows.map((r) => {
+    const cpu = num(r, 'cpu');
+    const iowait = num(r, 'iowait');
+    const memused = num(r, 'memused');
+    const memtotal = num(r, 'memtotal');
+    const rootused = num(r, 'rootused');
+    const roottotal = num(r, 'roottotal');
+    return {
+      time: num(r, 'time') ?? 0,
+      cpu: cpu == null ? null : cpu * 100,
+      iowait: iowait == null ? null : iowait * 100,
+      loadavg: num(r, 'loadavg'),
+      memused,
+      memtotal,
+      mempct: pct(memused, memtotal),
+      swapused: num(r, 'swapused'),
+      rootused,
+      rootpct: pct(rootused, roottotal),
+      netin: num(r, 'netin'),
+      netout: num(r, 'netout'),
+    };
+  });
+}
+
+/**
+ * Node metrics for the graphs tab. PVE returns raw RRD rows (cpu as a 0..1
+ * fraction, no percentages), so normalization happens here to keep the chart
+ * components identical to the instance ones.
+ */
+export function useNodeMetrics(serverId: number, node: string, timeframe = 'hour') {
+  return useQuery<NodeMetricPoint[]>({
     queryKey: nodeKeys.nodeRrd(serverId, node, timeframe),
-    queryFn: () => apiClient.get<unknown[]>(`/proxmox/api/${serverId}/node/rrddata?node=${node}&timeframe=${timeframe}`),
+    queryFn: () =>
+      apiClient
+        .get<{ data?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>(
+          `/proxmox/api/${serverId}/node/rrddata?node=${node}&timeframe=${timeframe}`,
+        )
+        .then((r) => normalizeNodeRrd(Array.isArray(r) ? r : (r?.data ?? []))),
     enabled: serverId > 0 && !!node,
+    // Keep the previous series on screen while a new timeframe loads.
+    placeholderData: keepPreviousData,
+    refetchInterval: timeframe === 'hour' ? 60000 : false,
   });
 }
 
@@ -118,6 +183,23 @@ export function useDeleteServer() {
       qc.invalidateQueries({ queryKey: nodeKeys.topology });
       qc.invalidateQueries({ queryKey: vmKeys.all });
       qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    },
+  });
+}
+
+/**
+ * Switch a password-authenticated server over to an API token the panel creates
+ * for itself. Uses the password already stored for that server.
+ */
+export function useProvisionServerToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      apiClient.post<{ success: boolean; token_name: string }>(
+        `/proxmox/api/servers/${id}/provision-token`, {},
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: nodeKeys.servers });
     },
   });
 }

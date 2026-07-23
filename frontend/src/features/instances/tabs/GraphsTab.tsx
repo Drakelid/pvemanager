@@ -1,19 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Area,
-  AreaChart,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { useVMMetrics } from '@/hooks/use-instances';
 import { formatBytes } from '@/lib/format';
+import {
+  ChartCard,
+  TIMEFRAME_PRESETS as PRESETS,
+  localToUnix,
+  unixToLocal,
+  tickFormatterFor,
+} from '@/components/shared/MetricChart';
 
 interface Props {
   serverId: number;
@@ -22,106 +19,7 @@ interface Props {
   node: string;
 }
 
-const PRESETS = [
-  { tf: 'hour', label: '1h' },
-  { tf: 'day', label: '24h' },
-  { tf: 'week', label: '7d' },
-  { tf: 'month', label: '30d' },
-];
-
 const MAX_SPAN = 30 * 86400;
-
-function fmtTime(ts: number): string {
-  const d = new Date(ts * 1000);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-// Convert a datetime-local string to unix seconds
-function localToUnix(val: string): number | undefined {
-  if (!val) return undefined;
-  return Math.floor(new Date(val).getTime() / 1000);
-}
-
-// Convert unix seconds to datetime-local value string
-function unixToLocal(ts: number): string {
-  const d = new Date(ts * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-interface ChartCardProps {
-  title: string;
-  data: Array<Record<string, unknown>>;
-  dataKey: string;
-  color: string;
-  formatValue?: (v: number) => string;
-  unit?: string;
-  headerRight?: React.ReactNode;
-}
-
-function ChartCard({ title, data, dataKey, color, formatValue, unit, headerRight }: ChartCardProps) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-sm font-semibold">{title}</CardTitle>
-          {headerRight}
-        </div>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
-            <defs>
-              <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={color} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-            <XAxis
-              dataKey="time"
-              tickFormatter={fmtTime}
-              className="text-2xs fill-muted-foreground"
-              tick={{ fontSize: 10 }}
-            />
-            <YAxis
-              className="text-2xs fill-muted-foreground"
-              tick={{ fontSize: 10 }}
-              tickFormatter={(v) => (formatValue ? formatValue(v) : String(v))}
-              width={55}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                border: '1px solid rgba(255, 255, 255, 0.25)',
-                borderRadius: '6px',
-                fontSize: 12,
-                color: '#fff',
-              }}
-              labelStyle={{ color: '#fff' }}
-              itemStyle={{ color: '#fff' }}
-              formatter={(val: unknown) => [
-                val != null && typeof val === 'number' && formatValue
-                  ? formatValue(val)
-                  : `${val ?? ''}${unit || ''}`,
-                title,
-              ]}
-              labelFormatter={(ts) => new Date((ts as number) * 1000).toLocaleString()}
-            />
-            <Area
-              type="monotone"
-              dataKey={dataKey}
-              stroke={color}
-              strokeWidth={1.5}
-              fill={`url(#grad-${dataKey})`}
-              dot={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  );
-}
 
 export default function GraphsTab({ serverId, vmid, type, node }: Props) {
   const { t } = useTranslation();
@@ -152,6 +50,13 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
 
   const points = (data?.data ?? []) as unknown as Array<Record<string, unknown>>;
   const nics = data?.meta?.nics ?? [];
+
+  // Custom ranges spanning more than a day need date ticks, not HH:MM.
+  const spanSeconds =
+    hasCustom && customRange.from != null && customRange.to != null
+      ? customRange.to - customRange.from
+      : 0;
+  const xTick = tickFormatterFor(hasCustom ? (spanSeconds > 86400 ? 'week' : 'day') : timeframe);
 
   function resetCustom() {
     setFromLocal('');
@@ -233,6 +138,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           <ChartCard
+            tickFormatter={xTick}
             title={t('graphs.cpu_usage')}
             data={points}
             dataKey="cpu"
@@ -241,6 +147,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             unit="%"
           />
           <ChartCard
+            tickFormatter={xTick}
             title={t('graphs.memory_usage')}
             data={points}
             dataKey="mem"
@@ -248,6 +155,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             formatValue={(v) => formatBytes(v)}
           />
           <ChartCard
+            tickFormatter={xTick}
             title={t('graphs.disk_write')}
             data={points}
             dataKey="diskwrite"
@@ -255,6 +163,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             formatValue={(v) => `${formatBytes(v)}/s`}
           />
           <ChartCard
+            tickFormatter={xTick}
             title={t('graphs.disk_read')}
             data={points}
             dataKey="diskread"
@@ -262,6 +171,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             formatValue={(v) => `${formatBytes(v)}/s`}
           />
           <ChartCard
+            tickFormatter={xTick}
             title={t('graphs.network_in')}
             data={points}
             dataKey="netin"
@@ -270,6 +180,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             headerRight={nicSelector}
           />
           <ChartCard
+            tickFormatter={xTick}
             title={t('graphs.network_out')}
             data={points}
             dataKey="netout"
@@ -278,6 +189,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             headerRight={nicSelector}
           />
           <ChartCard
+            tickFormatter={xTick}
             title="IOPS чтение"
             data={points}
             dataKey="iops_read"
@@ -286,6 +198,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             unit=" ops/s"
           />
           <ChartCard
+            tickFormatter={xTick}
             title="IOPS запись"
             data={points}
             dataKey="iops_write"
@@ -294,6 +207,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
             unit=" ops/s"
           />
           <ChartCard
+            tickFormatter={xTick}
             title="Заполненность диска"
             data={points}
             dataKey="diskpct"

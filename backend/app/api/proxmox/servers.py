@@ -16,6 +16,9 @@ from ...db import get_db
 from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
 from app.schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
 from ...proxmox import ProxmoxClient, get_proxmox_resources, _run_in_executor
+from ...proxmox.token_provisioning import (
+    TokenProvisionError, provision_api_token, revoke_api_token,
+)
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
 from ...logging_service import LoggingService
 from ...ipam_service import IPAMService
@@ -90,10 +93,49 @@ def create_proxmox_server(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Server with name '{server_data.name}' already exists"
         )
-    
-    server = ProxmoxServer(**server_data.model_dump())
+
+    payload = server_data.model_dump()
+    # Not a column — it selects how credentials are obtained, not what is stored.
+    auto_token = payload.pop("auto_create_token", False)
+    provisioned_token: str | None = None
+
+    if auto_token:
+        try:
+            token_name, token_value = provision_api_token(
+                ip_address=payload["ip_address"],
+                port=payload.get("port"),
+                api_user=payload["api_user"],
+                password=payload.get("password"),
+                verify_ssl=payload.get("verify_ssl", False),
+                comment=f"PVEmanager ({payload['name']})",
+            )
+        except TokenProvisionError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        payload["api_token_name"] = token_name
+        payload["api_token_value"] = token_value
+        # The password stays stored (encrypted) for SSH fallbacks like pvecm
+        # delnode, but day-to-day API calls now go through the token.
+        payload["use_password"] = False
+        provisioned_token = token_name
+
+    server = ProxmoxServer(**payload)
     db.add(server)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        # The secret was never persisted, so the token on the node is unusable —
+        # remove it instead of leaving an orphan behind.
+        if provisioned_token:
+            revoke_api_token(
+                ip_address=payload["ip_address"],
+                port=payload.get("port"),
+                api_user=payload["api_user"],
+                password=payload.get("password"),
+                token_name=provisioned_token,
+                verify_ssl=payload.get("verify_ssl", False),
+            )
+        raise
     db.refresh(server)
 
     # Сразу проверяем подключение, чтобы статус is_online отобразился без задержки
@@ -387,7 +429,9 @@ def test_proxmox_credentials(
 ):
     """Проверить произвольные учётные данные Proxmox без сохранения в БД."""
     try:
-        if payload.use_password:
+        # auto_create_token still authenticates by password at this point — the
+        # token only gets created when the server is actually saved.
+        if payload.use_password or payload.auto_create_token:
             client = ProxmoxClient(
                 host=payload.ip_address,
                 user=payload.api_user,
@@ -409,6 +453,70 @@ def test_proxmox_credentials(
     except Exception as e:
         logger.error(f"Error testing Proxmox credentials for {payload.ip_address}: {e}")
         return {"success": False, "status": "error", "message": str(e)}
+
+
+@router.post("/api/servers/{server_id}/provision-token", status_code=status.HTTP_200_OK)
+def provision_server_token(
+    server_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:update"))
+):
+    """Перевести уже подключённый сервер с парольной авторизации на API-токен.
+
+    Использует сохранённый пароль сервера: подключается им один раз, создаёт
+    токен и переключает сервер на токен-авторизацию. Пароль остаётся в БД
+    (зашифрованным) — он нужен для SSH-фолбэков вроде pvecm delnode.
+    """
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    if not server.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Server has no stored password — re-add it with credentials to create a token",
+        )
+
+    try:
+        token_name, token_value = provision_api_token(
+            ip_address=server.ip_address,
+            port=server.port,
+            api_user=server.api_user,
+            password=server.password,
+            verify_ssl=server.verify_ssl,
+            comment=f"PVEmanager ({server.name})",
+        )
+    except TokenProvisionError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    previous_token = server.api_token_name
+    server.api_token_name = token_name
+    server.api_token_value = token_value
+    server.use_password = False
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        revoke_api_token(
+            ip_address=server.ip_address, port=server.port, api_user=server.api_user,
+            password=server.password, token_name=token_name, verify_ssl=server.verify_ssl,
+        )
+        raise
+    db.refresh(server)
+
+    # Cached connections still carry the old credentials.
+    try:
+        from ...proxmox.client import clear_server_cache
+        clear_server_cache(server.ip_address)
+    except Exception as e:
+        logger.debug(f"Failed to clear connection cache for {server.name}: {e}")
+
+    logger.info(
+        f"User {current_user.username} switched server '{server.name}' to API token "
+        f"'{server.api_user}!{token_name}'"
+        + (f" (previous token: {previous_token})" if previous_token else "")
+    )
+    return {"success": True, "token_name": token_name}
 
 
 @router.post("/api/servers/{server_id}/test", status_code=status.HTTP_200_OK)

@@ -85,7 +85,10 @@ class ProxmoxServer(Base):
 
     api_user = Column(String(100), nullable=False, default="root@pam")
     api_token_name = Column(String(100), nullable=True)
-    api_token_value = Column(String(255), nullable=True)
+    # Encrypted like the password: with auto-provisioning the token becomes the
+    # primary credential. EncryptedString stores as String and falls back to
+    # plaintext on read, so existing rows keep working until they are rewritten.
+    api_token_value = Column(EncryptedString(255), nullable=True)
 
     use_password = Column(Boolean, nullable=False, default=False)
     password = Column(EncryptedString(255), nullable=True)

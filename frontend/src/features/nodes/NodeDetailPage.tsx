@@ -67,6 +67,7 @@ function NodeActionsMenu({ serverId, node }: { serverId: number; node: string })
     </DropdownMenu>
   );
 }
+import NodeGraphs from './NodeGraphs';
 import NodeNetworks from './NodeNetworks';
 import HAResources from './HAResources';
 import SDNManager from './SDNManager';
@@ -126,6 +127,7 @@ export default function NodeDetailPage() {
           <TabsTrigger value="overview">{t('nodes.tab_overview', 'Обзор')}</TabsTrigger>
           {nodes.length > 0 && (
             <>
+              <TabsTrigger value="graphs">{t('nodes.tab_graphs', 'Графики')}</TabsTrigger>
               <TabsTrigger value="network">{t('nodes.tab_network', 'Сеть')}</TabsTrigger>
               <TabsTrigger value="ha">{t('nodes.tab_ha', 'HA')}</TabsTrigger>
               <TabsTrigger value="firewall">{t('nodes.tab_firewall', 'Firewall')}</TabsTrigger>
@@ -206,6 +208,11 @@ export default function NodeDetailPage() {
 
         {nodes.length > 0 && (
           <>
+            {/* Graphs: node RRD metrics */}
+            <TabsContent value="graphs" className="mt-4">
+              <NodeGraphs serverId={sid} nodeNames={nodes.map(n => n.node)} />
+            </TabsContent>
+
             {/* Network: interfaces + SDN */}
             <TabsContent value="network" className="mt-4 space-y-6">
               <NodeNetworks serverId={sid} nodeNames={nodes.map(n => n.node)} />
