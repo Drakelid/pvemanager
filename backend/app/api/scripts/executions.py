@@ -8,14 +8,16 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ...auth import PermissionChecker
-from ...db import get_db
+from ...db import SessionLocal, get_db
 from ...models import ProxmoxServer, ScriptCatalog, ScriptExecution, User
 from ...services import script_engine
 from ...config import utcnow
@@ -25,13 +27,60 @@ router = APIRouter()
 _MAX_OUTPUT = 200_000  # см. SCRIPT_EXECUTION_OUTPUT_LIMIT в models/scripts.py
 
 
+def _run_execution_bg(execution_id: int, server_id: int, target_type: str,
+                      node: Optional[str], vmid: Optional[int],
+                      vm_type: Optional[str], rendered: str,
+                      interpreter: str, timeout: int) -> None:
+    """Фоновое выполнение скрипта: community-скрипты (build.func) идут минуты и
+    не помещаются в таймаут прокси/HTTP-запроса. Эндпоинт возвращает execution
+    со статусом `running` сразу, а результат дописывается сюда; фронтенд поллит
+    статус до завершения. Своя DB-сессия — сессия запроса уже закрыта.
+    """
+    db = SessionLocal()
+    try:
+        server = db.get(ProxmoxServer, server_id)
+        execution = db.get(ScriptExecution, execution_id)
+        if not server or not execution:
+            logger.error(f"[scripts] bg exec {execution_id}: server/execution пропал")
+            return
+        try:
+            result = script_engine.execute(
+                server, target_type=target_type, node=node, vmid=vmid,
+                vm_type=vm_type, script=rendered, interpreter=interpreter,
+                timeout=timeout,
+            )
+            execution.status = "success" if result.success else "failed"
+            execution.exit_code = result.exit_code
+            execution.output = (result.output or "")[:_MAX_OUTPUT]
+            execution.error_text = result.error
+        except Exception as e:  # защита фонового потока: не оставляем running навсегда
+            logger.exception(f"[scripts] bg exec {execution_id} failed: {e}")
+            execution.status = "failed"
+            execution.exit_code = -1
+            execution.error_text = str(e)
+        execution.finished_at = utcnow()
+        db.commit()
+    finally:
+        db.close()
+
+
 class ExecuteRequest(BaseModel):
     server_id: int
     node: Optional[str] = None
     vmid: Optional[int] = None
     vm_type: Optional[str] = Field(default=None, pattern="^(qemu|lxc)$")
     params: dict = {}
-    timeout: int = Field(default=60, ge=1, le=600)
+    # Верхняя граница поднята под долгие community-скрипты (build.func ставит
+    # Java/OpenSearch/MongoDB и т.п. — это минуты). Выполнение фоновое, так что
+    # длинный таймаут не держит HTTP-запрос. 0 → взять дефолт по типу скрипта.
+    timeout: int = Field(default=0, ge=0, le=3600)
+
+
+# Дефолтные таймауты выполнения по источнику скрипта (сек), когда клиент не
+# задал timeout явно (req.timeout == 0). Community-скрипты создают LXC и тянут
+# образы — им нужен большой запас; обычные скрипты остаются короткими.
+_DEFAULT_TIMEOUT = 60
+_COMMUNITY_TIMEOUT = 1800
 
 
 def _can_admin(user: User) -> bool:
@@ -81,19 +130,21 @@ def execute_script(
     db.refresh(execution)
 
     rendered = script_engine.render_params(script.content, params)
-    result = script_engine.execute(
-        server, target_type=script.target_type, node=req.node, vmid=req.vmid,
-        vm_type=req.vm_type, script=rendered, interpreter=script.interpreter,
-        timeout=req.timeout,
-    )
 
-    execution.status = "success" if result.success else "failed"
-    execution.exit_code = result.exit_code
-    execution.output = (result.output or "")[:_MAX_OUTPUT]
-    execution.error_text = result.error
-    execution.finished_at = utcnow()
-    db.commit()
-    db.refresh(execution)
+    # Эффективный таймаут: явное значение клиента, иначе дефолт по источнику
+    # (community-скрипты идут минуты — см. _COMMUNITY_TIMEOUT).
+    is_community = getattr(script, "source", None) == "community-scripts"
+    timeout = req.timeout or (_COMMUNITY_TIMEOUT if is_community else _DEFAULT_TIMEOUT)
+
+    # Выполнение — в фоновом потоке: долгие community-скрипты (build.func) не
+    # укладываются в таймаут HTTP/прокси (nginx рвёт на 60с → 504). Возвращаем
+    # execution со статусом `running`, фронтенд поллит его до завершения.
+    threading.Thread(
+        target=_run_execution_bg,
+        args=(execution.id, server.id, script.target_type, req.node, req.vmid,
+              req.vm_type, rendered, script.interpreter, timeout),
+        daemon=True,
+    ).start()
 
     return execution.to_dict()
 

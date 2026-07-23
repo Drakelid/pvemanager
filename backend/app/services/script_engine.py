@@ -30,6 +30,13 @@ from ..ssh_client import SSHClient
 
 _CMD_TIMEOUT = 60
 
+# Community-скрипты (build.func и т.п.) вызывают `clear` и печатают цветной
+# вывод, которым нужен установленный TERM. Панель запускает скрипт без PTY
+# (get_pty=False), поэтому TERM не наследуется — и `clear` падает с
+# "TERM environment variable not set", обрывая весь скрипт. Задаём безопасный
+# дефолт префиксом команды (надёжнее env paramiko: sshd AcceptEnv его режет).
+_SCRIPT_ENV = "TERM=xterm"
+
 
 class ScriptExecError(RuntimeError):
     """Ошибка выполнения скрипта с человекочитаемым сообщением."""
@@ -97,7 +104,8 @@ def run_on_node(server: ProxmoxServer, client: ProxmoxClient, script: str,
     try:
         _run(ssh, f"printf '%s' '{b64}' | base64 -d > {tmp} && chmod +x {tmp}",
              what="write script on node")
-        output, exit_code = ssh.execute(f"{interpreter} {tmp}", return_exit_code=True, timeout=timeout)
+        output, exit_code = ssh.execute(f"{_SCRIPT_ENV} {interpreter} {tmp}",
+                                        return_exit_code=True, timeout=timeout)
         return ExecResult(success=exit_code == 0, output=output or "", exit_code=exit_code)
     except ScriptExecError as e:
         return ExecResult(success=False, output="", exit_code=-1, error=str(e))
@@ -124,7 +132,7 @@ def run_on_lxc(server: ProxmoxServer, client: ProxmoxClient, node: str, vmid: in
              what="write script on node")
         _run(ssh, f"pct push {vmid} {tmp_node} {tmp_ct}", what="pct push script")
         output, exit_code = ssh.execute(
-            f"pct exec {vmid} -- {interpreter} {tmp_ct}",
+            f"pct exec {vmid} -- env {_SCRIPT_ENV} {interpreter} {tmp_ct}",
             return_exit_code=True, timeout=timeout,
         )
         return ExecResult(success=exit_code == 0, output=output or "", exit_code=exit_code)

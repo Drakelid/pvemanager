@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { useServers, useNodes } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
-import { useExecuteScript } from '@/hooks/use-scripts';
+import { useExecuteScript, useScriptExecution } from '@/hooks/use-scripts';
 import type { ScriptCatalogItem } from '@/types/scripts';
 import type { ScriptExecution } from '@/types/scripts';
 
@@ -29,7 +29,13 @@ export default function ScriptExecuteDialog({ script, onOpenChange }: Props) {
   const [node, setNode] = useState('');
   const [guestKey, setGuestKey] = useState(''); // `${server_id}:${vmid}:${type}`
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
-  const [result, setResult] = useState<ScriptExecution | null>(null);
+  const [executionId, setExecutionId] = useState<number | null>(null);
+
+  // Выполнение фоновое: запуск возвращает execution со статусом `running`,
+  // дальше поллим его до завершения (см. useScriptExecution).
+  const { data: liveExec } = useScriptExecution(executionId ?? 0);
+  const result: ScriptExecution | null = liveExec ?? null;
+  const isRunning = result?.status === 'running';
 
   const serverIdNum = serverId ? Number(serverId) : 0;
   const { data: nodesData } = useNodes(serverIdNum || 0);
@@ -42,7 +48,7 @@ export default function ScriptExecuteDialog({ script, onOpenChange }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setServerId(''); setNode(''); setGuestKey(''); setResult(null);
+    setServerId(''); setNode(''); setGuestKey(''); setExecutionId(null);
     const defaults: Record<string, string> = {};
     for (const p of script?.params_schema || []) {
       defaults[p.name] = p.default != null ? String(p.default) : '';

@@ -146,5 +146,7 @@ export function useScriptExecution(id: number) {
     queryKey: scriptKeys.execution(id),
     queryFn: () => apiClient.get<ScriptExecution>(`/api/scripts/executions/${id}`),
     enabled: id > 0,
+    // Выполнение фоновое: пока статус `running`, поллим каждые 3с до завершения.
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 3000 : false),
   });
 }
