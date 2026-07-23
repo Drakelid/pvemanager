@@ -4,6 +4,14 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.10.2] - 2026-07-23
+
+### 🐛 Fixes
+
+- **Templates** — after an auto-import, a clear message is shown instead of `undefined`
+
+---
+
 ## [v1.10.0] - 2026-07-22
 
 ### 🧭 Navigation & Instances

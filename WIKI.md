@@ -2282,5 +2282,5 @@ A: Not yet, but planned for future versions.
 
 ---
 
-*Last updated: July 22, 2026*
-*Version: 1.10.0*
+*Last updated: July 23, 2026*
+*Version: 1.10.2*
