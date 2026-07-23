@@ -4,7 +4,7 @@
 
 **Modern web panel for managing Proxmox servers, virtual machines and LXC containers**
 
-[![Version](https://img.shields.io/badge/version-1.8.0-blue?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.10.0-blue?style=flat-square)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](compose.yml)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](backend/)
@@ -39,6 +39,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **Install wizard** — dynamic app parameters (form fields), advanced LXC resources, auto-generated secrets, live install progress over WebSocket, and one-time credential display
 - **My Apps lifecycle** — start / stop / restart / logs / delete, with background reconciliation (orphan detection) and per-app status
 - **Update & Rollback** — snapshot-backed updates (`docker compose pull`) with health-check and one-click rollback to the pre-update snapshot
+- **Global operations tray** — minimize a running install or golden-template build into a global tray that survives page navigation and tab reload; click a chip to resume the dialog where you left off
 - **Secure by design** — unprivileged LXC only, Fernet-encrypted secrets, injection-safe `pct exec`/`pct push`, RBAC `app:view` / `app:install` / `app:manage`
 
 ### Access & Console
@@ -48,7 +49,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **SSH Keys Management** — personal SSH key library per user; keys selectable when deploying VMs/LXC; admin can manage keys for any user
 - **RBAC v2** — granular role-based access control with per-resource permissions
 - **Server assignment** — directly assign specific Proxmox servers to users with workspace-conflict validation
-- **VM/LXC ownership** — assign an owner user to any VM or LXC container
+- **VM/LXC ownership** — assign an owner user to any VM or LXC container; non-privileged users see only their own instances everywhere, including the dashboard and per-node resource views
 - **Per-user quotas** — limit each user's number of instances and total vCPU, RAM and disk; enforced at deploy time (HTTP 429), with admin management and self-service usage view
 - **Session management** — active session list, remote session revocation, login protection
 - **Smart login redirect** — users are automatically routed to the first page they have access to
@@ -60,6 +61,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **Audit log** — full action log with user, timestamp, and details
 
 ### Other
+- **Command palette** — `Ctrl+K` palette with search over a unified navigation registry for keyboard-driven jumps to any page
 - **IPAM** — IP Address Management with allocation history and orphan detection
 - **Multilingual** — Russian and English interface; language preference is per-user account
 - **Encrypted credentials** — sensitive fields stored encrypted in the database

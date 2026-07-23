@@ -4,6 +4,45 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.10.0] - 2026-07-22
+
+### 🧭 Navigation & Instances
+
+- **Command palette (Ctrl+K)** — searchable palette over a shared registry of navigation items (its own store), for jumping to any page from the keyboard
+- **Unified navigation** — the sidebar and command palette are driven by one shared nav-item registry
+- **Expanded instance menu** — the per-instance row menu gains **Options**, **Migrate**, **Change resources**, **Create backup** (new `BackupDialog`) and **Delete**; the menu no longer closes on every live list refresh (stable `columns` + `getRowId`)
+- **Instance tab reorganization** — for VMs, *Compute resources*, *CPU options*, *Disk management* and *Disk resize* moved from **Settings** to **Hardware**; LXC (which has no Hardware tab) keeps them in **Settings**. Shared cards extracted into `ResourceCards.tsx`
+- **New shared UI primitives** — `alert`, `breadcrumb`, `checkbox`, `progress`, `switch`, `textarea`; RU/EN locale keys for the new menu items and backup
+
+### 🛒 App Store
+
+- **Global minimized-operations tray** — minimized long-running operations (app install, golden-template build) now live in a global zustand store (persisted to `localStorage`) and are rendered by a `MinimizedOpsTray` in the app layout instead of by the dialog itself:
+  - the chip **survives page navigation and a tab reload**; the tray polls progress on its own (REST, every 3 s) independently of the dialog
+  - clicking a chip returns to the operation's page and reopens the dialog — install resumes in `InstallWizard` (resume mode via navigation state), template reopens the golden dialog with the server preselected
+  - **Minimize** adds the operation to the tray and closes the dialog; the chip's ✕ only removes the chip (the operation keeps running on the server); chips for operations that no longer exist (404 after reload) are cleared automatically
+- **App data files** — files bundled with a catalog app (`data_files`) are delivered before `compose up`; Umbrel `APP_PASSWORD` / `default_credentials` are honored
+- **Minimizable install/build dialogs** — long operations can be collapsed via `MinimizableDialog`
+- **Install/uninstall reliability**:
+  - **teardown** — a CT that no longer exists in Proxmox is treated as removed, so an `orphaned` app can finally be deleted from the DB
+  - **install** — the VMID search skips already-occupied records (`nextid` does not reserve the number, so a retry could grab another container)
+  - **retry** — install parameters (`cores/memory/disk/storage/bridge/ip_config/port`) are saved to `installed_apps.install_params` (JSONB, new migration) and reused on retry instead of falling back to hard-coded defaults
+  - **reconcile** — an unreachable server no longer flags all of its apps as `orphaned`
+  - **update** — the actually-published port is recorded in the DB (`url`/health)
+  - **.env** — values containing `#` are quoted (the dotenv parser was trimming them as an inline comment)
+  - port `80`, when chosen explicitly in the wizard, is published as-is
+  - `useCatalog` — `available_only` is part of the query key (fixes a cache collision)
+
+### 🔒 Owner Isolation
+
+- **Live Proxmox resources are now owner-scoped** — the instance list (`/api/virtual-machines`) was already filtered by `owner_id`, but the live-resource endpoints `/api/resources/all` (dashboard) and `/api/{server_id}/resources` (node/server page) returned **all** VMs/LXC. A regular user (`proxmox.view`) could see other owners' instances through the node page. Both endpoints now filter VM/LXC by owner for non-privileged users (matching `vmid` against the `vm_instances` cache); admins and roles with `vm:manage` still see everything
+- **`assign_instances_owner.py`** — script to bulk-assign an owner to existing instances whose `owner_id` is `NULL` (instances synced from Proxmox before ownership existed)
+
+### 🐛 Fixes
+
+- **React Query cache cleared on login/logout** — logging in as a different user in the same tab no longer serves the previous user's cached data (instance list, etc.) until a hard reload. `queryClient` was moved out of `App.tsx` into `lib/query-client.ts` so it is reachable outside React, and `auth-store` calls `queryClient.clear()` on successful login and on logout
+
+---
+
 ## [v1.9.1] - 2026-07-17
 
 ### 🛒 App Store

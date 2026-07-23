@@ -476,7 +476,13 @@ Automatically tracks:
 
 ## 🖥️ VM and Container Management
 
+### Command palette (Ctrl+K)
+
+Press **Ctrl+K** (⌘K on macOS) anywhere in the app to open the **command palette** — a searchable list of every navigation destination. Start typing to filter, then <kbd>Enter</kbd> to jump. The palette and the sidebar are driven by the same unified navigation registry, so they always stay in sync.
+
 ### VM Actions
+
+The per-instance row menu (⋯) exposes **Options**, **Migrate**, **Change resources**, **Create backup** and **Delete** alongside the power actions below. The menu stays open across live list refreshes.
 
 | Action | Description | Hotkey |
 |--------|-------------|--------|
@@ -485,6 +491,8 @@ Automatically tracks:
 | Restart | Reboot | - |
 | Force Stop | Force stop | - |
 | Delete | Delete VM | - |
+
+> **Instance tabs:** for **VMs**, *Compute resources*, *CPU options*, *Disk management* and *Disk resize* live on the **Hardware** tab; **LXC** containers (which have no Hardware tab) keep those cards on the **Settings** tab.
 
 ### Bulk Operations
 
@@ -807,17 +815,28 @@ Pipeline (each step is journaled and streamed over WebSocket):
 
 1. Clone the golden LXC template (default 2 vCPU / 2048 MB / 8 GB, DHCP or advanced overrides).
 2. Start and wait for IP.
-3. `pct push` `docker-compose.yml` + `.env` (form answers + generated `random` secrets).
+3. `pct push` `docker-compose.yml` + `.env` (form answers + generated `random` secrets) + any bundled `data_files`.
 4. `docker compose up -d`.
 5. HTTP health-check.
 6. Show the app URL and one-time credentials.
 
-A failed step sets status `error` with a step log; **Retry** does not recreate the LXC (idempotent by VMID), **Delete** removes the container and the record.
+A failed step sets status `error` with a step log; **Retry** does not recreate the LXC (idempotent by VMID) and reuses the original install parameters (saved in `installed_apps.install_params`), **Delete** removes the container and the record.
 
 **Reliability notes:**
+- Files bundled with a catalog app (`data_files`) are delivered to the container before `docker compose up`; Umbrel `APP_PASSWORD` / `default_credentials` are honored.
 - Bind-mount host directories (`volumes:` in the app's compose, both `${APP_DATA_DIR}/...` and relative paths) are pre-created with permissive ownership before `up` — otherwise Docker auto-creates them as root and non-root container users (e.g. mariadb's `mysql`) get `Permission denied`.
+- The VMID search skips already-occupied records — `nextid` does not reserve the number, so a retry could otherwise grab another container.
 - `pct create` retries a few times on a transient config-lock error (common right after deleting the same VMID, while the node is still wiping the old disk).
 - **Delete** now waits for Proxmox to actually confirm the destroy task finished (up to 30 min, covers slow disk wipes) before marking the app removed — otherwise a VMID could be reused while still busy on the node.
+- `.env` values containing `#` are quoted (the dotenv parser would otherwise trim them as an inline comment); a port chosen explicitly in the wizard (including `80`) is published as-is.
+
+### Minimized operations tray
+
+Long-running App Store operations — an app **install** and a **golden-template build** — can be minimized instead of keeping the dialog open:
+
+- Minimized operations live in a **global store** (persisted to `localStorage`) and are rendered as a **tray** in the app layout, so a chip **survives page navigation and a full tab reload**. The tray polls each operation's progress itself (REST, every 3 s), independently of the dialog.
+- **Clicking a chip** returns to the operation's page and reopens the dialog — an install resumes in the wizard, a template build reopens the golden-template dialog with the server preselected.
+- **Minimize** adds the operation to the tray and closes the dialog; the chip's ✕ only removes the chip (the operation keeps running on the server). Chips for operations that no longer exist (a `404` after reload) are cleared automatically.
 
 ### My Apps
 
@@ -1965,6 +1984,16 @@ Returns `409 workspace_conflict` if any server shares no workspace with the user
 
 Any VM or LXC container can have an **owner** — a regular user responsible for that instance. The owner is displayed in the VM list.
 
+### Isolation
+
+Ownership is enforced everywhere a non-privileged user sees instances, not just the instance list. The live-resource endpoints — `/api/resources/all` (dashboard) and `/api/{server_id}/resources` (node/server page) — filter VMs/LXC by owner (matching each `vmid` against the `vm_instances` cache), so a user with only `proxmox.view` cannot see other owners' instances through the node page. **Admins** and roles with **`vm:manage`** are exempt and see everything.
+
+Instances synced from Proxmox before ownership existed have `owner_id = NULL`. To bulk-assign an owner to them, run the helper script shipped in the backend image:
+
+```bash
+docker compose exec app python assign_instances_owner.py
+```
+
 ### Assigning an owner (Admin)
 
 Open the VM detail page → **Owner** button → select user → Save.
@@ -2253,5 +2282,5 @@ A: Not yet, but planned for future versions.
 
 ---
 
-*Last updated: June 20, 2026*
-*Version: 1.5.2-1*
+*Last updated: July 22, 2026*
+*Version: 1.10.0*
