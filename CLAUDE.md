@@ -1,3 +1,7 @@
+## Commit message language
+
+Git commit messages (`git commit -m`) must always be written in English, regardless of the language used elsewhere in the conversation.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
