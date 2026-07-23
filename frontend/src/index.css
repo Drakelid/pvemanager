@@ -114,37 +114,37 @@
 }
 
 .dark {
-  --background: oklch(0.141 0.005 286);
+  --background: oklch(0.17 0.035 258);
   --foreground: oklch(0.94 0.005 264);
-  --card: oklch(0.18 0.006 286);
+  --card: oklch(0.215 0.04 258);
   --card-foreground: oklch(0.94 0.005 264);
-  --popover: oklch(0.18 0.006 286);
+  --popover: oklch(0.215 0.04 258);
   --popover-foreground: oklch(0.94 0.005 264);
   --primary: oklch(0.592 0.19 264);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.24 0.008 264);
+  --secondary: oklch(0.27 0.035 258);
   --secondary-foreground: oklch(0.94 0.005 264);
-  --muted: oklch(0.24 0.008 264);
-  --muted-foreground: oklch(0.64 0.015 264);
-  --accent: oklch(0.24 0.008 264);
+  --muted: oklch(0.27 0.035 258);
+  --muted-foreground: oklch(0.66 0.03 258);
+  --accent: oklch(0.27 0.035 258);
   --accent-foreground: oklch(0.94 0.005 264);
   --destructive: oklch(0.577 0.245 27.33);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.27 0.008 264);
-  --input: oklch(0.27 0.008 264);
+  --border: oklch(0.30 0.035 258);
+  --input: oklch(0.30 0.035 258);
   --ring: oklch(0.592 0.19 264);
   --chart-1: oklch(0.592 0.19 264);
   --chart-2: oklch(0.723 0.191 149);
   --chart-3: oklch(0.768 0.165 75);
   --chart-4: oklch(0.577 0.245 27.33);
   --chart-5: oklch(0.586 0.24 293);
-  --sidebar: oklch(0.17 0.006 286);
+  --sidebar: oklch(0.20 0.038 258);
   --sidebar-foreground: oklch(0.94 0.005 264);
   --sidebar-primary: oklch(0.592 0.19 264);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.24 0.008 264);
+  --sidebar-accent: oklch(0.27 0.035 258);
   --sidebar-accent-foreground: oklch(0.94 0.005 264);
-  --sidebar-border: oklch(0.27 0.008 264);
+  --sidebar-border: oklch(0.30 0.035 258);
   --sidebar-ring: oklch(0.592 0.19 264);
   --success: oklch(0.723 0.191 149);
   --success-foreground: oklch(0.16 0.02 149);
@@ -152,7 +152,7 @@
   --warning-foreground: oklch(0.18 0.03 75);
   --danger: oklch(0.62 0.22 27.33);
   --danger-foreground: oklch(1 0 0);
-  --track: oklch(0.30 0.008 264);
+  --track: oklch(0.33 0.035 258);
 }
 
 @layer base {
