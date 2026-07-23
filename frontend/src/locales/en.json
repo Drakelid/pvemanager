@@ -1007,6 +1007,8 @@
     "os": "Operating System",
     "version": "Version",
     "imported": "Imported",
+    "imported_count": "Templates imported: {{count}}",
+    "imported_none": "No new templates found to import",
     "select_server": "Select server",
     "import_btn": "Import Templates",
     "group": "Group",

@@ -46,7 +46,12 @@ export default function TemplatesPage() {
     if (!importServerId) return;
     autoImport.mutate(Number(importServerId), {
       onSuccess: (res) => {
-        toast.success(`${t('templates.imported')}: ${res.count}`);
+        const count = res.imported_count ?? 0;
+        toast.success(
+          count > 0
+            ? t('templates.imported_count', { count })
+            : t('templates.imported_none'),
+        );
         setImportDialogOpen(false);
       },
       onError: (err: Error) => toast.error(err.message),

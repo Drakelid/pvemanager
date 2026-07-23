@@ -60,7 +60,7 @@ export function useDiscoverTemplates(serverId: number) {
 export function useAutoImportTemplates() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (serverId: number) => apiClient.post<{ success: boolean; count: number }>(`/templates/api/auto-import/${serverId}`),
+    mutationFn: (serverId: number) => apiClient.post<{ success: boolean; imported_count: number }>(`/templates/api/auto-import/${serverId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: templateKeys.groups });
       qc.invalidateQueries({ queryKey: ['templates'] });
