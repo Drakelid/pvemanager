@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Pencil, Trash2, Database, CalendarClock, Power, PowerOff } from 'lucide-react';
+import { Plus, Pencil, Trash2, Database, CalendarClock, Power, PowerOff, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -50,6 +50,8 @@ interface StorageRow {
   used?: number;
   total?: number;
   avail?: number;
+  /** Ноды, где хранилище объявлено, но недоступно (нет VG/пула, отвалился mount). */
+  inactive_nodes?: string[];
 }
 
 interface StorageForm {
@@ -563,15 +565,34 @@ export default function StoragesTab() {
                   <TableHead className="text-right">{t('common.actions')}</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
-                  {storages.map(s => (
-                    <TableRow key={s.storage}>
+                  {storages.map(s => {
+                    const inactiveNodes = s.inactive_nodes ?? [];
+                    return (
+                    <TableRow key={s.storage} className={inactiveNodes.length > 0 ? 'bg-destructive/5' : undefined}>
                       <TableCell className="font-mono font-medium">
                         {s.storage}
                         {s.disable === 1 && <Badge variant="secondary" className="ml-2 text-2xs">{t('storages.disabled')}</Badge>}
+                        {inactiveNodes.length > 0 && (
+                          <Badge
+                            variant="destructive"
+                            className="ml-2 text-2xs"
+                            title={t('storages.inactive_hint', { nodes: inactiveNodes.join(', ') })}
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            {t('storages.inactive')}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell><Badge variant="outline">{s.type}</Badge></TableCell>
                       <TableCell className="text-xs">{s.content || '—'}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{s.nodes || t('storages.all_nodes')}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {s.nodes || t('storages.all_nodes')}
+                        {inactiveNodes.length > 0 && (
+                          <span className="block text-2xs text-destructive">
+                            {t('storages.inactive_on', { nodes: inactiveNodes.join(', ') })}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {s.total ? `${formatBytes(s.used || 0)} / ${formatBytes(s.total)}` : '—'}
                       </TableCell>
@@ -591,7 +612,8 @@ export default function StoragesTab() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}

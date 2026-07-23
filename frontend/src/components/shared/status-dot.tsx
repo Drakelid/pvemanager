@@ -8,6 +8,8 @@ const statusColors: Record<string, string> = {
   unknown: 'bg-muted-foreground/30',
   online: 'bg-success',
   offline: 'bg-danger',
+  // Сервер отвечает, но отверг учётные данные — чинится не так, как «не отвечает».
+  auth_error: 'bg-warning',
 };
 
 interface StatusDotProps {

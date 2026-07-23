@@ -224,6 +224,8 @@ class ProxmoxServerResponse(BaseModel):
     last_check: Optional[datetime] = None
     is_online: Optional[bool] = None
     last_error: Optional[str] = None
+    # 'auth' — сервер отвечает, но отверг учётные данные; 'connection' — не отвечает
+    last_error_kind: Optional[str] = None
     workspaces: List[ServerWorkspaceBrief] = []
 
     # Exclude sensitive fields

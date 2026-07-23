@@ -1562,6 +1562,14 @@ def migrate_appstore_default_credentials(conn):
     logger.info("✓ App Store catalog_apps.default_credentials column added")
 
 
+def migrate_server_error_kind(conn):
+    """Add last_error_kind column to proxmox_servers ('auth' | 'connection')."""
+    if not table_exists(conn, 'proxmox_servers'):
+        return
+    if add_column_if_not_exists(conn, 'proxmox_servers', 'last_error_kind', 'VARCHAR(20)'):
+        logger.info("✓ proxmox_servers.last_error_kind column added")
+
+
 def migrate_script_repo_metadata_format(conn):
     """Add metadata_format column to script_git_repos (header-comment | community-scripts-ct)."""
     if not table_exists(conn, 'script_git_repos'):
@@ -2013,6 +2021,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"App Store default_credentials migration: {e}")
+                conn.rollback()
+
+            # Migration 40: proxmox_servers.last_error_kind ('auth' | 'connection')
+            try:
+                migrate_server_error_kind(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Server last_error_kind migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

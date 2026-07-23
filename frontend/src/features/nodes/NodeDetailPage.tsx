@@ -116,8 +116,20 @@ export default function NodeDetailPage() {
                 : t('nodes.standalone')}
             </Badge>
           )}
-          <Badge variant={server?.is_online ? 'default' : 'destructive'}>
-            {server?.is_online ? t('common.online') : t('common.offline')}
+          <Badge
+            variant={
+              server?.is_online ? 'default'
+                : server?.last_error_kind === 'auth' ? 'outline'
+                : 'destructive'
+            }
+            className={server?.last_error_kind === 'auth' && !server?.is_online
+              ? 'border-warning/40 text-warning' : undefined}
+            title={server?.last_error_kind === 'auth' && !server?.is_online
+              ? t('nodes.auth_error_hint') : server?.last_error || undefined}
+          >
+            {server?.is_online ? t('common.online')
+              : server?.last_error_kind === 'auth' ? t('nodes.auth_error')
+              : t('common.offline')}
           </Badge>
         </div>
       </div>

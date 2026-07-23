@@ -140,6 +140,10 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             self.connection_key = f"{host}:{user}:{token_name or 'password'}"
             self.proxmox = None
             self.last_used = time.time()
+            # Причина неудачного подключения: 'auth' | 'connection' | None.
+            # Нужна, чтобы отличить протухший токен от недоступной ноды.
+            self.connect_error_kind = None
+            self.connect_error = None
             
             # Check cache first
             with connection_cache_lock:
@@ -198,6 +202,13 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                         logger.debug(f"Cached connection for {self.connection_key}")
                     except Exception as e:
                         logger.error(f"Failed to test Proxmox connection for {host}: {e}")
+                        # При токен-авторизации 401 прилетает не AuthenticationError,
+                        # а ResourceException со status_code — proxmoxer не делает
+                        # отдельный логин, токен проверяется на первом же запросе.
+                        self.connect_error_kind = (
+                            'auth' if getattr(e, 'status_code', None) == 401 else 'connection'
+                        )
+                        self.connect_error = str(e)
                         self.proxmox = None
                         # Удаляем неудачное подключение из кеша
                         with connection_cache_lock:
@@ -206,6 +217,8 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                         
             except AuthenticationError as e:
                 logger.error(f"Ошибка аутентификации Proxmox {host}: {e}")
+                self.connect_error_kind = 'auth'
+                self.connect_error = str(e)
                 self.proxmox = None
                 # Удаляем из кеша при ошибке аутентификации
                 with connection_cache_lock:
@@ -213,6 +226,10 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                         del connection_cache[self.connection_key]
             except Exception as e:
                 logger.error(f"Ошибка подключения к Proxmox {host}: {e}")
+                self.connect_error_kind = (
+                    'auth' if getattr(e, 'status_code', None) == 401 else 'connection'
+                )
+                self.connect_error = str(e)
                 self.proxmox = None
                 # Удаляем из кеша при ошибке подключения
                 if self.connection_key in connection_cache:
@@ -228,6 +245,30 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 return True
             except Exception:
                 return False
+
+        def check_connection(self) -> tuple:
+            """
+            Проверить API, отличая отказ авторизации от недоступности ноды.
+
+            «Нода не отвечает» и «нода ответила 401» чинятся по-разному: первое —
+            сеть/питание, второе — протухший токен (например, после ввода ноды в
+            кластер, когда user.cfg и priv/token.cfg замещаются кластерными).
+
+            Returns:
+                (ok, error_kind, error) — error_kind: None | 'auth' | 'connection'
+            """
+            if not self.proxmox:
+                return (False, self.connect_error_kind or 'connection',
+                        self.connect_error or 'Failed to connect')
+            try:
+                self.proxmox.version.get()
+                self.last_used = time.time()
+                return (True, None, None)
+            except AuthenticationError as e:
+                return (False, 'auth', str(e))
+            except Exception as e:
+                kind = 'auth' if getattr(e, 'status_code', None) == 401 else 'connection'
+                return (False, kind, str(e))
 
         @asynccontextmanager
         async def ensure_connection(self):

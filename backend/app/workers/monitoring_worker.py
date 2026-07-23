@@ -90,6 +90,17 @@ def run_async(coro):
         return asyncio.run(coro)
 
 
+class ProbeFailure(Exception):
+    """Неудачная проверка доступности сервера с указанием причины.
+
+    error_kind: 'auth' — API ответил 401, 'connection' — не отвечает.
+    """
+
+    def __init__(self, message: str, error_kind: str = None):
+        super().__init__(message)
+        self.error_kind = error_kind or 'connection'
+
+
 class MonitoringWorker:
     """Background worker for monitoring and generating notifications"""
     
@@ -112,20 +123,22 @@ class MonitoringWorker:
             raise ValueError(f"Server {server.name} has no valid authentication configured")
         return ProxmoxClient.from_server(server)
     
-    def _notify_server_offline(self, db, server: ProxmoxServer, error: str, users: List[User]):
+    def _notify_server_offline(self, db, server: ProxmoxServer, error: str, users: List[User],
+                               error_kind: str = None):
         """Send notification that server went offline"""
         server_id = server.id
-        
+
         # Check cooldown (don't spam alerts)
         last_alert = self.last_server_alerts.get(server_id)
         if last_alert:
             # 10 minute cooldown between alerts for same server
             if (datetime.now().timestamp() - last_alert) < 600:
                 return
-        
+
         # Update server status in DB
         server.is_online = False
         server.last_error = error
+        server.last_error_kind = error_kind or 'connection'
         server.last_check = utcnow()
         db.commit()
         
@@ -247,39 +260,42 @@ class MonitoringWorker:
             for server in servers:
                 try:
                     client = self._create_proxmox_client(server)
-                    
+
                     # Quick connectivity check - just test if API responds
-                    if client.is_connected():
+                    ok, error_kind, check_error = client.check_connection()
+                    if ok:
                         # Server is online
                         was_offline = self.last_server_states.get(server.id) == False
-                        
+
                         # Update server status in DB
                         if not server.is_online or was_offline:
                             server.is_online = True
                             server.last_error = None
+                            server.last_error_kind = None
                             server.last_check = utcnow()
                             db.commit()
-                        
+
                         # Notify immediately if server recovered
                         if was_offline:
                             self._notify_server_recovered(db, server, users)
-                        
+
                         self.last_server_states[server.id] = True
                     else:
-                        raise ConnectionError("API not responding")
-                        
+                        raise ProbeFailure(check_error or "API not responding", error_kind)
+
                 except ValueError as e:
                     # Configuration error - log but don't mark as offline
                     logger.warning(f"[SERVER CHECK] Server {server.name} configuration error: {e}")
-                    
+
                 except Exception as e:
                     # Server is offline
                     error_msg = str(e)
                     was_online = self.last_server_states.get(server.id, True)
-                    
+
                     # Update server status in DB
                     server.is_online = False
                     server.last_error = error_msg[:500]
+                    server.last_error_kind = getattr(e, 'error_kind', None) or 'connection'
                     server.last_check = utcnow()
                     db.commit()
                     
@@ -298,7 +314,8 @@ class MonitoringWorker:
                         self.last_server_alerts[server.id] = now
                         
                         if was_online:
-                            logger.warning(f"[SERVER CHECK] Server {server.name} went OFFLINE: {error_msg}")
+                            reason = 'AUTH FAILED' if server.last_error_kind == 'auth' else 'OFFLINE'
+                            logger.warning(f"[SERVER CHECK] Server {server.name} went {reason}: {error_msg}")
                         else:
                             logger.warning(f"[SERVER CHECK] Server {server.name} still OFFLINE (repeat notification)")
                     
@@ -405,8 +422,12 @@ class MonitoringWorker:
                     client = self._create_proxmox_client(server)
                     
                     # Explicitly test connection - this will return False if offline
-                    if not client.is_connected():
-                        raise ConnectionError(f"Cannot connect to Proxmox server at {server.hostname}")
+                    ok, error_kind, check_error = client.check_connection()
+                    if not ok:
+                        raise ProbeFailure(
+                            check_error or f"Cannot connect to Proxmox server at {server.hostname}",
+                            error_kind,
+                        )
                     
                     # Server is online - notify if it was offline before
                     self._notify_server_online(db, server, users)
@@ -457,7 +478,8 @@ class MonitoringWorker:
                     # Connection error - server is offline
                     error_msg = str(e)
                     logger.error(f"[MONITORING] Server {server.name} connection failed: {error_msg}")
-                    self._notify_server_offline(db, server, error_msg, users)
+                    self._notify_server_offline(db, server, error_msg, users,
+                                                error_kind=getattr(e, 'error_kind', None))
                     
         except Exception as e:
             logger.error(f"[MONITORING] Critical error in VM status monitoring: {e}", exc_info=True)

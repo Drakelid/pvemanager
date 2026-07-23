@@ -142,10 +142,11 @@ def create_proxmox_server(
     # в 30 секунд (период monitoring_worker.run_server_availability_check).
     try:
         client = _get_proxmox_client(server)
-        if client.is_connected():
+        ok, error_kind, check_error = client.check_connection()
+        if ok:
             server.update_status(True)
         else:
-            server.update_status(False, "Failed to connect")
+            server.update_status(False, check_error or "Failed to connect", error_kind)
         db.commit()
         db.refresh(server)
     except Exception as e:
@@ -297,10 +298,11 @@ def update_proxmox_server(
     if creds_changed:
         try:
             client = _get_proxmox_client(server)
-            if client.is_connected():
+            ok, error_kind, check_error = client.check_connection()
+            if ok:
                 server.update_status(True)
             else:
-                server.update_status(False, "Failed to connect")
+                server.update_status(False, check_error or "Failed to connect", error_kind)
             db.commit()
             db.refresh(server)
             if server.is_online:

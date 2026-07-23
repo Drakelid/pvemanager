@@ -39,6 +39,14 @@ def get_storages(
     try:
         client = _get_proxmox_client(server)
         storages = client.get_cluster_storages()
+        # Конфиг кластера общий для всех нод и ничего не говорит о том, поднялось ли
+        # хранилище на конкретной ноде. Доступность берём из /cluster/resources —
+        # один запрос на весь кластер.
+        node_status = client.get_storage_node_status()
+        for s in storages:
+            statuses = node_status.get(s.get("storage"), [])
+            s["nodes_status"] = statuses
+            s["inactive_nodes"] = [n["node"] for n in statuses if not n["active"]]
         return JSONResponse(content={"storages": storages})
     except Exception as e:
         logger.error(f"Error listing storages for server {server_id}: {e}")

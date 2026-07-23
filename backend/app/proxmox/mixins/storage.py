@@ -152,6 +152,38 @@ class StorageMixin:
                 logger.error(f"Ошибка получения хранилищ ({content}) ноды {node}: {e}")
             return result
 
+        def get_storage_node_status(self) -> Dict[str, List[Dict[str, Any]]]:
+            """
+            Доступность каждого хранилища по нодам — одним запросом /cluster/resources.
+
+            Конфиг кластера (/storage) не знает, поднялось ли хранилище на конкретной
+            ноде: VG/пул может быть объявлен, но физически отсутствовать — типичный
+            случай после ввода новой ноды в кластер, где локальные хранилища ноды
+            заменяются кластерным конфигом.
+
+            Хранилища, отключённые в конфиге (disable), в /cluster/resources не
+            попадают, поэтому в карте их не будет.
+
+            Returns:
+                {storage_id: [{'node': 'prod', 'active': True}, ...]}
+            """
+            if not self.proxmox:
+                return {}
+            status: Dict[str, List[Dict[str, Any]]] = {}
+            try:
+                for res in self.get_cluster_resources(type_='storage'):
+                    storage_id = res.get('storage')
+                    node = res.get('node')
+                    if not storage_id or not node:
+                        continue
+                    status.setdefault(storage_id, []).append({
+                        'node': node,
+                        'active': res.get('status') == 'available',
+                    })
+            except Exception as e:
+                logger.error(f"Ошибка получения статусов хранилищ с {self.host}: {e}")
+            return status
+
         def get_node_storages(self, node: str, content: str = None) -> List[Dict]:
             """Get storages available on a specific node, optionally filtered by content type"""
             if not self.proxmox:

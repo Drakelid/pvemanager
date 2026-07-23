@@ -589,6 +589,8 @@
   },
   "nodes": {
     "title": "Servers",
+    "auth_error": "Auth error",
+    "auth_error_hint": "The server is reachable but rejected the credentials (HTTP 401). Check the API token or password — this usually means the token was revoked or replaced, e.g. after the node joined a cluster.",
     "vms": "VMs",
     "containers": "Containers",
     "cpu": "CPU",
@@ -1056,6 +1058,9 @@
     "enabled_ok": "Storage enabled",
     "disabled": "Disabled",
     "enabled": "Enabled",
+    "inactive": "Inactive",
+    "inactive_on": "unavailable on: {{nodes}}",
+    "inactive_hint": "Declared in the cluster config but not available on: {{nodes}}. The volume group, pool or mount is missing on those nodes.",
     "id_required": "Storage ID is required",
     "created": "Storage created",
     "saved": "Storage updated",

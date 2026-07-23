@@ -103,6 +103,9 @@ class ProxmoxServer(Base):
     
     is_online = Column(Boolean, nullable=True, default=None)
     last_error = Column(Text, nullable=True)
+    # Почему сервер недоступен: 'auth' — API ответил 401 (протух токен/пароль),
+    # 'connection' — не отвечает вовсе. Лечится по-разному, поэтому различаем.
+    last_error_kind = Column(String(20), nullable=True)
 
     __table_args__ = (
         Index('idx_proxmox_status', 'is_online', 'last_check'),
@@ -125,13 +128,15 @@ class ProxmoxServer(Base):
             'last_check': self.last_check
         }
 
-    def update_status(self, is_online: bool, error: str = None):
+    def update_status(self, is_online: bool, error: str = None, error_kind: str = None):
         self.is_online = is_online
         self.last_check = utcnow()
         if error:
             self.last_error = error
+            self.last_error_kind = error_kind or 'connection'
         elif is_online:
             self.last_error = None
+            self.last_error_kind = None
 
     assigned_users = relationship("User", secondary="user_servers", back_populates="assigned_servers", lazy="select")
 

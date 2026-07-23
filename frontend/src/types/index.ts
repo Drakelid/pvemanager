@@ -60,6 +60,8 @@ export interface ProxmoxServer {
   last_check?: string;
   is_online?: boolean;
   last_error?: string;
+  /** Почему сервер недоступен: 'auth' — отверг учётные данные, 'connection' — не отвечает. */
+  last_error_kind?: 'auth' | 'connection' | null;
   workspaces?: ServerWorkspaceBrief[];
 }
 
