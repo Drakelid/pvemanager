@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.8.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.10.2
 
 ---
 
@@ -1209,92 +1209,301 @@ PVEmanager includes comprehensive security features to protect your infrastructu
 
 ### RBAC v2 — Role-Based Access Control
 
-The new RBAC v2 system uses atomic permissions with `resource:action` format.
+> **This is the section to read if RBAC feels confusing.** It explains the whole
+> model end-to-end: what a permission *is*, how a request is actually checked,
+> what every built-in role can do, and — crucially — how "each user sees only
+> their own VMs" is a **separate** mechanism from RBAC and is easy to
+> misconfigure. Backend source of truth: `backend/app/rbac/permissions.py`
+> (catalogue of permissions), `backend/app/rbac/engine.py` (the check logic),
+> `backend/app/rbac/migration.py` (default roles).
 
-#### Permission Format
+#### The mental model in one paragraph
 
-```
-resource:action[:scope]
-```
+A **user** has exactly one **role**. A role is just a named JSON map of
+**permissions** → `true`/`false` (e.g. `{"vm:view": true, "vm:delete": false}`).
+Every protected API endpoint declares the permission it needs (e.g. "you need
+`vm:create`"). On each request the **Permission Engine** looks at the caller's
+role map and answers yes/no. There are no per-resource ACLs and no permission
+"scopes" in practice — a permission is either granted to the role or it is not.
+The one apparent exception, "users only see their own instances", is **not** a
+permission at all — it is a separate ownership filter described at the bottom of
+this section.
 
-Examples:
-- `vm:view` — View virtual machines
-- `server:create` — Add new Proxmox servers
-- `log:export` — Export audit logs
-- `role:manage` — Full role management
+#### Permission format
 
-#### Available Resources
-
-| Resource | Description |
-|----------|-------------|
-| `dashboard` | Dashboard access |
-| `server` | Proxmox servers |
-| `vm` | Virtual machines |
-| `lxc` | LXC containers |
-| `template` | OS templates |
-| `storage` | Storage pools |
-| `backup` | Backups |
-| `ipam` | IP address management |
-| `user` | User management |
-| `role` | Role management |
-| `log` | Audit logs |
-| `setting` | Panel settings |
-| `notification` | Notifications |
-
-#### Available Actions
-
-| Action | Description |
-|--------|-------------|
-| `view` | Read access |
-| `create` | Create new resources |
-| `update` | Modify existing resources |
-| `delete` | Remove resources |
-| `start` | Start VM/container |
-| `stop` | Stop VM/container |
-| `restart` | Restart VM/container |
-| `console` | Access console |
-| `migrate` | Migrate between nodes |
-| `manage` | Full management (implies view, update, etc.) |
-| `export` | Export data (logs) |
-| `execute` | Execute commands |
-
-#### Default Roles
-
-| Role | Description |
-|------|-------------|
-| `admin` | Full access to all features |
-| `moderator` | VM management, view logs, no settings |
-| `user` | VPS-style access — only own instances |
-| `demo` | Read-only access |
-
-### VPS-Style User Isolation
-
-Users with `user` role have VPS-style access — they can only see and manage instances assigned to them.
-
-#### How It Works
-
-1. **Instance Ownership**: Each VM/LXC can have an `owner_id` pointing to a user
-2. **Automatic Assignment**: When a user creates a VM, they automatically become the owner
-3. **Access Control**: All operations (view, start, stop, console, snapshots) check ownership
-
-#### User Role Permissions
+Every permission is an atomic string:
 
 ```
-vms:view:own      — View only own instances
-vms:start:own     — Start own instances
-vms:stop:own      — Stop own instances
-vms:restart:own   — Restart own instances
-vms:console:own   — Access console of own instances
-vms:snapshots:own — Manage snapshots of own instances
+resource:action
 ```
 
-#### Admin Assignment
+- **`resource`** — *what* you are acting on (`vm`, `backup`, `user`, …).
+- **`action`** — *what you do* to it (`view`, `create`, `delete`, …).
 
-Admins can assign instances to users:
-1. Open instance details
-2. Click "Assign Owner"
-3. Select user from dropdown
-4. Save changes
+Examples: `vm:view` (see VMs), `server:create` (add a Proxmox server),
+`log:export` (download audit logs), `role:manage` (full role administration).
+
+> **About `:scope`.** The permission dataclass technically supports a third
+> `:scope` segment, but **no built-in permission uses it** — every real
+> permission is global (`resource:action`). Ignore scope when designing roles;
+> tenant isolation is handled by ownership, not by a `:own` scope. (Older
+> versions of this wiki documented fictional `vms:view:own` codes — those never
+> existed in the code and have been removed.)
+
+#### How a permission check actually works (the engine)
+
+When an endpoint asks "does this user have `X:Y`?", `PermissionEngine.has_permission`
+evaluates these rules **in order** and returns `true` on the first match:
+
+1. **Admin bypass.** If the user is an administrator (`is_admin`, or role name
+   `admin`), the answer is always **yes** — admins implicitly hold every
+   permission and are never blocked.
+2. **Direct grant.** The exact code is present and `true` in the role map
+   (`vm:create` is in the role → yes).
+3. **Wildcard grant.** The role holds `resource:*` (e.g. `vm:*` grants *every*
+   `vm:` action). Wildcards are not used by the built-in roles but you may add
+   them to custom roles.
+4. **`manage` implies common actions.** If the role holds `resource:manage`, the
+   engine also grants these actions on that resource: **`view`, `list`, `update`,
+   `start`, `stop`, `restart`**. So `vm:manage` alone lets a user view/edit/power
+   VMs without listing those actions separately. ⚠️ Note `manage` does **not**
+   imply `create` or `delete` — grant those explicitly.
+
+If none match, access is denied with **HTTP 403 `Permission denied: X:Y`**.
+
+> **Enforcement points.** Endpoints gate access via the `PermissionChecker`
+> FastAPI dependency (`Depends(PermissionChecker("vm:create"))`) or an inline
+> `require_permission(user, "vm:create")` call. The frontend independently hides
+> sidebar items the user lacks permission for (see the UI-mapping table below),
+> but the backend check is the real security boundary.
+
+#### `requires` — permission dependencies
+
+Many permissions declare prerequisites (the `requires` field in
+`permissions.py`). These express logical dependencies — e.g. `vm:create`
+`requires` `vm:view` + `template:view`; `vm:execute` `requires` `vm:console`.
+
+> **Important:** `requires` is **documentation / UI guidance**, not runtime
+> enforcement — the engine does not auto-grant prerequisites. When you build a
+> custom role, tick the prerequisites yourself, otherwise the feature may be
+> half-broken (e.g. a user who can `vm:create` but lacks `vm:view` cannot see the
+> VM they just created).
+
+#### Full permission catalogue
+
+Grouped by resource. "Implied by `manage`" means the engine grants it for free
+when the role holds `<resource>:manage` (rule 4 above).
+
+**Dashboard**
+
+| Permission | Unlocks |
+|---|---|
+| `dashboard:view` | Access the Dashboard page and overview stats |
+
+**Proxmox Servers & Cluster** (`server`, `cluster`)
+
+| Permission | Unlocks |
+|---|---|
+| `server:view` | See the server/node list and status |
+| `server:create` | Add a new Proxmox server |
+| `server:update` | Edit server connection settings |
+| `server:delete` | Remove a Proxmox server |
+| `server:manage` | Full server management incl. cluster ops (requires `server:view`) |
+| `cluster:manage` | Create clusters, join/eject nodes (requires `server:view`) |
+
+**Virtual Machines** (`vm`)
+
+| Permission | Unlocks |
+|---|---|
+| `vm:view` | See VMs (subject to ownership filter — see below) |
+| `vm:create` | Create VMs (requires `vm:view`, `template:view`) |
+| `vm:update` | Change VM config (CPU/RAM/disk) |
+| `vm:delete` | Delete VMs |
+| `vm:start` / `vm:stop` / `vm:restart` | Power actions |
+| `vm:console` | noVNC / xterm.js console |
+| `vm:migrate` | Migrate between nodes of the same cluster |
+| `vm:remote_migrate` | Migrate to a *different* registered cluster (requires `vm:migrate`) |
+| `vm:execute` | Run commands via QEMU guest agent (requires `vm:console`) |
+| `vm:manage` | Full VM management **and the global "see all instances" flag** (see isolation section) |
+
+**LXC Containers** (`lxc`) — same shape as VM: `view`, `create`, `update`,
+`delete`, `start`, `stop`, `restart`, `console`, `migrate`, `remote_migrate`.
+(There is no separate `lxc:manage`; container listing/power is governed by the
+`lxc:*` actions and the same ownership filter as VMs.)
+
+**Templates & Images** (`template`)
+
+| Permission | Unlocks |
+|---|---|
+| `template:view` | Browse OS templates |
+| `template:create` / `template:update` / `template:delete` | Manage template entries |
+| `template:manage` | Full template management incl. the **Images** (cloud-image download) page |
+
+**Storage** (`storage`): `storage:view`, `storage:manage`.
+**Backups** (`backup`): `backup:view`, `backup:create`, `backup:restore`, `backup:delete`, `backup:manage` (storages + scheduled jobs).
+**IPAM** (`ipam`): `ipam:view`, `ipam:manage`.
+**Networking** (`network`): `network:view`, `network:manage` (node interfaces + SDN zones/vnets/subnets).
+**Firewall** (`firewall`): `firewall:view`, `firewall:manage` (datacenter/node/VM rules, groups, IP sets).
+**Node administration** (`node`): `node:view`, `node:manage` (systemd services, APT), `node:upgrade` (apt dist-upgrade), `node:power` (reboot/shutdown the physical node).
+**Resource pools** (`pool`): `pool:view`, `pool:manage`.
+**PVE access** (`access`): `access:view`, `access:manage` (Proxmox auth realms & API tokens).
+**App Store** (`app`): `app:view` (catalog + My Apps), `app:install`, `app:manage` (sync, update, rollback, delete).
+**Scripts** (`script`): `script:view`, `script:execute`, `script:manage` (edit scripts & git sources).
+
+**Users, Quotas & Roles** (`user`, `quota`, `role`)
+
+| Permission | Unlocks |
+|---|---|
+| `user:view` | See the user list |
+| `user:create` / `user:update` / `user:delete` | Manage user accounts |
+| `user:manage` | Full user admin, incl. managing **other** users' SSH keys |
+| `quota:view` / `quota:manage` | Read / set per-user resource quotas (requires `user:view`) |
+| `role:view` | See roles & their permissions |
+| `role:create` / `role:update` / `role:delete` | Manage roles |
+| `role:manage` | Full role administration incl. assigning roles (requires `role:view`, `user:view`) |
+
+**Logs** (`log`): `log:view`, `log:export`, `log:delete`.
+**Settings** (`setting`): `setting:view`, `setting:update` (panel settings), `setting:manage` (security & advanced settings).
+**Notifications** (`notification`): `notification:view`, `notification:manage`.
+
+> **Delegated role editing.** A non-admin with `role:manage` can only grant
+> permissions they **themselves already hold** (`can_assign_permission` /
+> `validate_role_permissions`). This prevents privilege escalation — you cannot
+> hand out access you don't have. Admins are exempt and can grant anything.
+
+#### Which permission unlocks which sidebar page
+
+The frontend (`frontend/src/lib/nav-items.ts`) hides a menu entry unless the
+user is an admin or holds the listed permission. Items with **no** permission
+are **admin-only**.
+
+| Sidebar item | Required permission |
+|---|---|
+| Dashboard | `dashboard:view` |
+| Instances | `vm:view` |
+| Nodes | `server:view` |
+| Cluster | `cluster:manage` |
+| Templates | `template:view` |
+| Images | `template:manage` |
+| Backups | `backup:view` |
+| Tasks | `vm:view` |
+| App Store / My Apps | `app:view` |
+| Scripts | `script:view` |
+| IPAM | `ipam:view` |
+| Networks | `server:manage` |
+| Users | `user:view` |
+| Workspaces | *(admin-only)* |
+| Logs | `log:view` |
+| Settings | `setting:view` |
+
+#### Default (built-in) roles
+
+Four roles are seeded/updated on every startup by
+`ensure_default_roles_new_format`. They are `is_system` roles. The seeding logic
+**only adds missing permission keys** — it never overwrites keys an admin has
+already toggled in the UI — so your customisations to these roles survive
+upgrades. New permissions introduced by a version bump are also **backfilled**
+onto custom roles that already hold the matching umbrella permission
+(`backfill_granular_permissions`), so a custom role built on `server:manage`
+automatically gains new `node:*` / `network:*` keys instead of silently losing
+access.
+
+| Role | Intended use | What it can do |
+|------|--------------|----------------|
+| **admin** | Platform administrator | Everything. Holds every permission *and* the `is_admin` bypass — sees all servers, all instances (regardless of owner), all users, settings, security. |
+| **moderator** | Operator without admin rights | View dashboard/servers; **create + power + console** VMs and LXC; view templates/storage/firewall/network/node/pool/backups/IPAM/users/logs; create backups; export logs; manage notifications. **No** delete, no settings changes, no user/role management. Note: without `vm:manage` a moderator is still subject to the ownership filter (see below). |
+| **user** | Standard tenant (VPS-style) | View + **start/stop/restart/console** their **own** VMs and LXC; view templates/storage/firewall/network/node/pool/IPAM; manage own notifications; view settings (for the self-service profile/quota page). **No** create/delete by default, **no** dashboard. Scoped to owned instances because it lacks `vm:manage`. |
+| **demo** | Read-only showcase | View-only across dashboard, servers, VMs, LXC, templates, storage, firewall, network, node, pool, IPAM. No power actions, no writes. |
+
+> The exact JSON for each role lives in `NEW_DEFAULT_ROLES` in
+> `backend/app/rbac/migration.py` — consult it if you need the byte-for-byte
+> permission set.
+
+#### Managing roles in the UI
+
+1. Open **Users** (needs `role:view`; editing needs `role:manage` or admin).
+2. Switch to the **Roles** tab → **New Role** or edit an existing one.
+3. Permissions are presented grouped by category (Virtual Machines, Backups,
+   User Management, …). Tick the checkboxes you want.
+4. Remember to also tick the **prerequisites** (`requires`) — the engine does not
+   auto-enable them.
+5. Assign the role to a user on the user's edit dialog.
+
+`is_system` roles (admin/moderator/user/demo) cannot be deleted, but their
+permission sets can be tuned (your changes are preserved across upgrades).
+
+#### Legacy permission format
+
+Older releases used a dot format (`vms.view`, `proxmox.manage`). These are
+mapped to the new colon format via `LEGACY_PERMISSION_MAP` and converted
+**once** in the database at startup, so no runtime translation is needed. You may
+still type a legacy code into a custom role — it is resolved transparently — but
+new roles should use the `resource:action` form.
+
+---
+
+### User Isolation — "each user sees only their own instances"
+
+This is the feature most often confused with RBAC. **It is not a permission.**
+It is a separate ownership filter layered *on top of* the `vm:*`/`lxc:*`
+permissions. Understanding the split is the key to configuring tenants correctly.
+
+#### The rule
+
+| Caller | Sees / controls |
+|---|---|
+| Admin, or role named `admin` | **All** instances |
+| Any role holding **`vm:manage`** | **All** instances |
+| Everyone else (incl. stock `user` role) | **Only** instances they **own** (`owner_id == user.id`) |
+
+The decision is made by `can_view_all_instances` in
+`backend/app/api/proxmox/_helpers.py`. Note carefully: the "see everything" key
+is **`vm:manage`**, **not** `vm:view`. The stock `user` role deliberately carries
+`vm:view` only so the Instances page works at all — `vm:view` on its own never
+reveals other tenants' VMs.
+
+> ⚠️ **The single most common misconfiguration:** granting `vm:manage` to the
+> `user` role (or a custom "tenant" role) to "let them manage their VMs". That
+> flips on the global view and every user suddenly sees **every** VM in the
+> panel. For tenants, grant the granular actions (`vm:update`, `vm:delete`,
+> `vm:start`, …) instead of `vm:manage`. Reserve `vm:manage` for
+> operators/admins who are *supposed* to see everything.
+
+#### How ownership is enforced everywhere
+
+Ownership is checked not just on the instance list but on every surface a
+non-privileged user can reach:
+
+- **Instance list & single-instance actions** — `check_vm_access` / `require_vm_access`
+  verify `owner_id` before any view/power/console/snapshot/backup/delete op.
+- **Live resource endpoints** — the dashboard (`/api/resources/all`) and the
+  node/server page (`/api/{server_id}/resources`) call `get_owned_vmids` and
+  filter the live Proxmox listing down to owned VMIDs, so a user with only
+  `server:view` cannot enumerate other owners' VMs through the node page.
+
+#### Assigning an owner
+
+1. **Automatic** — when a user deploys a VM/LXC they become its `owner_id`.
+2. **Manual (admin)** — open the instance → **Owner** button → pick a user →
+   Save. See [VM / LXC Ownership](#-vm--lxc-ownership) for the REST API.
+
+Instances synced from Proxmox before ownership existed have `owner_id = NULL`
+(visible to privileged users only). Bulk-assign them with:
+
+```bash
+docker compose exec app python assign_instances_owner.py
+```
+
+#### RBAC vs Workspaces vs Server-assignment vs Ownership
+
+These four mechanisms compose — a non-admin must pass **all** applicable filters:
+
+| Layer | Question it answers | Configured in |
+|---|---|---|
+| **RBAC role** | *What actions* may this user perform at all? | Users → Roles |
+| **Workspaces** | *Which servers* is this user allowed to see? | [Workspaces](#-workspaces) |
+| **Server assignment** | *Which specific servers* within those workspaces? | [User → Server Assignment](#-user--server-assignment) |
+| **Ownership** | *Which individual VMs/LXC* (unless `vm:manage`/admin)? | [VM / LXC Ownership](#-vm--lxc-ownership) |
 
 ### Snapshots
 
@@ -1413,7 +1622,7 @@ Manage network interfaces (bridges, bonds, VLANs) directly on Proxmox nodes.
 
 #### Accessing the Networks Page
 
-1. Open **Networks** from the sidebar (requires `proxmox.view` permission)
+1. Open **Networks** from the sidebar (requires `server:manage` permission; SDN/interface writes need `network:manage`)
 2. Select a **Server** from the dropdown
 3. The page shows two tabs: **SDN** and **Node Interfaces**
 
@@ -1643,7 +1852,7 @@ The SHA-256 fingerprint is computed and displayed automatically.
 
 ### Admin Key Management
 
-Admins (users with `users.manage` permission) can view and manage SSH keys for any user:
+Admins (users with `user:manage` permission) can view and manage SSH keys for any user:
 
 ```
 GET  /api/ssh-keys/user/{user_id}   — list keys for a specific user
