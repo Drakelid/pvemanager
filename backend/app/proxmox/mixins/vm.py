@@ -1,4 +1,5 @@
 from typing import List, Dict, Optional, Union, Any
+import re
 import time
 import urllib3
 from loguru import logger
@@ -39,6 +40,46 @@ class VmMixin:
             except Exception as e:
                 logger.error(f"Ошибка перезапуска VM {vmid} на {node}: {e}")
                 return None
+
+        def _wait_vm_stopped(self, node: str, vmid: int, timeout: int) -> bool:
+            """Опрашивать статус ВМ, пока не 'stopped' или не выйдет timeout секунд."""
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                st = self.get_vm_status(node, vmid) or {}
+                if st.get('status') == 'stopped':
+                    return True
+                time.sleep(1)
+            return False
+
+        def hybrid_restart_vm(self, node: str, vmid: int,
+                              graceful_timeout: int = 20) -> bool:
+            """Перезапуск «мягко, при таймауте — жёстко», затем start.
+
+            status/shutdown с forceStop=1 сначала шлёт ACPI-выключение, а если гость
+            не ответил за graceful_timeout секунд — Proxmox сам убивает процесс QEMU.
+            Это покрывает и живую ОС (корректное выключение), и свежий установщик без
+            ACPI/QEMU Guest Agent (где обычный reboot виснет на guest-ping). Нужен для
+            применения нового boot order. Возвращает True, если ВМ снова запущена.
+            """
+            if not self.proxmox:
+                return False
+            try:
+                self.proxmox.nodes(node).qemu(vmid).status.shutdown.post(
+                    timeout=graceful_timeout, forceStop=1)
+                # Ждём с запасом сверх graceful_timeout (форс-стоп внутри shutdown).
+                if not self._wait_vm_stopped(node, vmid, graceful_timeout + 20):
+                    # Подстраховка: shutdown завис — бьём по процессу напрямую.
+                    logger.warning(f"VM {vmid}: shutdown не завершился, принудительный stop")
+                    self.proxmox.nodes(node).qemu(vmid).status.stop.post()
+                    if not self._wait_vm_stopped(node, vmid, 15):
+                        logger.error(f"VM {vmid} не остановилась — старт отменён")
+                        return False
+                upid = self.proxmox.nodes(node).qemu(vmid).status.start.post()
+                logger.info(f"VM {vmid} на {node}: гибридный перезапуск выполнен, UPID: {upid}")
+                return isinstance(upid, str)
+            except Exception as e:
+                logger.error(f"Ошибка гибридного перезапуска VM {vmid} на {node}: {e}")
+                return False
 
         def shutdown_vm(self, node: str, vmid: int, timeout: int = 60) -> Optional[str]:
             """Корректно выключить VM (ACPI). Возвращает UPID задачи."""
@@ -202,6 +243,81 @@ class VmMixin:
                 return True
             except Exception as e:
                 logger.error(f"Ошибка отключения ISO у VM {vmid}: {e}")
+                return False
+
+        def _ordered_boot_disks(self, cfg: Dict,
+                                exclude_device: Optional[str] = None) -> List[str]:
+            """Загрузочные диски ВМ (не CD-ROM, не пустые) в порядке текущего boot.
+
+            Порядок между дисками берём из текущего boot=order=...; недостающие
+            добавляем в конец. exclude_device исключается принудительно. efidisk/
+            tpmstate не проходят regex дисковых устройств, поэтому не попадают.
+            """
+            disk_re = re.compile(r'^(?:scsi|virtio|sata|ide)\d+$')
+            disks: List[str] = []
+            for key, val in cfg.items():
+                if not disk_re.match(key):
+                    continue
+                if exclude_device and key == exclude_device:
+                    continue
+                if not isinstance(val, str) or not val:
+                    continue
+                if 'media=cdrom' in val or val.startswith('none'):
+                    continue
+                disks.append(key)
+
+            ordered: List[str] = []
+            m = re.search(r'order=([^,]+)', str(cfg.get('boot') or ''))
+            if m:
+                for dev in m.group(1).split(';'):
+                    if dev in disks and dev not in ordered:
+                        ordered.append(dev)
+            for dev in disks:
+                if dev not in ordered:
+                    ordered.append(dev)
+            return ordered
+
+        def set_boot_disk_first(self, node: str, vmid: int,
+                                exclude_device: Optional[str] = None) -> bool:
+            """Поставить дисковые устройства первыми в порядке загрузки, исключив CD-ROM.
+
+            Используется после установки ОС: извлекли ISO — грузимся с диска.
+            exclude_device (например отключаемый ide2) исключается из рассмотрения.
+            """
+            if not self.proxmox:
+                return False
+            try:
+                cfg = self.proxmox.nodes(node).qemu(vmid).config.get() or {}
+                ordered = self._ordered_boot_disks(cfg, exclude_device=exclude_device)
+                if not ordered:
+                    logger.warning(f"VM {vmid}: не найден загрузочный диск для boot order")
+                    return False
+                self.proxmox.nodes(node).qemu(vmid).config.put(boot=f"order={';'.join(ordered)}")
+                logger.info(f"VM {vmid} на {node}: порядок загрузки → диск ({';'.join(ordered)})")
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка установки boot order (диск) у VM {vmid}: {e}")
+                return False
+
+        def set_boot_iso_first(self, node: str, vmid: int,
+                               iso_device: str = 'ide2') -> bool:
+            """Поставить CD-ROM (ISO) первым в порядке загрузки, диски — следом.
+
+            Используется при монтировании ISO на работающую ВМ, когда нужно
+            загрузиться именно с образа (live-CD, восстановление, переустановка).
+            iso_device — привод с ISO (ide2 по умолчанию).
+            """
+            if not self.proxmox:
+                return False
+            try:
+                cfg = self.proxmox.nodes(node).qemu(vmid).config.get() or {}
+                disks = self._ordered_boot_disks(cfg)  # CD-ROM сюда не попадёт
+                order = [iso_device] + [d for d in disks if d != iso_device]
+                self.proxmox.nodes(node).qemu(vmid).config.put(boot=f"order={';'.join(order)}")
+                logger.info(f"VM {vmid} на {node}: порядок загрузки → ISO ({';'.join(order)})")
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка установки boot order (ISO) у VM {vmid}: {e}")
                 return False
 
         def force_stop_vm(self, node: str, vmid: int) -> bool:

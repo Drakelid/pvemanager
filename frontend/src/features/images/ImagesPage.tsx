@@ -13,8 +13,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useServers, useNodes } from '@/hooks/use-nodes';
-import { useImageCatalog, useImageLXCTemplates, useNodeArch } from '@/hooks/use-image-catalog';
+import { useImageCatalog, useImageLXCTemplates, useNodeArch, useNodeIsos } from '@/hooks/use-image-catalog';
 import { useProfile } from '@/hooks/use-settings';
+import { formatBytes } from '@/lib/format';
 import DownloadImageDialog, { type SelectedImage } from './DownloadImageDialog';
 import DownloadIsoDialog, { type IsoSource } from './DownloadIsoDialog';
 import MirrorsManager from './MirrorsManager';
@@ -47,6 +48,7 @@ export default function ImagesPage() {
   const { data: catalog } = useImageCatalog();
   const { data: lxcRepo = [] } = useImageLXCTemplates(serverId ?? undefined, node || undefined);
   const { data: nodeArch } = useNodeArch(serverId ?? undefined, node || undefined);
+  const { data: nodeIsosResp } = useNodeIsos(serverId ?? undefined, node || undefined);
 
   // Авто-выбор первого сервера и ноды
   useEffect(() => {
@@ -77,6 +79,14 @@ export default function ImagesPage() {
     return all.filter((img) => img.kind === 'iso'
       && (!q || `${img.name} ${img.os ?? ''} ${img.version ?? ''}`.toLowerCase().includes(q)));
   }, [catalog, search]);
+
+  // Реальные ISO-файлы на хранилищах выбранной ноды (в т.ч. существовавшие
+  // до подключения ноды к панели). Фильтр по поисковой строке.
+  const nodeIsos = useMemo(() => {
+    const all = nodeIsosResp?.isos ?? [];
+    const q = search.toLowerCase();
+    return all.filter((iso) => !q || `${iso.name} ${iso.volid}`.toLowerCase().includes(q));
+  }, [nodeIsosResp, search]);
 
   const openIsoDownload = (src: IsoSource | null) => {
     setIsoSource(src);
@@ -184,6 +194,31 @@ export default function ImagesPage() {
           {!canDownload && (
             <div className="text-sm text-muted-foreground">Выберите сервер и ноду, чтобы загрузить образ.</div>
           )}
+
+          {/* Реальные ISO на хранилище ноды (загруженные ранее, в т.ч. до подключения к панели) */}
+          {canDownload && nodeIsos.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-muted-foreground">На хранилище ноды</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {nodeIsos.map((iso) => (
+                  <Card key={iso.volid}>
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <OsLogo name={iso.name} />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate" title={iso.name}>{iso.name}</div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <Badge variant="outline">{iso.storage}</Badge>
+                          {iso.size != null && <Badge variant="secondary">{formatBytes(iso.size)}</Badge>}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Сохранённые ISO-ссылки из каталога/зеркал */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {isoImages.map((img) => (
               <Card key={img.id}>

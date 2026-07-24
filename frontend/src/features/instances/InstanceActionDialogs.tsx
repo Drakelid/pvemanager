@@ -818,18 +818,25 @@ function ExecuteCommandDialog({ open, onClose, serverId, vmid, node, type }: Omi
 function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
   const [device, setDevice] = useState('ide2');
   const [volid, setVolid] = useState<string>('');
+  const [bootFromDisk, setBootFromDisk] = useState(true);
+  const [bootFromIso, setBootFromIso] = useState(false);
   const isQemu = type === 'qemu';
   const isos = useNodeIsos(serverId, node, open && isQemu);
   const config = useVMConfig(serverId, vmid, type, node, open && isQemu);
   const attach = useAttachIso(serverId, vmid, node);
   const detach = useDetachIso(serverId, vmid, node);
 
-  const currentIso = useMemo(() => {
+  // volid текущего подключённого образа (без ',media=cdrom,size=...'); null — привод пуст.
+  const currentVolid = useMemo(() => {
     const v = config.data?.[device];
-    if (typeof v !== 'string') return null;
-    if (v.startsWith('none')) return null;
-    return v;
+    if (typeof v !== 'string' || v.startsWith('none')) return null;
+    return v.split(',')[0] || null;
   }, [config.data, device]);
+
+  // Отразить текущий образ в выпадающем списке при открытии/смене устройства.
+  useEffect(() => {
+    if (open) setVolid(currentVolid || '');
+  }, [open, device, currentVolid]);
 
   if (!isQemu) {
     return (
@@ -855,22 +862,17 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
           <DialogDescription>Подключите ISO к виртуальному CD-ROM устройству.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label>Устройство</Label>
-              <Select value={device} onValueChange={(v) => v && setDevice(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ide0">ide0</SelectItem>
-                  <SelectItem value="ide1">ide1</SelectItem>
-                  <SelectItem value="ide2">ide2</SelectItem>
-                  <SelectItem value="ide3">ide3</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="text-xs text-muted-foreground self-end">
-              Сейчас: <span className="font-mono">{currentIso || 'пусто'}</span>
-            </div>
+          <div>
+            <Label>Устройство</Label>
+            <Select value={device} onValueChange={(v) => v && setDevice(v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ide0">ide0</SelectItem>
+                <SelectItem value="ide1">ide1</SelectItem>
+                <SelectItem value="ide2">ide2</SelectItem>
+                <SelectItem value="ide3">ide3</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label>Образ</Label>
@@ -880,7 +882,9 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
               </SelectTrigger>
               <SelectContent>
                 {(isos.data?.isos || []).map((iso) => (
-                  <SelectItem key={iso.volid} value={iso.volid}>{iso.name || iso.volid}</SelectItem>
+                  <SelectItem key={iso.volid} value={iso.volid}>
+                    {iso.name || iso.volid}{iso.volid === currentVolid ? ' · текущий' : ''}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -888,22 +892,68 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
               <p className="mt-1 text-xs text-muted-foreground">На ноде нет загруженных ISO образов.</p>
             )}
           </div>
+          {currentVolid && (
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <Checkbox
+                className="mt-0.5"
+                checked={bootFromDisk}
+                onChange={(e) => setBootFromDisk(e.target.checked)}
+              />
+              <span>
+                Загружаться с диска после извлечения
+                <span className="block text-xs text-muted-foreground">
+                  Ставит диск первым в порядке загрузки и перезапускает ВМ, если она запущена, —
+                  чтобы сразу стартовать с установленной ОС, а не с ISO.
+                </span>
+              </span>
+            </label>
+          )}
+          {volid && volid !== currentVolid && (
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <Checkbox
+                className="mt-0.5"
+                checked={bootFromIso}
+                onChange={(e) => setBootFromIso(e.target.checked)}
+              />
+              <span>
+                Загрузиться с этого ISO
+                <span className="block text-xs text-muted-foreground">
+                  Ставит CD-ROM первым в порядке загрузки и перезапускает ВМ, если она запущена, —
+                  для установки/восстановления с образа. Без галочки ISO просто вставится в привод.
+                </span>
+              </span>
+            </label>
+          )}
         </div>
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => detach.mutate({ device }, {
-              onSuccess: () => { toast.success('ISO отключён'); onClose(); },
+            onClick={() => detach.mutate({ device, boot_from_disk: bootFromDisk, reboot_after: bootFromDisk }, {
+              onSuccess: (r) => {
+                toast.success(
+                  r.rebooted ? 'ISO извлечён, ВМ перезапускается с диска'
+                    : r.boot_from_disk ? 'ISO извлечён, загрузка с диска (применится при старте)'
+                    : 'ISO отключён',
+                );
+                onClose();
+              },
               onError: (e) => toast.error(e.message),
             })}
-            disabled={detach.isPending || !currentIso}
+            disabled={detach.isPending || !currentVolid}
           >
             {detach.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Отключить
+            Извлечь
           </Button>
           <Button
-            onClick={() => attach.mutate({ volid, device }, {
-              onSuccess: () => { toast.success('ISO подключён'); onClose(); },
+            onClick={() => attach.mutate({ volid, device, boot_from_iso: bootFromIso, reboot_after: bootFromIso }, {
+              onSuccess: (r) => {
+                toast.success(
+                  r.rebooted ? 'ISO подключён, ВМ перезапускается с образа'
+                    : r.boot_from_iso ? 'ISO подключён, загрузка с образа (применится при старте)'
+                    : 'ISO подключён',
+                );
+                onClose();
+              },
               onError: (e) => toast.error(e.message),
             })}
             disabled={!volid || attach.isPending}

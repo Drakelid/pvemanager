@@ -826,22 +826,34 @@ export function useNodeIsos(serverId: number, node: string, enabled = true) {
 
 export function useAttachIso(serverId: number, vmid: number, node: string) {
   const qc = useQueryClient();
-  return useMutation<{ status: string }, Error, { volid: string; device?: string }>({
+  return useMutation<
+    { status: string; boot_from_iso?: boolean; rebooted?: boolean },
+    Error,
+    { volid: string; device?: string; boot_from_iso?: boolean; reboot_after?: boolean }
+  >({
     mutationFn: (body) =>
       apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/iso/attach?node=${node}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
+      qc.invalidateQueries({ queryKey: vmKeys.status(serverId, vmid) });
+      qc.invalidateQueries({ queryKey: ['resources'] });
     },
   });
 }
 
 export function useDetachIso(serverId: number, vmid: number, node: string) {
   const qc = useQueryClient();
-  return useMutation<{ status: string }, Error, { device?: string }>({
+  return useMutation<
+    { status: string; boot_from_disk?: boolean; rebooted?: boolean },
+    Error,
+    { device?: string; boot_from_disk?: boolean; reboot_after?: boolean }
+  >({
     mutationFn: (body) =>
       apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/iso/detach?node=${node}`, body || {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) });
+      qc.invalidateQueries({ queryKey: vmKeys.status(serverId, vmid) });
+      qc.invalidateQueries({ queryKey: ['resources'] });
     },
   });
 }

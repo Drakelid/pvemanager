@@ -3649,10 +3649,18 @@ class NotesRequest(BaseModel):
 class IsoAttachRequest(BaseModel):
     volid: str
     device: str = "ide2"
+    # Поставить этот ISO первым в порядке загрузки (грузиться с образа: live-CD и т.п.).
+    boot_from_iso: bool = False
+    # Перезапустить ВМ, чтобы новый порядок загрузки вступил в силу (только если запущена).
+    reboot_after: bool = True
 
 
 class IsoDetachRequest(BaseModel):
     device: str = "ide2"
+    # После извлечения ISO — поставить диск первым в порядке загрузки (грузиться с ОС).
+    boot_from_disk: bool = True
+    # Перезапустить ВМ, чтобы новый порядок загрузки вступил в силу (только если запущена).
+    reboot_after: bool = True
 
 
 class ExecuteCommandRequest(BaseModel):
@@ -3750,16 +3758,29 @@ def attach_iso_endpoint(
     require_vm_access(db, current_user, server_id, vmid)
     server = _resolve_server(db, server_id)
     client = _get_client_or_503(server)
-    ok = client.attach_iso(node, vmid, body.volid, body.device or 'ide2')
+    device = body.device or 'ide2'
+    ok = client.attach_iso(node, vmid, body.volid, device)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to attach ISO")
+    boot_iso_set = False
+    rebooted = False
+    if body.boot_from_iso:
+        boot_iso_set = client.set_boot_iso_first(node, vmid, device)
+        # Новый порядок загрузки применяется только при power-cycle QEMU.
+        # Перезапускаем лишь запущенную ВМ.
+        if boot_iso_set and body.reboot_after:
+            status = client.get_vm_status(node, vmid) or {}
+            if status.get('status') == 'running':
+                rebooted = client.hybrid_restart_vm(node, vmid)
     LoggingService.log_proxmox_action(
         db=db, action='attach-iso', resource_type='vm', resource_id=vmid,
         username=current_user.username, server_id=server_id,
         server_name=server.name, node_name=node,
-        details={'volid': body.volid, 'device': body.device}, success=True,
+        details={'volid': body.volid, 'device': device,
+                 'boot_from_iso': boot_iso_set, 'rebooted': rebooted},
+        success=True,
     )
-    return {"status": "success"}
+    return {"status": "success", "boot_from_iso": boot_iso_set, "rebooted": rebooted}
 
 
 @router.post("/api/{server_id}/vm/{vmid}/iso/detach")
@@ -3775,10 +3796,28 @@ def detach_iso_endpoint(
     require_vm_access(db, current_user, server_id, vmid)
     server = _resolve_server(db, server_id)
     client = _get_client_or_503(server)
-    ok = client.detach_iso(node, vmid, body.device or 'ide2')
+    device = body.device or 'ide2'
+    ok = client.detach_iso(node, vmid, device)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to detach ISO")
-    return {"status": "success"}
+    boot_disk_set = False
+    rebooted = False
+    if body.boot_from_disk:
+        boot_disk_set = client.set_boot_disk_first(node, vmid, exclude_device=device)
+        # Новый порядок загрузки применяется только при power-cycle QEMU (гостевой
+        # reboot конфиг не перечитывает). Перезапускаем лишь запущенную ВМ.
+        if boot_disk_set and body.reboot_after:
+            status = client.get_vm_status(node, vmid) or {}
+            if status.get('status') == 'running':
+                rebooted = client.hybrid_restart_vm(node, vmid)
+    LoggingService.log_proxmox_action(
+        db=db, action='detach-iso', resource_type='vm', resource_id=vmid,
+        username=current_user.username, server_id=server_id,
+        server_name=server.name, node_name=node,
+        details={'device': device, 'boot_from_disk': boot_disk_set, 'rebooted': rebooted},
+        success=True,
+    )
+    return {"status": "success", "boot_from_disk": boot_disk_set, "rebooted": rebooted}
 
 
 # ══════════════════════════════════════════════════════════════════════════

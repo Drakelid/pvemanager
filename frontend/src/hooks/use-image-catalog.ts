@@ -50,6 +50,28 @@ export function useNodeArch(serverId?: number, node?: string) {
   });
 }
 
+// Реальные ISO-образы, уже лежащие на ISO-хранилищах ноды (в т.ч. загруженные
+// до подключения ноды к панели). Отдельно от каталога/зеркал — это содержимое storage.
+export interface NodeIso {
+  volid: string;
+  storage: string;
+  size: number | null;
+  format: string | null;
+  name: string;
+}
+
+export function useNodeIsos(serverId?: number, node?: string) {
+  return useQuery({
+    queryKey: ['node-isos', serverId, node],
+    queryFn: () =>
+      apiClient.get<{ isos: NodeIso[] }>(
+        `/proxmox/api/${serverId}/node/${encodeURIComponent(node!)}/isos`,
+      ),
+    enabled: !!serverId && !!node,
+    staleTime: 60 * 1000,
+  });
+}
+
 // Целевые хранилища ноды по типу контента (import|vztmpl|iso).
 export function useImageStorages(serverId?: number, node?: string, content?: string) {
   return useQuery({
