@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Column, FilterFn, RowData } from '@tanstack/react-table';
 import { ListFilter, X } from 'lucide-react';
@@ -49,13 +48,18 @@ export function ColumnFilter<TData>({ column, variant = 'text', formatOption }: 
       ? Array.isArray(filterValue) && filterValue.length > 0
       : !!filterValue;
 
-  const uniqueValues = useMemo(() => {
-    if (variant !== 'select') return [];
-    return Array.from(column.getFacetedUniqueValues().keys())
-      .filter((v): v is string => v != null && String(v).length > 0)
-      .map(String)
-      .sort();
-  }, [variant, column]);
+  // Not memoized on `column` — TanStack keeps the same Column object identity
+  // across data updates, so a useMemo keyed on it would freeze these options
+  // at whatever the table's data looked like when this popover first mounted
+  // (e.g. before a workspace switch re-scoped the rows). getFacetedUniqueValues()
+  // is already memoized internally against the actual row data.
+  const uniqueValues =
+    variant === 'select'
+      ? Array.from(column.getFacetedUniqueValues().keys())
+          .filter((v): v is string => v != null && String(v).length > 0)
+          .map(String)
+          .sort()
+      : [];
 
   const selected = (Array.isArray(filterValue) ? filterValue : []) as string[];
 

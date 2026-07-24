@@ -88,6 +88,7 @@ import { formatBytes, vmTypeLabel, formatUptime, formatVmConfig } from '@/lib/fo
 import { apiClient } from '@/lib/api-client';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
 import { useBulkTasksStore } from '@/stores/bulk-tasks-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { VMInstance } from '@/types';
 import { toast } from 'sonner';
 
@@ -364,6 +365,26 @@ export default function InstancesPage() {
     }
   });
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  // Reset every filter that can reference a server/node identity when the
+  // active workspace changes — those values belong to whatever workspace was
+  // active when they were picked, and silently keeping them can filter the
+  // new workspace's (now-scoped) VM list down to nothing.
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  // Compares against the previous *value* (not a one-shot "first render" flag)
+  // so React 18 StrictMode's dev-only double effect invocation on mount can't
+  // misfire this as a real workspace change.
+  const prevWorkspaceIdRef = useRef(activeWorkspaceId);
+  useEffect(() => {
+    if (prevWorkspaceIdRef.current === activeWorkspaceId) return;
+    prevWorkspaceIdRef.current = activeWorkspaceId;
+    setServerFilter('all');
+    localStorage.setItem('instances-server-filter', 'all');
+    setNodeFilter('all');
+    localStorage.setItem('instances-node-filter', 'all');
+    setColumnFilters([]);
+    setRowSelection({});
+  }, [activeWorkspaceId]);
 
   // Persist sorting + column filters across reloads
   useEffect(() => {
