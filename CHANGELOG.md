@@ -4,6 +4,18 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.13.0] - 2026-07-24
+
+### 🛒 App Store
+
+- **Storage selection for the golden template** — the "Golden LXC template" dialog now offers dropdowns for template storage (`vztmpl` content) and rootfs storage (`rootdir` content) populated from the selected server/node, instead of free-text fields. Selection auto-picks `local`/`local-lvm` when present, falling back to the first available storage
+
+### 📜 Scripts
+
+- **Name search in the scripts catalog** — filter manual, Git and Community-Scripts entries by name directly from the Scripts page
+
+---
+
 ## [v1.12.0] - 2026-07-24
 
 ### 🔗 Cluster

@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.12.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.13.0
 
 ---
 
@@ -797,7 +797,7 @@ Catalog of self-hosted applications with one-click install. Each app runs in its
 
 ### Prerequisites
 
-- A **golden LXC template** (Debian 12 + Docker + Compose) per Proxmox server. Build it from **App Store → золотой шаблон** (`POST /api/appstore/golden-template`, picks server/node/storage) — this automates the manual procedure in [docs/golden-template.md](docs/golden-template.md). The resulting vztmpl volid is stored **per `server_id`** (a template built on server A lives on A's storage only and is never used to install on server B); `APPSTORE_GOLDEN_TEMPLATE` is just the last-resort fallback for servers that never got their own build.
+- A **golden LXC template** (Debian 12 + Docker + Compose) per Proxmox server. Build it from **App Store → золотой шаблон** (`POST /api/appstore/golden-template`, picks server/node/storage) — this automates the manual procedure in [docs/golden-template.md](docs/golden-template.md). Template and rootfs storage are picked from dropdowns populated with the selected server/node's actual storages (filtered by `vztmpl`/`rootdir` content), defaulting to `local`/`local-lvm` when available. The resulting vztmpl volid is stored **per `server_id`** (a template built on server A lives on A's storage only and is never used to install on server B); `APPSTORE_GOLDEN_TEMPLATE` is just the last-resort fallback for servers that never got their own build.
 - **SSH access** from the panel to the Proxmox node (used for `pct exec` / `pct push`).
 - `FERNET_KEY` set (encrypts app secrets at rest).
 
@@ -2517,4 +2517,4 @@ A: Not yet, but planned for future versions.
 ---
 
 *Last updated: July 24, 2026*
-*Version: 1.12.0*
+*Version: 1.13.0*
