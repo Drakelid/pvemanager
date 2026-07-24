@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Terminal, Plus, RefreshCw, Loader2, Play, Pencil, Trash2, GitBranch, Package } from 'lucide-react';
+import { Terminal, Plus, RefreshCw, Loader2, Play, Pencil, Trash2, GitBranch, Package, Search } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
@@ -30,6 +31,7 @@ export default function ScriptsPage() {
 
   const { data: scripts = [], isLoading } = useScripts();
   const deleteScript = useDeleteScript();
+  const [search, setSearch] = useState('');
 
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<ScriptCatalogItem | null>(null);
@@ -44,9 +46,14 @@ export default function ScriptsPage() {
   const { data: executions = [] } = useScriptExecutions();
   const [execDetailId, setExecDetailId] = useState<number | null>(null);
 
-  const manualScripts = useMemo(() => scripts.filter((s) => s.source === 'manual'), [scripts]);
-  const gitScripts = useMemo(() => scripts.filter((s) => s.source === 'git'), [scripts]);
-  const communityScripts = useMemo(() => scripts.filter((s) => s.source === 'community-scripts'), [scripts]);
+  const filteredScripts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? scripts.filter((s) => s.name.toLowerCase().includes(q)) : scripts;
+  }, [scripts, search]);
+
+  const manualScripts = useMemo(() => filteredScripts.filter((s) => s.source === 'manual'), [filteredScripts]);
+  const gitScripts = useMemo(() => filteredScripts.filter((s) => s.source === 'git'), [filteredScripts]);
+  const communityScripts = useMemo(() => filteredScripts.filter((s) => s.source === 'community-scripts'), [filteredScripts]);
 
   const handleDelete = (script: ScriptCatalogItem) => {
     if (!confirm(t('scripts.confirm_delete', 'Удалить скрипт "{{name}}"?', { name: script.name }))) return;
@@ -136,12 +143,26 @@ export default function ScriptsPage() {
         </TabsList>
 
         <TabsContent value="catalog" className="mt-4 space-y-4">
+          <div className="relative w-[280px]">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-8"
+              placeholder={t('scripts.search', 'Поиск по названию...')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           {isLoading ? (
             <div className="py-20 text-center text-sm text-muted-foreground">{t('common.loading', 'Загрузка...')}</div>
           ) : scripts.length === 0 ? (
             <div className="py-20 text-center text-muted-foreground">
               <Terminal className="mx-auto mb-3 h-12 w-12 opacity-40" />
               <p>{t('scripts.no_scripts', 'Пока нет ни одного скрипта')}</p>
+            </div>
+          ) : filteredScripts.length === 0 ? (
+            <div className="py-20 text-center text-muted-foreground">
+              <Search className="mx-auto mb-3 h-12 w-12 opacity-40" />
+              <p>{t('scripts.no_search_results', 'Ничего не найдено')}</p>
             </div>
           ) : (
             <>
