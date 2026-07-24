@@ -43,6 +43,8 @@
       "pick_server": "Выберите сервер",
       "template_storage": "Хранилище шаблона",
       "rootfs_storage": "Хранилище rootfs",
+      "no_template_storage": "нет хранилищ с vztmpl",
+      "no_rootfs_storage": "нет хранилищ с rootdir",
       "force": "Пересобрать",
       "build": "Собрать шаблон",
       "started": "Сборка шаблона запущена",

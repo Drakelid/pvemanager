@@ -7,10 +7,10 @@ import { DialogMinimizeButton } from '@/components/shared/MinimizableDialog';
 import { useMinimizedOpsStore, goldenOpKey } from '@/stores/minimized-ops-store';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { useServers, useNodes } from '@/hooks/use-nodes';
+import { useLXCStorages } from '@/hooks/use-lxc-templates';
 import { useBuildGoldenTemplate, useGoldenTemplateStatus } from '@/hooks/use-appstore';
 
 interface Props {
@@ -33,13 +33,34 @@ export default function GoldenTemplateDialog({ open, onOpenChange, initialServer
     if (open && initialServerId && !serverId) setServerId(String(initialServerId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialServerId]);
-  const [templateStorage, setTemplateStorage] = useState('local');
-  const [rootfsStorage, setRootfsStorage] = useState('local-lvm');
+  const [templateStorage, setTemplateStorage] = useState('');
+  const [rootfsStorage, setRootfsStorage] = useState('');
   const [force, setForce] = useState(false);
 
   const serverIdNum = serverId ? Number(serverId) : 0;
   const { data: nodesData } = useNodes(serverIdNum || 0);
   const nodes = nodesData?.nodes ?? [];
+
+  // Хранилища сервера — vztmpl для файла шаблона, rootdir для rootfs контейнера.
+  // node не обязателен (сборка может выбрать ноду сама), поэтому список тянем
+  // сразу по serverId, а при выбранной ноде — сужаем до её хранилищ.
+  const { data: templateStorages = [] } = useLXCStorages(serverIdNum || undefined, node || undefined, 'vztmpl');
+  const { data: rootfsStorages = [] } = useLXCStorages(serverIdNum || undefined, node || undefined, 'rootdir');
+
+  // Автовыбор при загрузке списка: предпочитаем local/local-lvm, иначе первое доступное.
+  useEffect(() => {
+    if (templateStorage && templateStorages.some(s => s.storage === templateStorage)) return;
+    if (!templateStorages.length) return;
+    setTemplateStorage(templateStorages.find(s => s.storage === 'local')?.storage ?? templateStorages[0].storage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateStorages]);
+
+  useEffect(() => {
+    if (rootfsStorage && rootfsStorages.some(s => s.storage === rootfsStorage)) return;
+    if (!rootfsStorages.length) return;
+    setRootfsStorage(rootfsStorages.find(s => s.storage === 'local-lvm')?.storage ?? rootfsStorages[0].storage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootfsStorages]);
 
   const build = useBuildGoldenTemplate();
 
@@ -142,7 +163,7 @@ export default function GoldenTemplateDialog({ open, onOpenChange, initialServer
           {/* Сервер */}
           <div className="space-y-1.5">
             <Label>{t('appstore.golden.server', 'Сервер Proxmox')}</Label>
-            <Select value={serverId} onValueChange={(v) => { setServerId(v ?? ''); setNode(''); }}>
+            <Select value={serverId} onValueChange={(v) => { setServerId(v ?? ''); setNode(''); setTemplateStorage(''); setRootfsStorage(''); }}>
               <SelectTrigger><SelectValue placeholder={t('appstore.golden.pick_server', 'Выберите сервер')} /></SelectTrigger>
               <SelectContent>
                 {servers.map((s) => (
@@ -168,14 +189,28 @@ export default function GoldenTemplateDialog({ open, onOpenChange, initialServer
             </div>
             <div className="space-y-1.5">
               <Label>{t('appstore.golden.template_storage', 'Хранилище шаблона')}</Label>
-              <Input value={templateStorage} onChange={(e) => setTemplateStorage(e.target.value)} placeholder="local" />
+              <Select value={templateStorage} onValueChange={(v) => setTemplateStorage(v ?? '')} disabled={!serverIdNum}>
+                <SelectTrigger><SelectValue placeholder={templateStorages.length ? undefined : t('appstore.golden.no_template_storage', 'нет хранилищ с vztmpl')} /></SelectTrigger>
+                <SelectContent>
+                  {templateStorages.map((s) => (
+                    <SelectItem key={s.storage} value={s.storage}>{s.storage}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>{t('appstore.golden.rootfs_storage', 'Хранилище rootfs')}</Label>
-              <Input value={rootfsStorage} onChange={(e) => setRootfsStorage(e.target.value)} placeholder="local-lvm" />
+              <Select value={rootfsStorage} onValueChange={(v) => setRootfsStorage(v ?? '')} disabled={!serverIdNum}>
+                <SelectTrigger><SelectValue placeholder={rootfsStorages.length ? undefined : t('appstore.golden.no_rootfs_storage', 'нет хранилищ с rootdir')} /></SelectTrigger>
+                <SelectContent>
+                  {rootfsStorages.map((s) => (
+                    <SelectItem key={s.storage} value={s.storage}>{s.storage}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <label className="flex items-end gap-2 pb-2 text-sm">
               <Checkbox checked={force} onChange={(e) => setForce(e.target.checked)} />

@@ -43,6 +43,8 @@
       "pick_server": "Select a server",
       "template_storage": "Template storage",
       "rootfs_storage": "Rootfs storage",
+      "no_template_storage": "no vztmpl storages",
+      "no_rootfs_storage": "no rootdir storages",
       "force": "Rebuild",
       "build": "Build template",
       "started": "Template build started",
