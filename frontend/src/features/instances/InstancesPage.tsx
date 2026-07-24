@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -80,7 +81,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusDot } from '@/components/shared/status-dot';
 import { ColumnFilter, multiSelectFilter } from '@/components/shared/column-filter';
-import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync, useInstancesMetricsSync, useBulkTasksSync } from '@/hooks/use-instances';
+import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync, useInstancesMetricsSync, useBulkTasksSync, vmKeys } from '@/hooks/use-instances';
 import { useServers } from '@/hooks/use-nodes';
 import { useProfile } from '@/hooks/use-settings';
 import { formatBytes, vmTypeLabel, formatUptime, formatVmConfig } from '@/lib/format';
@@ -291,6 +292,7 @@ export default function InstancesPage() {
   }, [t]);
 
   // ── Deploy task polling ──────────────────────────────────────────
+  const qc = useQueryClient();
   const { tasks: deployTasks, updateTask, removeTask } = useDeployTasksStore();
   const activeTasks = deployTasks.filter((t) => t.status === 'pending' || t.status === 'running');
 
@@ -318,6 +320,10 @@ export default function InstancesPage() {
                 { description: data.error_message, duration: 15000 },
               );
             }
+            // Новая VM уже сохранена в кэше бэкендом — подтягиваем список сразу,
+            // не дожидаясь фонового vm_created от 10-секундного sync_vm_cache.
+            qc.invalidateQueries({ queryKey: vmKeys.all });
+            qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
             setTimeout(() => removeTask(task.id), 5000);
           }
         } catch { /* ignore */ }

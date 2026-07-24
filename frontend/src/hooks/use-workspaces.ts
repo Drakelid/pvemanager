@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import type { Workspace } from '@/types';
+import { nodeKeys } from './use-nodes';
+import { vmKeys } from './use-instances';
 
 export const workspaceKeys = {
   all: ['workspaces'] as const,
@@ -61,7 +63,14 @@ export function useUpdateWorkspaceServers() {
   return useMutation({
     mutationFn: ({ id, ids }: { id: number; ids: number[] }) =>
       apiClient.post<WorkspaceDetail>(`/api/workspaces/${id}/servers`, { ids }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['workspace'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.all });
+      qc.invalidateQueries({ queryKey: ['workspace'] });
+      qc.invalidateQueries({ queryKey: nodeKeys.servers });
+      qc.invalidateQueries({ queryKey: nodeKeys.topology });
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    },
   });
 }
 
@@ -70,6 +79,13 @@ export function useUpdateWorkspaceUsers() {
   return useMutation({
     mutationFn: ({ id, ids }: { id: number; ids: number[] }) =>
       apiClient.post<WorkspaceDetail>(`/api/workspaces/${id}/users`, { ids }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['workspace'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.all });
+      qc.invalidateQueries({ queryKey: ['workspace'] });
+      qc.invalidateQueries({ queryKey: nodeKeys.servers });
+      qc.invalidateQueries({ queryKey: nodeKeys.topology });
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+      qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+    },
   });
 }

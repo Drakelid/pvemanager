@@ -951,6 +951,13 @@ async def delete_vm(
         # Удаляем VM
         result = client.delete_vm(node, vmid)
         if result:
+            # Помечаем запись в локальном кэше удалённой сразу, не дожидаясь
+            # фонового sync_vm_cache (тикает раз в 10с) — иначе VM ещё
+            # какое-то время висит в списке после реального удаления.
+            try:
+                soft_delete_vm_instance(db, server_id, vmid)
+            except Exception as _sde:
+                logger.warning(f"Failed to soft-delete cached VM {vmid}: {_sde}")
             # Освобождаем IP в IPAM (если есть)
             try:
                 ipam = IPAMService(db)
@@ -1003,8 +1010,13 @@ async def delete_vm(
                 success=True
             )
             logger.info(f"User {current_user.username} deleted VM {vmid} on {server.name}")
+            try:
+                from ...websocket_manager import broadcast_event
+                broadcast_event("vm_deleted", server_id=server_id, vmid=vmid, node=node, name=vm_name, vm_type="qemu")
+            except Exception as _we:
+                logger.warning(f"Failed to broadcast vm_deleted for VM {vmid}: {_we}")
             return JSONResponse(content={
-                "status": "success", 
+                "status": "success",
                 "message": f"VM {vmid} удалена",
                 "snapshots_archived": snapshot_result["archived"],
                 "snapshots_deleted": snapshot_result["deleted"]
@@ -1312,6 +1324,13 @@ async def delete_container(
         # Удаляем контейнер
         result = client.delete_container(node, vmid)
         if result:
+            # Помечаем запись в локальном кэше удалённой сразу, не дожидаясь
+            # фонового sync_vm_cache (тикает раз в 10с) — иначе контейнер ещё
+            # какое-то время висит в списке после реального удаления.
+            try:
+                soft_delete_vm_instance(db, server_id, vmid)
+            except Exception as _sde:
+                logger.warning(f"Failed to soft-delete cached container {vmid}: {_sde}")
             # Освобождаем IP в IPAM (если есть)
             try:
                 ipam = IPAMService(db)
@@ -1359,8 +1378,13 @@ async def delete_container(
             )
             
             logger.info(f"User {current_user.username} deleted container {vmid} on {server.name}")
+            try:
+                from ...websocket_manager import broadcast_event
+                broadcast_event("vm_deleted", server_id=server_id, vmid=vmid, node=node, name=container_name, vm_type="lxc")
+            except Exception as _we:
+                logger.warning(f"Failed to broadcast vm_deleted for container {vmid}: {_we}")
             return JSONResponse(content={
-                "status": "success", 
+                "status": "success",
                 "message": f"Контейнер {vmid} удалён",
                 "snapshots_archived": snapshot_result["archived"],
                 "snapshots_deleted": snapshot_result["deleted"]
