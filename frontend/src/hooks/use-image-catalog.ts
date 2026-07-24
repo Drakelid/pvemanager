@@ -99,6 +99,50 @@ export function useDownloadImage(serverId: number) {
   });
 }
 
+export interface ImageUploadRequest {
+  node: string;
+  storage: string;
+  content: 'iso' | 'vztmpl';
+  file: File;
+  filename?: string;
+  checksum?: string;
+  checksum_algorithm?: string;
+}
+
+// Загрузка локального файла (drag&drop) на ноду: multipart, без JSON.
+export function useUploadImageFile(serverId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ImageUploadRequest) => {
+      const form = new FormData();
+      form.append('node', data.node);
+      form.append('storage', data.storage);
+      form.append('content', data.content);
+      if (data.filename) form.append('filename', data.filename);
+      if (data.checksum) form.append('checksum', data.checksum);
+      if (data.checksum_algorithm) form.append('checksum_algorithm', data.checksum_algorithm);
+      form.append('file', data.file);
+      return apiClient.postForm<{ task_id: number; status: string; name: string }>(
+        `/proxmox/api/${serverId}/images/upload`,
+        form,
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['all-tasks'] });
+    },
+  });
+}
+
+// Определить реальное имя файла по URL (Content-Disposition / хвост после редиректов).
+export function useResolveFilename() {
+  return useMutation({
+    mutationFn: (url: string) =>
+      apiClient.get<{ filename: string }>(
+        `/proxmox/api/images/resolve-filename?url=${encodeURIComponent(url)}`,
+      ),
+  });
+}
+
 // ── Custom mirrors (admin) ───────────────────────────────────────────────────
 
 export function useImageMirrors(enabled = true) {

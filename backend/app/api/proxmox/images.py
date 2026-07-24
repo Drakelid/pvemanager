@@ -7,9 +7,16 @@ qcow2 (content=import) / vztmpl с прогрессом через DeployTask + 
 """
 
 import asyncio
+import os
+import re
+import shutil
+import tempfile
+from email.message import Message as _EmailMessage
 from typing import Optional
+from urllib.parse import unquote, urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, model_validator
 from sqlalchemy.orm import Session
@@ -22,6 +29,18 @@ from ...catalog import CATALOG, get_catalog_image
 from ._helpers import _get_proxmox_client
 
 router = APIRouter()
+
+
+def _sanitize_filename(name: str, default: str = 'upload.iso') -> str:
+    """Свести произвольное (клиентское) имя файла к безопасному basename.
+
+    Отбрасывает путь и заменяет всё, кроме букв/цифр/._- на подчёркивание;
+    strip('.') нейтрализует '..', '.' и ведущие точки — иначе basename вида
+    '..' привёл бы к записи временного файла за пределами tmp_dir.
+    """
+    name = os.path.basename((name or '').strip().replace('\\', '/'))
+    name = re.sub(r'[^A-Za-z0-9._-]+', '_', name).strip('.')
+    return name or default
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -243,6 +262,47 @@ def get_image_target_storages(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _filename_from_url_response(url: str, headers) -> str:
+    """Имя файла из Content-Disposition ответа, иначе — хвост пути (после редиректов)."""
+    cd = headers.get('content-disposition')
+    if cd:
+        msg = _EmailMessage()
+        msg['content-disposition'] = cd
+        name = msg.get_filename()
+        if name:
+            return unquote(name.strip())
+    path = urlparse(url).path
+    return unquote(path.rsplit('/', 1)[-1]) or 'download'
+
+
+@router.get("/api/images/resolve-filename")
+async def resolve_image_filename(
+    url: str = Query(..., description="URL образа для определения реального имени файла"),
+    current_user: User = Depends(PermissionChecker("template:view")),
+):
+    """
+    Определить настоящее имя файла по произвольному URL.
+
+    Простой хвост пути (как делает фронт на лету) не годится для ссылок вида
+    /download?id=123 без расширения — здесь сервер обычно возвращает реальное
+    имя в Content-Disposition, поэтому сначала пробуем HEAD и читаем заголовок,
+    а если сервер не поддерживает HEAD — открываем GET-поток и сразу же его
+    закрываем, не скачивая тело.
+    """
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0, verify=False) as hc:
+            try:
+                resp = await hc.head(url)
+                if resp.status_code >= 400:
+                    raise httpx.HTTPStatusError("HEAD not usable", request=resp.request, response=resp)
+                return {"filename": _filename_from_url_response(str(resp.url), resp.headers)}
+            except Exception:
+                async with hc.stream('GET', url) as stream_resp:
+                    return {"filename": _filename_from_url_response(str(stream_resp.url), stream_resp.headers)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Не удалось определить имя файла: {e}")
+
+
 # ── Download ─────────────────────────────────────────────────────────────────
 
 def _resolve_source(db: Session, req: ImageDownloadRequest) -> dict:
@@ -348,3 +408,80 @@ async def download_image(
 
     logger.info(f"[IMG DL] Task #{task_id} ({kind}) queued: {src['filename']} by {current_user.username}")
     return ImageDownloadResponse(task_id=task_id, status='pending', name=src['name'])
+
+
+@router.post("/api/{server_id}/images/upload", response_model=ImageDownloadResponse)
+async def upload_image_file(
+    server_id: int,
+    node: str = Form(...),
+    storage: str = Form(...),
+    content: str = Form('iso'),
+    filename: Optional[str] = Form(None),
+    checksum: Optional[str] = Form(None),
+    checksum_algorithm: Optional[str] = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("template:manage")),
+):
+    """Загрузить локальный файл (ISO/vztmpl) на ноду.
+
+    Сохраняем присланный файл во временный файл на диске бэкенда (basename ==
+    итоговое имя в хранилище — так его подхватит client.upload_file через
+    file_obj.name), затем фоновый воркер проксирует его в Proxmox через upload
+    API и чистит за собой временную директорию.
+    """
+    from ..templates import _deploy_executor
+    from .async_ops import _do_image_upload_sync, _normalize_iso_filename
+
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    if content not in ('iso', 'vztmpl'):
+        raise HTTPException(status_code=400, detail=f"Неподдерживаемый тип контента: {content}")
+
+    final_name = _sanitize_filename(filename or file.filename or 'upload.iso')
+    if content == 'iso':
+        final_name = _normalize_iso_filename(final_name)
+
+    tmp_dir = tempfile.mkdtemp(prefix='pveup_')
+    tmp_path = os.path.join(tmp_dir, final_name)
+    size = 0
+    try:
+        with open(tmp_path, 'wb') as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+                size += len(chunk)
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"Не удалось сохранить файл: {e}")
+    finally:
+        await file.close()
+
+    if size == 0:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="Пустой файл")
+
+    task = DeployTask(
+        status='pending', step='В очереди...', progress=0,
+        kind='image_upload', name=final_name,
+        server_id=server_id, user_id=current_user.id, node=node,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    task_id = task.id
+
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        _deploy_executor, _do_image_upload_sync,
+        task_id, server_id, node, storage, content,
+        final_name, tmp_path, tmp_dir, checksum, checksum_algorithm,
+        current_user.id, current_user.username,
+    )
+
+    logger.info(f"[IMG UPLOAD] Task #{task_id} queued: {final_name} ({size} bytes) by {current_user.username}")
+    return ImageDownloadResponse(task_id=task_id, status='pending', name=final_name)

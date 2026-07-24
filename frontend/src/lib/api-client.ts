@@ -128,6 +128,31 @@ class ApiClient {
       headers,
     });
 
+    return this.handleResponse<T>(res, path);
+  }
+
+  // multipart/form-data: без Content-Type (браузер сам проставит boundary) и
+  // без JSON.stringify тела — для загрузки файлов (напр. локальный ISO).
+  async postForm<T>(path: string, formData: FormData): Promise<T> {
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    const wsId = getActiveWorkspaceId();
+    if (wsId) {
+      headers['X-Active-Workspace'] = String(wsId);
+    }
+
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    return this.handleResponse<T>(res, path);
+  }
+
+  private async handleResponse<T>(res: Response, path: string): Promise<T> {
     if (res.status === 401) {
       // 401 от самого логина — это «неверный логин/пароль»: отдаём ошибку в
       // форму, а не перезагружаем страницу (иначе сообщение теряется).

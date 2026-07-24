@@ -8,6 +8,7 @@ progress through DeployTask records (with `kind` field) + WebSocket broadcast.
 from __future__ import annotations
 
 import re
+import shutil
 import time
 from typing import Optional
 
@@ -933,6 +934,69 @@ def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: st
         _update_deploy_task(task_id, 'failed', f'Ошибка: {err[:150]}', 0, error=err)
     finally:
         db.close()
+
+
+# ==================== Image upload (local file) ====================
+
+def _do_image_upload_sync(task_id: int, server_id: int, node: str, storage: str,
+                          content: str, filename: str, tmp_path: str, tmp_dir: str,
+                          checksum: Optional[str], checksum_algorithm: Optional[str],
+                          user_id: int, username: str):
+    """Проксировать локально загруженный файл (уже сохранён на диске бэкенда
+    endpoint'ом /images/upload) в хранилище ноды через Proxmox upload API.
+
+    В отличие от _do_image_download_sync, здесь нет UPID для polling'а прогресса
+    (Proxmox отдаёт upload как единый блокирующий multipart POST) — прогресс
+    задачи поэтому грубее: 'running' на время самого запроса, 'completed' по
+    его завершении.
+    """
+    db = SessionLocal()
+    server = None
+    try:
+        _update_deploy_task(task_id, 'running', 'Подключение к Proxmox...', 10, node=node)
+        server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+        if not server:
+            _update_deploy_task(task_id, 'failed', 'Сервер не найден', 0, error='Proxmox сервер не найден')
+            return
+        client = _connect(server)
+        if not client:
+            _update_deploy_task(task_id, 'failed', 'Ошибка подключения к Proxmox', 10,
+                                error='Не удалось подключиться к Proxmox серверу')
+            return
+
+        # Идемпотентность: если файл уже есть в хранилище — не грузим повторно
+        existing_volid = f'{storage}:{content}/{filename}'
+        if client.volume_exists(node, storage, existing_volid):
+            _update_deploy_task(task_id, 'completed', f'Файл {filename} уже в хранилище', 100, node=node)
+            logger.info(f"[IMG UPLOAD #{task_id}] {filename} already present on {node}:{storage}")
+            return
+
+        _update_deploy_task(task_id, 'running', f'Загрузка {filename} на ноду...', 30, node=node)
+        try:
+            with open(tmp_path, 'rb') as f:
+                client.upload_file(node, storage, content, filename, f,
+                                   checksum=checksum, checksum_algorithm=checksum_algorithm)
+        except Exception as e:
+            _update_deploy_task(task_id, 'failed', 'Ошибка загрузки', 30, error=f'Upload failed: {e}')
+            return
+
+        LoggingService.log_proxmox_action(
+            db=db, action='upload_image',
+            resource_type='storage', resource_id=0,
+            username=username, resource_name=filename,
+            server_id=server_id, server_name=server.name, node_name=node,
+            details={'content': content, 'storage': storage}, success=True,
+        )
+
+        _update_deploy_task(task_id, 'completed', f'Файл {filename} загружен', 100, node=node)
+        logger.info(f"[IMG UPLOAD #{task_id}] {filename} -> {node}:{storage} by {username}")
+    except Exception as e:
+        err = str(e)
+        logger.error(f"[IMG UPLOAD #{task_id}] failed: {err}")
+        _update_deploy_task(task_id, 'failed', f'Ошибка: {err[:150]}', 0, error=err)
+    finally:
+        db.close()
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def _get_or_create_os_group(db, hint: Optional[str]) -> int:

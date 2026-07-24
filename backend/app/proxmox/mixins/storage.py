@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Union, Any
+from typing import List, Dict, Optional, Union, Any, BinaryIO
 import time
 import urllib3
 from loguru import logger
@@ -117,6 +117,46 @@ class StorageMixin:
                 return result
             except Exception as e:
                 logger.error(f"Ошибка загрузки {url} на {node}:{storage}: {e}")
+                raise
+
+        def upload_file(self, node: str, storage: str, content: str, filename: str,
+                        file_obj: BinaryIO, checksum: Optional[str] = None,
+                        checksum_algorithm: Optional[str] = None) -> Optional[str]:
+            """
+            Загрузить локальный файл (ISO / vztmpl) прямо в хранилище ноды через
+            POST /nodes/{node}/storage/{storage}/upload (multipart).
+
+            proxmoxer сам детектирует io.IOBase-значения в data и переносит их в
+            files, используя requests_toolbelt для потоковой отправки больших
+            файлов (иначе есть риск упереться в 2 GiB лимит SSL-буфера). Имя файла
+            в хранилище Proxmox берёт из file_obj.name — поэтому file_obj должен
+            быть открыт из пути, чей basename уже равен нужному filename.
+
+            Args:
+                node: имя ноды
+                storage: целевое хранилище
+                content: тип контента ('iso' или 'vztmpl')
+                filename: имя файла в хранилище (для логов; фактическое имя Proxmox
+                          берёт из file_obj.name)
+                file_obj: открытый бинарный файл (basename == filename)
+                checksum: контрольная сумма (опционально)
+                checksum_algorithm: алгоритм (md5/sha1/sha224/sha256/sha384/sha512)
+
+            Returns:
+                UPID задачи или None
+            """
+            if not self.proxmox:
+                return None
+            try:
+                params = {'content': content, 'filename': file_obj}
+                if checksum and checksum_algorithm:
+                    params['checksum'] = checksum
+                    params['checksum-algorithm'] = checksum_algorithm
+                result = self.proxmox.nodes(node).storage(storage).upload.post(**params)
+                logger.info(f"Загружен файл {filename} ({content}) на {node}:{storage}, UPID: {result}")
+                return result
+            except Exception as e:
+                logger.error(f"Ошибка загрузки файла {filename} на {node}:{storage}: {e}")
                 raise
 
         def volume_exists(self, node: str, storage: str, volid: str) -> bool:
