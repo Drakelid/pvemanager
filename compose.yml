@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: pvemanager
       POSTGRES_USER: pvemanager
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pvemanager_secure_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — run deploy.sh or bootstrap.sh to generate .env}
       TZ: ${TZ:-Asia/Tashkent}
       # Оптимизация для быстрого старта
       POSTGRES_INITDB_ARGS: "--no-sync"
@@ -59,7 +59,7 @@ services:
       - .:/project:rw
     restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql://pvemanager:${POSTGRES_PASSWORD:-pvemanager_secure_password}@db:5432/pvemanager
+      - DATABASE_URL=postgresql://pvemanager:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/pvemanager
       - PYTHONPATH=/app
       - TZ=${TZ:-Asia/Tashkent}
       - PROJECT_ROOT=/project
