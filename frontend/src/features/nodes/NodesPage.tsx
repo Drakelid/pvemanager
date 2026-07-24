@@ -31,7 +31,10 @@ function ServerMeta({ serverId, online }: { serverId: number; online?: boolean }
   const nodes = data?.nodes ?? [];
   if (nodes.length === 0) return null;
 
-  const uptime = nodes.reduce((max, n) => Math.max(max, n.uptime ?? 0), 0);
+  // Аптайм показываем только для standalone-сервера (1 нода): для кластера
+  // из нескольких нод единое число вводит в заблуждение — при перезагрузке
+  // одной ноды отображался бы аптайм другой, ещё не перезагруженной.
+  const uptime = nodes.length === 1 ? (nodes[0].uptime ?? 0) : 0;
   const version = data?.version;
 
   if (!version && nodes.length <= 1 && uptime <= 0) return null;
