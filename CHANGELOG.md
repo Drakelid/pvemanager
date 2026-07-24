@@ -4,6 +4,15 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.14.0] - 2026-07-24
+
+### 🐛 Bug Fixes
+
+- **Workspace switch left stale instance filters behind** — the server, node and per-column filters on the Instances page kept whatever values were picked in the previously active workspace, which could filter the newly-scoped VM list down to nothing. Switching the active workspace now resets all of them
+- **"Node" column filter never updated after the first render** — its checklist of available nodes was memoized against the TanStack `Column` object, which keeps the same identity across data updates, so the list stayed frozen at whatever nodes were visible when the popover first mounted — including nodes from workspaces you'd since switched away from. It now reads live from the table's faceted values on every render
+
+---
+
 ## [v1.13.0] - 2026-07-24
 
 ### 🛒 App Store
