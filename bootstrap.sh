@@ -175,7 +175,10 @@ register_this_host() {
     fi
 
     log "Registering this host (${host_name} / ${host_ip}) in the panel..."
-    resp=$(curl -fsS -X POST "${base}/api/servers" \
+    # The proxmox router is mounted under /proxmox (see main.py's
+    # include_router(..., prefix="/proxmox")) — only /api/auth/* lives at the
+    # bare /api root.
+    resp=$(curl -fsS -X POST "${base}/proxmox/api/servers" \
         -H "Authorization: Bearer ${jwt}" \
         -H 'Content-Type: application/json' \
         -d "{\"name\":\"${host_name}\",\"hostname\":\"${host_name}\",\"ip_address\":\"${host_ip}\",\"port\":8006,\"api_user\":\"root@pam\",\"api_token_name\":\"${token_name}\",\"api_token_value\":\"${token_secret}\",\"use_password\":false,\"verify_ssl\":false}" \
