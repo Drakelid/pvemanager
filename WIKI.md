@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.10.2
+> Complete guide for installation, configuration and usage of PVEmanager v1.11.0
 
 ---
 
@@ -173,10 +173,11 @@ This section summarizes key API endpoints. All require JWT authentication.
 ### Proxmox Servers
 
 - `GET /api/servers` — list servers
-- `POST /api/servers` — add server
+- `POST /api/servers` — add server (`auto_create_token` provisions an API token from a login/password)
 - `PUT /api/servers/{id}` — update server
 - `DELETE /api/servers/{id}` — delete server
 - `POST /api/servers/{id}/test` — test connection
+- `POST /api/servers/{id}/provision-token` — migrate a password-auth server to an auto-provisioned API token
 
 ### Virtual Machines
 
@@ -308,8 +309,9 @@ This section summarizes key API endpoints. All require JWT authentication.
 
 - Add multiple servers
 - API Token or password authentication
-- Automatic API token creation
-- Server status monitoring
+- Automatic API token creation, with in-place migration for existing password-auth servers
+- Server status monitoring, distinguishing an unreachable node from rejected/stale credentials
+- Per-node storage availability
 
 ### VM and LXC Management
 
@@ -394,7 +396,7 @@ Per-user resource limits enforced when deploying VMs/LXC:
 ### Monitoring
 
 - Real-time CPU, RAM, Disk, Network metrics
-- Historical graphs (hour, day, week, month)
+- Historical graphs (hour, day, week, month) for both instances and nodes (node **Graphs** tab: CPU, IO delay, memory, load average, network, swap, root filesystem)
 - Resource alert thresholds
 
 ---
@@ -672,6 +674,8 @@ The **Images** module allows you to browse, download, and manage OS images from 
 - **Auto-convert to template** — optional automatic conversion of downloaded images to Proxmox VM templates
 - **Architecture-aware filtering** — images are filtered by node platform (x86-64, aarch64); default architecture matches the selected node
 - **Custom mirrors** — administrators can add, edit, and manage custom mirror sources for image discovery
+- **ISO downloads** — fetch install ISOs by URL, from a saved mirror (`kind=iso`), or straight from the ISO step of the create-instance wizard. The bundled catalog stays `.qcow2`-only on purpose — install ISOs have no stable "latest" URL, so hardcoded links would rot on every point release
+- **Local file upload** — upload an ISO or LXC template (`vztmpl`) from your own machine straight to node storage, for images that aren't published anywhere the panel can reach
 
 ### Accessing Images
 
@@ -686,6 +690,17 @@ The **Images** module allows you to browse, download, and manage OS images from 
 3. Optionally enable **Convert to Template** (creates a VM template on completion)
 4. Click **Download** — progress is tracked in real-time
 5. Once complete, the image is available in storage for VM deployment
+
+### Uploading a Local File
+
+1. Go to **Infrastructure** → **Images** and pick **Upload**
+2. Select an ISO or `vztmpl` file and the target storage
+3. The panel streams the file to the node in the background; progress is tracked the same way as a URL download
+4. Once complete, the file is available in storage for VM/CT deployment
+
+### Installing an OS from an ISO
+
+The create-instance wizard offers a **blank VM** kind for ISO-based installs: it provisions an empty disk with the chosen ISO mounted on `ide2` and set first in the boot order, so the VM boots straight into the installer over the built-in noVNC console. Selecting a Windows guest automatically presets OVMF firmware, a SATA disk and an e1000 NIC, since the installer has no virtio drivers loaded yet.
 
 ### Custom Mirrors (Admin Only)
 
@@ -2491,5 +2506,5 @@ A: Not yet, but planned for future versions.
 
 ---
 
-*Last updated: July 23, 2026*
-*Version: 1.10.2*
+*Last updated: July 24, 2026*
+*Version: 1.11.0*

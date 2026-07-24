@@ -4,6 +4,45 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.11.0] - 2026-07-24
+
+### 🔌 Servers & Connectivity
+
+- **Auto-provisioned API tokens** — connect a server with a login and password once; the panel authenticates, creates its own API token on the node (`privsep=0`) and uses it from then on. The token can be revoked from the Proxmox UI, cannot be used for SSH or web login, and appears in the PVE audit log under its own name. Existing password-auth servers can be migrated in place via **Provision token**
+- **Rejected credentials vs. unreachable node** — an offline server used to report a single "Failed to connect"; now a stale/rejected token (401, typically left behind after a cluster join replaces `user.cfg`/`token.cfg`) shows its own `auth_error` state with a hint explaining the cause
+- **Per-node storage availability** — a storage can be declared cluster-wide but missing on a given node (e.g. an absent volume group or pool); this is now surfaced instead of staying invisible
+- **Unified status badges** — every server list (including cluster topology and user-assignment views) renders the same `ServerStatusBadge` instead of a repeated online/offline ternary
+- **Workspace-scoped listings** — `/api/cluster/topology` and `/api/resources/all` now respect the active workspace instead of returning every server on the panel; live metrics are fetched in parallel instead of serially, so one unreachable cluster no longer stalls the whole request
+
+### 📊 Monitoring
+
+- **Node Graphs tab** — CPU, IO delay, memory, load average, network, swap and root filesystem charts on the node detail page, with `1h/24h/7d/30d/1y` presets
+
+### 💿 Images & Instance Creation
+
+- **Local file upload** — upload an ISO or `vztmpl` directly from your machine to node storage, alongside the existing URL-download flow
+- **Blank VM for ISO installs** — a new instance kind in the create wizard: an empty-disk VM with the ISO mounted and booted first, so the guest starts straight into the installer over noVNC; picking Windows presets OVMF, a SATA disk and an e1000 NIC
+- **ISO downloads** — fetch an ISO onto a node by URL from the Images page or from a saved mirror (mirrors now accept `kind=iso`)
+
+### 🔄 Realtime & UX
+
+- Instance and workspace lists now update immediately after assigning servers/users, deploying, or deleting a VM/container — no manual refresh needed
+- The node overview no longer flashes "no data" while the instance list is still loading
+
+### 🛠 Reliability
+
+- **Panel self-update recovers from a stalled rebuild** instead of hanging at "restarting — 80%" forever; after a timeout it surfaces a clear "failed" state pointing at the host update logs
+
+### 🎨 Theme
+
+- Dark theme surfaces (background, card, popover, sidebar, borders) shifted from neutral to a blue-graphite hue
+
+### 📖 Documentation
+
+- Expanded the RBAC/Security guide (permission format, evaluation order, full permission catalogue, per-page map) and added a complete Russian translation, **WIKI.ru.md**
+
+---
+
 ## [v1.10.2] - 2026-07-23
 
 ### 🐛 Fixes
