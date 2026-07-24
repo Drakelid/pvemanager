@@ -195,7 +195,16 @@
     "nodes": "nodes",
     "standalone": "Standalone servers",
     "no_standalone": "No standalone servers.",
-    "two_node_quorum": "A 2-node cluster loses quorum if one node fails. 3+ nodes or a QDevice is recommended for production."
+    "two_node_quorum": "A 2-node cluster loses quorum if one node fails. 3+ nodes or a QDevice is recommended for production.",
+    "import_btn": "Import",
+    "import_title": "Import existing cluster",
+    "import_hint": "For nodes already clustered on the Proxmox side (outside the panel). This only links matching panel entries by IP/hostname — it does not run any pvecm operation.",
+    "detect_btn": "Detect cluster",
+    "no_real_cluster": "This node is not part of a Proxmox cluster.",
+    "detected_as": "Detected cluster",
+    "not_in_panel": "Not added to the panel yet — add it as a server first.",
+    "linked_elsewhere": "Panel entry is linked to a different cluster.",
+    "already_linked": "Already linked in the panel."
   },
   "login": {
     "title": "Sign in to your account",

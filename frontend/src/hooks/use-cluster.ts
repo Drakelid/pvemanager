@@ -64,6 +64,31 @@ export interface ClusterActionResult {
   confirmed?: boolean;
 }
 
+export interface ImportClusterNode {
+  name: string | null;
+  address: string | null;
+  matched_server_id: number | null;
+  matched_server_name: string | null;
+  already_linked: boolean;
+  linked_elsewhere: boolean;
+}
+
+export interface ImportClusterInfo {
+  server_id: number;
+  is_cluster: boolean;
+  cluster_name: string | null;
+  nodes: ImportClusterNode[];
+  message?: string;
+}
+
+export interface ImportClusterResult {
+  success: boolean;
+  cluster_name: string;
+  applied: number[];
+  errors: { server_id: number; error: string }[];
+  message: string;
+}
+
 // ==================== Queries ====================
 
 export function useClusterTopology() {
@@ -115,6 +140,24 @@ export function useJoinCluster() {
   return useMutation({
     mutationFn: (body: { node_server_id: number; cluster_server_id: number; rootpw: string; link0?: string; cluster_host?: string }) =>
       apiClient.post<ClusterActionResult>('/proxmox/api/cluster/join', body),
+    onSuccess: () => invalidate(),
+  });
+}
+
+/** On-demand detection of a real Proxmox cluster formed outside the panel, matched against known servers. */
+export function useClusterImportInfo() {
+  return useMutation({
+    mutationFn: (serverId: number) =>
+      apiClient.get<ImportClusterInfo>(`/proxmox/api/cluster/${serverId}/import-info`),
+  });
+}
+
+/** Link existing panel server entries to a cluster detected via useClusterImportInfo (DB-only, no Proxmox changes). */
+export function useImportCluster() {
+  const invalidate = useInvalidateCluster();
+  return useMutation({
+    mutationFn: (body: { server_id: number; server_ids: number[] }) =>
+      apiClient.post<ImportClusterResult>('/proxmox/api/cluster/import', body),
     onSuccess: () => invalidate(),
   });
 }

@@ -626,6 +626,198 @@ async def join_cluster(
     }
 
 
+# ==================== GET /api/cluster/{server_id}/import-info ====================
+
+@router.get("/api/cluster/{server_id}/import-info")
+async def get_cluster_import_info(
+    server_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("cluster:manage")),
+):
+    """
+    Обнаружить кластер, сформированный на стороне Proxmox в обход панели
+    (напр. через pvecm/веб-интерфейс Proxmox), и сопоставить его ноды с
+    серверами, уже добавленными в панель — по IP/hostname из nodelist.
+    Ничего не меняет, только читает.
+    """
+    server = _get_server_or_404(db, server_id)
+    if server.cluster_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Сервер '{server.name}' уже привязан к кластеру '{server.cluster_name}' в панели"
+        )
+
+    client = _get_proxmox_client(server)
+
+    is_cluster = await _run_in_executor(client.is_cluster)
+    if not is_cluster:
+        return {
+            "server_id": server_id,
+            "is_cluster": False,
+            "cluster_name": None,
+            "nodes": [],
+            "message": "Нода не состоит в кластере Proxmox — нечего импортировать.",
+        }
+
+    join_info_result = await _run_in_executor(client.get_cluster_join_info)
+    if not join_info_result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось получить информацию о кластере: {join_info_result.get('error')}"
+        )
+
+    data = join_info_result.get("data", {})
+    cluster_name = data.get("totem", {}).get("cluster_name")
+    nodelist = data.get("nodelist", [])
+
+    all_servers = db.query(ProxmoxServer).all()
+
+    def find_match(entry: dict):
+        addr_candidates = {entry.get("pve_addr"), entry.get("ring0_addr")}
+        addr_candidates.discard(None)
+        for s in all_servers:
+            if s.ip_address in addr_candidates:
+                return s
+        name = entry.get("name")
+        if name:
+            for s in all_servers:
+                if s.hostname == name:
+                    return s
+        return None
+
+    nodes = []
+    for entry in nodelist:
+        if not isinstance(entry, dict):
+            continue
+        match = find_match(entry)
+        nodes.append({
+            "name": entry.get("name"),
+            "address": entry.get("pve_addr") or entry.get("ring0_addr"),
+            "matched_server_id": match.id if match else None,
+            "matched_server_name": match.name if match else None,
+            "already_linked": bool(match and match.cluster_name == cluster_name),
+            "linked_elsewhere": bool(match and match.cluster_name and match.cluster_name != cluster_name),
+        })
+
+    return {
+        "server_id": server_id,
+        "is_cluster": True,
+        "cluster_name": cluster_name,
+        "nodes": nodes,
+    }
+
+
+# ==================== POST /api/cluster/import ====================
+
+@router.post("/api/cluster/import")
+async def import_cluster(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("cluster:manage")),
+):
+    """
+    Привязать существующие панельные записи серверов к реальному
+    Proxmox-кластеру, обнаруженному на server_id (см. import-info).
+    Только правит cluster_name в БД панели — никаких pvecm-операций не
+    выполняется, реальный кластер не затрагивается.
+
+    Body:
+        server_id (int): нода-якорь, на которой обнаружен кластер
+        server_ids (list[int]): панельные ID серверов для привязки к кластеру
+            (каждый должен совпадать по IP или hostname с нодой из nodelist
+            кластера — иначе привязка для него отклоняется)
+    """
+    server_id = body.get("server_id")
+    server_ids = body.get("server_ids") or []
+
+    if not server_id or not server_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать server_id и server_ids"
+        )
+
+    anchor = _get_server_or_404(db, server_id)
+    client = _get_proxmox_client(anchor)
+
+    if not await _run_in_executor(client.is_cluster):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Сервер '{anchor.name}' не состоит в кластере Proxmox"
+        )
+
+    join_info_result = await _run_in_executor(client.get_cluster_join_info)
+    if not join_info_result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось получить информацию о кластере: {join_info_result.get('error')}"
+        )
+
+    data = join_info_result.get("data", {})
+    cluster_name = data.get("totem", {}).get("cluster_name")
+    if not cluster_name:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось определить имя кластера"
+        )
+    nodelist = data.get("nodelist", [])
+
+    addr_by_node: set = set()
+    name_by_node: set = set()
+    for entry in nodelist:
+        if not isinstance(entry, dict):
+            continue
+        for addr in (entry.get("pve_addr"), entry.get("ring0_addr")):
+            if addr:
+                addr_by_node.add(addr)
+        if entry.get("name"):
+            name_by_node.add(entry.get("name"))
+
+    applied = []
+    errors = []
+
+    for sid in server_ids:
+        s = db.query(ProxmoxServer).filter(ProxmoxServer.id == sid).first()
+        if not s:
+            errors.append({"server_id": sid, "error": "Сервер не найден"})
+            continue
+        if s.cluster_name == cluster_name:
+            applied.append(sid)  # уже привязан — идемпотентно
+            continue
+        if s.cluster_name and s.cluster_name != cluster_name:
+            errors.append({
+                "server_id": sid,
+                "error": f"'{s.name}' уже привязан к другому кластеру '{s.cluster_name}'",
+            })
+            continue
+        if s.ip_address not in addr_by_node and s.hostname not in name_by_node:
+            errors.append({
+                "server_id": sid,
+                "error": f"IP/hostname '{s.name}' не найден среди нод кластера '{cluster_name}' — привязка отклонена",
+            })
+            continue
+        s.cluster_name = cluster_name
+        applied.append(sid)
+
+    db.commit()
+
+    logger.info(
+        f"User {current_user.username} imported existing cluster '{cluster_name}' "
+        f"for panel servers {applied} (anchor='{anchor.name}', errors={len(errors)})"
+    )
+
+    return {
+        "success": len(errors) == 0,
+        "cluster_name": cluster_name,
+        "applied": applied,
+        "errors": errors,
+        "message": (
+            f"Кластер '{cluster_name}' импортирован для {len(applied)} серверов."
+            if not errors
+            else f"Импортировано {len(applied)}, ошибок: {len(errors)}."
+        ),
+    }
+
+
 # ==================== POST /api/cluster/{server_id}/eject-node ====================
 
 @router.post("/api/cluster/{server_id}/eject-node")

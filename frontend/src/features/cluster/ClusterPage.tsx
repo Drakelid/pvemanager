@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Network, Server, Plus, Loader2, LogOut, AlertTriangle, Info,
-  ArrowRight, ArrowLeft, ShieldAlert, Boxes,
+  ArrowRight, ArrowLeft, ShieldAlert, Boxes, Link2, ScanSearch, CheckCircle2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,9 +21,9 @@ import { ServerStatusBadge } from '@/components/shared/ServerStatusBadge';
 import { formatBytes } from '@/lib/format';
 import {
   useClusterTopology, useCreateCluster, usePreJoinCheck, usePrepareJoin,
-  useJoinCluster, useEjectNode,
+  useJoinCluster, useEjectNode, useClusterImportInfo, useImportCluster,
 } from '@/hooks/use-cluster';
-import type { ClusterServerEntry, PreJoinCheck } from '@/hooks/use-cluster';
+import type { ClusterServerEntry, PreJoinCheck, ImportClusterInfo } from '@/hooks/use-cluster';
 import { toast } from 'sonner';
 
 // ==================== Create Cluster Dialog ====================
@@ -384,6 +384,171 @@ function JoinWizard({
   );
 }
 
+// ==================== Import Existing Cluster Dialog ====================
+
+function ImportClusterDialog({
+  open, onOpenChange, standalone,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  standalone: ClusterServerEntry[];
+}) {
+  const { t } = useTranslation();
+  const importInfo = useClusterImportInfo();
+  const importCluster = useImportCluster();
+
+  const [serverId, setServerId] = useState('');
+  const [info, setInfo] = useState<ImportClusterInfo | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const reset = () => { setServerId(''); setInfo(null); setSelected(new Set()); };
+  const close = (v: boolean) => { if (!v) reset(); onOpenChange(v); };
+
+  const runDetect = () => {
+    importInfo.mutate(Number(serverId), {
+      onSuccess: (data) => {
+        setInfo(data);
+        if (!data.is_cluster) {
+          toast.info(data.message || t('cluster.no_real_cluster', 'This node is not part of a Proxmox cluster.'));
+          return;
+        }
+        // Pre-select every node that already matches a panel server and isn't linked elsewhere.
+        const ids = data.nodes
+          .filter((n) => n.matched_server_id !== null && !n.linked_elsewhere)
+          .map((n) => n.matched_server_id as number);
+        setSelected(new Set(ids));
+      },
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  const toggle = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const runImport = () => {
+    importCluster.mutate(
+      { server_id: Number(serverId), server_ids: Array.from(selected) },
+      {
+        onSuccess: (res) => {
+          if (res.errors.length > 0) {
+            toast.warning(res.message);
+          } else {
+            toast.success(res.message);
+            reset();
+            onOpenChange(false);
+          }
+        },
+        onError: (err) => toast.error(err.message),
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t('cluster.import_title', 'Import existing cluster')}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {t('cluster.import_hint',
+              'For nodes already clustered on the Proxmox side (outside the panel). This only links matching panel entries by IP/hostname — it does not run any pvecm operation.')}
+          </p>
+
+          <div>
+            <Label>{t('cluster.select_node', 'Standalone server')}</Label>
+            <Select
+              value={serverId}
+              onValueChange={(v) => { if (v !== null) { setServerId(v); setInfo(null); setSelected(new Set()); } }}
+            >
+              <SelectTrigger className="mt-1"><SelectValue placeholder={t('cluster.select_node', 'Select server')} /></SelectTrigger>
+              <SelectContent>
+                {standalone.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.ip_address})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {!info && (
+            <Button variant="outline" className="w-full" onClick={runDetect} disabled={!serverId || importInfo.isPending}>
+              {importInfo.isPending
+                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                : <ScanSearch className="mr-2 h-4 w-4" />}
+              {t('cluster.detect_btn', 'Detect cluster')}
+            </Button>
+          )}
+
+          {info && !info.is_cluster && (
+            <div className="flex items-start gap-2 rounded-md bg-muted p-3 text-sm">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{info.message || t('cluster.no_real_cluster', 'This node is not part of a Proxmox cluster.')}</span>
+            </div>
+          )}
+
+          {info && info.is_cluster && (
+            <>
+              <div className="flex items-center gap-2 rounded-md bg-success/10 p-3 text-sm">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                <span>
+                  {t('cluster.detected_as', 'Detected cluster')}: <b>{info.cluster_name}</b> · {info.nodes.length} {t('cluster.nodes', 'nodes')}
+                </span>
+              </div>
+
+              <div className="divide-y rounded-md border">
+                {info.nodes.map((n) => (
+                  <div key={n.name ?? n.address} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{n.name} <span className="text-muted-foreground font-mono">({n.address})</span></p>
+                      {n.matched_server_id === null && (
+                        <p className="text-xs text-muted-foreground">{t('cluster.not_in_panel', 'Not added to the panel yet — add it as a server first.')}</p>
+                      )}
+                      {n.linked_elsewhere && (
+                        <p className="text-xs text-destructive">{t('cluster.linked_elsewhere', 'Panel entry is linked to a different cluster.')}</p>
+                      )}
+                      {n.already_linked && (
+                        <p className="text-xs text-muted-foreground">{t('cluster.already_linked', 'Already linked in the panel.')}</p>
+                      )}
+                    </div>
+                    {n.matched_server_id !== null && !n.already_linked && !n.linked_elsewhere && (
+                      <Checkbox
+                        checked={selected.has(n.matched_server_id)}
+                        onChange={() => toggle(n.matched_server_id as number)}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {importCluster.data?.errors && importCluster.data.errors.length > 0 && (
+                <div className="space-y-1 rounded-md bg-destructive/10 p-3 text-xs text-destructive">
+                  {importCluster.data.errors.map((e) => <p key={e.server_id}>{e.error}</p>)}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <DialogClose render={<Button variant="outline" />}>{t('common.cancel', 'Cancel')}</DialogClose>
+          {info?.is_cluster && (
+            <Button onClick={runImport} disabled={selected.size === 0 || importCluster.isPending}>
+              {importCluster.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('cluster.import_btn', 'Import')} ({selected.size})
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ==================== Eject Dialog ====================
 
 function EjectDialog({
@@ -467,6 +632,7 @@ export default function ClusterPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [ejectState, setEjectState] = useState<{ via: ClusterServerEntry; node: ClusterServerEntry } | null>(null);
 
   const standalone = topology?.standalone ?? [];
@@ -483,6 +649,9 @@ export default function ClusterPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('nav.cluster', 'Cluster')}</h1>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} disabled={standalone.length === 0}>
+            <Link2 className="mr-1 h-4 w-4" />{t('cluster.import_btn', 'Import')}
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setJoinOpen(true)} disabled={!hasClusters || standalone.length === 0}>
             <Plus className="mr-1 h-4 w-4" />{t('cluster.join_node', 'Join node')}
           </Button>
@@ -582,6 +751,7 @@ export default function ClusterPage() {
 
       <CreateClusterDialog open={createOpen} onOpenChange={setCreateOpen} standalone={standalone} />
       <JoinWizard open={joinOpen} onOpenChange={setJoinOpen} standalone={standalone} clusterMembers={clusterMembers} />
+      <ImportClusterDialog open={importOpen} onOpenChange={setImportOpen} standalone={standalone} />
       <EjectDialog
         open={ejectState !== null}
         onOpenChange={(v) => { if (!v) setEjectState(null); }}
