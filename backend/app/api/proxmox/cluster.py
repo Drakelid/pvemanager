@@ -89,6 +89,7 @@ def get_cluster_topology(
             "ip_address": s.ip_address,
             "port": s.port,
             "is_online": s.is_online,
+            "last_error_kind": s.last_error_kind,
             "cluster_name": s.cluster_name,
         }
         if s.cluster_name:

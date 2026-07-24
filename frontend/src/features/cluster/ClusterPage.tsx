@@ -17,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { StatusDot } from '@/components/shared/status-dot';
+import { ServerStatusBadge } from '@/components/shared/ServerStatusBadge';
 import { formatBytes } from '@/lib/format';
 import {
   useClusterTopology, useCreateCluster, usePreJoinCheck, usePrepareJoin,
@@ -521,10 +522,11 @@ export default function ClusterPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <StatusDot status={m.is_online ? 'online' : 'offline'} pulse />
-                      {m.is_online ? t('common.online', 'Online') : t('common.offline', 'Offline')}
-                    </span>
+                    <ServerStatusBadge
+                      isOnline={m.is_online}
+                      errorKind={m.last_error_kind}
+                      variant="inline"
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -566,10 +568,11 @@ export default function ClusterPage() {
                       <p className="text-xs text-muted-foreground font-mono truncate">{s.ip_address}</p>
                     </div>
                   </div>
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <StatusDot status={s.is_online ? 'online' : 'offline'} pulse />
-                    {s.is_online ? t('common.online', 'Online') : t('common.offline', 'Offline')}
-                  </span>
+                  <ServerStatusBadge
+                    isOnline={s.is_online}
+                    errorKind={s.last_error_kind}
+                    variant="inline"
+                  />
                 </div>
               ))}
             </div>

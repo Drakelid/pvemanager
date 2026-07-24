@@ -654,6 +654,7 @@ async def get_user_server_assignments(
             "name": server.name,
             "ip_address": server.ip_address,
             "is_online": server.is_online,
+            "last_error_kind": server.last_error_kind,
             "workspaces": server_workspaces,
             "compatible": compatible,
             "assigned": server.id in assigned_ids,

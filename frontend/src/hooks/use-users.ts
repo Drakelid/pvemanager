@@ -77,6 +77,7 @@ export interface ServerAssignment {
   name: string;
   ip_address: string;
   is_online: boolean;
+  last_error_kind?: 'auth' | 'connection' | null;
   workspaces: { id: number; name: string }[];
   compatible: boolean;
   assigned: boolean;

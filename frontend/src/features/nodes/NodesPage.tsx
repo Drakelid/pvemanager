@@ -13,10 +13,9 @@ import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useTestS
 import { useVirtualMachines } from '@/hooks/use-instances';
 import type { ProxmoxServer, ProxmoxServerCreate } from '@/types';
 import { formatUptime } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
-import { StatusDot } from '@/components/shared/status-dot';
+import { ServerStatusBadge } from '@/components/shared/ServerStatusBadge';
 import ServerUpdatesBadge from './ServerUpdatesBadge';
 
 /**
@@ -359,8 +358,6 @@ export default function NodesPage() {
         {servers.map(srv => {
           const srvVMs = vms.filter(v => v.server_id === srv.id && v.type === 'qemu');
           const srvCTs = vms.filter(v => v.server_id === srv.id && v.type === 'lxc');
-          // Сервер ответил 401 — он жив, дело в учётных данных, а не в связи.
-          const authError = !srv.is_online && srv.last_error_kind === 'auth';
           return (
             <Card key={srv.id} className="relative group">
               <CardContent className="p-5 space-y-4">
@@ -449,18 +446,11 @@ export default function NodesPage() {
                       <span className="font-mono tabular-nums">{srvCTs.length} LXC</span>
                     </div>
                   </div>
-                  <Badge
-                    variant={srv.is_online ? 'default' : authError ? 'outline' : 'destructive'}
-                    className={cn('gap-1.5', authError && 'border-warning/40 text-warning')}
-                    title={authError ? t('nodes.auth_error_hint') : srv.last_error || undefined}
-                  >
-                    <StatusDot
-                      status={srv.is_online ? 'online' : authError ? 'auth_error' : 'offline'}
-                      pulse
-                      className="h-1.5 w-1.5"
-                    />
-                    {srv.is_online ? t('common.online') : authError ? t('nodes.auth_error') : t('common.offline')}
-                  </Badge>
+                  <ServerStatusBadge
+                    isOnline={srv.is_online}
+                    errorKind={srv.last_error_kind}
+                    lastError={srv.last_error}
+                  />
                 </div>
 
                 <ServerMeta serverId={srv.id} online={srv.is_online} />

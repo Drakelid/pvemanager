@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { ServerStatusBadge } from '@/components/shared/ServerStatusBadge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useWorkspaces, useCreateWorkspace, useUpdateWorkspace, useDeleteWorkspace, useWorkspace, useUpdateWorkspaceServers, useUpdateWorkspaceUsers } from '@/hooks/use-workspaces';
@@ -204,9 +205,12 @@ function EditWorkspaceDialog({
                       <p className="text-sm font-medium">{srv.name}</p>
                       <p className="text-xs text-muted-foreground font-mono">{srv.ip_address}</p>
                     </div>
-                    <Badge variant={srv.is_online ? 'default' : 'destructive'} className="ml-auto shrink-0 text-xs">
-                      {srv.is_online ? t('common.online') : t('common.offline')}
-                    </Badge>
+                    <ServerStatusBadge
+                      isOnline={srv.is_online}
+                      errorKind={srv.last_error_kind}
+                      lastError={srv.last_error}
+                      className="ml-auto shrink-0 text-xs"
+                    />
                   </label>
                 ))}
               </div>

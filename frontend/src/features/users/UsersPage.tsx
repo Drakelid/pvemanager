@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { ServerStatusBadge } from '@/components/shared/ServerStatusBadge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -639,9 +640,11 @@ function UserServersForm({
                 )}
               </div>
               <div className="flex flex-col items-end gap-1 shrink-0">
-                <Badge variant={srv.is_online ? 'default' : 'destructive'} className="text-xs">
-                  {srv.is_online ? t('common.online') : t('common.offline')}
-                </Badge>
+                <ServerStatusBadge
+                  isOnline={srv.is_online}
+                  errorKind={srv.last_error_kind}
+                  className="text-xs"
+                />
                 {!srv.compatible && (
                   <Badge variant="outline" className="text-xs">{t('users.incompatible')}</Badge>
                 )}

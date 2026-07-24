@@ -14,6 +14,7 @@ import { useServer, useNodes, useClusterInfo } from '@/hooks/use-nodes';
 import { useVirtualMachines } from '@/hooks/use-instances';
 import { useNodePower } from '@/hooks/use-node-admin';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
+import { ServerStatusBadge } from '@/components/shared/ServerStatusBadge';
 import { useAuthStore } from '@/stores/auth-store';
 import { StatusDot } from '@/components/shared/status-dot';
 import { formatBytes, formatUptime, formatPercent } from '@/lib/format';
@@ -116,21 +117,11 @@ export default function NodeDetailPage() {
                 : t('nodes.standalone')}
             </Badge>
           )}
-          <Badge
-            variant={
-              server?.is_online ? 'default'
-                : server?.last_error_kind === 'auth' ? 'outline'
-                : 'destructive'
-            }
-            className={server?.last_error_kind === 'auth' && !server?.is_online
-              ? 'border-warning/40 text-warning' : undefined}
-            title={server?.last_error_kind === 'auth' && !server?.is_online
-              ? t('nodes.auth_error_hint') : server?.last_error || undefined}
-          >
-            {server?.is_online ? t('common.online')
-              : server?.last_error_kind === 'auth' ? t('nodes.auth_error')
-              : t('common.offline')}
-          </Badge>
+          <ServerStatusBadge
+            isOnline={server?.is_online}
+            errorKind={server?.last_error_kind}
+            lastError={server?.last_error}
+          />
         </div>
       </div>
 

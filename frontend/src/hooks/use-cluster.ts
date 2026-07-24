@@ -12,6 +12,7 @@ export interface ClusterServerEntry {
   ip_address: string;
   port: number;
   is_online: boolean;
+  last_error_kind?: 'auth' | 'connection' | null;
   cluster_name: string | null;
 }
 
