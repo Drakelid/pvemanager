@@ -56,7 +56,11 @@ resolve_ref() {
 ensure_host_tools() {
     command -v git >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && return
     log "Installing git/curl..."
-    apt-get update -y
+    # On a PVE host without a paid subscription, apt's enterprise repo answers
+    # 401 and fails the whole update under `set -e` even though every other
+    # source succeeded; `apt-get install` right after still fails loudly if
+    # the package genuinely couldn't be found.
+    apt-get update -y || true
     apt-get install -y --no-install-recommends git curl ca-certificates
 }
 
@@ -67,7 +71,7 @@ install_branch_a() {
     log "Plan: install Docker (if missing), clone ${REPO} @ ${REF} into ${DIR}, run deploy.sh --standalone."
 
     log "Installing base dependencies..."
-    apt-get update -y
+    apt-get update -y || true
     apt-get install -y --no-install-recommends git curl ca-certificates openssl jq
 
     if [ ! -d "$DIR/.git" ]; then
