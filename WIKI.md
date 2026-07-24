@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.11.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.12.0
 
 ---
 
@@ -923,6 +923,16 @@ pvecm add 10.10.10.11  # IP of pve1
 ### Cross-Node Template Deployment
 
 See [OS Templates - Cross-Node Template Deployment](#cross-node-template-deployment-clusters)
+
+### Importing an Existing Cluster
+
+If nodes were already joined into a cluster outside the panel (via `pvecm` or the Proxmox web UI), add each node to the panel as a regular standalone server first, then use **Cluster** → **Import**:
+
+1. Pick any one of the already-added nodes — the panel reads `cluster/config/join` from it to detect the real cluster name and node list
+2. Matching panel servers (by IP or hostname) are pre-selected; nodes not yet added to the panel are listed but can't be linked until you add them as servers
+3. Confirm — the panel only links the matching server records to the cluster group in its own database; no `pvecm` command is run and the real cluster is not touched
+
+This is the DB-only counterpart to **Create cluster**/**Join node**, which perform the actual `pvecm create`/`pvecm add` operations — use Import only when the nodes are already clustered for real.
 
 ---
 
@@ -2507,4 +2517,4 @@ A: Not yet, but planned for future versions.
 ---
 
 *Last updated: July 24, 2026*
-*Version: 1.11.0*
+*Version: 1.12.0*

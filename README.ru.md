@@ -4,7 +4,7 @@
 
 **Современная веб-панель для управления серверами Proxmox, виртуальными машинами и контейнерами LXC**
 
-[![Версия](https://img.shields.io/badge/версия-1.11.0-blue?style=flat-square)](CHANGELOG.md)
+[![Версия](https://img.shields.io/badge/версия-1.12.0-blue?style=flat-square)](CHANGELOG.md)
 [![Лицензия](https://img.shields.io/badge/лицензия-MIT-green?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-готов-2496ED?style=flat-square&logo=docker&logoColor=white)](compose.yml)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](backend/)

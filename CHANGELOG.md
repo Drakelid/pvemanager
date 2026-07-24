@@ -4,6 +4,14 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.12.0] - 2026-07-24
+
+### 🔗 Cluster
+
+- **Import an existing cluster** — nodes already joined into a Proxmox cluster outside the panel (via `pvecm`/the Proxmox UI) can now be linked in the Cluster page instead of only via the panel's own Create/Join flow. Detection reads `cluster/config/join` on the selected node, matches its nodelist against known panel servers by IP/hostname, and links the matching panel records to that cluster group — no `pvecm` operation is run, only the panel's own bookkeeping is updated
+
+---
+
 ## [v1.11.0] - 2026-07-24
 
 ### 🔌 Servers & Connectivity
