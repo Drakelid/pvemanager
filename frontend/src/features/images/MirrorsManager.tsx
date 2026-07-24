@@ -65,8 +65,8 @@ function MirrorFormDialog({
 
   const submit = () => {
     if (!form.name.trim()) return;
-    if (form.kind === 'qcow2' && !form.url?.trim()) {
-      toast.error('Для qcow2 нужен URL');
+    if ((form.kind === 'qcow2' || form.kind === 'iso') && !form.url?.trim()) {
+      toast.error(`Для ${form.kind} нужен URL`);
       return;
     }
     if (!form.url?.trim() && !form.template?.trim()) {
@@ -110,6 +110,7 @@ function MirrorFormDialog({
                 <SelectContent>
                   <SelectItem value="qcow2">qcow2 (ВМ)</SelectItem>
                   <SelectItem value="vztmpl">vztmpl (LXC)</SelectItem>
+                  <SelectItem value="iso">iso (установочный)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -133,8 +134,13 @@ function MirrorFormDialog({
             <Input id="m-ver" placeholder="24.04" value={form.version} onChange={(e) => set('version', e.target.value)} />
           </div>
           <div>
-            <Label htmlFor="m-url">URL {form.kind === 'qcow2' ? '(обязательно)' : '(или имя шаблона ниже)'}</Label>
-            <Input id="m-url" placeholder="https://.../image.qcow2" value={form.url} onChange={(e) => set('url', e.target.value)} />
+            <Label htmlFor="m-url">URL {form.kind === 'vztmpl' ? '(или имя шаблона ниже)' : '(обязательно)'}</Label>
+            <Input
+              id="m-url"
+              placeholder={form.kind === 'iso' ? 'https://.../installer-amd64.iso' : 'https://.../image.qcow2'}
+              value={form.url}
+              onChange={(e) => set('url', e.target.value)}
+            />
           </div>
           {form.kind === 'vztmpl' && (
             <div>

@@ -441,7 +441,7 @@ export interface OSTemplate {
 
 // ==================== Image Catalog Types ====================
 
-export type ImageKind = 'qcow2' | 'vztmpl';
+export type ImageKind = 'qcow2' | 'vztmpl' | 'iso';
 export type ImageArch = 'amd64' | 'arm64';
 
 export interface CatalogImage {

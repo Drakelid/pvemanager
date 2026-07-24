@@ -845,3 +845,39 @@ export function useDetachIso(serverId: number, vmid: number, node: string) {
     },
   });
 }
+
+// ==================== Пустая ВМ под установку с ISO ====================
+export interface IsoVMCreateRequest {
+  server_id: number;
+  node: string;
+  name: string;
+  iso: string;
+  vmid?: number;
+  cores: number;
+  memory: number;
+  disk: number;
+  storage: string;
+  bridge: string;
+  ostype: string;
+  disk_bus: 'scsi' | 'sata' | 'virtio';
+  net_model: 'virtio' | 'e1000' | 'rtl8139' | 'vmxnet3';
+  bios: 'seabios' | 'ovmf';
+  tpm: boolean;
+  extra_iso?: string;
+  ip_address?: string;
+  gateway?: string;
+  ipam_network_id?: number;
+  owner_id?: number;
+  start_after_create: boolean;
+  onboot: boolean;
+}
+
+export function useCreateIsoVM() {
+  const qc = useQueryClient();
+  return useMutation<{ task_id: number; status: string; name: string }, Error, IsoVMCreateRequest>({
+    mutationFn: (body) => apiClient.post('/proxmox/api/vm/create-from-iso', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: vmKeys.all });
+    },
+  });
+}

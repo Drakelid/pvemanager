@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
-import { Server, Cpu, CheckCircle, ChevronLeft, ChevronRight, Loader2, Monitor, Container, HardDrive, KeyRound, Gauge } from 'lucide-react';
+import { Server, Cpu, CheckCircle, ChevronLeft, ChevronRight, Loader2, Monitor, Container, HardDrive, KeyRound, Gauge, Disc, Download, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { ServerStatusBadge } from '@/components/shared/ServerStatusBadge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useServers, useNodes } from '@/hooks/use-nodes';
 import { useTemplates, useTemplateGroups } from '@/hooks/use-templates';
@@ -16,6 +16,8 @@ import { useIPAMNetworks } from '@/hooks/use-ipam';
 import { scopedNetworks, autoPickNetworkId } from '@/features/ipam/network-scope';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useLXCTemplates, useLXCStorages, useDeployLXC } from '@/hooks/use-lxc-templates';
+import { useNodeIsos, useCreateIsoVM } from '@/hooks/use-instances';
+import DownloadIsoDialog from '@/features/images/DownloadIsoDialog';
 import { useMySSHKeys, useUserSSHKeys } from '@/hooks/use-ssh-keys';
 import { useProfile, useMyQuota } from '@/hooks/use-settings';
 import { useUsers } from '@/hooks/use-users';
@@ -24,9 +26,19 @@ import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
 import type { VMDeployRequest, OSTemplate, ProxmoxServer, LXCTemplate } from '@/types';
 import { toast } from 'sonner';
 
-type InstanceKind = 'vm' | 'lxc';
+type InstanceKind = 'vm' | 'lxc' | 'iso';
 const STEPS = ['server', 'type', 'template', 'config', 'confirm'] as const;
 type Step = (typeof STEPS)[number];
+
+// ostype Proxmox → подпись в списке. l26 покрывает все современные ядра Linux.
+const OS_TYPES = [
+  { value: 'l26', label: 'Linux (5.x/6.x)' },
+  { value: 'win11', label: 'Windows 11 / 2022' },
+  { value: 'win10', label: 'Windows 10 / 2016-2019' },
+  { value: 'win8', label: 'Windows 8 / 2012' },
+  { value: 'solaris', label: 'Solaris' },
+  { value: 'other', label: 'Other' },
+] as const;
 
 export default function CreateInstanceWizard({ onClose }: { onClose?: () => void }) {
   const { t } = useTranslation();
@@ -95,6 +107,29 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
     onboot: false,
   });
 
+  // ── ISO (пустая ВМ под установку ОС) state ────────────────────────────────
+  const [isoDownloadOpen, setIsoDownloadOpen] = useState(false);
+  const [isoConfig, setIsoConfig] = useState({
+    name: '',
+    iso: '',
+    extra_iso: '',
+    cores: 2,
+    memory: 4096,
+    disk: 32,
+    storage: 'local-lvm',
+    bridge: 'vmbr0',
+    ostype: 'l26' as string,
+    disk_bus: 'scsi' as 'scsi' | 'sata' | 'virtio',
+    net_model: 'virtio' as 'virtio' | 'e1000' | 'rtl8139' | 'vmxnet3',
+    bios: 'seabios' as 'seabios' | 'ovmf',
+    tpm: false,
+    ipam_network_id: null as number | null,
+    ip_address: '',
+    gateway: '',
+    start_after_create: true,
+    onboot: false,
+  });
+
   // Queries
   const { data: servers = [] } = useServers();
   const { data: groups = [] } = useTemplateGroups();
@@ -105,6 +140,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   const { data: vmStorages = [] } = useLXCStorages(selectedServer?.id, selectedNode || undefined, 'images');
   const { data: nodesData } = useNodes(selectedServer?.id ?? 0);
   const nodes = nodesData?.nodes ?? [];
+  const isoList = useNodeIsos(selectedServer?.id ?? 0, selectedNode, kind === 'iso' && !!selectedNode);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
 
   // Нода нужна только для размещения; сеть подбирается по активной рабочей области.
@@ -146,6 +182,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   });
 
   const deployLXC = useDeployLXC();
+  const createIsoVM = useCreateIsoVM();
 
   const next = () => {
     const i = STEPS.indexOf(step);
@@ -159,12 +196,86 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
   const canNext = () => {
     if (step === 'server') return !!selectedServer;
     if (step === 'type') return !!kind;
-    if (step === 'template') return kind === 'vm' ? !!selectedTemplate : !!selectedLXCTemplate;
-    if (step === 'config') return kind === 'vm' ? config.name.length >= 2 : lxcConfig.name.length >= 2;
+    if (step === 'template') {
+      if (kind === 'vm') return !!selectedTemplate;
+      if (kind === 'iso') return !!selectedNode && !!isoConfig.iso;
+      return !!selectedLXCTemplate;
+    }
+    if (step === 'config') {
+      if (kind === 'vm') return config.name.length >= 2;
+      if (kind === 'iso') return isoConfig.name.length >= 2;
+      return lxcConfig.name.length >= 2;
+    }
     return true;
   };
 
+  // Windows не грузится с SeaBIOS+VirtIO «из коробки»: UEFI, SATA-диск и e1000
+  // дают установщику увидеть диск и сеть без подгрузки virtio-драйверов.
+  const selectOsType = (ostype: string) => {
+    setIsoConfig(p => {
+      if (!ostype.startsWith('win')) {
+        return { ...p, ostype, bios: 'seabios', tpm: false, disk_bus: 'scsi', net_model: 'virtio' };
+      }
+      return {
+        ...p,
+        ostype,
+        bios: 'ovmf',
+        tpm: ostype === 'win11',
+        disk_bus: 'sata',
+        net_model: 'e1000',
+      };
+    });
+  };
+
   const handleDeploy = () => {
+    if (kind === 'iso') {
+      if (!selectedServer || !selectedNode || !isoConfig.iso) return;
+      createIsoVM.mutate(
+        {
+          server_id: selectedServer.id,
+          node: selectedNode,
+          name: isoConfig.name,
+          iso: isoConfig.iso,
+          extra_iso: isoConfig.extra_iso || undefined,
+          cores: isoConfig.cores,
+          memory: isoConfig.memory,
+          disk: isoConfig.disk,
+          storage: isoConfig.storage,
+          bridge: isoConfig.bridge,
+          ostype: isoConfig.ostype,
+          disk_bus: isoConfig.disk_bus,
+          net_model: isoConfig.net_model,
+          bios: isoConfig.bios,
+          tpm: isoConfig.tpm,
+          ip_address: isoConfig.ip_address || undefined,
+          gateway: isoConfig.gateway || undefined,
+          ipam_network_id: isoConfig.ipam_network_id || undefined,
+          owner_id: effectiveOwnerId ?? undefined,
+          start_after_create: isoConfig.start_after_create,
+          onboot: isoConfig.onboot,
+        },
+        {
+          onSuccess: (res) => {
+            addDeployTask({
+              id: res.task_id,
+              name: res.name,
+              status: 'pending',
+              step: t('wizard.deploy_starting'),
+              progress: 0,
+              vmid: null,
+              node: selectedNode,
+              error_message: null,
+              kind: 'vm_iso',
+              server_id: selectedServer.id,
+            });
+            toast.success(t('wizard.deploy_queued', { name: res.name }));
+            navigate('/instances');
+          },
+          onError: (err: Error) => toast.error(err.message),
+        },
+      );
+      return;
+    }
     if (kind === 'lxc') {
       if (!selectedLXCTemplate || !selectedServer) return;
       deployLXC.mutate(
@@ -282,6 +393,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   const nid = autoPickNetworkId(networks, activeWorkspaceId);
                   setConfig(p => ({ ...p, ipam_network_id: nid }));
                   setLxcConfig(p => ({ ...p, ipam_network_id: nid }));
+                  setIsoConfig(p => ({ ...p, ipam_network_id: nid, iso: '', extra_iso: '' }));
                 }}
               >
                 <CardContent className="flex items-center gap-3 p-4">
@@ -290,9 +402,11 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                     <p className="font-medium truncate">{srv.name}</p>
                     <p className="text-sm text-muted-foreground font-mono">{srv.ip_address}:{srv.port}</p>
                   </div>
-                  <Badge variant={srv.is_online ? 'default' : 'destructive'}>
-                    {srv.is_online ? t('common.online') : t('common.offline')}
-                  </Badge>
+                  <ServerStatusBadge
+                    isOnline={srv.is_online}
+                    errorKind={srv.last_error_kind}
+                    lastError={srv.last_error}
+                  />
                 </CardContent>
               </Card>
             ))}
@@ -304,7 +418,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       {step === 'type' && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">{t('wizard.select_type')}</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Card
               interactive
               className={kind === 'vm' ? 'border-primary bg-primary/5' : ''}
@@ -333,6 +447,78 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 {kind === 'lxc' && <CheckCircle className="ml-auto h-5 w-5 text-success shrink-0" />}
               </CardContent>
             </Card>
+            <Card
+              interactive
+              className={kind === 'iso' ? 'border-primary bg-primary/5' : ''}
+              onClick={() => setKind('iso')}
+            >
+              <CardContent className="flex items-center gap-4 p-5">
+                <Disc className="h-10 w-10 text-primary shrink-0" />
+                <div>
+                  <p className="font-semibold">{t('wizard.type_iso')}</p>
+                  <p className="text-sm text-muted-foreground">{t('wizard.type_iso_desc')}</p>
+                </div>
+                {kind === 'iso' && <CheckCircle className="ml-auto h-5 w-5 text-primary shrink-0" />}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: ISO selection — пустая ВМ под установку ОС */}
+      {step === 'template' && kind === 'iso' && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold">{t('wizard.select_iso')}</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label>{t('wizard.target_node')}</Label>
+              <Select value={selectedNode} onValueChange={v => { setSelectedNode(v ?? ''); setIsoConfig(p => ({ ...p, iso: '', extra_iso: '' })); }}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder={t('wizard.select_node_first')} /></SelectTrigger>
+                <SelectContent>
+                  {nodes.map(n => <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">{t('wizard.iso_node_hint')}</p>
+            </div>
+            <div>
+              <Label>{t('wizard.iso_image')}</Label>
+              <div className="mt-1 flex gap-2">
+                <Select value={isoConfig.iso} onValueChange={v => setIsoConfig(p => ({ ...p, iso: v ?? '' }))}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder={isoList.isLoading ? t('common.loading') : t('wizard.iso_select_placeholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(isoList.data?.isos || []).map(iso => (
+                      <SelectItem key={iso.volid} value={iso.volid}>{iso.name || iso.volid}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="icon" disabled={!selectedNode || isoList.isFetching}
+                  title={t('wizard.iso_refresh')} onClick={() => isoList.refetch()}>
+                  <RefreshCw className={`h-4 w-4 ${isoList.isFetching ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+              {selectedNode && !isoList.isLoading && (isoList.data?.isos?.length ?? 0) === 0 && (
+                <p className="mt-1 text-xs text-warning">{t('wizard.no_isos')}</p>
+              )}
+              <Button variant="link" size="sm" className="mt-1 h-auto p-0" disabled={!selectedNode}
+                onClick={() => setIsoDownloadOpen(true)}>
+                <Download className="mr-1 h-3.5 w-3.5" /> {t('wizard.iso_download')}
+              </Button>
+            </div>
+            <div className="sm:col-span-2">
+              <Label>{t('wizard.iso_extra')}</Label>
+              <Select value={isoConfig.extra_iso || '__none__'} onValueChange={v => setIsoConfig(p => ({ ...p, extra_iso: v && v !== '__none__' ? v : '' }))}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t('wizard.iso_extra_none')}</SelectItem>
+                  {(isoList.data?.isos || []).map(iso => (
+                    <SelectItem key={iso.volid} value={iso.volid}>{iso.name || iso.volid}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">{t('wizard.iso_extra_hint')}</p>
+            </div>
           </div>
         </div>
       )}
@@ -580,6 +766,176 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
         </div>
       )}
 
+      {/* Step 4: Configuration — ISO */}
+      {step === 'config' && kind === 'iso' && (
+        <div className="space-y-6">
+          <h3 className="text-lg font-semibold">{t('wizard.configure')}</h3>
+          <QuotaHint addCores={isoConfig.cores} addMemoryMb={isoConfig.memory} addDiskGb={isoConfig.disk} />
+          <div className="grid gap-6 sm:grid-cols-2">
+            {/* Basic */}
+            <Card>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">{t('wizard.basic')}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label>{t('common.name')}</Label>
+                  <Input value={isoConfig.name} onChange={e => setIsoConfig(p => ({ ...p, name: e.target.value }))} placeholder={t('common.placeholder_vm_name')} />
+                </div>
+                <div>
+                  <Label>{t('wizard.os_type')}</Label>
+                  <Select value={isoConfig.ostype} onValueChange={v => v && selectOsType(v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {OS_TYPES.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('wizard.os_type_hint')}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="iso_start_after"
+                    checked={isoConfig.start_after_create}
+                    onChange={e => setIsoConfig(p => ({ ...p, start_after_create: e.target.checked }))}
+                  />
+                  <Label htmlFor="iso_start_after">{t('wizard.start_after_create')}</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="iso_onboot"
+                    checked={isoConfig.onboot}
+                    onChange={e => setIsoConfig(p => ({ ...p, onboot: e.target.checked }))}
+                  />
+                  <Label htmlFor="iso_onboot">{t('instances.start_on_boot')}</Label>
+                </div>
+                {isAdmin && (
+                  <SSHOwnerSelector
+                    users={allUsers}
+                    value={ownerId}
+                    onChange={(v) => setOwnerId(v)}
+                  />
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Resources */}
+            <Card>
+              <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Cpu className="h-4 w-4" />{t('wizard.resources')}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label>vCPU</Label>
+                  <Input type="number" min={1} value={isoConfig.cores} onChange={e => setIsoConfig(p => ({ ...p, cores: Number(e.target.value) }))} />
+                </div>
+                <div>
+                  <Label>{t('wizard.memory_mb')}</Label>
+                  <Input type="number" min={256} step={256} value={isoConfig.memory} onChange={e => setIsoConfig(p => ({ ...p, memory: Number(e.target.value) }))} />
+                </div>
+                <div>
+                  <Label>{t('wizard.disk_gb')}</Label>
+                  <Input type="number" min={1} value={isoConfig.disk} onChange={e => setIsoConfig(p => ({ ...p, disk: Number(e.target.value) }))} />
+                </div>
+                <div>
+                  <Label>{t('wizard.storage')}</Label>
+                  <Select value={isoConfig.storage} onValueChange={v => setIsoConfig(p => ({ ...p, storage: v ?? '' }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {vmStorages.length > 0
+                        ? vmStorages.map(s => <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>)
+                        : <SelectItem value="local-lvm">local-lvm</SelectItem>
+                      }
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Hardware */}
+            <Card>
+              <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Disc className="h-4 w-4" />{t('wizard.iso_hardware')}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label>{t('wizard.disk_bus')}</Label>
+                  <Select value={isoConfig.disk_bus} onValueChange={v => v && setIsoConfig(p => ({ ...p, disk_bus: v as typeof p.disk_bus }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="scsi">VirtIO SCSI</SelectItem>
+                      <SelectItem value="sata">SATA</SelectItem>
+                      <SelectItem value="virtio">VirtIO Block</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {isoConfig.ostype.startsWith('win') && isoConfig.disk_bus !== 'sata' && (
+                    <p className="mt-1 text-xs text-warning">{t('wizard.disk_bus_windows_hint')}</p>
+                  )}
+                </div>
+                <div>
+                  <Label>BIOS</Label>
+                  <Select value={isoConfig.bios} onValueChange={v => v && setIsoConfig(p => ({ ...p, bios: v as typeof p.bios }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="seabios">SeaBIOS (Legacy)</SelectItem>
+                      <SelectItem value="ovmf">OVMF (UEFI)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>{t('wizard.net_model')}</Label>
+                  <Select value={isoConfig.net_model} onValueChange={v => v && setIsoConfig(p => ({ ...p, net_model: v as typeof p.net_model }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="virtio">VirtIO</SelectItem>
+                      <SelectItem value="e1000">Intel E1000</SelectItem>
+                      <SelectItem value="rtl8139">Realtek RTL8139</SelectItem>
+                      <SelectItem value="vmxnet3">VMware vmxnet3</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="iso_tpm"
+                    checked={isoConfig.tpm}
+                    onChange={e => setIsoConfig(p => ({ ...p, tpm: e.target.checked }))}
+                  />
+                  <Label htmlFor="iso_tpm">{t('wizard.tpm')}</Label>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Network */}
+            <Card>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">{t('wizard.network')}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label>{t('wizard.bridge')}</Label>
+                  <Input value={isoConfig.bridge} onChange={e => setIsoConfig(p => ({ ...p, bridge: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>IPAM {t('wizard.network')}</Label>
+                  <Select value={String(isoConfig.ipam_network_id || '')} onValueChange={v => setIsoConfig(p => ({ ...p, ipam_network_id: v ? Number(v) : null }))}>
+                    <SelectTrigger><SelectValue placeholder={t('wizard.manual_ip')} /></SelectTrigger>
+                    <SelectContent>
+                      {vmFilteredNetworks.map(n => (
+                        <SelectItem key={n.id} value={String(n.id)}>{n.name} ({n.network})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {!isoConfig.ipam_network_id && (
+                  <>
+                    <div>
+                      <Label>IP</Label>
+                      <Input value={isoConfig.ip_address} onChange={e => setIsoConfig(p => ({ ...p, ip_address: e.target.value }))} placeholder="10.10.10.5" />
+                    </div>
+                    <div>
+                      <Label>Gateway</Label>
+                      <Input value={isoConfig.gateway} onChange={e => setIsoConfig(p => ({ ...p, gateway: e.target.value }))} placeholder="10.10.10.1" />
+                    </div>
+                  </>
+                )}
+                <p className="text-xs text-muted-foreground">{t('wizard.iso_ip_hint')}</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
       {/* Step 4: Configuration — LXC */}
       {step === 'config' && kind === 'lxc' && (
         <div className="space-y-6">
@@ -751,6 +1107,34 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
         </div>
       )}
 
+      {/* Step 5: Confirm — ISO */}
+      {step === 'confirm' && kind === 'iso' && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold">{t('wizard.confirm')}</h3>
+          <Card>
+            <CardContent className="p-6 space-y-3">
+              <Row label={t('wizard.server_label')} value={selectedServer?.name || ''} />
+              <Row label={t('common.type')} value="VM (QEMU) · ISO" />
+              <Row label={t('wizard.target_node')} value={selectedNode} />
+              <Row label={t('wizard.iso_image')} value={isoConfig.iso.split('/').pop() || isoConfig.iso} />
+              {isoConfig.extra_iso && <Row label={t('wizard.iso_extra')} value={isoConfig.extra_iso.split('/').pop() || isoConfig.extra_iso} />}
+              <Row label={t('common.name')} value={isoConfig.name} />
+              <Row label={t('common.vcpu')} value={String(isoConfig.cores)} />
+              <Row label={t('wizard.memory_mb')} value={`${isoConfig.memory} MB`} />
+              <Row label={t('wizard.disk_gb')} value={`${isoConfig.disk} GB`} />
+              <Row label={t('wizard.storage')} value={isoConfig.storage} />
+              <Row label={t('wizard.disk_bus')} value={isoConfig.disk_bus} />
+              <Row label="BIOS" value={isoConfig.bios === 'ovmf' ? 'OVMF (UEFI)' : 'SeaBIOS'} />
+              {isoConfig.tpm && <Row label={t('wizard.tpm')} value={t('common.yes')} />}
+              <Row label={t('wizard.bridge')} value={`${isoConfig.bridge} · ${isoConfig.net_model}`} />
+              {isoConfig.ipam_network_id && <Row label={t('common.ipam')} value={networks.find(n => n.id === isoConfig.ipam_network_id)?.name || 'Auto'} />}
+              {isoConfig.ip_address && <Row label={t('common.primary_ip')} value={isoConfig.ip_address} />}
+            </CardContent>
+          </Card>
+          <p className="text-sm text-muted-foreground">{t('wizard.iso_next_steps')}</p>
+        </div>
+      )}
+
       {/* Step 5: Confirm — LXC */}
       {step === 'confirm' && kind === 'lxc' && (
         <div className="space-y-4">
@@ -775,14 +1159,24 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
         </div>
       )}
 
+      {/* Загрузка ISO прямо из мастера: файл появится в списке после фоновой задачи */}
+      {selectedServer && (
+        <DownloadIsoDialog
+          open={isoDownloadOpen}
+          onClose={() => { setIsoDownloadOpen(false); isoList.refetch(); }}
+          serverId={selectedServer.id}
+          node={selectedNode}
+        />
+      )}
+
       {/* Navigation */}
       <div className="flex items-center justify-between border-t pt-4">
         <Button variant="outline" onClick={stepIdx === 0 ? handleClose : prev}>
           {stepIdx === 0 ? t('common.cancel') : <><ChevronLeft className="mr-1 h-4 w-4" />{t('wizard.back')}</>}
         </Button>
         {step === 'confirm' ? (
-          <Button onClick={handleDeploy} disabled={deploy.isPending || deployLXC.isPending}>
-            {(deploy.isPending || deployLXC.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          <Button onClick={handleDeploy} disabled={deploy.isPending || deployLXC.isPending || createIsoVM.isPending}>
+            {(deploy.isPending || deployLXC.isPending || createIsoVM.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t('wizard.deploy')}
           </Button>
         ) : (

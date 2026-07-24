@@ -342,7 +342,8 @@
     "placeholder_snapshot_name": "например перед-обновлением",
     "placeholder_root_pam": "root@pam",
     "placeholder_disk": "scsi0",
-    "placeholder_notes": "Описание / заметки об инстансе..."
+    "placeholder_notes": "Описание / заметки об инстансе...",
+    "ipam": "IPAM"
   },
   "snap_archive": {
     "title": "Архив снапшотов",
@@ -585,7 +586,29 @@
     "lxc_password_placeholder": "Пароль root контейнера",
     "swap_mb": "Своп (МБ)",
     "unprivileged": "Непривилегированный контейнер",
-    "lxc_template_label": "CT Шаблон"
+    "lxc_template_label": "CT Шаблон",
+    "type_iso": "ВМ из ISO",
+    "type_iso_desc": "Пустая QEMU/KVM ВМ под установку ОС с ISO",
+    "select_iso": "Выберите установочный ISO",
+    "select_node_first": "Выберите ноду",
+    "iso_node_hint": "Список ISO берётся с хранилищ этой ноды",
+    "iso_image": "ISO образ",
+    "iso_select_placeholder": "Выберите ISO",
+    "no_isos": "На ноде нет ISO образов. Сначала загрузите образ в хранилище с типом контента ISO.",
+    "iso_extra": "Второй ISO (драйверы)",
+    "iso_extra_none": "Не использовать",
+    "iso_extra_hint": "Подключается вторым CD-ROM — например virtio-win при установке Windows",
+    "iso_hardware": "Оборудование",
+    "disk_bus": "Шина диска",
+    "disk_bus_windows_hint": "Установщик Windows не увидит VirtIO-диск без драйверов — выберите SATA или подключите virtio-win вторым ISO.",
+    "net_model": "Сетевая карта",
+    "tpm": "TPM 2.0",
+    "os_type": "Гостевая ОС",
+    "os_type_hint": "Выбор ОС подставляет BIOS, шину диска и сетевую карту",
+    "iso_ip_hint": "IP только резервируется в IPAM — cloud-init здесь нет, адрес нужно ввести вручную в установщике.",
+    "iso_next_steps": "ВМ загрузится с ISO. Откройте консоль и пройдите установку; после неё отключите ISO и поставьте диск первым в порядке загрузки.",
+    "iso_download": "Загрузить ISO на эту ноду",
+    "iso_refresh": "Обновить список ISO"
   },
   "nodes": {
     "title": "Серверы",

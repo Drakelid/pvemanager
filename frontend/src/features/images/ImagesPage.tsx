@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Download, HardDriveDownload, Package, ChevronDown } from 'lucide-react';
+import { Search, Download, HardDriveDownload, Package, ChevronDown, Disc } from 'lucide-react';
 import { OsLogo } from '@/features/templates/OsLogo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { useServers, useNodes } from '@/hooks/use-nodes';
 import { useImageCatalog, useImageLXCTemplates, useNodeArch } from '@/hooks/use-image-catalog';
 import { useProfile } from '@/hooks/use-settings';
 import DownloadImageDialog, { type SelectedImage } from './DownloadImageDialog';
+import DownloadIsoDialog, { type IsoSource } from './DownloadIsoDialog';
 import MirrorsManager from './MirrorsManager';
 import type { CatalogImage } from '@/types';
 
@@ -29,9 +30,13 @@ export default function ImagesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(() => localStorage.getItem('images-cloud-open') !== '0');
   const [lxcOpen, setLxcOpen] = useState(() => localStorage.getItem('images-lxc-open') !== '0');
+  const [isoOpen, setIsoOpen] = useState(() => localStorage.getItem('images-iso-open') !== '0');
+  const [isoSource, setIsoSource] = useState<IsoSource | null>(null);
+  const [isoDialogOpen, setIsoDialogOpen] = useState(false);
 
   const toggleCloud = () => setCloudOpen((v) => { localStorage.setItem('images-cloud-open', v ? '0' : '1'); return !v; });
   const toggleLxc = () => setLxcOpen((v) => { localStorage.setItem('images-lxc-open', v ? '0' : '1'); return !v; });
+  const toggleIso = () => setIsoOpen((v) => { localStorage.setItem('images-iso-open', v ? '0' : '1'); return !v; });
 
   const { data: servers = [] } = useServers();
   const { data: profile } = useProfile();
@@ -64,6 +69,19 @@ export default function ImagesPage() {
       return !q || `${img.name} ${img.os ?? ''} ${img.version ?? ''}`.toLowerCase().includes(q);
     });
   }, [catalog, archFilter, search]);
+
+  // ISO во встроенном каталоге нет — ссылки на дистрибутивы живут в зеркалах пользователя.
+  const isoImages = useMemo<CatalogImage[]>(() => {
+    const all = [...(catalog?.builtin ?? []), ...(catalog?.mirrors ?? [])];
+    const q = search.toLowerCase();
+    return all.filter((img) => img.kind === 'iso'
+      && (!q || `${img.name} ${img.os ?? ''} ${img.version ?? ''}`.toLowerCase().includes(q)));
+  }, [catalog, search]);
+
+  const openIsoDownload = (src: IsoSource | null) => {
+    setIsoSource(src);
+    setIsoDialogOpen(true);
+  };
 
   const lxcTemplates = useMemo(() => {
     const q = search.toLowerCase();
@@ -149,6 +167,48 @@ export default function ImagesPage() {
         )}
       </section>
 
+      {/* ISO-образы (установочные) */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <button type="button" onClick={toggleIso}
+            className="flex items-center gap-2 text-lg font-semibold">
+            <ChevronDown className={`h-5 w-5 transition-transform ${isoOpen ? '' : '-rotate-90'}`} />
+            <Disc className="h-5 w-5" /> ISO-образы
+          </button>
+          <Button size="sm" variant="outline" disabled={!canDownload}
+            onClick={() => openIsoDownload(null)}>
+            <Download className="mr-2 h-4 w-4" /> Загрузить по URL
+          </Button>
+        </div>
+        {isoOpen && (<>
+          {!canDownload && (
+            <div className="text-sm text-muted-foreground">Выберите сервер и ноду, чтобы загрузить образ.</div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {isoImages.map((img) => (
+              <Card key={img.id}>
+                <CardContent className="flex items-center gap-3 p-4">
+                  <OsLogo name={img.os || img.name} />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium truncate">{img.name}</div>
+                    <div className="text-xs text-muted-foreground truncate" title={img.url ?? ''}>{img.url}</div>
+                  </div>
+                  <Button size="sm" disabled={!canDownload}
+                    onClick={() => openIsoDownload({ source_id: img.id, name: img.name, url: img.url ?? undefined })}>
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          {isoImages.length === 0 && (
+            <div className="text-sm text-muted-foreground">
+              Сохранённых ISO-ссылок нет. Загрузите образ по URL или добавьте зеркало с типом «iso» ниже.
+            </div>
+          )}
+        </>)}
+      </section>
+
       {/* LXC-шаблоны (репозиторий Proxmox) */}
       <section className="space-y-3">
         <button type="button" onClick={toggleLxc}
@@ -188,6 +248,14 @@ export default function ImagesPage() {
         serverId={serverId ?? 0}
         node={node}
         image={selected}
+      />
+
+      <DownloadIsoDialog
+        open={isoDialogOpen}
+        onClose={() => setIsoDialogOpen(false)}
+        serverId={serverId ?? 0}
+        node={node}
+        source={isoSource}
       />
     </div>
   );

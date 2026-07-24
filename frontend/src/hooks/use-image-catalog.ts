@@ -67,7 +67,7 @@ export interface ImageDownloadRequest {
   node: string;
   storage: string;
   source_id?: string;
-  kind?: 'qcow2' | 'vztmpl';
+  kind?: 'qcow2' | 'vztmpl' | 'iso';
   url?: string;
   template?: string;
   filename?: string;

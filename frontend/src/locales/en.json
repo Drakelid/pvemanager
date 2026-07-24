@@ -342,7 +342,8 @@
     "placeholder_snapshot_name": "e.g. before-update",
     "placeholder_root_pam": "root@pam",
     "placeholder_disk": "scsi0",
-    "placeholder_notes": "Описание / заметки об инстансе..."
+    "placeholder_notes": "Описание / заметки об инстансе...",
+    "ipam": "IPAM"
   },
   "snap_archive": {
     "title": "Snapshot archive",
@@ -585,7 +586,29 @@
     "lxc_password_placeholder": "Container root password",
     "swap_mb": "Swap (MB)",
     "unprivileged": "Unprivileged container",
-    "lxc_template_label": "CT Template"
+    "lxc_template_label": "CT Template",
+    "type_iso": "VM from ISO",
+    "type_iso_desc": "Blank QEMU/KVM VM for an OS install from an ISO",
+    "select_iso": "Select installation ISO",
+    "select_node_first": "Select a node",
+    "iso_node_hint": "The ISO list comes from this node's storages",
+    "iso_image": "ISO image",
+    "iso_select_placeholder": "Select ISO",
+    "no_isos": "No ISO images on this node. Upload one to a storage with the ISO content type first.",
+    "iso_extra": "Second ISO (drivers)",
+    "iso_extra_none": "Not used",
+    "iso_extra_hint": "Mounted as a second CD-ROM — for example virtio-win when installing Windows",
+    "iso_hardware": "Hardware",
+    "disk_bus": "Disk bus",
+    "disk_bus_windows_hint": "The Windows installer will not see a VirtIO disk without drivers — pick SATA or attach virtio-win as the second ISO.",
+    "net_model": "Network card",
+    "tpm": "TPM 2.0",
+    "os_type": "Guest OS",
+    "os_type_hint": "Changing this presets BIOS, disk bus and network card",
+    "iso_ip_hint": "The IP is only reserved in IPAM — there is no cloud-init here, so enter it manually in the installer.",
+    "iso_next_steps": "The VM boots from the ISO. Open the console to run the installer; when it is done, unmount the ISO and put the disk first in the boot order.",
+    "iso_download": "Download an ISO to this node",
+    "iso_refresh": "Refresh the ISO list"
   },
   "nodes": {
     "title": "Servers",

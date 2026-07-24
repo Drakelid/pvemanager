@@ -38,7 +38,7 @@ class ImageDownloadRequest(BaseModel):
     # Либо ссылка на запись каталога/зеркала...
     source_id: Optional[str] = None
     # ...либо явные параметры произвольного образа:
-    kind: Optional[str] = None          # 'qcow2' | 'vztmpl'
+    kind: Optional[str] = None          # 'qcow2' | 'vztmpl' | 'iso'
     url: Optional[str] = None
     template: Optional[str] = None      # имя шаблона из репозитория (aplinfo)
     filename: Optional[str] = None
@@ -82,7 +82,7 @@ def get_image_catalog(
 
 class ImageMirrorBase(BaseModel):
     name: str
-    kind: str = 'qcow2'              # 'qcow2' | 'vztmpl'
+    kind: str = 'qcow2'              # 'qcow2' | 'vztmpl' | 'iso'
     os: Optional[str] = None
     version: Optional[str] = None
     arch: str = 'amd64'
@@ -95,12 +95,12 @@ class ImageMirrorBase(BaseModel):
 
     @model_validator(mode='after')
     def _check(self):
-        if self.kind not in ('qcow2', 'vztmpl'):
-            raise ValueError("kind должен быть 'qcow2' или 'vztmpl'")
+        if self.kind not in ('qcow2', 'vztmpl', 'iso'):
+            raise ValueError("kind должен быть 'qcow2', 'vztmpl' или 'iso'")
         if not self.url and not self.template:
             raise ValueError('Нужен url или template')
-        if self.kind == 'qcow2' and not self.url:
-            raise ValueError('Для qcow2 нужен url')
+        if self.kind in ('qcow2', 'iso') and not self.url:
+            raise ValueError(f'Для {self.kind} нужен url')
         return self
 
 
@@ -305,10 +305,12 @@ async def download_image(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
 
     src = _resolve_source(db, req)
+    if src['kind'] not in ('qcow2', 'vztmpl', 'iso'):
+        raise HTTPException(status_code=400, detail=f"Неизвестный тип образа: {src['kind']}")
     if src['kind'] == 'vztmpl' and not src['template'] and not src['url']:
         raise HTTPException(status_code=400, detail="Для vztmpl нужен url или template")
     if src['kind'] != 'vztmpl' and not src['url']:
-        raise HTTPException(status_code=400, detail="Для qcow2 нужен url")
+        raise HTTPException(status_code=400, detail=f"Для {src['kind']} нужен url")
 
     to_template = req.to_template and src['kind'] == 'qcow2'
     kind = 'image_template' if to_template else 'image_download'

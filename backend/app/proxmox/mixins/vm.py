@@ -101,6 +101,86 @@ class VmMixin:
                 logger.error(f"Ошибка обновления заметок VM {vmid}: {e}")
                 return False
 
+        def create_vm_from_iso(self, node: str, vmid: int, name: str,
+                               memory: int, cores: int,
+                               disk_storage: str, disk_size: int,
+                               iso_volid: Optional[str] = None,
+                               bridge: str = 'vmbr0',
+                               ostype: str = 'l26',
+                               disk_bus: str = 'scsi',
+                               net_model: str = 'virtio',
+                               bios: str = 'seabios',
+                               tpm: bool = False,
+                               extra_iso_volid: Optional[str] = None,
+                               onboot: bool = False,
+                               description: Optional[str] = None) -> Optional[str]:
+            """
+            Создать «пустую» ВМ под установку ОС с ISO.
+
+            В отличие от create_vm_with_import диск не импортируется из образа,
+            а аллоцируется пустым (`<storage>:<size_gb>`), ISO подключается
+            CD-ROM'ом на ide2 и ставится первым в порядке загрузки. Консоль —
+            графическая (vga=std), иначе установщик не будет виден в noVNC.
+
+            Args:
+                disk_size: размер пустого диска в GB
+                iso_volid: volid установочного ISO ('local:iso/ubuntu.iso'); None — без ISO
+                disk_bus: шина диска — scsi | sata | virtio (ide занят CD-ROM'ом)
+                net_model: модель сетевой карты (virtio | e1000 | rtl8139)
+                bios: seabios | ovmf (UEFI — добавляется efidisk0 и machine=q35)
+                tpm: добавить TPM 2.0 (требуется для Windows 11)
+                extra_iso_volid: второй ISO на ide0 (например, virtio-win с драйверами)
+
+            Returns:
+                UPID задачи создания ВМ
+
+            Исключение пробрасывается наверх — воркеру нужен текст ошибки Proxmox.
+            """
+            if not self.proxmox:
+                return None
+
+            bus = disk_bus if disk_bus in ('scsi', 'sata', 'virtio') else 'scsi'
+            disk_dev = f'{bus}0'
+            disk_opts = ',discard=on' + (',iothread=1' if bus in ('scsi', 'virtio') else '')
+
+            params = {
+                'vmid': vmid,
+                'name': name,
+                'memory': memory,
+                'cores': cores,
+                'sockets': 1,
+                'cpu': 'host',
+                'ostype': ostype,
+                'scsihw': 'virtio-scsi-single',
+                disk_dev: f'{disk_storage}:{disk_size}{disk_opts}',
+                'net0': f'{net_model},bridge={bridge},firewall=1',
+                'agent': 'enabled=1',
+                'vga': 'std',
+                'onboot': 1 if onboot else 0,
+            }
+            if iso_volid:
+                params['ide2'] = f'{iso_volid},media=cdrom'
+                params['boot'] = f'order=ide2;{disk_dev}'
+            else:
+                params['boot'] = f'order={disk_dev}'
+            if extra_iso_volid:
+                # ide0 — второй привод под ISO с драйверами (ide2 занят основным)
+                params['ide0'] = f'{extra_iso_volid},media=cdrom'
+            if bios == 'ovmf':
+                params['bios'] = 'ovmf'
+                params['machine'] = 'q35'
+                # Ключи Secure Boot нужны Windows и мешают части Linux-установщиков
+                pre_enrolled = 1 if ostype.startswith('win') else 0
+                params['efidisk0'] = f'{disk_storage}:1,efitype=4m,pre-enrolled-keys={pre_enrolled}'
+            if tpm:
+                params['tpmstate0'] = f'{disk_storage}:1,version=v2.0'
+            if description:
+                params['description'] = description
+
+            result = self.proxmox.nodes(node).qemu.post(**params)
+            logger.info(f"Создание ВМ {vmid} ({name}) под установку с {iso_volid or 'без ISO'} на {node}, UPID: {result}")
+            return result
+
         def attach_iso(self, node: str, vmid: int, iso_volid: str, device: str = 'ide2') -> bool:
             """Подключить ISO образ к VM (только KVM)."""
             if not self.proxmox:

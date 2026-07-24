@@ -8,6 +8,7 @@ from .backup import router as backup_router
 from .cluster import router as cluster_router
 from .networks import router as networks_router
 from .lxc import router as lxc_router
+from .iso_vm import router as iso_vm_router
 from .images import router as images_router
 from .firewall import router as firewall_router
 from .pools import router as pools_router
@@ -26,6 +27,7 @@ router.include_router(backup_router)
 router.include_router(cluster_router)
 router.include_router(networks_router)
 router.include_router(lxc_router)
+router.include_router(iso_vm_router)
 router.include_router(images_router)
 router.include_router(firewall_router)
 router.include_router(pools_router)

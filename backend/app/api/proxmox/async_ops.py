@@ -794,6 +794,18 @@ def _normalize_import_filename(filename: str) -> str:
     return base + '.qcow2'
 
 
+def _normalize_iso_filename(filename: str) -> str:
+    """Привести имя файла к допустимому для content=iso расширению.
+
+    Proxmox принимает в ISO-хранилище только `*.iso` и `*.img`; ссылки вида
+    `.../download?file=x` или архивные имена он отвергает ещё на старте задачи.
+    """
+    low = filename.lower()
+    if low.endswith('.iso') or low.endswith('.img'):
+        return filename
+    return filename + '.iso'
+
+
 def _wait_download_with_progress(client, task_id: int, node: str, upid: str,
                                  lo: int = 15, hi: int = 100,
                                  timeout: int = 3600) -> bool:
@@ -843,12 +855,13 @@ def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: st
                             url: Optional[str], template: Optional[str],
                             checksum: Optional[str], checksum_algorithm: Optional[str],
                             user_id: int, username: str):
-    """Скачать образ (qcow2 или vztmpl) в хранилище ноды с прогрессом.
+    """Скачать образ (qcow2, vztmpl или iso) в хранилище ноды с прогрессом.
 
     kind:
         'qcow2'  — cloud-образ ВМ, content=import (url обязателен)
         'vztmpl' — LXC-шаблон: либо template (репозиторий Proxmox, aplinfo),
                    либо url (произвольное зеркало, content=vztmpl)
+        'iso'    — установочный ISO, content=iso (url обязателен)
     """
     db = SessionLocal()
     server = None
@@ -864,8 +877,13 @@ def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: st
                                 error='Не удалось подключиться к Proxmox серверу')
             return
 
-        content = 'vztmpl' if kind == 'vztmpl' else 'import'
-        dl_filename = _normalize_import_filename(filename) if content == 'import' else filename
+        content = {'vztmpl': 'vztmpl', 'iso': 'iso'}.get(kind, 'import')
+        if content == 'import':
+            dl_filename = _normalize_import_filename(filename)
+        elif content == 'iso':
+            dl_filename = _normalize_iso_filename(filename)
+        else:
+            dl_filename = filename
 
         # Идемпотентность: если файл уже есть в хранилище — не качаем повторно
         existing_volid = f'{storage}:{content}/{dl_filename}'

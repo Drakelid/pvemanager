@@ -141,6 +141,7 @@ class DeployTask(Base):
         kind = self.kind or 'deploy'
         descriptions = {
             'deploy': f"Создание {self.name}",
+            'vm_iso': f"Создание ВМ под ISO: {self.name}",
             'reinstall': f"Переустановка {self.name}",
             'clone': f"Клонирование {self.name}",
             'change_password': f"Смена пароля: {self.name}",
