@@ -15,6 +15,12 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./nginx/certbot/conf:/etc/letsencrypt:ro
       - ./nginx/certbot/www:/var/www/certbot:rw
+    # nginx reads the certificate once at startup, so a certificate renewed by
+    # the certbot service below would keep being served in its old form until
+    # the container restarts — i.e. the site would start serving an expired
+    # certificate roughly 30 days after the first successful renewal.
+    # Reload every 6h so a renewed certificate is picked up in time.
+    command: /bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'
     depends_on:
       app:
         condition: service_healthy

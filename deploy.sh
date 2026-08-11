@@ -371,16 +371,35 @@ setup_nginx_config() {
     print_success "NGINX configuration created for domain: ${domain}"
 }
 
+# Check whether a usable certificate for the domain is already on disk.
+#
+# The check has to run as root inside a container: certbot creates
+# /etc/letsencrypt/{live,archive,accounts} owned by root with mode 0700, so a
+# plain `[ -d nginx/certbot/conf/live/$domain ]` from the (unprivileged) deploy
+# user always fails with EACCES — even when the certificate is perfectly valid.
+certificate_exists() {
+    local domain=$1
+
+    docker run --rm \
+        -v "$(pwd)/nginx/certbot/conf:/etc/letsencrypt" \
+        --entrypoint sh \
+        certbot/certbot -c \
+        "[ -s /etc/letsencrypt/live/${domain}/fullchain.pem ] && [ -s /etc/letsencrypt/live/${domain}/privkey.pem ]" \
+        >/dev/null 2>&1
+}
+
 obtain_ssl_certificate() {
     local domain=$1
     local email=$2
-    
+
     print_info "Obtaining SSL certificate for ${domain}..."
-    
-    # Create certbot directories with proper permissions
+
+    # Create certbot directories. Only the ACME webroot needs relaxing — the
+    # rest belongs to certbot (root, 0700 on purpose: it holds private keys),
+    # and chmod -R here would only spam errors it cannot act on anyway.
     mkdir -p nginx/certbot/conf nginx/certbot/www
-    chmod -R 755 nginx/certbot
-    
+    chmod 755 nginx/certbot nginx/certbot/www 2>/dev/null || true
+
     # Wait for nginx to be fully ready
     print_info "Waiting for nginx to be ready..."
     local max_wait=30
@@ -398,7 +417,9 @@ obtain_ssl_certificate() {
         print_warning "NGINX may not be fully ready, continuing anyway..."
     fi
     
-    # Request certificate using standalone certbot (more reliable)
+    # Request certificate via the webroot nginx is already serving.
+    # --keep-until-expiring makes an existing, still-valid certificate a plain
+    # success instead of an ambiguous "no action taken" result.
     print_info "Requesting SSL certificate from Let's Encrypt..."
     docker run --rm \
         -v "$(pwd)/nginx/certbot/conf:/etc/letsencrypt" \
@@ -410,18 +431,26 @@ obtain_ssl_certificate() {
         --agree-tos \
         --no-eff-email \
         --non-interactive \
+        --keep-until-expiring \
         -d "${domain}"
-    
+
     local result=$?
-    
-    if [ $result -eq 0 ] && [ -d "nginx/certbot/conf/live/${domain}" ]; then
-        print_success "SSL certificate obtained successfully"
+
+    # The certificate on disk is the source of truth, not certbot's exit code:
+    # a certificate that is present and not yet due for renewal is a success
+    # even on the runs where certbot reports it had nothing to do.
+    if certificate_exists "$domain"; then
+        if [ $result -ne 0 ]; then
+            print_warning "certbot exited with code ${result}, but a valid certificate for ${domain} is present"
+        fi
+        print_success "SSL certificate is available for ${domain}"
         return 0
-    else
-        print_error "Failed to obtain SSL certificate"
-        print_warning "Continuing with HTTP only..."
-        return 1
     fi
+
+    print_error "Failed to obtain SSL certificate (certbot exit code: ${result})"
+    print_warning "Check that ${domain} resolves to this server and that port 80 is reachable"
+    print_warning "Continuing with HTTP only..."
+    return 1
 }
 
 # Resilient Docker build: try with cache + --pull first; on failure retry once
@@ -479,6 +508,26 @@ check_stale_db_volume() {
     fi
 }
 
+# Wait for the nginx container to settle into a running state and accept its
+# configuration. A bad ssl_certificate path makes nginx exit at startup, so
+# "up -d" returning 0 is not on its own proof that the site is being served.
+verify_nginx_running() {
+    local max_wait=20
+    local waited=0
+
+    while [ $waited -lt $max_wait ]; do
+        if docker compose -f compose.yml -f compose.prod.yml ps nginx 2>/dev/null | grep -qi "running\|healthy"; then
+            if docker compose -f compose.yml -f compose.prod.yml exec -T nginx nginx -t >/dev/null 2>&1; then
+                return 0
+            fi
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+
+    return 1
+}
+
 deploy_with_nginx() {
     local domain=$1
     local use_ssl=$2
@@ -534,20 +583,33 @@ deploy_with_nginx() {
         
         # Try to obtain SSL certificate
         if obtain_ssl_certificate "$domain" "$email"; then
-            ssl_success=true
-            
             # Stop nginx to reconfigure with SSL
             docker compose -f compose.yml -f compose.prod.yml stop nginx
-            
+
             # Setup SSL config
             setup_nginx_config "$domain" true
-            
+
             print_info "Starting NGINX with SSL..."
             docker compose -f compose.yml -f compose.prod.yml up -d nginx
-            
-            # Start certbot renewal service
-            print_info "Starting certbot renewal service..."
-            docker compose -f compose.yml -f compose.prod.yml --profile ssl up -d certbot
+
+            if verify_nginx_running; then
+                ssl_success=true
+                print_success "NGINX is serving HTTPS for ${domain}"
+
+                # Start certbot renewal service
+                print_info "Starting certbot renewal service..."
+                docker compose -f compose.yml -f compose.prod.yml --profile ssl up -d certbot
+            else
+                # A crash-looping nginx takes the whole panel offline, which is
+                # worse than no HTTPS — roll back to the HTTP-only config.
+                print_error "NGINX failed to start with the SSL configuration:"
+                docker compose -f compose.yml -f compose.prod.yml logs --tail 20 nginx || true
+                print_warning "Rolling back to the HTTP-only configuration..."
+                docker compose -f compose.yml -f compose.prod.yml stop nginx
+                setup_nginx_config "$domain" false
+                docker compose -f compose.yml -f compose.prod.yml up -d nginx
+                ssl_success=false
+            fi
         else
             # Already running with non-SSL config, just continue
             print_warning "Continuing with HTTP only (no SSL)..."

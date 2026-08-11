@@ -27,6 +27,9 @@ node_modules/
 # Generated systemd files (created by deploy.sh when not root)
 systemd/
 
+# Let's Encrypt state written by certbot (contains private keys — never commit)
+nginx/certbot/
+
 # Environment
 .env
 .env.local
