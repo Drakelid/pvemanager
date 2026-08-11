@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
-import { Server, Cpu, CheckCircle, ChevronLeft, ChevronRight, Loader2, Monitor, Container, HardDrive, KeyRound, Gauge, Disc, Download, RefreshCw } from 'lucide-react';
+import { Server, Cpu, CheckCircle, ChevronLeft, ChevronRight, Loader2, Monitor, Container, HardDrive, KeyRound, Gauge, Disc, Download, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -24,6 +25,10 @@ import { useUsers } from '@/hooks/use-users';
 import { apiClient } from '@/lib/api-client';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
 import type { VMDeployRequest, OSTemplate, ProxmoxServer, LXCTemplate } from '@/types';
+import {
+  buildQuotaMetrics, exceededMetrics, exhaustedMetrics,
+  type QuotaMetric, type WizardResources,
+} from './quota';
 import { toast } from 'sonner';
 
 type InstanceKind = 'vm' | 'lxc' | 'iso';
@@ -160,6 +165,34 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
     : myKeys;
   const toggleKey = (id: number) =>
     setSelectedKeyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  // ── Quotas ────────────────────────────────────────────────────────────────
+  // Раньше о превышении квоты сообщал только бэкенд (429) — уже после того, как
+  // пользователь прошёл весь мастер. Считаем то же самое здесь, чтобы сказать
+  // заранее и назвать конкретную метрику.
+  //
+  // Блокировки применяются только к не-админам: квота у нас загружается своя, а
+  // админ может создавать инстанс на другого пользователя, и его собственный
+  // лимит тут ни при чём. Подсказку с цифрами при этом видят все.
+  const { data: myQuota } = useMyQuota();
+  const enforceQuota = !isAdmin;
+
+  const activeResources: WizardResources =
+    kind === 'vm'
+      ? { cores: config.cores, memoryMb: config.memory, diskGb: config.disk }
+      : kind === 'iso'
+        ? { cores: isoConfig.cores, memoryMb: isoConfig.memory, diskGb: isoConfig.disk }
+        : { cores: lxcConfig.cores, memoryMb: lxcConfig.memory, diskGb: lxcConfig.disk };
+
+  // Метрики, по которым пользователь ограничен. Показываем их всем, включая
+  // админов, — блокируем только не-админов (см. выше).
+  const quotaMetrics = buildQuotaMetrics(myQuota, activeResources);
+  const quotaBlockers = enforceQuota ? exhaustedMetrics(quotaMetrics) : [];
+  const quotaOverruns = enforceQuota ? exceededMetrics(quotaMetrics) : [];
+  // Придерживаем превышение до шага, где поля ресурсов на экране: иначе
+  // конфигурация по умолчанию, не влезающая в остаток квоты, заблокировала бы
+  // «Далее» ещё на выборе сервера — и уменьшить её было бы негде.
+  const blockOnOverrun = quotaOverruns.length > 0 && (step === 'config' || step === 'confirm');
 
   const deploy = useMutation({
     mutationFn: (data: VMDeployRequest) =>
@@ -359,6 +392,38 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       disk: tpl.default_disk,
     }));
   };
+
+  // Места нет ни под какой инстанс — мастер не открываем: настраивать нечего,
+  // деплой всё равно завершится 429 в самом конце.
+  if (quotaBlockers.length > 0) {
+    return (
+      <div className="space-y-6">
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{t('wizard.quota_blocked_title')}</AlertTitle>
+          <AlertDescription>
+            <p>{t('wizard.quota_blocked_desc')}</p>
+            <ul className="mt-3 space-y-1.5">
+              {quotaBlockers.map(m => (
+                <li key={m.key} className="flex items-center justify-between gap-4 rounded-md border px-2.5 py-1.5 text-xs">
+                  <span>{t(m.labelKey)}</span>
+                  <span className="font-medium">
+                    {t('wizard.quota_used_of', { used: m.used, limit: m.limit })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs">{t('wizard.quota_blocked_hint')}</p>
+          </AlertDescription>
+        </Alert>
+        <div className="flex border-t pt-4">
+          <Button variant="outline" onClick={handleClose}>
+            <ChevronLeft className="mr-1 h-4 w-4" />{t('wizard.back')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -615,7 +680,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       {step === 'config' && kind === 'vm' && (
         <div className="space-y-6">
           <h3 className="text-lg font-semibold">{t('wizard.configure')}</h3>
-          <QuotaHint addCores={config.cores} addMemoryMb={config.memory} addDiskGb={config.disk} />
+          <QuotaHint metrics={quotaMetrics} />
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Basic */}
             <Card>
@@ -770,7 +835,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       {step === 'config' && kind === 'iso' && (
         <div className="space-y-6">
           <h3 className="text-lg font-semibold">{t('wizard.configure')}</h3>
-          <QuotaHint addCores={isoConfig.cores} addMemoryMb={isoConfig.memory} addDiskGb={isoConfig.disk} />
+          <QuotaHint metrics={quotaMetrics} />
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Basic */}
             <Card>
@@ -940,7 +1005,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       {step === 'config' && kind === 'lxc' && (
         <div className="space-y-6">
           <h3 className="text-lg font-semibold">{t('wizard.configure')}</h3>
-          <QuotaHint addCores={lxcConfig.cores} addMemoryMb={lxcConfig.memory} addDiskGb={lxcConfig.disk} />
+          <QuotaHint metrics={quotaMetrics} />
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Basic */}
             <Card>
@@ -1169,18 +1234,45 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
         />
       )}
 
+      {/* Выбранная конфигурация не влезает в квоту — говорим об этом до отправки */}
+      {blockOnOverrun && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{t('wizard.quota_exceeded_title')}</AlertTitle>
+          <AlertDescription>
+            <ul className="mt-2 space-y-1.5">
+              {quotaOverruns.map(m => (
+                <li key={m.key} className="flex items-center justify-between gap-4 rounded-md border px-2.5 py-1.5 text-xs">
+                  <span>{t(m.labelKey)}</span>
+                  <span className="font-medium">
+                    {t('wizard.quota_used_of', { used: m.used + m.add, limit: m.limit })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs">{t('wizard.quota_exceeded_hint')}</p>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Navigation */}
       <div className="flex items-center justify-between border-t pt-4">
         <Button variant="outline" onClick={stepIdx === 0 ? handleClose : prev}>
           {stepIdx === 0 ? t('common.cancel') : <><ChevronLeft className="mr-1 h-4 w-4" />{t('wizard.back')}</>}
         </Button>
         {step === 'confirm' ? (
-          <Button onClick={handleDeploy} disabled={deploy.isPending || deployLXC.isPending || createIsoVM.isPending}>
+          <Button
+            onClick={handleDeploy}
+            disabled={
+              deploy.isPending || deployLXC.isPending || createIsoVM.isPending ||
+              blockOnOverrun
+            }
+          >
             {(deploy.isPending || deployLXC.isPending || createIsoVM.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t('wizard.deploy')}
           </Button>
         ) : (
-          <Button onClick={next} disabled={!canNext()}>
+          <Button onClick={next} disabled={!canNext() || blockOnOverrun}>
             {t('wizard.next')}<ChevronRight className="ml-1 h-4 w-4" />
           </Button>
         )}
@@ -1199,38 +1291,33 @@ function Row({ label, value }: { label: string; value: string }) {
 
 /**
  * Shows the deploying user's remaining quota at the config step, projecting the
- * currently-entered resources. Hidden when the user has no quota set.
+ * currently-entered resources. Renders nothing when the user has no quota set.
  * Note: reflects the current user's quota (the common self-deploy case), not an
  * admin-selected owner's quota.
  */
-function QuotaHint({ addCores, addMemoryMb, addDiskGb }: { addCores: number; addMemoryMb: number; addDiskGb: number }) {
+function QuotaHint({ metrics }: { metrics: QuotaMetric[] }) {
   const { t } = useTranslation();
-  const { data: q } = useMyQuota();
-
-  const hasAnyLimit = q && (
-    q.max_instances !== null || q.max_cores !== null ||
-    q.max_memory_mb !== null || q.max_disk_gb !== null
-  );
-  if (!q || !hasAnyLimit) return null;
-
-  const rows: Array<{ label: string; used: number; add: number; limit: number | null }> = [
-    { label: t('users.quota.instances'), used: q.used_instances, add: 1, limit: q.max_instances },
-    { label: t('common.vcpu'), used: q.used_cores, add: addCores, limit: q.max_cores },
-    { label: t('wizard.memory_mb'), used: q.used_memory_mb, add: addMemoryMb, limit: q.max_memory_mb },
-    { label: t('wizard.disk_gb'), used: q.used_disk_gb, add: addDiskGb, limit: q.max_disk_gb },
-  ];
+  if (metrics.length === 0) return null;
 
   return (
     <Card className="border-warning/40">
-      <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Gauge className="h-4 w-4" />{t('users.quota.manage')}</CardTitle></CardHeader>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Gauge className="h-4 w-4" />{t('users.quota.manage')}
+        </CardTitle>
+        {/* Цифры — прогноз с учётом создаваемого инстанса, а не текущий расход:
+            без подписи «4 / 4» читается как «лимит уже исчерпан». */}
+        <p className="text-xs text-muted-foreground">{t('wizard.quota_projection_note')}</p>
+      </CardHeader>
       <CardContent className="grid gap-2 sm:grid-cols-2">
-        {rows.filter(r => r.limit !== null).map(r => {
-          const projected = r.used + r.add;
-          const over = projected > (r.limit as number);
+        {metrics.map(m => {
+          const projected = m.used + m.add;
           return (
-            <div key={r.label} className="flex items-center justify-between text-xs rounded-md border px-2.5 py-1.5">
-              <span className="text-muted-foreground">{r.label}</span>
-              <span className={over ? 'text-destructive font-medium' : ''}>{projected} / {r.limit}</span>
+            <div key={m.key} className="flex items-center justify-between text-xs rounded-md border px-2.5 py-1.5">
+              <span className="text-muted-foreground">{t(m.labelKey)}</span>
+              <span className={projected > m.limit ? 'text-destructive font-medium' : ''}>
+                {projected} / {m.limit}
+              </span>
             </div>
           );
         })}

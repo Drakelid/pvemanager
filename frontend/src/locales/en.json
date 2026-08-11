@@ -619,7 +619,14 @@
     "iso_ip_hint": "The IP is only reserved in IPAM — there is no cloud-init here, so enter it manually in the installer.",
     "iso_next_steps": "The VM boots from the ISO. Open the console to run the installer; when it is done, click Eject in the ISO dialog — the disk becomes first in the boot order automatically.",
     "iso_download": "Download an ISO to this node",
-    "iso_refresh": "Refresh the ISO list"
+    "iso_refresh": "Refresh the ISO list",
+    "quota_blocked_title": "Quota limits reached",
+    "quota_blocked_desc": "You cannot create another instance — the following limits are fully used:",
+    "quota_blocked_hint": "Delete an instance you no longer need, or ask an administrator to raise your quota.",
+    "quota_exceeded_title": "This configuration does not fit your quota",
+    "quota_exceeded_hint": "Reduce the resources above to continue.",
+    "quota_used_of": "{{used}} of {{limit}}",
+    "quota_projection_note": "Including the instance being created."
   },
   "nodes": {
     "title": "Servers",
