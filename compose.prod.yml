@@ -34,6 +34,14 @@ services:
       interval: 30s
       timeout: 3s
       retries: 3
+    # nginx.conf asks for 2048 worker_connections, but Docker's default file
+    # descriptor limit is 1024 — so the real ceiling was a quarter of the
+    # configured one (each proxied connection needs an fd downstream and
+    # upstream), and nginx warned about it on every config test.
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
     deploy:
       resources:
         limits:
