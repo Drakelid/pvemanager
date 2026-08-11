@@ -754,7 +754,7 @@ def _update_deploy_task(task_id: int, status: str, step: str, progress: int,
 
 
 def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
-                    user_id: int, username: str, user_ssh_key: str,
+                    user_id: int, username: str,
                     owner_id: int = None):
     """Blocking deploy logic — runs in a thread pool."""
     db = SessionLocal()
@@ -918,18 +918,10 @@ def _do_deploy_sync(task_id: int, deploy_data: VMDeployRequest,
 
         # Configure VM
         _update_deploy_task(task_id, 'running', 'Настройка VM (CPU, RAM, Cloud-Init)...', 72, vmid=new_vmid, node=deploy_node)
+        # Ключи уже собраны и дедуплицированы в эндпоинте
+        # (build_deploy_ssh_keys): вставленные вручную + выбранные из
+        # библиотеки + профильный ключ владельца инстанса.
         ssh_keys = deploy_data.ssh_keys or ""
-        if user_ssh_key:
-            ssh_keys = f"{ssh_keys}\n{user_ssh_key}".strip()
-        # Deduplicate SSH keys while preserving order
-        _seen_ssh: set = set()
-        _uniq_ssh = []
-        for _k in ssh_keys.splitlines():
-            _k = _k.strip()
-            if _k and _k not in _seen_ssh:
-                _seen_ssh.add(_k)
-                _uniq_ssh.append(_k)
-        ssh_keys = "\n".join(_uniq_ssh)
 
         config_result = client.configure_vm(
             node=deploy_node,
@@ -1084,13 +1076,11 @@ async def deploy_vm_from_template(
     from ..services.quota_service import check_quota
     check_quota(db, instance_owner_id, add_cores=cores, add_memory_mb=memory, add_disk_gb=disk)
 
-    if deploy_data.ssh_key_ids:
-        from .ssh_keys import resolve_ssh_keys_for_deploy
-        resolved = resolve_ssh_keys_for_deploy(
-            db, current_user, deploy_data.ssh_key_ids, instance_owner_id
-        )
-        existing = (deploy_data.ssh_keys or "").strip()
-        deploy_data.ssh_keys = (existing + "\n" + resolved).strip() if existing else resolved
+    from .ssh_keys import build_deploy_ssh_keys
+    deploy_data.ssh_keys = build_deploy_ssh_keys(
+        db, current_user, instance_owner_id,
+        deploy_data.ssh_key_ids, deploy_data.ssh_keys,
+    ) or None
 
     # Create deploy task record
     task = DeployTask(
@@ -1116,7 +1106,6 @@ async def deploy_vm_from_template(
         deploy_data,
         current_user.id,
         current_user.username,
-        current_user.ssh_public_key or '',
         instance_owner_id,
     )
 

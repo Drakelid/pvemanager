@@ -451,3 +451,48 @@ def resolve_ssh_keys_for_deploy(
             )
 
     return "\n".join(k.public_key.strip() for k in keys if k.public_key).strip()
+
+
+def build_deploy_ssh_keys(
+    db: Session,
+    requester: User,
+    instance_owner_id: int,
+    key_ids: Optional[List[int]] = None,
+    raw_keys: Optional[str] = None,
+) -> str:
+    """Собрать итоговый блок public-ключей для cloud-init / LXC.
+
+    Объединяет вставленные вручную ключи, выбранные из библиотеки ключи
+    (с проверкой прав) и профильный ключ **владельца** инстанса.
+
+    Профильный ключ берётся именно у владельца, а не у того, кто нажал
+    «Создать»: иначе VM, созданная админом для пользователя, получала ключ
+    админа, а ключ самого пользователя на неё не попадал.
+    """
+    parts: List[str] = []
+
+    if raw_keys:
+        parts.append(raw_keys)
+
+    if key_ids:
+        parts.append(
+            resolve_ssh_keys_for_deploy(db, requester, key_ids, instance_owner_id)
+        )
+
+    owner = (
+        requester
+        if instance_owner_id == requester.id
+        else db.query(User).filter(User.id == instance_owner_id).first()
+    )
+    if owner and owner.ssh_public_key:
+        parts.append(owner.ssh_public_key)
+
+    seen: set = set()
+    uniq: List[str] = []
+    for block in parts:
+        for line in (block or "").splitlines():
+            line = line.strip()
+            if line and line not in seen:
+                seen.add(line)
+                uniq.append(line)
+    return "\n".join(uniq)

@@ -463,11 +463,10 @@ async def deploy_lxc_from_template(
     from ...services.quota_service import check_quota
     check_quota(db, instance_owner_id, add_cores=req.cores, add_memory_mb=req.memory, add_disk_gb=req.disk)
 
-    if req.ssh_key_ids:
-        from ..ssh_keys import resolve_ssh_keys_for_deploy
-        resolved = resolve_ssh_keys_for_deploy(db, current_user, req.ssh_key_ids, instance_owner_id)
-        existing = (req.ssh_keys or "").strip()
-        req.ssh_keys = (existing + "\n" + resolved).strip() if existing else resolved
+    from ..ssh_keys import build_deploy_ssh_keys
+    req.ssh_keys = build_deploy_ssh_keys(
+        db, current_user, instance_owner_id, req.ssh_key_ids, req.ssh_keys,
+    ) or None
 
     # Create task record
     task = DeployTask(

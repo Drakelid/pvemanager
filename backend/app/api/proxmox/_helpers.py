@@ -465,6 +465,15 @@ def save_vm_instance(
         existing.template_name = template_name
         existing.description = description
         existing.extra_config = extra_config
+        # Владельца проставляем только когда он передан явно: часть вызовов
+        # (например, сохранение конфига перед удалением) владельца не знает,
+        # и None не должен обезличивать инстанс.
+        # Без этой строки владелец, выбранный при создании, терялся: фоновый
+        # sync_vm_cache идёт каждые 10с и заводит запись с owner_id=NULL ещё
+        # во время клонирования, поэтому деплой почти всегда попадает сюда,
+        # а не в ветку создания новой записи.
+        if owner_id is not None:
+            existing.owner_id = owner_id
         existing.updated_at = func.now()
         db.commit()
         db.refresh(existing)
@@ -496,7 +505,8 @@ def save_vm_instance(
         deleted_existing.template_name = template_name
         deleted_existing.description = description
         deleted_existing.extra_config = extra_config
-        deleted_existing.owner_id = owner_id
+        if owner_id is not None:
+            deleted_existing.owner_id = owner_id
         deleted_existing.status = 'unknown'
         deleted_existing.deleted_at = None  # Восстанавливаем запись
         deleted_existing.updated_at = func.now()
