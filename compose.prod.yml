@@ -64,9 +64,13 @@ services:
     profiles:
       - ssl
 
-  # Override app service - remove port exposure (nginx will handle it)
+  # Override app service - remove port exposure (nginx will handle it).
+  # `ports: []` does NOT do that: compose concatenates list fields across -f
+  # files, so an empty list contributes nothing and 8000:8000 survived from
+  # compose.yml — leaving the API on the public interface over plain HTTP.
+  # !reset drops the inherited value outright.
   app:
-    ports: []
+    ports: !reset []
     expose:
       - "8000"
     volumes:
@@ -74,8 +78,8 @@ services:
       - ./logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
 
-  # Override frontend service - remove port exposure (nginx will handle it)
+  # Same here: 3001:80 was still published despite `ports: []`.
   frontend:
-    ports: []
+    ports: !reset []
     expose:
       - "80"
