@@ -20,8 +20,9 @@ server {
 
 # HTTPS
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name DOMAIN_NAME;
 
     # SSL certificates
@@ -34,8 +35,9 @@ server {
     ssl_prefer_server_ciphers off;
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 10m;
-    ssl_stapling on;
-    ssl_stapling_verify on;
+    # No OCSP stapling: Let's Encrypt no longer publishes an OCSP responder URL
+    # in its certificates, so ssl_stapling had nothing to staple and only
+    # produced a warning on every reload.
 
     # Security headers
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
