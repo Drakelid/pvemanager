@@ -34,6 +34,7 @@ import {
 } from '@/hooks/use-users';
 import { SSHKeysManager } from '@/features/settings/SSHKeysManager';
 import { useAuthStore } from '@/stores/auth-store';
+import { useHasPermission } from '@/lib/permissions';
 
 // ==================== Helpers ====================
 
@@ -63,20 +64,26 @@ function getErrMsg(e: unknown): string {
 
 export default function UsersPage() {
   const { t } = useTranslation();
+  // Each tab is gated on the permission its own API requires: the user list and
+  // active sessions need `user:view` (already required to open this page), while
+  // roles and the security settings are separate permissions.
+  const canViewRoles = useHasPermission('role:view');
+  const canManageSecurity = useHasPermission('setting:manage');
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">{t('nav.users')}</h1>
       <Tabs defaultValue="users">
         <TabsList>
           <TabsTrigger value="users">{t('users.users')}</TabsTrigger>
-          <TabsTrigger value="roles">{t('users.roles')}</TabsTrigger>
+          {canViewRoles && <TabsTrigger value="roles">{t('users.roles')}</TabsTrigger>}
           <TabsTrigger value="sessions">{t('users.sessions')}</TabsTrigger>
-          <TabsTrigger value="security">{t('users.security')}</TabsTrigger>
+          {canManageSecurity && <TabsTrigger value="security">{t('users.security')}</TabsTrigger>}
         </TabsList>
         <TabsContent value="users"><UsersTab /></TabsContent>
-        <TabsContent value="roles"><RolesTab /></TabsContent>
+        {canViewRoles && <TabsContent value="roles"><RolesTab /></TabsContent>}
         <TabsContent value="sessions"><SessionsTab /></TabsContent>
-        <TabsContent value="security"><SecurityTab /></TabsContent>
+        {canManageSecurity && <TabsContent value="security"><SecurityTab /></TabsContent>}
       </Tabs>
     </div>
   );

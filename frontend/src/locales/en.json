@@ -264,6 +264,8 @@
     "recent_activity": "Recent Activity"
   },
   "common": {
+    "access_denied": "Access denied",
+    "access_denied_desc": "You do not have permission to open this page. Contact an administrator if you need access.",
     "loading": "Loading...",
     "save": "Save",
     "saved": "Saved",

@@ -16,6 +16,7 @@ import {
   Package,
   Terminal,
 } from 'lucide-react';
+import { hasPermission } from './permissions';
 
 export interface NavItem {
   label: string;
@@ -83,7 +84,22 @@ export function canSeeNavItem(
   isAdmin: boolean,
   permissions: Record<string, boolean> | undefined,
 ): boolean {
-  if (isAdmin) return true;
-  if (!item.permission) return false; // admin-only item
-  return !!permissions?.[item.permission];
+  return hasPermission(isAdmin, permissions, item.permission);
+}
+
+/**
+ * Path of the first nav item the user may open, or null when nothing is
+ * reachable. Used as the landing page for users who lack `dashboard:view` and
+ * as the redirect target when a route guard denies access.
+ */
+export function firstAccessiblePath(
+  isAdmin: boolean,
+  permissions: Record<string, boolean> | undefined,
+): string | null {
+  for (const group of navGroups) {
+    for (const item of group.items) {
+      if (canSeeNavItem(item, isAdmin, permissions)) return item.path;
+    }
+  }
+  return null;
 }

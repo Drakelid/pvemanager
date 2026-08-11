@@ -28,9 +28,15 @@ import { SSHKeysManager } from './SSHKeysManager';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
 import { apiClient } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/auth-store';
+import { useHasPermission } from '@/lib/permissions';
 
 export default function SettingsPage() {
   const { t } = useTranslation();
+  // Profile, SSH keys and personal notification preferences belong to every
+  // user; the panel-wide tabs are gated on the permission their API requires.
+  const canEditPanel = useHasPermission('setting:update');
+  const canManageSecurity = useHasPermission('setting:manage');
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">{t('nav.settings')}</h1>
@@ -38,8 +44,8 @@ export default function SettingsPage() {
         <TabsList>
           <TabsTrigger value="profile">{t('settings.profile')}</TabsTrigger>
           <TabsTrigger value="ssh-keys">{t('ssh_keys.title')}</TabsTrigger>
-          <TabsTrigger value="panel">{t('settings.panel')}</TabsTrigger>
-          <TabsTrigger value="security">{t('settings.security')}</TabsTrigger>
+          {canEditPanel && <TabsTrigger value="panel">{t('settings.panel')}</TabsTrigger>}
+          {canManageSecurity && <TabsTrigger value="security">{t('settings.security')}</TabsTrigger>}
           <TabsTrigger value="notifications">{t('settings.notifications')}</TabsTrigger>
           <TabsTrigger value="about">{t('settings.about')}</TabsTrigger>
         </TabsList>
@@ -50,8 +56,8 @@ export default function SettingsPage() {
             <CardContent><SSHKeysManager /></CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="panel"><PanelTab /></TabsContent>
-        <TabsContent value="security"><SecurityTab /></TabsContent>
+        {canEditPanel && <TabsContent value="panel"><PanelTab /></TabsContent>}
+        {canManageSecurity && <TabsContent value="security"><SecurityTab /></TabsContent>}
         <TabsContent value="notifications"><NotificationsTab /></TabsContent>
         <TabsContent value="about"><AboutTab /></TabsContent>
       </Tabs>
@@ -384,6 +390,18 @@ function SecurityTab() {
 }
 
 function NotificationsTab() {
+  // The SMTP/Telegram channels are panel-wide and admin-only on the backend;
+  // the preferences card below is every user's own notification settings.
+  const isAdmin = useHasPermission();
+  return (
+    <div className="space-y-4">
+      {isAdmin && <NotificationChannelsCards />}
+      <NotificationPreferencesCard />
+    </div>
+  );
+}
+
+function NotificationChannelsCards() {
   const { t } = useTranslation();
   const { data: channels } = useNotificationChannels();
   const updateSmtp = useUpdateSMTP();
@@ -461,8 +479,6 @@ function NotificationsTab() {
           })}>{t('common.save')}</Button>
         </CardContent>
       </Card>
-
-      <NotificationPreferencesCard />
     </div>
   );
 }
@@ -578,8 +594,28 @@ function NotificationPreferencesCard() {
 
 function AboutTab() {
   const { t } = useTranslation();
-  const confirm = useConfirm();
   const { data: version } = useAppVersion();
+  // Everyone may see which version they are on; the update machinery behind it
+  // is admin territory (`setting:manage` on the backend).
+  const canUpdate = useHasPermission('setting:manage');
+
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-sm">{t('settings.about')}</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">{t('settings.version')}:</span>
+          <Badge variant="outline">{version?.version || '—'}</Badge>
+        </div>
+        {canUpdate && <UpdateSection />}
+      </CardContent>
+    </Card>
+  );
+}
+
+function UpdateSection() {
+  const { t } = useTranslation();
+  const confirm = useConfirm();
   const checkUpdates = useCheckUpdates();
   const { data: repo } = useUpdateRepository();
   const setRepo = useSetUpdateRepository();
@@ -614,84 +650,76 @@ function AboutTab() {
   };
 
   return (
-    <Card>
-      <CardHeader><CardTitle className="text-sm">{t('settings.about')}</CardTitle></CardHeader>
-      <CardContent className="space-y-4">
+    <>
+    {/* Repository */}
+    <div className="space-y-1">
+      <Label className="text-xs text-muted-foreground">{t('settings.update_repository')}</Label>
+      {repoEdit ? (
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{t('settings.version')}:</span>
-          <Badge variant="outline">{version?.version || '—'}</Badge>
+          <Input value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="https://git.example.com/owner/repo" />
+          <Button size="sm" onClick={handleSaveRepo} disabled={setRepo.isPending || !repoUrl}>{t('common.save')}</Button>
+          <Button size="sm" variant="ghost" onClick={() => { setRepoEdit(false); setRepoUrl(repo?.repository_url || ''); }}>{t('common.cancel')}</Button>
         </div>
-
-        {/* Repository */}
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">{t('settings.update_repository')}</Label>
-          {repoEdit ? (
-            <div className="flex items-center gap-2">
-              <Input value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="https://git.example.com/owner/repo" />
-              <Button size="sm" onClick={handleSaveRepo} disabled={setRepo.isPending || !repoUrl}>{t('common.save')}</Button>
-              <Button size="sm" variant="ghost" onClick={() => { setRepoEdit(false); setRepoUrl(repo?.repository_url || ''); }}>{t('common.cancel')}</Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <code className="rounded bg-muted px-2 py-1 text-xs">{repo?.repository_url || '—'}</code>
-              <Button size="sm" variant="ghost" onClick={() => setRepoEdit(true)}>{t('common.edit', 'Edit')}</Button>
-            </div>
-          )}
+      ) : (
+        <div className="flex items-center gap-2">
+          <code className="rounded bg-muted px-2 py-1 text-xs">{repo?.repository_url || '—'}</code>
+          <Button size="sm" variant="ghost" onClick={() => setRepoEdit(true)}>{t('common.edit', 'Edit')}</Button>
         </div>
+      )}
+    </div>
 
-        {/* Check */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => checkUpdates.mutate()} disabled={checkUpdates.isPending}>
-            {t('settings.check_updates')}
-          </Button>
-          {updating && (
-            <Button size="sm" onClick={handlePerform} disabled={performUpdate.isPending || status?.is_updating}>
-              {t('settings.perform_update')}
-            </Button>
-          )}
-        </div>
+    {/* Check */}
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="outline" onClick={() => checkUpdates.mutate()} disabled={checkUpdates.isPending}>
+        {t('settings.check_updates')}
+      </Button>
+      {updating && (
+        <Button size="sm" onClick={handlePerform} disabled={performUpdate.isPending || status?.is_updating}>
+          {t('settings.perform_update')}
+        </Button>
+      )}
+    </div>
 
-        {check && (
-          <div className="space-y-1 text-sm">
-            {check.error ? (
-              <p className="text-destructive">{check.error}</p>
-            ) : check.update_available ? (
-              <p className="font-medium text-warning">
-                {t('settings.update_available')}: {check.latest_version}
-              </p>
-            ) : (
-              <p className="text-muted-foreground">{t('settings.up_to_date')}</p>
-            )}
-            {check.changelog && (
-              <pre className="mt-2 max-h-48 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap">{check.changelog}</pre>
-            )}
-          </div>
+    {check && (
+      <div className="space-y-1 text-sm">
+        {check.error ? (
+          <p className="text-destructive">{check.error}</p>
+        ) : check.update_available ? (
+          <p className="font-medium text-warning">
+            {t('settings.update_available')}: {check.latest_version}
+          </p>
+        ) : (
+          <p className="text-muted-foreground">{t('settings.up_to_date')}</p>
         )}
-
-        {/* Update in progress / failed banner */}
-        {status && (status.is_updating || status.stage === 'failed' || status.error) && (
-          <div className={`rounded-md border p-3 text-sm ${
-            status.stage === 'failed' || status.error
-              ? 'border-destructive/40 bg-destructive/10'
-              : 'border-warning/40 bg-warning/10'
-          }`}>
-            {status.stage === 'failed' || status.error ? (
-              <>
-                <p className="font-medium text-destructive">{t('settings.update_failed')}</p>
-                {status.error && <p className="mt-1 text-xs text-muted-foreground">{status.error}</p>}
-              </>
-            ) : (
-              <>
-                <p className="font-medium">{t('settings.update_in_progress')}</p>
-                <p className="text-xs text-muted-foreground">{status.stage} — {status.progress}%</p>
-              </>
-            )}
-            <Button size="sm" variant="ghost" className="mt-2" onClick={() => resetUpdate.mutate()} disabled={resetUpdate.isPending}>
-              {t('settings.update_reset')}
-            </Button>
-          </div>
+        {check.changelog && (
+          <pre className="mt-2 max-h-48 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap">{check.changelog}</pre>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    )}
+
+    {/* Update in progress / failed banner */}
+    {status && (status.is_updating || status.stage === 'failed' || status.error) && (
+      <div className={`rounded-md border p-3 text-sm ${
+        status.stage === 'failed' || status.error
+          ? 'border-destructive/40 bg-destructive/10'
+          : 'border-warning/40 bg-warning/10'
+      }`}>
+        {status.stage === 'failed' || status.error ? (
+          <>
+            <p className="font-medium text-destructive">{t('settings.update_failed')}</p>
+            {status.error && <p className="mt-1 text-xs text-muted-foreground">{status.error}</p>}
+          </>
+        ) : (
+          <>
+            <p className="font-medium">{t('settings.update_in_progress')}</p>
+            <p className="text-xs text-muted-foreground">{status.stage} — {status.progress}%</p>
+          </>
+        )}
+        <Button size="sm" variant="ghost" className="mt-2" onClick={() => resetUpdate.mutate()} disabled={resetUpdate.isPending}>
+          {t('settings.update_reset')}
+        </Button>
+      </div>
+    )}
+    </>
   );
 }

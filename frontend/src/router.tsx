@@ -3,7 +3,7 @@ import { createBrowserRouter, Navigate } from 'react-router';
 import AppLayout from '@/layouts/AppLayout';
 import AuthLayout from '@/layouts/AuthLayout';
 import ConsoleLayout from '@/layouts/ConsoleLayout';
-import { ProtectedRoute, PublicRoute } from '@/components/shared/route-guards';
+import { ProtectedRoute, PublicRoute, RequirePermission } from '@/components/shared/route-guards';
 import LoginPage from '@/features/auth/LoginPage';
 const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage.tsx'));
 const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage.tsx'));
@@ -48,6 +48,19 @@ function SuspenseWrap({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<LazyFallback />}>{children}</Suspense>;
 }
 
+/**
+ * A guarded page. `perm` is the permission the page's own API requires — the
+ * same code the matching nav item is gated on, so a hidden menu entry can no
+ * longer be reached by typing its URL. Omit `perm` for admin-only pages.
+ */
+function Page({ perm, children }: { perm?: string; children: React.ReactNode }) {
+  return (
+    <RequirePermission permission={perm}>
+      <SuspenseWrap>{children}</SuspenseWrap>
+    </RequirePermission>
+  );
+}
+
 export const router = createBrowserRouter([
   {
     element: <PublicRoute />,
@@ -69,45 +82,45 @@ export const router = createBrowserRouter([
       {
         path: '/console/node/:serverId/:node',
         element: <ConsoleLayout />,
-        children: [{ index: true, element: <SuspenseWrap><NodeShellPage /></SuspenseWrap> }],
+        children: [{ index: true, element: <Page perm="node:upgrade"><NodeShellPage /></Page> }],
       },
       {
         path: '/console/:serverId/:vmid',
         element: <ConsoleLayout />,
-        children: [{ index: true, element: <ConsolePage /> }],
+        children: [{ index: true, element: <Page perm="vm:console"><ConsolePage /></Page> }],
       },
       // Main app layout
       {
         element: <AppLayout />,
         children: [
           { path: '/', element: <Navigate to="/dashboard" replace /> },
-          { path: '/dashboard', element: <DashboardPage /> },
-          { path: '/instances', element: <InstancesPage /> },
-          { path: '/instances/create', element: <SuspenseWrap><CreateInstanceWizard /></SuspenseWrap> },
-          { path: '/instances/snapshot-archives', element: <SuspenseWrap><SnapshotArchivesPage /></SuspenseWrap> },
-          { path: '/instances/:serverId/:vmid', element: <InstanceDetailPage /> },
-          { path: '/nodes', element: <SuspenseWrap><NodesPage /></SuspenseWrap> },
-          { path: '/nodes/:serverId', element: <SuspenseWrap><NodeDetailPage /></SuspenseWrap> },
-          { path: '/cluster', element: <SuspenseWrap><ClusterPage /></SuspenseWrap> },
-          { path: '/templates', element: <SuspenseWrap><TemplatesPage /></SuspenseWrap> },
-          { path: '/appstore', element: <SuspenseWrap><AppStorePage /></SuspenseWrap> },
-          { path: '/appstore/:appId', element: <SuspenseWrap><AppDetailPage /></SuspenseWrap> },
-          { path: '/my-apps', element: <SuspenseWrap><MyAppsPage /></SuspenseWrap> },
-          { path: '/scripts', element: <SuspenseWrap><ScriptsPage /></SuspenseWrap> },
-          { path: '/images', element: <SuspenseWrap><ImagesPage /></SuspenseWrap> },
-          { path: '/backups', element: <SuspenseWrap><BackupsPage /></SuspenseWrap> },
-          { path: '/tasks', element: <SuspenseWrap><TasksPage /></SuspenseWrap> },
-          { path: '/ipam', element: <SuspenseWrap><IPAMDashboardPage /></SuspenseWrap> },
-          { path: '/ipam/networks', element: <SuspenseWrap><IPAMNetworksPage /></SuspenseWrap> },
-          { path: '/ipam/network/:id', element: <SuspenseWrap><IPAMNetworkDetailPage /></SuspenseWrap> },
-          { path: '/ipam/allocations', element: <SuspenseWrap><IPAMAllocationsPage /></SuspenseWrap> },
-          { path: '/ipam/history', element: <SuspenseWrap><IPAMHistoryPage /></SuspenseWrap> },
-          { path: '/ipam/tools', element: <SuspenseWrap><IPAMToolsPage /></SuspenseWrap> },
-          { path: '/networks', element: <SuspenseWrap><IPAMNetworksPage /></SuspenseWrap> },
-          { path: '/users', element: <SuspenseWrap><UsersPage /></SuspenseWrap> },
-          { path: '/workspaces', element: <SuspenseWrap><WorkspacesPage /></SuspenseWrap> },
-          { path: '/logs', element: <SuspenseWrap><LogsPage /></SuspenseWrap> },
-          { path: '/settings', element: <SuspenseWrap><SettingsPage /></SuspenseWrap> },
+          { path: '/dashboard', element: <Page perm="dashboard:view"><DashboardPage /></Page> },
+          { path: '/instances', element: <Page perm="vm:view"><InstancesPage /></Page> },
+          { path: '/instances/create', element: <Page perm="vm:create"><CreateInstanceWizard /></Page> },
+          { path: '/instances/snapshot-archives', element: <Page perm="log:view"><SnapshotArchivesPage /></Page> },
+          { path: '/instances/:serverId/:vmid', element: <Page perm="vm:view"><InstanceDetailPage /></Page> },
+          { path: '/nodes', element: <Page perm="server:view"><NodesPage /></Page> },
+          { path: '/nodes/:serverId', element: <Page perm="server:view"><NodeDetailPage /></Page> },
+          { path: '/cluster', element: <Page perm="cluster:manage"><ClusterPage /></Page> },
+          { path: '/templates', element: <Page perm="template:view"><TemplatesPage /></Page> },
+          { path: '/appstore', element: <Page perm="app:view"><AppStorePage /></Page> },
+          { path: '/appstore/:appId', element: <Page perm="app:view"><AppDetailPage /></Page> },
+          { path: '/my-apps', element: <Page perm="app:view"><MyAppsPage /></Page> },
+          { path: '/scripts', element: <Page perm="script:view"><ScriptsPage /></Page> },
+          { path: '/images', element: <Page perm="template:manage"><ImagesPage /></Page> },
+          { path: '/backups', element: <Page perm="backup:view"><BackupsPage /></Page> },
+          { path: '/tasks', element: <Page perm="vm:view"><TasksPage /></Page> },
+          { path: '/ipam', element: <Page perm="ipam:view"><IPAMDashboardPage /></Page> },
+          { path: '/ipam/networks', element: <Page perm="ipam:view"><IPAMNetworksPage /></Page> },
+          { path: '/ipam/network/:id', element: <Page perm="ipam:view"><IPAMNetworkDetailPage /></Page> },
+          { path: '/ipam/allocations', element: <Page perm="ipam:view"><IPAMAllocationsPage /></Page> },
+          { path: '/ipam/history', element: <Page perm="ipam:view"><IPAMHistoryPage /></Page> },
+          { path: '/ipam/tools', element: <Page perm="ipam:view"><IPAMToolsPage /></Page> },
+          { path: '/networks', element: <Page perm="server:manage"><IPAMNetworksPage /></Page> },
+          { path: '/users', element: <Page perm="user:view"><UsersPage /></Page> },
+          { path: '/workspaces', element: <Page><WorkspacesPage /></Page> },
+          { path: '/logs', element: <Page perm="log:view"><LogsPage /></Page> },
+          { path: '/settings', element: <Page perm="setting:view"><SettingsPage /></Page> },
         ],
       },
     ],
