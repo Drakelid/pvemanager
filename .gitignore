@@ -29,6 +29,9 @@ systemd/
 
 # Let's Encrypt state written by certbot (contains private keys — never commit)
 nginx/certbot/
+# Generated per deployment by setup_nginx_config() from the .template files,
+# with the domain substituted in — deployment state, not source.
+nginx/conf.d/pvemanager.conf
 
 # Environment
 .env
