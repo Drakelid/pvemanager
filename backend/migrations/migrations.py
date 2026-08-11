@@ -1570,6 +1570,147 @@ def migrate_server_error_kind(conn):
         logger.info("✓ proxmox_servers.last_error_kind column added")
 
 
+def pick_backfill_owner(candidates):
+    """Pick the owner for one instance from creation evidence, or None.
+
+    ``candidates`` is an iterable of ``(server_id, user_id)`` pairs already
+    filtered to the instance's VMID. A ``server_id`` of ``None`` means the
+    source did not record one (deploy_tasks does not set it for LXC), so the
+    pair is treated as applicable to any server.
+
+    Ownership grants access, so a guess is worse than leaving the row alone:
+    the owner is returned only when every applicable pair names the same user.
+    """
+    users = {user_id for _, user_id in candidates if user_id is not None}
+    return users.pop() if len(users) == 1 else None
+
+
+def migrate_backfill_instance_owner(conn):
+    """
+    Backfill vm_instances.owner_id for instances that were created through the
+    panel but ended up ownerless.
+
+    Until save_vm_instance() learned to set the owner when updating an existing
+    row, every deploy lost it: the cache sync registers a VM with
+    owner_id = NULL within ~10s of it appearing on Proxmox — while the clone is
+    still running — so the deploy's own save minutes later always took the
+    update path, which ignored owner_id.
+
+    The creator is recovered from two sources, in order of confidence:
+      1. deploy_tasks — user_id is a real foreign key stored when the deploy was
+         queued (server_id is absent for LXC deploys, so it may be NULL)
+      2. audit_logs — 'vm_create' / 'ct_create' / 'lxc_create' entries, which
+         only carry a username and so are matched by name
+
+    A row is updated only when the evidence names exactly one existing user.
+    Ambiguous and unmatched instances keep owner_id = NULL for an operator to
+    assign deliberately with backend/assign_instances_owner.py. Instances that
+    already have an owner are never touched, which also makes the migration
+    idempotent.
+
+    Caveat: this recovers who *created* the instance, not necessarily who it was
+    meant for. A VM an admin created on behalf of a user is attributed to the
+    admin, because before the fix the intended owner was never persisted
+    anywhere. Those need the CLI script to be corrected.
+    """
+    if not table_exists(conn, 'vm_instances'):
+        return
+    if not column_exists(conn, 'vm_instances', 'owner_id'):
+        logger.info("vm_instances.owner_id missing, skipping owner backfill")
+        return
+
+    orphans = conn.execute(text(
+        "SELECT id, server_id, vmid, name FROM vm_instances "
+        "WHERE owner_id IS NULL AND deleted_at IS NULL"
+    )).fetchall()
+    if not orphans:
+        logger.info("✓ No ownerless instances to backfill")
+        return
+
+    logger.info(f"Migration 41: backfilling owner for {len(orphans)} ownerless instance(s)...")
+
+    known_user_ids = {row[0] for row in conn.execute(text("SELECT id FROM users"))}
+    user_id_by_name = {
+        row[1]: row[0]
+        for row in conn.execute(text("SELECT id, username FROM users"))
+        if row[1]
+    }
+
+    # vmid -> [(server_id, user_id)], strongest source first
+    from_deploys: dict = {}
+    from_logs: dict = {}
+
+    if table_exists(conn, 'deploy_tasks'):
+        for user_id, server_id, vmid in conn.execute(text(
+            "SELECT user_id, server_id, vmid FROM deploy_tasks WHERE vmid IS NOT NULL"
+        )):
+            if user_id in known_user_ids:
+                from_deploys.setdefault(vmid, []).append((server_id, user_id))
+
+    if table_exists(conn, 'audit_logs'):
+        for username, server_id, resource_id, success in conn.execute(text(
+            "SELECT username, server_id, resource_id, success FROM audit_logs "
+            "WHERE action IN ('vm_create', 'ct_create', 'lxc_create', 'container_create') "
+            "AND username IS NOT NULL AND resource_id IS NOT NULL"
+        )):
+            if not success:
+                continue
+            user_id = user_id_by_name.get(username)
+            if user_id is None:
+                continue
+            try:
+                vmid = int(resource_id)
+            except (TypeError, ValueError):
+                continue
+            from_logs.setdefault(vmid, []).append((server_id, user_id))
+
+    assigned = 0
+    ambiguous = 0
+    unmatched = 0
+
+    for inst_id, server_id, vmid, name in orphans:
+        owner_id = None
+        had_evidence = False
+        for source in (from_deploys, from_logs):
+            applicable = [
+                (sid, uid) for sid, uid in source.get(vmid, [])
+                if sid is None or sid == server_id
+            ]
+            if not applicable:
+                continue
+            had_evidence = True
+            owner_id = pick_backfill_owner(applicable)
+            if owner_id is not None:
+                break
+
+        if owner_id is None:
+            # Evidence that names several users (a reused VMID, most likely) is
+            # not usable, but it is worth distinguishing from no evidence at all.
+            if had_evidence:
+                ambiguous += 1
+            else:
+                unmatched += 1
+            continue
+
+        conn.execute(
+            text("UPDATE vm_instances SET owner_id = :owner_id "
+                 "WHERE id = :id AND owner_id IS NULL"),
+            {"owner_id": owner_id, "id": inst_id},
+        )
+        assigned += 1
+        logger.info(f"  VM {vmid} ({name}) -> user_id={owner_id}")
+
+    logger.info(
+        f"✓ Instance owner backfill: {assigned} assigned, "
+        f"{ambiguous} ambiguous, {unmatched} without evidence"
+    )
+    if ambiguous or unmatched:
+        logger.info(
+            "  Remaining instances stay ownerless on purpose — assign them with "
+            "backend/assign_instances_owner.py"
+        )
+
+
 def migrate_script_repo_metadata_format(conn):
     """Add metadata_format column to script_git_repos (header-comment | community-scripts-ct)."""
     if not table_exists(conn, 'script_git_repos'):
@@ -2029,6 +2170,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Server last_error_kind migration: {e}")
+                conn.rollback()
+
+            # Migration 41: backfill vm_instances.owner_id for ownerless instances
+            try:
+                migrate_backfill_instance_owner(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Instance owner backfill migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)
