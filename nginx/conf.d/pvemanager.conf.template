@@ -48,7 +48,10 @@ server {
 
     # Rate limiting
     limit_req zone=general burst=20 nodelay;
-    limit_conn addr 10;
+    # nginx counts each concurrent HTTP/2 stream against limit_conn, and a
+    # browser multiplexes the whole page over one connection — 10 throttled
+    # both the asset load and parallel API queries.
+    limit_conn addr 100;
 
     # Health check endpoint
     location /health {
@@ -103,6 +106,7 @@ server {
     # limit_req from the server level only when a location declares none.
     location ~ ^/(assets/|favicon\.|icons\.svg|logo\.png) {
         limit_req zone=static burst=200 nodelay;
+        limit_conn addr 200;
         proxy_pass http://pvemanager-frontend:80;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
