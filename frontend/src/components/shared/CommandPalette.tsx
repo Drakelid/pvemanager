@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { DialogPortal, DialogOverlay } from '@/components/ui/dialog';
 import { useAuthStore } from '@/stores/auth-store';
 import { useCommandPaletteStore } from '@/stores/command-palette-store';
-import { navGroups, canSeeNavItem } from '@/lib/nav-items';
+import { navGroups, canSeeNavItem, personalNavItems } from '@/lib/nav-items';
 import { cn } from '@/lib/utils';
 
 /**
@@ -39,16 +39,21 @@ export default function CommandPalette() {
 
   const flatItems = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return navGroups.flatMap((group) =>
-      group.items
-        .filter((item) => canSeeNavItem(item, isAdmin, permissions))
-        .filter((item) => {
-          if (!q) return true;
-          const label = t(`nav.${item.label.toLowerCase()}`, item.label);
-          return label.toLowerCase().includes(q) || item.path.toLowerCase().includes(q);
-        })
-        .map((item) => ({ ...item, group: group.title }))
-    );
+    const matches = (item: { label: string; path: string }) => {
+      if (!q) return true;
+      const label = t(`nav.${item.label.toLowerCase()}`, item.label);
+      return label.toLowerCase().includes(q) || item.path.toLowerCase().includes(q);
+    };
+    return [
+      ...navGroups.flatMap((group) =>
+        group.items
+          .filter((item) => canSeeNavItem(item, isAdmin, permissions))
+          .filter(matches)
+          .map((item) => ({ ...item, group: group.title }))
+      ),
+      // Not permission-gated: reachable by anyone who is logged in.
+      ...personalNavItems.filter(matches).map((item) => ({ ...item, group: 'Account' })),
+    ];
   }, [query, isAdmin, permissions, t]);
 
   // Reset transient UI state whenever the dialog's open state changes, driven

@@ -616,17 +616,19 @@ def _create_permissions() -> PermissionRegistry:
         requires=["log:view"]
     ))
     
-    # Settings permissions
+    # Settings permissions. These cover panel-wide configuration only — a user's
+    # own account (profile, password, 2FA, SSH keys, notification preferences)
+    # is self-scoped and needs no permission at all.
     registry.register(Permission(
         resource="setting", action="view",
-        display_name="View Settings",
-        description="View panel settings",
+        display_name="View Panel Settings",
+        description="View panel-wide settings (not needed for one's own profile)",
         category="Settings"
     ))
     registry.register(Permission(
         resource="setting", action="update",
-        display_name="Update Settings",
-        description="Modify panel settings",
+        display_name="Update Panel Settings",
+        description="Modify panel-wide settings",
         category="Settings",
         requires=["setting:view"]
     ))

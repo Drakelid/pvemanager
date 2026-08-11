@@ -1388,7 +1388,7 @@ when the role holds `<resource>:manage` (rule 4 above).
 | `role:manage` | Full role administration incl. assigning roles (requires `role:view`, `user:view`) |
 
 **Logs** (`log`): `log:view`, `log:export`, `log:delete`.
-**Settings** (`setting`): `setting:view`, `setting:update` (panel settings), `setting:manage` (security & advanced settings).
+**Settings** (`setting`): `setting:view`, `setting:update` (panel settings), `setting:manage` (security & advanced settings). These cover **panel-wide** configuration only — a user's own account (profile, password, 2FA, SSH keys, notification preferences) lives at `/profile`, is self-scoped, and needs no permission.
 **Notifications** (`notification`): `notification:view`, `notification:manage`.
 
 > **Delegated role editing.** A non-admin with `role:manage` can only grant
@@ -1400,7 +1400,10 @@ when the role holds `<resource>:manage` (rule 4 above).
 
 The frontend (`frontend/src/lib/nav-items.ts`) hides a menu entry unless the
 user is an admin or holds the listed permission. Items with **no** permission
-are **admin-only**.
+are **admin-only**. The same permission also guards the route itself
+(`RequirePermission` in `frontend/src/components/shared/route-guards.tsx`), so
+a hidden page cannot be reached by typing its URL — denied users are redirected
+to the first page they can open.
 
 | Sidebar item | Required permission |
 |---|---|
@@ -1419,7 +1422,8 @@ are **admin-only**.
 | Users | `user:view` |
 | Workspaces | *(admin-only)* |
 | Logs | `log:view` |
-| Settings | `setting:view` |
+| Settings (panel-wide) | `setting:view` |
+| Profile (user menu, not the sidebar) | *(none — any logged-in user)* |
 
 #### Default (built-in) roles
 
@@ -1437,7 +1441,7 @@ access.
 |------|--------------|----------------|
 | **admin** | Platform administrator | Everything. Holds every permission *and* the `is_admin` bypass — sees all servers, all instances (regardless of owner), all users, settings, security. |
 | **moderator** | Operator without admin rights | View dashboard/servers; **create + power + console** VMs and LXC; view templates/storage/firewall/network/node/pool/backups/IPAM/users/logs; create backups; export logs; manage notifications. **No** delete, no settings changes, no user/role management. Note: without `vm:manage` a moderator is still subject to the ownership filter (see below). |
-| **user** | Standard tenant (VPS-style) | View + **start/stop/restart/console** their **own** VMs and LXC; view templates/storage/firewall/network/node/pool/IPAM; manage own notifications; view settings (for the self-service profile/quota page). **No** create/delete by default, **no** dashboard. Scoped to owned instances because it lacks `vm:manage`. |
+| **user** | Standard tenant (VPS-style) | View + **start/stop/restart/console** their **own** VMs and LXC; view templates/storage/firewall/network/node/pool/IPAM; manage own notifications. Their own profile, SSH keys and quota live at `/profile` and need no permission, so this role deliberately has **no** `setting:view` (that would hand out the panel-wide settings page). **No** create/delete by default, **no** dashboard. Scoped to owned instances because it lacks `vm:manage`. |
 | **demo** | Read-only showcase | View-only across dashboard, servers, VMs, LXC, templates, storage, firewall, network, node, pool, IPAM. No power actions, no writes. |
 
 > The exact JSON for each role lives in `NEW_DEFAULT_ROLES` in

@@ -1838,6 +1838,65 @@ def migrate_app_operations_server_id(conn):
         logger.info("✓ app_operations.server_id already exists")
 
 
+def migrate_setting_view_panel_only(conn):
+    """Migration 42: drop setting:view where it was only granting the profile page.
+
+    `setting:view` used to gate the whole /settings page, which mixed panel-wide
+    configuration with a user's own account (password, 2FA, SSH keys,
+    notification preferences). The account half now lives at /profile and needs
+    no permission, so roles that were given setting:view just to let their users
+    reach their own settings would silently gain the panel settings page.
+
+    Only roles that clearly were not meant to administer the panel are touched:
+    those holding setting:view without setting:update or setting:manage. Runs
+    once — a marker in panel_settings keeps a later admin grant from being
+    reverted on the next startup.
+    """
+    if not table_exists(conn, 'roles') or not table_exists(conn, 'panel_settings'):
+        logger.info("Tables roles/panel_settings missing, skipping setting:view split")
+        return
+
+    marker = 'migration_setting_view_panel_only'
+    done = conn.execute(
+        text("SELECT 1 FROM panel_settings WHERE key = :k"), {"k": marker}
+    ).fetchone()
+    if done:
+        logger.info("✓ setting:view split already applied, skipping")
+        return
+
+    import json as _json
+    rows = conn.execute(text("SELECT id, name, permissions FROM roles")).fetchall()
+    changed = []
+
+    for role_id, role_name, permissions in rows:
+        perms = permissions if isinstance(permissions, dict) else _json.loads(permissions or '{}')
+        if not perms.get('setting:view'):
+            continue
+        if perms.get('setting:update') or perms.get('setting:manage'):
+            continue  # a real panel administrator — leave the grant alone
+
+        del perms['setting:view']
+        conn.execute(
+            text("UPDATE roles SET permissions = :p WHERE id = :id"),
+            {"p": _json.dumps(perms), "id": role_id},
+        )
+        changed.append(role_name)
+
+    conn.execute(
+        text("""
+            INSERT INTO panel_settings (key, value, description)
+            VALUES (:k, 'done', 'setting:view no longer gates a user''s own profile page')
+            ON CONFLICT (key) DO NOTHING
+        """),
+        {"k": marker},
+    )
+
+    if changed:
+        logger.info(f"✓ Removed panel-only setting:view from role(s): {', '.join(changed)}")
+    else:
+        logger.info("✓ No roles needed the setting:view split")
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -2178,6 +2237,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"Instance owner backfill migration: {e}")
+                conn.rollback()
+
+            # Migration 42: setting:view now covers panel settings only
+            try:
+                migrate_setting_view_panel_only(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"setting:view split migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

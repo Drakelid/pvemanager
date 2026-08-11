@@ -176,7 +176,8 @@ NEW_DEFAULT_ROLES = [
             "node:view": True,
             "pool:view": True,
             "ipam:view": True,
-            "setting:view": True,
+            # No setting:view — that grants the panel-wide settings page. A
+            # user's own profile lives at /profile and needs no permission.
             "notification:view": True,
             "notification:manage": True,
         }

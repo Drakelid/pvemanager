@@ -35,6 +35,7 @@ const UsersPage = lazy(() => import('./features/users/UsersPage.tsx'));
 const WorkspacesPage = lazy(() => import('./features/workspaces/WorkspacesPage.tsx'));
 const LogsPage = lazy(() => import('./features/logs/LogsPage.tsx'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage.tsx'));
+const ProfilePage = lazy(() => import('./features/settings/ProfilePage.tsx'));
 const AppStorePage = lazy(() => import('./features/appstore/AppStorePage.tsx'));
 const AppDetailPage = lazy(() => import('./features/appstore/AppDetailPage.tsx'));
 const MyAppsPage = lazy(() => import('./features/appstore/MyAppsPage.tsx'));
@@ -121,6 +122,8 @@ export const router = createBrowserRouter([
           { path: '/workspaces', element: <Page><WorkspacesPage /></Page> },
           { path: '/logs', element: <Page perm="log:view"><LogsPage /></Page> },
           { path: '/settings', element: <Page perm="setting:view"><SettingsPage /></Page> },
+          // Own account — self-scoped endpoints, so no permission gates it.
+          { path: '/profile', element: <SuspenseWrap><ProfilePage /></SuspenseWrap> },
         ],
       },
     ],

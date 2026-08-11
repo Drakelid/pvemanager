@@ -1,6 +1,5 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router';
 import {
-  Settings,
   Sun,
   Moon,
   Menu,
@@ -127,9 +126,9 @@ function UserSection() {
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onClick={() => navigate('/settings')}>
-            <Settings className="mr-2 h-4 w-4" />
-            {t('nav.settings')}
+          <DropdownMenuItem onClick={() => navigate('/profile')}>
+            <UserCog className="mr-2 h-4 w-4" />
+            {t('nav.profile')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleLogout} className="text-destructive">

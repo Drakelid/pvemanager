@@ -1,5 +1,7 @@
 {
   "nav": {
+    "account": "Account",
+    "profile": "Profile",
     "infrastructure": "Infrastructure",
     "network": "Network",
     "management": "Management",
@@ -1328,6 +1330,7 @@
   },
   "settings": {
     "profile": "Profile",
+    "notification_channels": "Notification channels",
     "panel": "Panel",
     "security": "Security",
     "notifications": "Notifications",

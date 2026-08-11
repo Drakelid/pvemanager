@@ -513,6 +513,9 @@ INSERT INTO roles (name, display_name, description, permissions, is_system, is_a
     "setting:view": true,
     "notification:view": true, "notification:manage": true
 }', TRUE, TRUE),
+-- No setting:view here: it grants the panel-wide settings page. A user's own
+-- profile (password, 2FA, SSH keys, notification preferences) lives at /profile
+-- and is reachable without any permission.
 ('user', 'User', 'Standard user with limited access', '{
     "dashboard:view": true,
     "server:view": true,
@@ -521,7 +524,6 @@ INSERT INTO roles (name, display_name, description, permissions, is_system, is_a
     "template:view": true,
     "storage:view": true,
     "ipam:view": true,
-    "setting:view": true,
     "notification:view": true, "notification:manage": true
 }', TRUE, TRUE),
 ('demo', 'Demo User', 'Read-only access for demonstration', '{

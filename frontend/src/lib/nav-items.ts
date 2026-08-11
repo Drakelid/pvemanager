@@ -15,6 +15,7 @@ import {
   Store,
   Package,
   Terminal,
+  UserCog,
 } from 'lucide-react';
 import { hasPermission } from './permissions';
 
@@ -73,9 +74,20 @@ export const navGroups: NavGroup[] = [
       { label: 'Users', icon: Users, path: '/users', permission: 'user:view' },
       { label: 'Workspaces', icon: FolderKanban, path: '/workspaces' }, // admin-only
       { label: 'Logs', icon: FileText, path: '/logs', permission: 'log:view' },
+      // Panel-wide settings only; a user's own account is /profile below.
       { label: 'Settings', icon: Settings, path: '/settings', permission: 'setting:view' },
     ],
   },
+];
+
+/**
+ * Pages every logged-in user may open. They are self-scoped (the endpoints
+ * behind them only require a session), so unlike `navGroups` these carry no
+ * permission — the type omits the field so they can never be mistaken for
+ * admin-only entries. Reached from the user menu, not the sidebar groups.
+ */
+export const personalNavItems: Omit<NavItem, 'permission'>[] = [
+  { label: 'Profile', icon: UserCog, path: '/profile' },
 ];
 
 /** Whether the current user may see a given nav item. Admins see everything. */
@@ -88,9 +100,10 @@ export function canSeeNavItem(
 }
 
 /**
- * Path of the first nav item the user may open, or null when nothing is
- * reachable. Used as the landing page for users who lack `dashboard:view` and
- * as the redirect target when a route guard denies access.
+ * Path of the first nav item the user may open, falling back to their own
+ * profile when no permission-gated page is reachable. Used as the landing page
+ * for users who lack `dashboard:view` and as the redirect target when a route
+ * guard denies access.
  */
 export function firstAccessiblePath(
   isAdmin: boolean,
@@ -101,5 +114,5 @@ export function firstAccessiblePath(
       if (canSeeNavItem(item, isAdmin, permissions)) return item.path;
     }
   }
-  return null;
+  return personalNavItems[0]?.path ?? null;
 }

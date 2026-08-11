@@ -1,5 +1,7 @@
 {
   "nav": {
+    "account": "Учётная запись",
+    "profile": "Профиль",
     "infrastructure": "Инфраструктура",
     "network": "Сеть",
     "management": "Управление",
@@ -1328,6 +1330,7 @@
   },
   "settings": {
     "profile": "Профиль",
+    "notification_channels": "Каналы уведомлений",
     "panel": "Панель",
     "security": "Безопасность",
     "notifications": "Уведомления",
@@ -1658,8 +1661,8 @@
       "log_view": "Просмотр логов",
       "log_export": "Экспорт логов",
       "log_delete": "Удаление логов",
-      "setting_view": "Просмотр настроек",
-      "setting_update": "Изменение настроек",
+      "setting_view": "Просмотр настроек панели",
+      "setting_update": "Изменение настроек панели",
       "setting_manage": "Управление безопасностью",
       "notification_view": "Просмотр уведомлений",
       "notification_manage": "Управление уведомлениями",
