@@ -83,7 +83,8 @@ import { StatusDot } from '@/components/shared/status-dot';
 import { ColumnFilter, multiSelectFilter } from '@/components/shared/column-filter';
 import { useVirtualMachines, useBulkOperation, usePowerAction, useVMStatusSync, useInstancesMetricsSync, useBulkTasksSync, vmKeys } from '@/hooks/use-instances';
 import { useServers } from '@/hooks/use-nodes';
-import { useProfile } from '@/hooks/use-settings';
+import { useProfile, useMyQuota } from '@/hooks/use-settings';
+import { buildQuotaMetrics, exhaustedMetrics } from './quota';
 import { formatBytes, vmTypeLabel, formatUptime, formatVmConfig } from '@/lib/format';
 import { apiClient } from '@/lib/api-client';
 import { useDeployTasksStore } from '@/stores/deploy-tasks-store';
@@ -338,6 +339,16 @@ export default function InstancesPage() {
 
   const { data: servers = [] } = useServers();
   const { data: profile } = useProfile();
+
+  // Квота исчерпана — мастер создания всё равно откажется открываться, так что
+  // не ведём туда пользователя вхолостую. Условие то же, что в мастере:
+  // размер будущего инстанса не важен (сравниваем использовано/лимит), а на
+  // админов не распространяется — их лимит не про инстанс, который они создают
+  // другому пользователю.
+  const { data: myQuota } = useMyQuota();
+  const quotaBlockers = profile?.is_admin
+    ? []
+    : exhaustedMetrics(buildQuotaMetrics(myQuota, { cores: 0, memoryMb: 0, diskGb: 0 }));
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -1070,10 +1081,34 @@ export default function InstancesPage() {
               {t('snap_archive.title')}
             </Button>
           )}
-          <Button render={<Link to="/instances/create" />} size="sm">
-            <Plus className="mr-1.5 h-4 w-4" />
-            {t('instances.create', 'Create Instance')}
-          </Button>
+          {quotaBlockers.length > 0 ? (
+            // Кнопка-ссылка с disabled всё равно навигирует (<a> не знает про
+            // disabled), поэтому при исчерпанной квоте рендерим обычную кнопку
+            // без Link, а причину показываем в подсказке.
+            <Tooltip>
+              <TooltipTrigger render={<span />}>
+                <Button size="sm" disabled>
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  {t('instances.create', 'Create Instance')}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('wizard.quota_blocked_title')}</p>
+                <ul className="mt-1">
+                  {quotaBlockers.map(m => (
+                    <li key={m.key}>
+                      {t(m.labelKey)}: {t('wizard.quota_used_of', { used: m.used, limit: m.limit })}
+                    </li>
+                  ))}
+                </ul>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button render={<Link to="/instances/create" />} size="sm">
+              <Plus className="mr-1.5 h-4 w-4" />
+              {t('instances.create', 'Create Instance')}
+            </Button>
+          )}
         </div>
       </div>
 
