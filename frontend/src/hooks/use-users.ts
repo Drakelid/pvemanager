@@ -173,11 +173,20 @@ export function useUnlockUser() {
   });
 }
 
+/**
+ * `message` is the backend's own English wording and is not shown to the user;
+ * the toast is built from `count` so it can be translated and declined.
+ */
+export interface TerminateSessionsResult {
+  message: string;
+  count: number;
+}
+
 export function useTerminateUserSessions() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (userId: number) =>
-      apiClient.post<{ message: string }>(`/admin/api/users/${userId}/terminate-sessions`),
+      apiClient.post<TerminateSessionsResult>(`/admin/api/users/${userId}/terminate-sessions`),
     onSuccess: () => qc.invalidateQueries({ queryKey: userKeys.sessions }),
   });
 }
@@ -337,7 +346,7 @@ export function useTerminateSession() {
 export function useTerminateAllSessions() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => apiClient.post<{ message: string }>('/admin/api/sessions/terminate-all'),
+    mutationFn: () => apiClient.post<TerminateSessionsResult>('/admin/api/sessions/terminate-all'),
     onSuccess: () => qc.invalidateQueries({ queryKey: userKeys.sessions }),
   });
 }

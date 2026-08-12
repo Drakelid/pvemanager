@@ -262,7 +262,7 @@ function UsersTab() {
                         variant="ghost" size="icon" className="h-7 w-7"
                         title={t('users.terminate_sessions')}
                         onClick={() => terminateSessions.mutate(u.id, {
-                          onSuccess: r => toast.success(r.message),
+                          onSuccess: r => toast.success(t('users.sessions_terminated', { count: r.count })),
                           onError: e => toast.error(getErrMsg(e)),
                         })}
                       >
@@ -1074,7 +1074,7 @@ function SessionsTab() {
             variant="destructive" size="sm"
             disabled={sessions.length === 0 || terminateAll.isPending}
             onClick={() => terminateAll.mutate(undefined, {
-              onSuccess: r => toast.success(r.message),
+              onSuccess: r => toast.success(t('users.sessions_terminated', { count: r.count })),
               onError: e => toast.error(getErrMsg(e)),
             })}
           >

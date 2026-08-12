@@ -978,7 +978,9 @@ async def terminate_user_sessions(
         resource_name=user.username
     )
     
-    return {"message": f"Terminated {count} sessions"}
+    # count отдаётся отдельным полем: фронтенд склоняет фразу сам, показывать
+    # message пользователю нельзя — он не переводится.
+    return {"message": f"Terminated {count} sessions", "count": count}
 
 
 # ==================== Security Settings API ====================
@@ -1167,7 +1169,7 @@ async def terminate_all_sessions(
         ip_address=get_client_ip(request)
     )
     
-    return {"message": f"Terminated {deleted} sessions"}
+    return {"message": f"Terminated {deleted} sessions", "count": deleted}
 
 
 # ==================== Security Events API ====================

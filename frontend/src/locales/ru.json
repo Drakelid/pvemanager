@@ -1509,7 +1509,11 @@
       "used": "Использовано",
       "unlimited": "без лимита",
       "saved": "Квоты сохранены"
-    }
+    },
+    "sessions_terminated_one": "Завершена {{count}} сессия",
+    "sessions_terminated_few": "Завершено {{count}} сессии",
+    "sessions_terminated_many": "Завершено {{count}} сессий",
+    "sessions_terminated_other": "Завершено {{count}} сессий"
   },
   "workspaces": {
     "create": "Создать рабочую область",

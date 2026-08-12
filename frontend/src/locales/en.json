@@ -1509,7 +1509,9 @@
       "used": "Used",
       "unlimited": "unlimited",
       "saved": "Quota saved"
-    }
+    },
+    "sessions_terminated_one": "Terminated {{count}} session",
+    "sessions_terminated_other": "Terminated {{count}} sessions"
   },
   "workspaces": {
     "create": "Create Workspace",
