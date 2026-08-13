@@ -43,6 +43,7 @@
       "none": "не настроен",
       "server": "Сервер Proxmox",
       "pick_server": "Выберите сервер",
+      "pick_server_hint": "Выберите сервер, чтобы увидеть его текущий шаблон",
       "template_storage": "Хранилище шаблона",
       "rootfs_storage": "Хранилище rootfs",
       "no_template_storage": "нет хранилищ с vztmpl",
