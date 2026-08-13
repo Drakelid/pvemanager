@@ -359,7 +359,16 @@
     "placeholder_root_pam": "root@pam",
     "placeholder_disk": "scsi0",
     "placeholder_notes": "Описание / заметки об инстансе...",
-    "ipam": "IPAM"
+    "ipam": "IPAM",
+    "comment": "Комментарий",
+    "add": "Добавить",
+    "clone": "Клонировать",
+    "iso": "ISO образ",
+    "notes": "Примечание",
+    "reinstall": "Переустановить",
+    "done": "Готово",
+    "copied": "Скопировано",
+    "message": "Сообщение"
   },
   "snap_archive": {
     "title": "Архив снапшотов",
@@ -695,7 +704,14 @@
     "cluster_mode": "Кластер",
     "standalone": "Одиночный",
     "cluster_nodes_count": "{{count}} узла(ов)",
-    "no_workspace": "Без рабочей области"
+    "no_workspace": "Без рабочей области",
+    "reboot": "Перезагрузка",
+    "shutdown": "Выключение",
+    "shell": "Консоль (Shell)",
+    "confirm_reboot": "Перезагрузить ноду «{{node}}»? Все ВМ и контейнеры на ней будут остановлены.",
+    "confirm_shutdown": "Выключить ноду «{{node}}»? Доступ к ней будет потерян до ручного включения.",
+    "reboot_started": "Перезагрузка ноды запущена",
+    "shutdown_started": "Выключение ноды запущено"
   },
   "netif": {
     "title": "Сетевые интерфейсы",

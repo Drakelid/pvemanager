@@ -359,7 +359,16 @@
     "placeholder_root_pam": "root@pam",
     "placeholder_disk": "scsi0",
     "placeholder_notes": "Description / notes about the instance...",
-    "ipam": "IPAM"
+    "ipam": "IPAM",
+    "comment": "Comment",
+    "add": "Add",
+    "clone": "Clone",
+    "iso": "ISO image",
+    "notes": "Notes",
+    "reinstall": "Reinstall",
+    "done": "Done",
+    "copied": "Copied",
+    "message": "Message"
   },
   "snap_archive": {
     "title": "Snapshot archive",
@@ -695,7 +704,14 @@
     "cluster_mode": "Cluster",
     "standalone": "Standalone",
     "cluster_nodes_count": "{{count}} nodes",
-    "no_workspace": "No workspace"
+    "no_workspace": "No workspace",
+    "reboot": "Reboot",
+    "shutdown": "Shutdown",
+    "shell": "Console (Shell)",
+    "confirm_reboot": "Reboot node «{{node}}»? All VMs and containers on it will be stopped.",
+    "confirm_shutdown": "Shut down node «{{node}}»? Access will be lost until manually powered on.",
+    "reboot_started": "Node reboot initiated",
+    "shutdown_started": "Node shutdown initiated"
   },
   "netif": {
     "title": "Network Interfaces",
