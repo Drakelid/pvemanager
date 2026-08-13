@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Loader2, Download, Upload, Wand2, FileUp, X } from 'lucide-react';
 import {
   Dialog,
@@ -65,6 +66,7 @@ function filenameFromUrl(url: string): string {
 type Mode = 'url' | 'local';
 
 export default function DownloadIsoDialog({ open, onClose, serverId, node, source }: Props) {
+  const { t } = useTranslation();
   const fromMirror = !!source?.source_id;
 
   const [mode, setMode] = useState<Mode>('url');
@@ -116,7 +118,7 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
     resolveFilename.mutate(trimmed, {
       onSuccess: (data) => {
         if (data.filename) setFilename(data.filename);
-        else toast.error('Не удалось определить имя файла');
+        else toast.error(t('images.detect_filename_failed'));
       },
       onError: (e: Error) => toast.error(e.message),
     });
@@ -132,7 +134,7 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
       id: data.task_id,
       name: data.name,
       status: 'pending',
-      step: 'В очереди...',
+      step: t('common.queued'),
       progress: 0,
       vmid: null,
       node,
@@ -159,7 +161,7 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
           checksum_algorithm: checksum.trim() ? checksumAlgo : undefined,
         },
         {
-          onSuccess: (data) => onSuccess(data, 'Загрузка ISO на ноду запущена в фоне'),
+          onSuccess: (data) => onSuccess(data, t('images.iso_upload_started')),
           onError: (e: Error) => toast.error(e.message),
         },
       );
@@ -178,7 +180,7 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
         checksum_algorithm: checksum.trim() ? checksumAlgo : undefined,
       },
       {
-        onSuccess: (data) => onSuccess(data, 'Загрузка ISO запущена в фоне'),
+        onSuccess: (data) => onSuccess(data, t('images.iso_download_started')),
         onError: (e: Error) => toast.error(e.message),
       },
     );
@@ -188,35 +190,35 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Загрузить ISO</DialogTitle>
+          <DialogTitle>{t('images.download_iso_title')}</DialogTitle>
           <DialogDescription>
             {fromMirror
               ? source?.name
               : mode === 'local'
-                ? 'Файл будет передан на ноду через панель'
-                : 'Proxmox скачает образ по ссылке прямо на ноду'}
+                ? t('images.iso_local_desc')
+                : t('images.iso_url_desc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="text-sm text-muted-foreground">
-            Нода: <span className="font-medium text-foreground">{node}</span>
+            {t('images.node_label')}: <span className="font-medium text-foreground">{node}</span>
           </div>
 
           {!fromMirror && (
             <Tabs value={mode} onValueChange={(v) => v && setMode(v as Mode)}>
               <TabsList className="w-full">
                 <TabsTrigger value="url" className="flex-1">
-                  <Download className="mr-1.5 h-4 w-4" />По ссылке (URL)
+                  <Download className="mr-1.5 h-4 w-4" />{t('images.tab_url')}
                 </TabsTrigger>
                 <TabsTrigger value="local" className="flex-1">
-                  <FileUp className="mr-1.5 h-4 w-4" />Локальный файл
+                  <FileUp className="mr-1.5 h-4 w-4" />{t('images.tab_local')}
                 </TabsTrigger>
               </TabsList>
 
               <TabsContent value="url" className="mt-4 space-y-4">
                 <div>
-                  <Label htmlFor="iso-url">URL образа</Label>
+                  <Label htmlFor="iso-url">{t('images.url_label')}</Label>
                   <div className="flex gap-2">
                     <Input
                       id="iso-url"
@@ -230,7 +232,7 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
                       variant="outline"
                       onClick={handleDetectFilename}
                       disabled={!url.trim() || resolveFilename.isPending}
-                      title="Определить имя файла по ссылке"
+                      title={t('images.detect_filename_title')}
                     >
                       {resolveFilename.isPending
                         ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -239,7 +241,7 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="iso-filename">Имя файла в хранилище</Label>
+                  <Label htmlFor="iso-filename">{t('images.filename_label')}</Label>
                   <Input
                     id="iso-filename"
                     placeholder={filenameFromUrl(url) || 'linux-24.04-amd64.iso'}
@@ -247,9 +249,7 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
                     onChange={(e) => setFilename(e.target.value)}
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Proxmox принимает только .iso и .img — иначе расширение будет добавлено автоматически.
-                    Кнопка со звёздочкой рядом с URL определяет настоящее имя файла (по Content-Disposition
-                    или итоговой ссылке после редиректов), если оно не видно из самого URL.
+                    {t('images.filename_hint')}
                   </p>
                 </div>
               </TabsContent>
@@ -278,8 +278,8 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
                     )}
                   >
                     <Upload className="h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm font-medium">Перетащите ISO-файл сюда</p>
-                    <p className="text-xs text-muted-foreground">или нажмите, чтобы выбрать (.iso, .img)</p>
+                    <p className="text-sm font-medium">{t('images.drop_iso')}</p>
+                    <p className="text-xs text-muted-foreground">{t('images.drop_iso_hint')}</p>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between rounded-lg border p-3">
@@ -292,43 +292,43 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
                       variant="ghost"
                       size="icon"
                       onClick={() => setSelectedFile(null)}
-                      title="Убрать файл"
+                      title={t('images.remove_file')}
                     >
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Имя файла в хранилище назначается автоматически — из имени выбранного файла.
+                  {t('images.local_filename_hint')}
                 </p>
               </TabsContent>
             </Tabs>
           )}
 
           <div>
-            <Label>Хранилище (iso)</Label>
+            <Label>{t('images.storage_iso')}</Label>
             <Select value={storage || '__none__'} onValueChange={(v) => { if (v !== null) setStorage(v === '__none__' ? '' : v); }}>
               <SelectTrigger>
-                <SelectValue placeholder={storagesLoading ? 'Загрузка...' : 'Выберите хранилище'} />
+                <SelectValue placeholder={storagesLoading ? t('common.loading') : t('images.select_storage')} />
               </SelectTrigger>
               <SelectContent>
                 {storages.map((s) => (
                   <SelectItem key={s.storage} value={s.storage}>
-                    {s.storage} ({s.type}){s.avail ? ` · ${fmtSize(s.avail)} свободно` : ''}
+                    {s.storage} ({s.type}){s.avail ? ` · ${fmtSize(s.avail)} ${t('images.free')}` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {!storagesLoading && storages.length === 0 && (
               <p className="mt-2 text-sm text-warning">
-                Нет хранилища с типом контента ISO. Включите ISO в настройках хранилища.
+                {t('images.no_iso_storage')}
               </p>
             )}
           </div>
 
           <div className="grid grid-cols-[1fr_140px] gap-3">
             <div>
-              <Label htmlFor="iso-checksum">Контрольная сумма (необязательно)</Label>
+              <Label htmlFor="iso-checksum">{t('images.checksum_optional')}</Label>
               <Input
                 id="iso-checksum"
                 placeholder="e3b0c44298fc1c14..."
@@ -337,7 +337,7 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
               />
             </div>
             <div>
-              <Label>Алгоритм</Label>
+              <Label>{t('images.algo')}</Label>
               <Select value={checksumAlgo} onValueChange={(v) => { if (v) setChecksumAlgo(v); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -352,14 +352,14 @@ export default function DownloadIsoDialog({ open, onClose, serverId, node, sourc
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={submitDisabled}>
             {isPending
               ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               : mode === 'local' && !fromMirror
                 ? <Upload className="mr-2 h-4 w-4" />
                 : <Download className="mr-2 h-4 w-4" />}
-            {mode === 'local' && !fromMirror ? 'Загрузить' : 'Скачать'}
+            {mode === 'local' && !fromMirror ? t('images.upload_btn') : t('images.download_btn')}
           </Button>
         </DialogFooter>
       </DialogContent>

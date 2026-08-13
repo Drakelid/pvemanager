@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,7 @@ function MirrorFormDialog({
   onClose: () => void;
   editing: ImageMirrorItem | null;
 }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<ImageMirrorInput>(EMPTY);
   const create = useCreateMirror();
   const update = useUpdateMirror();
@@ -66,11 +68,11 @@ function MirrorFormDialog({
   const submit = () => {
     if (!form.name.trim()) return;
     if ((form.kind === 'qcow2' || form.kind === 'iso') && !form.url?.trim()) {
-      toast.error(`Для ${form.kind} нужен URL`);
+      toast.error(t('mirrors.url_required', { kind: form.kind }));
       return;
     }
     if (!form.url?.trim() && !form.template?.trim()) {
-      toast.error('Нужен URL или имя шаблона');
+      toast.error(t('mirrors.url_or_template_required'));
       return;
     }
     const payload: ImageMirrorInput = {
@@ -84,7 +86,7 @@ function MirrorFormDialog({
       description: form.description?.trim() || undefined,
     };
     const opts = {
-      onSuccess: () => { toast.success('Сохранено'); onClose(); },
+      onSuccess: () => { toast.success(t('mirrors.saved')); onClose(); },
       onError: (e: Error) => toast.error(e.message),
     };
     if (editing) update.mutate({ id: editing.mirror_id, data: payload }, opts);
@@ -95,27 +97,27 @@ function MirrorFormDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{editing ? 'Редактировать зеркало' : 'Добавить зеркало'}</DialogTitle>
+          <DialogTitle>{editing ? t('mirrors.edit_title') : t('mirrors.add_title')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
           <div>
-            <Label htmlFor="m-name">Название</Label>
+            <Label htmlFor="m-name">{t('mirrors.name')}</Label>
             <Input id="m-name" value={form.name} onChange={(e) => set('name', e.target.value)} />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <Label>Тип</Label>
+              <Label>{t('mirrors.kind')}</Label>
               <Select value={form.kind} onValueChange={(v) => { if (v !== null) set('kind', v); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="qcow2">qcow2 (ВМ)</SelectItem>
-                  <SelectItem value="vztmpl">vztmpl (LXC)</SelectItem>
-                  <SelectItem value="iso">iso (установочный)</SelectItem>
+                  <SelectItem value="qcow2">{t('mirrors.kind_qcow2')}</SelectItem>
+                  <SelectItem value="vztmpl">{t('mirrors.kind_vztmpl')}</SelectItem>
+                  <SelectItem value="iso">{t('mirrors.kind_iso')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Архитектура</Label>
+              <Label>{t('mirrors.arch')}</Label>
               <Select value={form.arch} onValueChange={(v) => { if (v !== null) set('arch', v); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -125,16 +127,18 @@ function MirrorFormDialog({
               </Select>
             </div>
             <div>
-              <Label htmlFor="m-os">ОС</Label>
+              <Label htmlFor="m-os">{t('mirrors.os')}</Label>
               <Input id="m-os" placeholder="ubuntu" value={form.os} onChange={(e) => set('os', e.target.value)} />
             </div>
           </div>
           <div>
-            <Label htmlFor="m-ver">Версия</Label>
+            <Label htmlFor="m-ver">{t('mirrors.version')}</Label>
             <Input id="m-ver" placeholder="24.04" value={form.version} onChange={(e) => set('version', e.target.value)} />
           </div>
           <div>
-            <Label htmlFor="m-url">URL {form.kind === 'vztmpl' ? '(или имя шаблона ниже)' : '(обязательно)'}</Label>
+            <Label htmlFor="m-url">
+              URL {form.kind === 'vztmpl' ? t('mirrors.url_or_template_hint') : t('mirrors.url_required_hint')}
+            </Label>
             <Input
               id="m-url"
               placeholder={form.kind === 'iso' ? 'https://.../installer-amd64.iso' : 'https://.../image.qcow2'}
@@ -144,17 +148,17 @@ function MirrorFormDialog({
           </div>
           {form.kind === 'vztmpl' && (
             <div>
-              <Label htmlFor="m-tpl">Имя шаблона (vztmpl)</Label>
+              <Label htmlFor="m-tpl">{t('mirrors.template_name')}</Label>
               <Input id="m-tpl" placeholder="debian-12-standard_..._amd64.tar.zst" value={form.template} onChange={(e) => set('template', e.target.value)} />
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="m-sum">Контрольная сумма</Label>
+              <Label htmlFor="m-sum">{t('mirrors.checksum')}</Label>
               <Input id="m-sum" value={form.checksum} onChange={(e) => set('checksum', e.target.value)} />
             </div>
             <div>
-              <Label>Алгоритм</Label>
+              <Label>{t('mirrors.algo')}</Label>
               <Select value={form.checksum_algorithm || '__none__'} onValueChange={(v) => { if (v !== null) set('checksum_algorithm', v === '__none__' ? '' : v); }}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
@@ -168,19 +172,19 @@ function MirrorFormDialog({
             </div>
           </div>
           <div>
-            <Label htmlFor="m-desc">Описание</Label>
+            <Label htmlFor="m-desc">{t('mirrors.description')}</Label>
             <Input id="m-desc" value={form.description} onChange={(e) => set('description', e.target.value)} />
           </div>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={form.enabled} onChange={(e) => set('enabled', e.target.checked)} />
-            <span>Включено (показывать в каталоге)</span>
+            <span>{t('mirrors.enabled_label')}</span>
           </label>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={!form.name.trim() || pending}>
             {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Сохранить
+            {t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -189,6 +193,7 @@ function MirrorFormDialog({
 }
 
 export default function MirrorsManager() {
+  const { t } = useTranslation();
   const confirm = useConfirm();
   const { data: mirrors = [], isLoading } = useImageMirrors();
   const del = useDeleteMirror();
@@ -200,13 +205,13 @@ export default function MirrorsManager() {
 
   const handleDelete = async (m: ImageMirrorItem) => {
     const ok = await confirm(m.name, {
-      title: 'Удалить зеркало?',
-      confirmLabel: 'Удалить',
+      title: t('mirrors.delete_title'),
+      confirmLabel: t('common.delete'),
       variant: 'destructive',
     });
     if (!ok) return;
     del.mutate(m.mirror_id, {
-      onSuccess: () => toast.success('Зеркало удалено'),
+      onSuccess: () => toast.success(t('mirrors.deleted')),
       onError: (e: Error) => toast.error(e.message),
     });
   };
@@ -214,16 +219,16 @@ export default function MirrorsManager() {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Кастомные зеркала</h2>
+        <h2 className="text-lg font-semibold">{t('mirrors.title')}</h2>
         <Button size="sm" onClick={openAdd}>
-          <Plus className="mr-2 h-4 w-4" /> Добавить
+          <Plus className="mr-2 h-4 w-4" /> {t('mirrors.add')}
         </Button>
       </div>
 
       {isLoading ? (
-        <div className="text-sm text-muted-foreground">Загрузка...</div>
+        <div className="text-sm text-muted-foreground">{t('common.loading')}</div>
       ) : mirrors.length === 0 ? (
-        <div className="text-sm text-muted-foreground">Кастомных зеркал пока нет.</div>
+        <div className="text-sm text-muted-foreground">{t('mirrors.empty')}</div>
       ) : (
         <div className="space-y-2">
           {mirrors.map((m) => (
@@ -235,7 +240,7 @@ export default function MirrorsManager() {
                 </div>
                 <Badge variant="secondary">{m.kind}</Badge>
                 <Badge variant="outline">{m.arch}</Badge>
-                {!m.enabled && <Badge variant="destructive">выкл</Badge>}
+                {!m.enabled && <Badge variant="destructive">{t('mirrors.disabled_badge')}</Badge>}
                 <Button variant="ghost" size="icon" onClick={() => openEdit(m)}>
                   <Pencil className="h-4 w-4" />
                 </Button>

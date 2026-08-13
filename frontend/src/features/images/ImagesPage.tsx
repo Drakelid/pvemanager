@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Download, HardDriveDownload, Package, ChevronDown, Disc } from 'lucide-react';
 import { OsLogo } from '@/features/templates/OsLogo';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,6 +23,7 @@ import MirrorsManager from './MirrorsManager';
 import type { CatalogImage } from '@/types';
 
 export default function ImagesPage() {
+  const { t } = useTranslation();
   const [serverId, setServerId] = useState<number | null>(null);
   const [node, setNode] = useState<string>('');
   const [search, setSearch] = useState('');
@@ -110,33 +112,33 @@ export default function ImagesPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <HardDriveDownload className="h-6 w-6" />
-          <h1 className="text-2xl font-bold">Образы</h1>
+          <h1 className="text-2xl font-bold">{t('images.title')}</h1>
         </div>
       </div>
 
       {/* Контекст: сервер + нода */}
       <div className="flex flex-wrap gap-3">
         <Select value={serverId != null ? String(serverId) : ''} onValueChange={(v) => { if (v !== null) { setServerId(Number(v)); setNode(''); } }}>
-          <SelectTrigger className="w-[200px]"><SelectValue placeholder="Сервер" /></SelectTrigger>
+          <SelectTrigger className="w-[200px]"><SelectValue placeholder={t('images.server')} /></SelectTrigger>
           <SelectContent>
             {servers.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={node} onValueChange={(v) => { if (v) setNode(v); }}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Нода" /></SelectTrigger>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder={t('images.node')} /></SelectTrigger>
           <SelectContent>
-            {nodes.length === 0 && <SelectItem value="__empty__" disabled>Нет доступных нод</SelectItem>}
+            {nodes.length === 0 && <SelectItem value="__empty__" disabled>{t('images.no_nodes')}</SelectItem>}
             {nodes.map((n) => <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>)}
           </SelectContent>
         </Select>
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Поиск образа..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input className="pl-9" placeholder={t('images.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Select value={archFilter || '__all__'} onValueChange={(v) => { if (v !== null) setArchFilter(v === '__all__' ? '' : v); }}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Архитектура" /></SelectTrigger>
+          <SelectTrigger className="w-[150px]"><SelectValue placeholder={t('images.arch')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">Все архитектуры</SelectItem>
+            <SelectItem value="__all__">{t('images.arch_all')}</SelectItem>
             <SelectItem value="amd64">amd64</SelectItem>
             <SelectItem value="arm64">arm64</SelectItem>
           </SelectContent>
@@ -148,7 +150,7 @@ export default function ImagesPage() {
         <button type="button" onClick={toggleCloud}
           className="flex w-full items-center gap-2 text-lg font-semibold">
           <ChevronDown className={`h-5 w-5 transition-transform ${cloudOpen ? '' : '-rotate-90'}`} />
-          <Package className="h-5 w-5" /> Cloud-образы ВМ
+          <Package className="h-5 w-5" /> {t('images.cloud_section')}
         </button>
         {cloudOpen && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -160,7 +162,7 @@ export default function ImagesPage() {
                   <div className="font-medium truncate">{img.name}</div>
                   <div className="flex items-center gap-1.5 mt-1">
                     <Badge variant="secondary">{img.arch}</Badge>
-                    {img.source === 'mirror' && <Badge variant="outline">зеркало</Badge>}
+                    {img.source === 'mirror' && <Badge variant="outline">{t('images.mirror_badge')}</Badge>}
                   </div>
                 </div>
                 <Button size="sm" disabled={!canDownload}
@@ -171,7 +173,7 @@ export default function ImagesPage() {
             </Card>
           ))}
           {cloudImages.length === 0 && (
-            <div className="text-sm text-muted-foreground col-span-full">Нет образов по фильтру.</div>
+            <div className="text-sm text-muted-foreground col-span-full">{t('images.no_images_filter')}</div>
           )}
         </div>
         )}
@@ -183,22 +185,22 @@ export default function ImagesPage() {
           <button type="button" onClick={toggleIso}
             className="flex items-center gap-2 text-lg font-semibold">
             <ChevronDown className={`h-5 w-5 transition-transform ${isoOpen ? '' : '-rotate-90'}`} />
-            <Disc className="h-5 w-5" /> ISO-образы
+            <Disc className="h-5 w-5" /> {t('images.iso_section')}
           </button>
           <Button size="sm" variant="outline" disabled={!canDownload}
             onClick={() => openIsoDownload(null)}>
-            <Download className="mr-2 h-4 w-4" /> Загрузить по URL
+            <Download className="mr-2 h-4 w-4" /> {t('images.download_by_url')}
           </Button>
         </div>
         {isoOpen && (<>
           {!canDownload && (
-            <div className="text-sm text-muted-foreground">Выберите сервер и ноду, чтобы загрузить образ.</div>
+            <div className="text-sm text-muted-foreground">{t('images.select_server_node')}</div>
           )}
 
           {/* Реальные ISO на хранилище ноды (загруженные ранее, в т.ч. до подключения к панели) */}
           {canDownload && nodeIsos.length > 0 && (
             <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">На хранилище ноды</div>
+              <div className="text-sm font-medium text-muted-foreground">{t('images.node_storage')}</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {nodeIsos.map((iso) => (
                   <Card key={iso.volid}>
@@ -238,7 +240,7 @@ export default function ImagesPage() {
           </div>
           {isoImages.length === 0 && (
             <div className="text-sm text-muted-foreground">
-              Сохранённых ISO-ссылок нет. Загрузите образ по URL или добавьте зеркало с типом «iso» ниже.
+              {t('images.no_iso_links')}
             </div>
           )}
         </>)}
@@ -249,11 +251,11 @@ export default function ImagesPage() {
         <button type="button" onClick={toggleLxc}
           className="flex w-full items-center gap-2 text-lg font-semibold">
           <ChevronDown className={`h-5 w-5 transition-transform ${lxcOpen ? '' : '-rotate-90'}`} />
-          <Package className="h-5 w-5" /> LXC-шаблоны (репозиторий Proxmox)
+          <Package className="h-5 w-5" /> {t('images.lxc_section')}
         </button>
         {lxcOpen && (<>
         {!canDownload && (
-          <div className="text-sm text-muted-foreground">Выберите сервер и ноду, чтобы увидеть список.</div>
+          <div className="text-sm text-muted-foreground">{t('images.select_server_node_list')}</div>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {lxcTemplates.map((t) => (
