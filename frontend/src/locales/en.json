@@ -303,6 +303,7 @@
     "console": "Console",
     "start": "Start",
     "stop": "Stop",
+    "shutdown": "Shutdown",
     "restart": "Restart",
     "snapshots": "Snapshots",
     "suspend": "Suspend",
@@ -357,7 +358,7 @@
     "placeholder_snapshot_name": "e.g. before-update",
     "placeholder_root_pam": "root@pam",
     "placeholder_disk": "scsi0",
-    "placeholder_notes": "Описание / заметки об инстансе...",
+    "placeholder_notes": "Description / notes about the instance...",
     "ipam": "IPAM"
   },
   "snap_archive": {
@@ -530,7 +531,17 @@
     "backup_now": "Create backup",
     "backup_started": "Backup started in background",
     "backup_create": "Create backup",
-    "backup_no_storages": "No backup-capable storages on this node"
+    "backup_no_storages": "No backup-capable storages on this node",
+    "destroy_title": "Destroy {{type}}",
+    "destroy_irreversible": "This action is irreversible!",
+    "destroy_warning_before": "This will permanently delete",
+    "destroy_warning_after": " and all its data, including disks and snapshots. IP allocations will be released.",
+    "destroy_confirm_label_before": "Type",
+    "destroy_confirm_label_after": "to confirm",
+    "destroy_button": "Permanently Destroy {{type}}",
+    "destroyed": "{{name}} has been destroyed",
+    "status_reinstalling": "Reinstalling",
+    "status_changing_password": "Changing password"
   },
   "wizard": {
     "title": "Create Instance",
