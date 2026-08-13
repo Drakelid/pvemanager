@@ -92,6 +92,7 @@ export default function InstanceActionDialogs(props: Props) {
 const CLONE_AUTO = '__auto__';
 
 function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
   const [newName, setNewName] = useState('');
   const [full, setFull] = useState(true);
   const [targetNode, setTargetNode] = useState('');
@@ -109,7 +110,6 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
   const effectiveNode = targetNode || node;
   const { data: storages = [] } = useLXCStorages(serverId, effectiveNode);
 
-  // Reset form whenever the dialog is opened for a fresh instance.
   useEffect(() => {
     if (open) {
       setNewName('');
@@ -138,7 +138,7 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
             id: data.task_id,
             name: data.name,
             status: 'pending',
-            step: 'В очереди...',
+            step: t('common.queued'),
             progress: 0,
             vmid: null,
             node: targetNode || node,
@@ -146,7 +146,7 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
             kind: 'clone',
             server_id: serverId,
           });
-          toast.success('Клонирование запущено в фоне');
+          toast.success(t('instances.clone_started'));
           onClose();
         },
         onError: (e) => toast.error(e.message),
@@ -158,22 +158,22 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Copy className="h-4 w-4" /> Клонировать</DialogTitle>
-          <DialogDescription>Создать копию <strong>{name ?? `#${vmid}`}</strong></DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><Copy className="h-4 w-4" /> {t('instances.clone_title')}</DialogTitle>
+          <DialogDescription>{t('instances.clone_desc', { name: name ?? `#${vmid}` })}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="clone-name">Имя новой инстанции</Label>
+            <Label htmlFor="clone-name">{t('instances.clone_new_name')}</Label>
             <Input id="clone-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={`${name || 'instance'}-clone`} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Целевой узел</Label>
+              <Label>{t('instances.clone_target_node')}</Label>
               <Select value={targetNode || CLONE_AUTO} onValueChange={(v) => { setTargetNode(v && v !== CLONE_AUTO ? v : ''); setTargetStorage(''); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={CLONE_AUTO}>Тот же узел ({node})</SelectItem>
+                  <SelectItem value={CLONE_AUTO}>{t('instances.clone_same_node', { node })}</SelectItem>
                   {nodes.filter((n) => n.node !== node).map((n) => (
                     <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>
                   ))}
@@ -182,11 +182,11 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
             </div>
 
             <div className="space-y-1.5">
-              <Label>Хранилище</Label>
+              <Label>{t('instances.clone_storage')}</Label>
               <Select value={targetStorage || CLONE_AUTO} onValueChange={(v) => setTargetStorage(v && v !== CLONE_AUTO ? v : '')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={CLONE_AUTO}>Как у источника</SelectItem>
+                  <SelectItem value={CLONE_AUTO}>{t('instances.clone_same_storage')}</SelectItem>
                   {storages.map((s) => (
                     <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>
                   ))}
@@ -197,11 +197,11 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
 
           {isAdmin && (
             <div className="space-y-1.5">
-              <Label>Владелец</Label>
+              <Label>{t('instances.clone_owner')}</Label>
               <Select value={ownerId ? String(ownerId) : CLONE_AUTO} onValueChange={(v) => setOwnerId(v === CLONE_AUTO ? null : Number(v))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={CLONE_AUTO}>Я ({profile?.username})</SelectItem>
+                  <SelectItem value={CLONE_AUTO}>{t('instances.clone_owner_me', { username: profile?.username })}</SelectItem>
                   {allUsers.map((u) => (
                     <SelectItem key={u.id} value={String(u.id)}>
                       {u.username}{u.full_name ? ` (${u.full_name})` : ''}
@@ -213,20 +213,20 @@ function CloneDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<P
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="clone-desc">Описание <span className="text-muted-foreground">(необязательно)</span></Label>
-            <Input id="clone-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Заметка для новой инстанции" />
+            <Label htmlFor="clone-desc">{t('instances.clone_desc_label')} <span className="text-muted-foreground">({t('common.optional')})</span></Label>
+            <Input id="clone-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('instances.clone_desc_placeholder')} />
           </div>
 
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={full} onChange={(e) => setFull(e.target.checked)} />
-            <span>Полный клон (full clone)</span>
+            <span>{t('instances.clone_full')}</span>
           </label>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={!newName.trim() || clone.isPending}>
             {clone.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Клонировать
+            {t('instances.clone_btn')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -252,7 +252,6 @@ function MigrateDialog({ open, onClose, serverId, vmid, type, node, name }: Omit
   const isRunning = status?.status === 'running';
   const { data: storages = [] } = useLXCStorages(serverId, targetNode || node);
 
-  // Сброс формы при открытии; online по умолчанию = инстанс запущен.
   useEffect(() => {
     if (open) {
       setTargetNode('');
@@ -275,7 +274,7 @@ function MigrateDialog({ open, onClose, serverId, vmid, type, node, name }: Omit
             id: data.task_id,
             name: data.name,
             status: 'pending',
-            step: 'В очереди...',
+            step: t('common.queued'),
             progress: 0,
             vmid,
             node: targetNode,
@@ -363,7 +362,6 @@ function RemoteMigrateDialog({ open, onClose, serverId, vmid, type, node, name }
   const addDeployTask = useDeployTasksStore((s) => s.addTask);
 
   const { data: allServers = [] } = useServers();
-  // Только другие кластеры, настроенные через API-токен — remote_migrate не принимает пароль.
   const targetServers = allServers.filter((s) => s.id !== serverId && !s.use_password);
 
   const { data: nodesResp } = useNodes(targetServerId ?? 0);
@@ -402,7 +400,7 @@ function RemoteMigrateDialog({ open, onClose, serverId, vmid, type, node, name }
             id: data.task_id,
             name: data.name,
             status: 'pending',
-            step: 'В очереди...',
+            step: t('common.queued'),
             progress: 0,
             vmid,
             node: targetNode,
@@ -410,7 +408,7 @@ function RemoteMigrateDialog({ open, onClose, serverId, vmid, type, node, name }
             kind: 'remote_migrate',
             server_id: serverId,
           });
-          toast.success(t('instances.remote_migrate_started', 'Миграция на другой кластер запущена в фоне'));
+          toast.success(t('instances.remote_migrate_started'));
           onClose();
         },
         onError: (e) => toast.error(e.message),
@@ -423,20 +421,20 @@ function RemoteMigrateDialog({ open, onClose, serverId, vmid, type, node, name }
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ArrowRightLeft className="h-4 w-4" /> {t('instances.remote_migrate', 'Миграция на другой кластер')}
+            <ArrowRightLeft className="h-4 w-4" /> {t('instances.remote_migrate')}
           </DialogTitle>
           <DialogDescription>
-            {t('instances.remote_migrate_desc', 'Перенести на независимый Proxmox-кластер (не ноду текущего)')} <strong>{name ?? `#${vmid}`}</strong>
+            {t('instances.remote_migrate_desc')} <strong>{name ?? `#${vmid}`}</strong>
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>{t('instances.remote_migrate_target_server', 'Целевой кластер')}</Label>
+            <Label>{t('instances.remote_migrate_target_server')}</Label>
             <Select
               value={targetServerId ? String(targetServerId) : ''}
               onValueChange={(v) => { if (v) { setTargetServerId(Number(v)); setTargetNode(''); setTargetStorage(''); setTargetBridge(''); } }}
             >
-              <SelectTrigger><SelectValue placeholder={t('instances.remote_migrate_select_server', 'Выберите сервер')} /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('instances.remote_migrate_select_server')} /></SelectTrigger>
               <SelectContent>
                 {targetServers.map((s) => (
                   <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
@@ -445,7 +443,7 @@ function RemoteMigrateDialog({ open, onClose, serverId, vmid, type, node, name }
             </Select>
             {targetServers.length === 0 && (
               <p className="text-xs text-warning">
-                {t('instances.remote_migrate_no_targets', 'Нет других серверов с API-токеном. Remote-миграция требует, чтобы у целевого сервера была настроена авторизация по API-токену (не по паролю).')}
+                {t('instances.remote_migrate_no_targets')}
               </p>
             )}
           </div>
@@ -476,11 +474,11 @@ function RemoteMigrateDialog({ open, onClose, serverId, vmid, type, node, name }
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>{t('instances.remote_migrate_target_bridge', 'Сетевой мост')}</Label>
+              <Label>{t('instances.remote_migrate_target_bridge')}</Label>
               <Select value={targetBridge || REMOTE_MIGRATE_SAME} onValueChange={(v) => setTargetBridge(!v || v === REMOTE_MIGRATE_SAME ? '' : v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={REMOTE_MIGRATE_SAME}>{t('instances.remote_migrate_same_bridge', 'Как на источнике')}</SelectItem>
+                  <SelectItem value={REMOTE_MIGRATE_SAME}>{t('instances.remote_migrate_same_bridge')}</SelectItem>
                   {bridges.map((b) => (
                     <SelectItem key={b.iface} value={b.iface}>{b.iface}</SelectItem>
                   ))}
@@ -499,14 +497,14 @@ function RemoteMigrateDialog({ open, onClose, serverId, vmid, type, node, name }
 
           <label className="flex items-center gap-2.5 cursor-pointer">
             <Checkbox checked={deleteSource} onChange={(e) => setDeleteSource(e.target.checked)} />
-            <span className="text-sm">{t('instances.remote_migrate_delete_source', 'Удалить с исходного кластера после успешного переноса')}</span>
+            <span className="text-sm">{t('instances.remote_migrate_delete_source')}</span>
           </label>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={!targetServerId || !targetNode || migrate.isPending}>
             {migrate.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('instances.remote_migrate', 'Миграция на другой кластер')}
+            {t('instances.remote_migrate')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -517,12 +515,12 @@ function RemoteMigrateDialog({ open, onClose, serverId, vmid, type, node, name }
 // ==================== Reinstall ====================
 
 function ReinstallDialog({ open, onClose, serverId, vmid, node, name, type }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
   const [confirm, setConfirm] = useState('');
   const reinstall = useReinstallInstance(serverId, vmid, node);
   const addDeployTask = useDeployTasksStore((s) => s.addTask);
   const expected = name || String(vmid);
 
-  // Reinstall via this endpoint currently supports only saved-template instances.
   const submit = () => {
     if (confirm !== expected) return;
     reinstall.mutate(undefined, {
@@ -531,7 +529,7 @@ function ReinstallDialog({ open, onClose, serverId, vmid, node, name, type }: Om
           id: data.task_id,
           name: data.name || expected,
           status: 'pending',
-          step: 'В очереди...',
+          step: t('common.queued'),
           progress: 0,
           vmid,
           node,
@@ -539,7 +537,7 @@ function ReinstallDialog({ open, onClose, serverId, vmid, node, name, type }: Om
           kind: 'reinstall',
           server_id: serverId,
         });
-        toast.success('Переустановка запущена в фоне');
+        toast.success(t('instances.reinstall_started'));
         setConfirm('');
         onClose();
       },
@@ -551,25 +549,25 @@ function ReinstallDialog({ open, onClose, serverId, vmid, node, name, type }: Om
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> Переустановить</DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> {t('instances.reinstall_title')}</DialogTitle>
           <DialogDescription>
-            Это пересоздаст инстанс <strong>{expected}</strong> из исходного шаблона. Все данные будут утеряны.
+            {t('instances.reinstall_desc', { name: expected })}
             {type === 'lxc' && (
-              <span className="mt-2 block text-warning">Поддержка LXC — экспериментальная.</span>
+              <span className="mt-2 block text-warning">{t('instances.reinstall_lxc_warn')}</span>
             )}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label>Введите <strong className="text-foreground">{expected}</strong> для подтверждения</Label>
+            <Label>{t('instances.reinstall_confirm_label')} <strong className="text-foreground">{expected}</strong></Label>
             <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={expected} />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="destructive" onClick={submit} disabled={confirm !== expected || reinstall.isPending}>
             {reinstall.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Переустановить
+            {t('instances.reinstall_btn')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -600,7 +598,7 @@ function ChangePasswordDialog({ open, onClose, serverId, vmid, type, node, name 
             id: data.task_id,
             name: data.name || (name || `#${vmid}`),
             status: 'pending',
-            step: 'В очереди...',
+            step: t('common.queued'),
             progress: 0,
             vmid,
             node,
@@ -608,7 +606,7 @@ function ChangePasswordDialog({ open, onClose, serverId, vmid, type, node, name 
             kind: 'change_password',
             server_id: serverId,
           });
-          toast.success('Смена пароля запущена в фоне');
+          toast.success(t('instances.password_started'));
           setPassword('');
           onClose();
         },
@@ -621,20 +619,20 @@ function ChangePasswordDialog({ open, onClose, serverId, vmid, type, node, name 
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Изменить пароль</DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> {t('instances.change_password_title')}</DialogTitle>
           <DialogDescription>
             {type === 'qemu'
-              ? 'Требуется установленный qemu-guest-agent внутри VM.'
-              : 'Контейнер должен быть запущен.'}
+              ? t('instances.change_password_qemu_hint')
+              : t('instances.change_password_lxc_hint')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label>Пользователь</Label>
+            <Label>{t('instances.change_password_user')}</Label>
             <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder={t('common.placeholder_root')} />
           </div>
           <div>
-            <Label>Новый пароль</Label>
+            <Label>{t('instances.change_password_new')}</Label>
             <div className="relative">
               <Input
                 type={show ? 'text' : 'password'}
@@ -654,10 +652,10 @@ function ChangePasswordDialog({ open, onClose, serverId, vmid, type, node, name 
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={!password || mut.isPending}>
             {mut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Изменить
+            {t('instances.change_password_btn')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -668,12 +666,12 @@ function ChangePasswordDialog({ open, onClose, serverId, vmid, type, node, name 
 // ==================== Notes ====================
 
 function NotesDialog({ open, onClose, serverId, vmid, type, node, description }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
   const config = useVMConfig(serverId, vmid, type, node, open);
   const remote = (config.data?.description as string | undefined) ?? description ?? '';
   const [value, setValue] = useState('');
   const [touched, setTouched] = useState(false);
 
-  // Sync remote → local when dialog opens or config loads, unless user typed
   useEffect(() => {
     if (open && !touched) setValue(remote);
     if (!open) setTouched(false);
@@ -699,21 +697,21 @@ function NotesDialog({ open, onClose, serverId, vmid, type, node, description }:
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><FileText className="h-4 w-4" /> Примечание</DialogTitle>
-          <DialogDescription>Свободный текст / markdown, видимый в Proxmox UI.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><FileText className="h-4 w-4" /> {t('instances.notes_title')}</DialogTitle>
+          <DialogDescription>{t('instances.notes_desc')}</DialogDescription>
         </DialogHeader>
         <textarea
           value={value}
           onChange={(e) => { setTouched(true); setValue(e.target.value); }}
           rows={8}
           className="min-h-32 w-full rounded-md border bg-background p-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring"
-          placeholder="Описание / заметки об инстансе..."
+          placeholder={t('instances.notes_placeholder')}
         />
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={mut.isPending}>
             {mut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Сохранить
+            {t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -740,8 +738,8 @@ function ExecuteCommandDialog({ open, onClose, serverId, vmid, node, type }: Omi
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Запуск команд недоступен</DialogTitle>
-            <DialogDescription>Поддержка через qemu-guest-agent — только для KVM (qemu) инстансов.</DialogDescription>
+            <DialogTitle>{t('instances.exec_unavailable_title')}</DialogTitle>
+            <DialogDescription>{t('instances.exec_unavailable_desc')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button onClick={onClose}>OK</Button>
@@ -755,13 +753,13 @@ function ExecuteCommandDialog({ open, onClose, serverId, vmid, node, type }: Omi
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><TerminalIcon className="h-4 w-4" /> Запуск команды (qemu-agent)</DialogTitle>
-          <DialogDescription>Команда выполняется внутри VM через guest-agent.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><TerminalIcon className="h-4 w-4" /> {t('instances.exec_title')}</DialogTitle>
+          <DialogDescription>{t('instances.exec_desc')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
             <div>
-              <Label>Команда</Label>
+              <Label>{t('instances.exec_command')}</Label>
               <Input
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
@@ -770,7 +768,7 @@ function ExecuteCommandDialog({ open, onClose, serverId, vmid, node, type }: Omi
               />
             </div>
             <div>
-              <Label>Таймаут (с)</Label>
+              <Label>{t('instances.exec_timeout')}</Label>
               <Input
                 type="number"
                 min={1}
@@ -802,10 +800,10 @@ function ExecuteCommandDialog({ open, onClose, serverId, vmid, node, type }: Omi
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Закрыть</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.close')}</Button>
           <Button onClick={submit} disabled={!command.trim() || exec.isPending}>
             {exec.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Выполнить
+            {t('instances.exec_run')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -816,6 +814,7 @@ function ExecuteCommandDialog({ open, onClose, serverId, vmid, node, type }: Omi
 // ==================== ISO mount/unmount ====================
 
 function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'open' | 'onOpenChange'> & { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
   const [device, setDevice] = useState('ide2');
   const [volid, setVolid] = useState<string>('');
   const [bootFromDisk, setBootFromDisk] = useState(true);
@@ -826,14 +825,12 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
   const attach = useAttachIso(serverId, vmid, node);
   const detach = useDetachIso(serverId, vmid, node);
 
-  // volid текущего подключённого образа (без ',media=cdrom,size=...'); null — привод пуст.
   const currentVolid = useMemo(() => {
     const v = config.data?.[device];
     if (typeof v !== 'string' || v.startsWith('none')) return null;
     return v.split(',')[0] || null;
   }, [config.data, device]);
 
-  // Отразить текущий образ в выпадающем списке при открытии/смене устройства.
   useEffect(() => {
     if (open) setVolid(currentVolid || '');
   }, [open, device, currentVolid]);
@@ -843,8 +840,8 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>ISO недоступно для LXC</DialogTitle>
-            <DialogDescription>Подключение ISO-образов поддерживается только для KVM (qemu) виртуальных машин.</DialogDescription>
+            <DialogTitle>{t('instances.iso_lxc_title')}</DialogTitle>
+            <DialogDescription>{t('instances.iso_lxc_desc')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button onClick={onClose}>OK</Button>
@@ -858,12 +855,12 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Disc className="h-4 w-4" /> ISO образ</DialogTitle>
-          <DialogDescription>Подключите ISO к виртуальному CD-ROM устройству.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><Disc className="h-4 w-4" /> {t('instances.iso_title')}</DialogTitle>
+          <DialogDescription>{t('instances.iso_desc')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label>Устройство</Label>
+            <Label>{t('instances.iso_device')}</Label>
             <Select value={device} onValueChange={(v) => v && setDevice(v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -875,21 +872,21 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
             </Select>
           </div>
           <div>
-            <Label>Образ</Label>
+            <Label>{t('instances.iso_image')}</Label>
             <Select value={volid} onValueChange={(v) => v && setVolid(v)}>
               <SelectTrigger>
-                <SelectValue placeholder={isos.isLoading ? 'Загрузка...' : 'Выберите ISO'} />
+                <SelectValue placeholder={isos.isLoading ? t('common.loading') : t('instances.iso_select')} />
               </SelectTrigger>
               <SelectContent>
                 {(isos.data?.isos || []).map((iso) => (
                   <SelectItem key={iso.volid} value={iso.volid}>
-                    {iso.name || iso.volid}{iso.volid === currentVolid ? ' · текущий' : ''}
+                    {iso.name || iso.volid}{iso.volid === currentVolid ? ` · ${t('instances.iso_current')}` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {isos.data?.isos?.length === 0 && (
-              <p className="mt-1 text-xs text-muted-foreground">На ноде нет загруженных ISO образов.</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('instances.iso_no_isos')}</p>
             )}
           </div>
           {currentVolid && (
@@ -900,10 +897,9 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
                 onChange={(e) => setBootFromDisk(e.target.checked)}
               />
               <span>
-                Загружаться с диска после извлечения
+                {t('instances.iso_boot_disk')}
                 <span className="block text-xs text-muted-foreground">
-                  Ставит диск первым в порядке загрузки и перезапускает ВМ, если она запущена, —
-                  чтобы сразу стартовать с установленной ОС, а не с ISO.
+                  {t('instances.iso_boot_disk_hint')}
                 </span>
               </span>
             </label>
@@ -916,10 +912,9 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
                 onChange={(e) => setBootFromIso(e.target.checked)}
               />
               <span>
-                Загрузиться с этого ISO
+                {t('instances.iso_boot_iso')}
                 <span className="block text-xs text-muted-foreground">
-                  Ставит CD-ROM первым в порядке загрузки и перезапускает ВМ, если она запущена, —
-                  для установки/восстановления с образа. Без галочки ISO просто вставится в привод.
+                  {t('instances.iso_boot_iso_hint')}
                 </span>
               </span>
             </label>
@@ -931,9 +926,9 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
             onClick={() => detach.mutate({ device, boot_from_disk: bootFromDisk, reboot_after: bootFromDisk }, {
               onSuccess: (r) => {
                 toast.success(
-                  r.rebooted ? 'ISO извлечён, ВМ перезапускается с диска'
-                    : r.boot_from_disk ? 'ISO извлечён, загрузка с диска (применится при старте)'
-                    : 'ISO отключён',
+                  r.rebooted ? t('instances.iso_ejected_rebooting')
+                    : r.boot_from_disk ? t('instances.iso_ejected_disk')
+                    : t('instances.iso_ejected'),
                 );
                 onClose();
               },
@@ -942,15 +937,15 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
             disabled={detach.isPending || !currentVolid}
           >
             {detach.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Извлечь
+            {t('instances.iso_eject')}
           </Button>
           <Button
             onClick={() => attach.mutate({ volid, device, boot_from_iso: bootFromIso, reboot_after: bootFromIso }, {
               onSuccess: (r) => {
                 toast.success(
-                  r.rebooted ? 'ISO подключён, ВМ перезапускается с образа'
-                    : r.boot_from_iso ? 'ISO подключён, загрузка с образа (применится при старте)'
-                    : 'ISO подключён',
+                  r.rebooted ? t('instances.iso_attached_rebooting')
+                    : r.boot_from_iso ? t('instances.iso_attached_booting')
+                    : t('instances.iso_attached'),
                 );
                 onClose();
               },
@@ -959,7 +954,7 @@ function IsoDialog({ open, onClose, serverId, vmid, node, type }: Omit<Props, 'o
             disabled={!volid || attach.isPending}
           >
             {attach.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Подключить
+            {t('instances.iso_attach')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -976,8 +971,6 @@ function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<
   const [mode, setMode] = useState('snapshot');
   const [compress, setCompress] = useState('zstd');
 
-  // Only storages that accept backups and are visible from this VM's node
-  // (`nodes` empty/absent => storage is available on all nodes).
   const storages = useMemo(() => {
     const list = (storagesData?.storages || []) as { storage: string; type: string; content?: string; nodes?: string }[];
     return list
@@ -997,7 +990,7 @@ function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<
       { server_id: serverId, node, vmid, storage, mode, compress },
       {
         onSuccess: () => {
-          toast.success(t('instances.backup_started', 'Бэкап запущен в фоне'));
+          toast.success(t('instances.backup_started'));
           onClose();
         },
         onError: (e) => toast.error(e.message),
@@ -1009,17 +1002,17 @@ function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{t('instances.backup_now', 'Создать резервную копию')}</DialogTitle>
+          <DialogTitle>{t('instances.backup_now')}</DialogTitle>
           <DialogDescription>
             {name || `${type === 'qemu' ? 'VM' : 'CT'} ${vmid}`} · {node}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>{t('backups.storage', 'Хранилище')}</Label>
+            <Label>{t('backups.storage')}</Label>
             <Select value={storage} onValueChange={setStorage}>
               <SelectTrigger>
-                <SelectValue placeholder={t('backups.select_storage', 'Выберите хранилище')} />
+                <SelectValue placeholder={t('backups.select_storage')} />
               </SelectTrigger>
               <SelectContent>
                 {storages.map((s) => (
@@ -1031,13 +1024,13 @@ function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<
             </Select>
             {storages.length === 0 && (
               <p className="text-xs text-warning">
-                {t('instances.backup_no_storages', 'Нет хранилищ с поддержкой бэкапов на этой ноде')}
+                {t('instances.backup_no_storages')}
               </p>
             )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>{t('backups.mode', 'Режим')}</Label>
+              <Label>{t('backups.mode')}</Label>
               <Select value={mode} onValueChange={setMode}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1048,24 +1041,24 @@ function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>{t('backups.compression', 'Сжатие')}</Label>
+              <Label>{t('backups.compression')}</Label>
               <Select value={compress} onValueChange={setCompress}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="zstd">ZSTD</SelectItem>
                   <SelectItem value="gzip">GZIP</SelectItem>
                   <SelectItem value="lzo">LZO</SelectItem>
-                  <SelectItem value="0">{t('backups.no_compression', 'Без сжатия')}</SelectItem>
+                  <SelectItem value="0">{t('backups.no_compression')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Отмена')}</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={!storage || createBackup.isPending}>
             {createBackup.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('instances.backup_create', 'Создать бэкап')}
+            {t('instances.backup_create')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1077,9 +1070,9 @@ function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<
 
 type ActionConfig = {
   icon: React.ReactNode;
-  title: string;
-  description: string;
-  btnLabel: string;
+  titleKey: string;
+  descKey: string;
+  btnKey: string;
   btnVariant: 'default' | 'outline' | 'destructive';
   btnClass: string;
 };
@@ -1087,33 +1080,33 @@ type ActionConfig = {
 const POWER_ACTION_CONFIG: Record<PowerAction, ActionConfig> = {
   start: {
     icon: <Play className="h-4 w-4 text-success" />,
-    title: 'Запустить',
-    description: 'Запустить инстанс',
-    btnLabel: 'Запустить',
+    titleKey: 'instances.power_start',
+    descKey: 'instances.power_start_desc',
+    btnKey: 'instances.power_start',
     btnVariant: 'default',
     btnClass: 'bg-success text-success-foreground hover:bg-success/90 border-0',
   },
   restart: {
     icon: <RotateCcw className="h-4 w-4 text-warning" />,
-    title: 'Перезапустить',
-    description: 'Перезапустить инстанс',
-    btnLabel: 'Перезапустить',
+    titleKey: 'instances.power_restart',
+    descKey: 'instances.power_restart_desc',
+    btnKey: 'instances.power_restart',
     btnVariant: 'outline',
     btnClass: 'border-warning text-warning hover:bg-warning/10',
   },
   shutdown: {
     icon: <Power className="h-4 w-4 text-orange-500" />,
-    title: 'Выключить',
-    description: 'Мягко выключить инстанс (ACPI shutdown)',
-    btnLabel: 'Выключить',
+    titleKey: 'instances.power_shutdown',
+    descKey: 'instances.power_shutdown_desc',
+    btnKey: 'instances.power_shutdown',
     btnVariant: 'outline',
     btnClass: 'border-orange-500 text-orange-500 hover:bg-orange-500/10',
   },
   stop: {
     icon: <Square className="h-4 w-4" />,
-    title: 'Остановить',
-    description: 'Принудительно остановить инстанс. Несохранённые данные могут быть утеряны',
-    btnLabel: 'Остановить',
+    titleKey: 'instances.power_stop',
+    descKey: 'instances.power_stop_desc',
+    btnKey: 'instances.power_stop',
     btnVariant: 'destructive',
     btnClass: '',
   },
@@ -1134,9 +1127,10 @@ export function PowerConfirmDialog({
   vmName?: string;
   isPending?: boolean;
 }) {
+  const { t } = useTranslation();
   if (!action) return null;
   const cfg = POWER_ACTION_CONFIG[action];
-  const displayName = vmName ? `«${vmName}»` : 'выбранный инстанс';
+  const displayName = vmName ? `«${vmName}»` : t('instances.power_unnamed');
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -1144,21 +1138,21 @@ export function PowerConfirmDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {cfg.icon}
-            {cfg.title}
+            {t(cfg.titleKey)}
           </DialogTitle>
           <DialogDescription>
-            {cfg.description} {displayName}?
+            {t(cfg.descKey)} {displayName}?
             {action === 'stop' && (
               <span className="mt-2 flex items-center gap-1.5 text-destructive">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                Это аналог «выдернуть кабель из розетки».
+                {t('instances.power_stop_warn')}
               </span>
             )}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isPending}>
-            Отмена
+            {t('common.cancel')}
           </Button>
           <Button
             variant={cfg.btnVariant}
@@ -1167,7 +1161,7 @@ export function PowerConfirmDialog({
             disabled={isPending}
           >
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {cfg.btnLabel}
+            {t(cfg.btnKey)}
           </Button>
         </DialogFooter>
       </DialogContent>

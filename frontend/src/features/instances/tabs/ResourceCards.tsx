@@ -166,7 +166,7 @@ export function DiskResizeCard({ serverId, vmid, type, node }: Props) {
     if (!diskSize || !diskDevice) return;
     if (currentDiskGb != null && Number(diskSize) <= currentDiskGb) {
       toast.error(
-        `Новый размер должен быть больше текущего (${currentDiskGb.toFixed(1)} ГБ). Уменьшение диска Proxmox не поддерживает.`
+        t('instances.disk_resize_too_small', { size: currentDiskGb.toFixed(1) })
       );
       return;
     }
@@ -178,7 +178,7 @@ export function DiskResizeCard({ serverId, vmid, type, node }: Props) {
           const grown = !!res?.filesystem_grown;
           setGrowResult({ grown, output: res?.grow_output ?? '' });
           if (grown) toast.success(res?.message ?? `Disk resized to ${diskSize}G`);
-          else toast.warning(res?.message ?? `Диск увеличен до ${diskSize}G, но ФС не расширена`);
+          else toast.warning(res?.message ?? t('instances.disk_no_fs', { size: diskSize }));
         },
         onError: (err) => toast.error(err.message),
       }
@@ -229,7 +229,7 @@ export function DiskResizeCard({ serverId, vmid, type, node }: Props) {
             />
             {currentDiskGb != null && (
               <p className="text-xs text-muted-foreground">
-                Текущий размер: {currentDiskGb.toFixed(1)} ГБ
+                {t('instances.current_disk_size', { size: currentDiskGb.toFixed(1) })}
               </p>
             )}
           </div>
@@ -250,8 +250,8 @@ export function DiskResizeCard({ serverId, vmid, type, node }: Props) {
           <div className="space-y-1.5">
             <p className={`text-xs font-medium ${growResult.grown ? 'text-success' : 'text-warning'}`}>
               {growResult.grown
-                ? 'Файловая система расширена внутри ОС'
-                : 'Файловая система не расширена — вывод growpart ниже'}
+                ? t('instances.fs_grown')
+                : t('instances.fs_not_grown')}
             </p>
             {growResult.output && (
               <pre className="max-h-48 overflow-auto rounded bg-muted p-2 text-xs font-mono whitespace-pre-wrap">

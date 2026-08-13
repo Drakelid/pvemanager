@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink, ChevronDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -85,10 +86,11 @@ function ClusterOverviewCard({ serverList, nodeStats, allVMs, memPercent, diskPe
   serverList: Rec[]; nodeStats: Rec[]; allVMs: Rec[]
   memPercent: number; diskPercent: number; availableIPs: number
 }) {
+  const { t } = useTranslation()
   const clusterName =
     (serverList[0]?.cluster_name as string) ||
     (serverList[0]?.server_name as string) ||
-    'Кластер'
+    t('dashboard.cluster')
   const totalVMs = allVMs.filter(v => v.type === 'qemu').length
   const totalCTs = allVMs.filter(v => v.type === 'lxc').length
   const totalNodeMem = nodeStats.reduce((s, n) => s + (Number(n.maxmem) || 0), 0)
@@ -111,12 +113,12 @@ function ClusterOverviewCard({ serverList, nodeStats, allVMs, memPercent, diskPe
         <div className={`grid ${cols} gap-4`}>
           {availableIPs > 0 && (
             <div>
-              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">IPv4 доступно</p>
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{t('dashboard.ipv4_available')}</p>
               <p className="font-mono text-3xl font-bold tabular-nums text-success">{availableIPs.toLocaleString()}</p>
             </div>
           )}
           <div>
-            <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Узлов</p>
+            <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{t('dashboard.nodes_count')}</p>
             <p className="font-mono text-3xl font-bold tabular-nums">{nodeStats.length}</p>
           </div>
           <div>
@@ -132,7 +134,7 @@ function ClusterOverviewCard({ serverList, nodeStats, allVMs, memPercent, diskPe
 
         <div className="flex items-center justify-between text-xs pt-1">
           <span className="text-muted-foreground">
-            Оверселлинг RAM = <span className="font-mono text-foreground font-medium">{overselling}</span>
+            {t('dashboard.ram_oversell')} <span className="font-mono text-foreground font-medium">{overselling}</span>
           </span>
           <span className="flex items-center gap-1 text-muted-foreground">
             <ExternalLink className="h-3 w-3" /> Grafana
@@ -145,6 +147,7 @@ function ClusterOverviewCard({ serverList, nodeStats, allVMs, memPercent, diskPe
 
 // ==================== Tasks Today Card ====================
 function TasksTodayCard() {
+  const { t } = useTranslation()
   const { data: tasksData } = useAllTasks({ limit: 500 })
   const { data: activeData } = useActiveTaskCount()
 
@@ -169,16 +172,16 @@ function TasksTodayCard() {
   ).length
 
   const rows = [
-    { label: 'Выполнено:', value: completed, red: false },
-    { label: 'Выполняются:', value: running, red: false },
-    { label: 'В очереди:', value: queued, red: false },
-    { label: 'Ошибки:', value: errors, red: errors > 0 },
+    { label: t('dashboard.tasks_done'), value: completed, red: false },
+    { label: t('dashboard.tasks_running'), value: running, red: false },
+    { label: t('dashboard.tasks_queued'), value: queued, red: false },
+    { label: t('dashboard.tasks_errors'), value: errors, red: errors > 0 },
   ]
 
   return (
     <Card className="h-full">
       <CardHeader className="pb-2 pt-5 px-5">
-        <CardTitle className="text-sm font-semibold">Задачи за сутки</CardTitle>
+        <CardTitle className="text-sm font-semibold">{t('dashboard.tasks_today')}</CardTitle>
       </CardHeader>
       <CardContent className="px-5 pb-5 space-y-2.5">
         {rows.map(({ label, value, red }) => (
@@ -188,7 +191,7 @@ function TasksTodayCard() {
           </div>
         ))}
         <div className="border-t border-border pt-2.5 flex items-center justify-between">
-          <span className="text-sm font-medium">Всего</span>
+          <span className="text-sm font-medium">{t('dashboard.tasks_total')}</span>
           <span className="font-mono text-sm font-bold tabular-nums">{today.length}</span>
         </div>
       </CardContent>
@@ -200,11 +203,12 @@ function TasksTodayCard() {
 function NodeStatsCard({ cpuPercent, memPercent, serverName, serverCount }: {
   cpuPercent: number; memPercent: number; serverName: string; serverCount: number
 }) {
+  const { t } = useTranslation()
   return (
     <Card className="h-full gap-0 py-0 overflow-hidden">
       <div className={`h-[3px] w-full ${healthColor(cpuPercent, memPercent)}`} />
       <CardHeader className="pb-2 pt-4 px-5">
-        <CardTitle className="text-sm font-semibold truncate">{serverName || 'Сервер'}</CardTitle>
+        <CardTitle className="text-sm font-semibold truncate">{serverName || t('dashboard.server')}</CardTitle>
       </CardHeader>
       <CardContent className="px-5 pb-5 space-y-4">
         <div className="flex justify-around">
@@ -213,11 +217,11 @@ function NodeStatsCard({ cpuPercent, memPercent, serverName, serverCount }: {
         </div>
         <div className="space-y-1.5 text-xs">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Серверов:</span>
+            <span className="text-muted-foreground">{t('dashboard.servers_count')}:</span>
             <span className="font-mono font-medium">{serverCount}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Платформа:</span>
+            <span className="text-muted-foreground">{t('dashboard.platform')}:</span>
             <span className="font-medium">Proxmox VE</span>
           </div>
         </div>
@@ -228,6 +232,7 @@ function NodeStatsCard({ cpuPercent, memPercent, serverName, serverCount }: {
 
 // ==================== Cluster Nodes Section ====================
 function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<'now' | 'day'>('now')
 
   // Top-10 nodes by disk usage % — one donut slice per node.
@@ -256,19 +261,19 @@ function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
       <Card>
         <CardHeader className="pb-3 pt-4 px-5">
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <CardTitle className="text-sm font-semibold">Узлы кластера</CardTitle>
+            <CardTitle className="text-sm font-semibold">{t('dashboard.cluster_nodes')}</CardTitle>
             <div className="flex gap-1">
-              {(['now', 'day'] as const).map(t => (
+              {(['now', 'day'] as const).map(tab_key => (
                 <button
-                  key={t}
-                  onClick={() => setTab(t)}
+                  key={tab_key}
+                  onClick={() => setTab(tab_key)}
                   className={`rounded-full px-3 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card ${
-                    tab === t
+                    tab === tab_key
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {t === 'now' ? 'Топ-10 сейчас' : 'Топ-10 за сутки'}
+                  {tab_key === 'now' ? t('dashboard.top10_now') : t('dashboard.top10_day')}
                 </button>
               ))}
             </div>
@@ -276,13 +281,13 @@ function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
         </CardHeader>
         <CardContent className="px-5 pb-4">
           <div className="grid grid-cols-[1fr_56px_56px_56px] gap-2 px-2 py-1 text-2xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border mb-1">
-            <span>Название узлов</span>
+            <span>{t('dashboard.node_name')}</span>
             <span className="text-right">CPU, %</span>
             <span className="text-right">RAM</span>
             <span className="text-right">Disk</span>
           </div>
           {sorted.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Нет данных</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">{t('common.no_data')}</p>
           ) : (
             sorted.map((n, i) => {
               const cpu = Number(n.cpu_pct) || 0
@@ -320,12 +325,12 @@ function ClusterNodesSection({ nodeStats }: { nodeStats: Rec[] }) {
       {/* Disk stats — donut, one slice per node by disk usage % */}
       <Card>
         <CardHeader className="pb-2 pt-4 px-5">
-          <CardTitle className="text-sm font-semibold">ТОП статистика по диску</CardTitle>
+          <CardTitle className="text-sm font-semibold">{t('dashboard.disk_top')}</CardTitle>
         </CardHeader>
         <CardContent className="px-3 pb-4">
           {pieData.length === 0 ? (
             <div className="h-52 flex items-center justify-center text-sm text-muted-foreground">
-              Нет данных
+              {t('common.no_data')}
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
