@@ -4,6 +4,45 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.15.0] - 2026-08-13
+
+### 🚀 One-Command Bootstrap
+
+- **`bootstrap.sh`** — installs the panel with a single command on either a plain Debian/Ubuntu host or directly on a Proxmox VE host. On a PVE host it provisions a Debian 12 LXC, installs the panel inside it via the existing `deploy.sh`, creates a local `root@pam` API token and registers that host as the panel's first node — no Proxmox password is ever transmitted
+- Tolerates `apt-get update` failures from an unsubscribed PVE host's enterprise repo instead of aborting the whole bootstrap before `git`/`curl` are installed
+- Registers the host at the correct `/proxmox/api/servers` path (the previous `/api/servers` 404'd, since the Proxmox router is mounted under `/proxmox`)
+- Removed the insecure `pvemanager_secure_password` fallback for `POSTGRES_PASSWORD` in `compose.yml` — every deploy path already generates a real `.env` before the stack starts
+
+### 💿 Images & Instances
+
+- **ISO eject/mount rework** — the Images page now shows real ISO files already present on node storage (including ones that predate the node joining the panel); "Detach" is renamed **Eject**, the current image is shown inside the select, and a new **"boot from disk"** / **"boot from this ISO"** checkbox controls boot order on eject/mount
+- Applying a new boot order reboots the guest via a **hybrid restart** — graceful ACPI shutdown with a forceStop fallback, then start — avoiding the guest-ping timeout seen on a freshly installed OS with no QEMU Guest Agent yet
+
+### 🔒 RBAC & Access
+
+- **`/profile` split from `/settings`** — account settings (profile, password, 2FA, SSH keys) moved to their own permission-free `/profile` page reached from the user menu and Ctrl+K, so revoking `setting:view` to keep a user out of panel settings no longer locks them out of their own account. `/settings` keeps the panel-wide tabs behind `setting:view`, with saving behind `setting:update`, security behind `setting:manage`, and SMTP/Telegram behind admin-only
+- **Routes are now guarded by permission**, not just hidden from the sidebar — `/users`, `/logs` and `/settings` (and their tabs) previously rendered for anyone who typed the URL and let the backend answer with 403s; denied users are now redirected to the first page they can open
+- Migration 42 drops `setting:view` from roles that don't also hold `setting:update`/`setting:manage`, since those grants only existed to reach the old combined settings page
+
+### 👤 Ownership & Quotas
+
+- **Owner assignment fixed at creation time** — newly created VMs/LXCs were silently ending up with `owner_id = NULL` because the sync job that registers a still-cloning VM beats the deploy flow to the database row; owner is now set on that update path too. A VM created by an admin on behalf of a user now also injects the **user's** SSH key instead of the admin's
+- **Backfill migration** for instances created before the fix above, recovered from `deploy_tasks` and `audit_logs` and applied only when every piece of evidence agrees on the same existing user; ambiguous instances are left ownerless for `assign_instances_owner.py` to resolve by hand
+- **Create Instance is disabled once a quota has no headroom left**, instead of only refusing inside the wizard — the button shows a tooltip naming which limits are full (skipped for admins, whose own quota doesn't apply to instances they create for someone else)
+- The pre-wizard quota block is now distinct from the in-wizard one: no headroom at all keeps the wizard from opening; headroom that a chosen configuration would exceed opens the wizard but disables Next/Deploy with the offending metric named
+
+### 🐛 Bug Fixes
+
+- **Production deployments were bypassing TLS** — `compose.prod.yml`'s `ports: []` didn't actually drop the published `8000`/`3001` ports (Compose concatenates list-valued fields across `-f` files instead of overriding), so an SSL deployment kept answering unencrypted on both ports alongside HTTPS. Fixed with the `!reset` tag
+- **SSL deployments reported "Failed to obtain SSL certificate" after successfully issuing one** — the success check couldn't read certbot's root-owned, mode-0700 output directory as a non-root user; the check now verifies the certificate from inside the container and falls back to HTTP only if nginx actually fails to come up with the new config
+- **The frontend bundle's cold load could render a blank page** — the general request-rate limit (`10r/s`) applied to static assets too and started rejecting the SPA's ~86 preloaded chunks with 503s; and once that was fixed, `limit_conn addr 10` capped the whole page to 10 concurrent HTTP/2 streams (a browser multiplexes a page's entire load over one connection), producing the same blank page from a different limiter. Static assets now have their own rate-limit zone, and both `limit_conn` caps are raised
+- **nginx workers were unable to open enough file descriptors** to match `worker_connections 2048` (Docker's default `RLIMIT_NOFILE` of 1024 quietly halved the real ceiling); raised to 8192
+- Dropped `listen 443 ssl http2` (deprecated since nginx 1.25.1) and `ssl_stapling` (no OCSP responder in current Let's Encrypt certs) — both warned on nginx's periodic reload
+- **Node uptime showed the wrong value on multi-node clusters** — the server card took `Math.max` over every cluster node's uptime instead of the current node's own, so rebooting one node could still show another node's higher uptime
+- **The terminated-sessions toast never translated** — the message was assembled server-side in Python and returned verbatim, so the Russian UI showed "Terminated 0 sessions"; the count is now returned separately and the phrase is composed client-side (Russian needs four plural forms against English's two)
+
+---
+
 ## [v1.14.0] - 2026-07-24
 
 ### 🐛 Bug Fixes

@@ -4,7 +4,7 @@
 
 **Modern web panel for managing Proxmox servers, virtual machines and LXC containers**
 
-[![Version](https://img.shields.io/badge/version-1.13.0-blue?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.15.0-blue?style=flat-square)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](compose.yml)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](backend/)
@@ -28,6 +28,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **Snapshot management** — create, rollback, delete snapshots with an async queue system
 - **OS templates** — deploy VMs from templates; cross-node replication handled automatically
 - **Cloud image catalog** — browse, download, and convert OS images from cloud repositories (default Proxmox mirrors and custom sources); auto-convert to VM templates with architecture-aware filtering
+- **ISO eject/mount** — attach or eject an ISO on a running VM, with a boot-order switch (boot from disk or from the ISO) applied via a graceful ACPI-then-forceStop hybrid reboot
 - **CT template deployment** — create LXC containers directly from Proxmox CT template files (`.tar.zst`, `.tar.gz`) with full IPAM and SSH key integration
 - **Unified Create Instance Wizard** — multi-step wizard supporting both QEMU VM templates and LXC CT templates in a single flow
 - **SDN support** — manage Software-Defined Networking zones, VNets, and subnets; edit zones and VNets; auto-create IPAM networks for subnets
@@ -47,10 +48,11 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **xterm.js terminal** — full interactive shell directly in the browser for LXC containers
 - **Remote commands** — execute bash commands via QEMU Guest Agent
 - **SSH Keys Management** — personal SSH key library per user; keys selectable when deploying VMs/LXC; admin can manage keys for any user
-- **RBAC v2** — granular role-based access control with per-resource permissions
+- **RBAC v2** — granular role-based access control with per-resource permissions; routes are guarded server- and client-side, not just hidden from the sidebar
+- **Permission-free profile page** — account settings (profile, password, 2FA, SSH keys) live at `/profile` and never require a panel-settings permission, so restricting `setting:view` can't lock a user out of their own account
 - **Server assignment** — directly assign specific Proxmox servers to users with workspace-conflict validation
-- **VM/LXC ownership** — assign an owner user to any VM or LXC container; non-privileged users see only their own instances everywhere, including the dashboard and per-node resource views
-- **Per-user quotas** — limit each user's number of instances and total vCPU, RAM and disk; enforced at deploy time (HTTP 429), with admin management and self-service usage view
+- **VM/LXC ownership** — assign an owner user to any VM or LXC container; non-privileged users see only their own instances everywhere, including the dashboard and per-node resource views; owner is set automatically on create, with a migration to backfill pre-existing instances
+- **Per-user quotas** — limit each user's number of instances and total vCPU, RAM and disk; enforced at deploy time (HTTP 429); the Create Instance entry point itself is disabled once a quota has no headroom left, naming which limit is full
 - **Session management** — active session list, remote session revocation, login protection
 - **Smart login redirect** — users are automatically routed to the first page they have access to
 
@@ -90,6 +92,16 @@ docker compose up -d
 ```
 
 > **Important:** Change the default password immediately after first login.
+
+### One-command bootstrap
+
+`bootstrap.sh` installs the panel with a single command, on either a plain Debian/Ubuntu host or directly on a Proxmox VE host — on a PVE host it provisions a Debian 12 LXC, installs the panel inside it, and registers that host as the panel's first node automatically (no Proxmox password is ever transmitted):
+
+```bash
+git clone https://git.tzim.uz/markmorado/pvemanager.git
+cd pvemanager
+bash bootstrap.sh
+```
 
 ---
 

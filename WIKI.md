@@ -102,6 +102,21 @@ docker compose up -d
 # Specify domain and email for Let's Encrypt
 ```
 
+#### 4. One-command bootstrap (`bootstrap.sh`)
+
+A single script that installs the panel on either a plain Debian/Ubuntu host or directly on a Proxmox VE host — it detects which by checking for `/etc/pve`:
+
+```bash
+git clone https://git.tzim.uz/markmorado/pvemanager.git
+cd pvemanager
+bash bootstrap.sh
+```
+
+- **Plain Debian/Ubuntu host** — installs Docker and `git`/`curl`/`openssl`/`jq` if missing, clones the repo into `PVEMANAGER_DIR` (default `/opt/pvemanager`) and hands off to `deploy.sh --standalone`.
+- **Proxmox VE host** — creates a Debian 12 LXC (DHCP on `vmbr0`, `nesting=1,keyctl=1` for Docker inside), installs the panel inside it via the same flow, then — once the panel answers `GET /health` — creates a `root@pam!pvemanager` API token locally on the PVE host (`pvesh create ... --privsep 0`) and registers that host as the panel's first node. **No Proxmox password is ever transmitted** to or through the panel.
+- Configuration is via environment variables (`PVEMANAGER_REPO`, `PVEMANAGER_VERSION`, `PVEMANAGER_DIR`, and `PVEMANAGER_LXC_*` for the container's vmid/storage/bridge/resources) — see the header of `bootstrap.sh` for the full list and defaults.
+- Tolerates `apt-get update` failures from an unsubscribed PVE host's enterprise repo instead of aborting before `git`/`curl` are installed.
+
 ### Environment Variables
 
 #### Main (`.env`)
@@ -701,6 +716,15 @@ The **Images** module allows you to browse, download, and manage OS images from 
 ### Installing an OS from an ISO
 
 The create-instance wizard offers a **blank VM** kind for ISO-based installs: it provisions an empty disk with the chosen ISO mounted on `ide2` and set first in the boot order, so the VM boots straight into the installer over the built-in noVNC console. Selecting a Windows guest automatically presets OVMF firmware, a SATA disk and an e1000 NIC, since the installer has no virtio drivers loaded yet.
+
+### Ejecting and Mounting an ISO
+
+From a VM's detail page, the ISO dialog shows every ISO already on the node's storage — including ones that predate the node joining the panel — and the image currently mounted, if any:
+
+- **Mount** — pick an ISO from storage; optionally check **"boot from this ISO"** to put the CD-ROM drive first in the boot order.
+- **Eject** (renamed from "Detach") — remove the mounted ISO; optionally check **"boot from disk"** to put the primary disk first in the boot order.
+
+Either action that changes boot order applies it via a **hybrid reboot**: a graceful ACPI shutdown with a `forceStop` fallback, then start. This avoids the guest-ping timeout that a plain restart hits on a freshly installed OS with no QEMU Guest Agent running yet.
 
 ### Custom Mirrors (Admin Only)
 
@@ -2226,7 +2250,9 @@ Any VM or LXC container can have an **owner** — a regular user responsible for
 
 Ownership is enforced everywhere a non-privileged user sees instances, not just the instance list. The live-resource endpoints — `/api/resources/all` (dashboard) and `/api/{server_id}/resources` (node/server page) — filter VMs/LXC by owner (matching each `vmid` against the `vm_instances` cache), so a user with only `proxmox.view` cannot see other owners' instances through the node page. **Admins** and roles with **`vm:manage`** are exempt and see everything.
 
-Instances synced from Proxmox before ownership existed have `owner_id = NULL`. To bulk-assign an owner to them, run the helper script shipped in the backend image:
+**Owner is set automatically on create** (`vm_create`/`ct_create`), including when an admin creates an instance on behalf of another user — the deploy flow injects that owner's SSH key (merged with any pasted/library keys) rather than the creator's.
+
+Instances synced from Proxmox before ownership existed, or created before the fix above, have `owner_id = NULL`. A one-time migration backfills these automatically from `deploy_tasks` and `audit_logs` (`vm_create`/`ct_create`/`lxc_create` entries), but only when every applicable piece of evidence names the same existing user — ambiguous cases (e.g. a reused VMID) are deliberately left ownerless. To assign an owner to whatever is left, run the helper script shipped in the backend image:
 
 ```bash
 docker compose exec app python assign_instances_owner.py
@@ -2260,13 +2286,22 @@ Per-user resource quotas cap how much a user can provision. Four metrics are lim
 - **Enforcement** — deploying a VM/LXC that would push any metric over its limit is rejected with **HTTP 429** and a bilingual message (`Превышена квота … / Quota exceeded …`) showing the projected value vs. the limit.
 - **Usage source** — current usage is computed from the `vm_instances` cache (`owner_id`), where RAM is stored in MB and disk in GB (no conversion needed).
 
+### Two levels of client-side blocking
+
+The backend's 429 is the only real enforcement, but the UI now warns before a user reaches it, using the same `exhaustedMetrics()` logic (`features/instances/quota.ts`) in both places so the two can't disagree:
+
+- **No headroom at all** (used ≥ limit on any metric) — the **Create Instance** entry point itself is disabled, with a tooltip naming exactly which limits are full. No configuration would fit, so the wizard does not open.
+- **Headroom left, but the chosen configuration would exceed it** — the wizard opens normally; from the configuration step onward, the metric that would be exceeded is named and **Next**/**Deploy** are disabled until the request is reduced.
+
+Neither block applies to **admins** — their own quota says nothing about an instance they're creating on behalf of someone else, and the figures shown to them are informational only.
+
 ### Managing quotas (Admin)
 
 **Users** page → quota dialog. Live usage bars show current consumption against each limit. Leave a field empty for *unlimited*. Requires the `quota:manage` permission (`quota:view` to read).
 
 ### Self-service
 
-Each user sees their own limits and current usage on the **Settings** page. The **Create Instance** wizard shows the remaining quota as a hint on the configuration step.
+Each user sees their own limits and current usage on the **Profile** page. The **Create Instance** wizard shows the remaining quota as a hint on the configuration step.
 
 ### REST API
 
