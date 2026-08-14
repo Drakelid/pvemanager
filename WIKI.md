@@ -1,6 +1,6 @@
 # 📖 PVEmanager - Documentation
 
-> Complete guide for installation, configuration and usage of PVEmanager v1.13.0
+> Complete guide for installation, configuration and usage of PVEmanager v1.16.0
 
 ---
 
@@ -725,6 +725,21 @@ From a VM's detail page, the ISO dialog shows every ISO already on the node's st
 - **Eject** (renamed from "Detach") — remove the mounted ISO; optionally check **"boot from disk"** to put the primary disk first in the boot order.
 
 Either action that changes boot order applies it via a **hybrid reboot**: a graceful ACPI shutdown with a `forceStop` fallback, then start. This avoids the guest-ping timeout that a plain restart hits on a freshly installed OS with no QEMU Guest Agent running yet.
+
+### GitHub Mirror with QEMU Guest Agent
+
+The bundled amd64 image catalog points to a **GitHub mirror** that contains cloud images pre-patched with `qemu-guest-agent`. This means:
+
+- Live per-VM metrics (CPU, memory, disk fill, I/O rates) work immediately after deploy — no post-install agent setup needed
+- Images include a **sha256 checksum** for integrity verification; if the cached file no longer matches the published checksum, the panel re-downloads it automatically
+
+To rebuild or update the mirror yourself, run the included helper script on a Linux host with QEMU installed:
+
+```bash
+bash patch-cloud-images.sh
+```
+
+It downloads the upstream `.qcow2`, installs `qemu-guest-agent` via `virt-customize`, and publishes the patched image as a GitHub Release.
 
 ### Custom Mirrors (Admin Only)
 
@@ -1903,6 +1918,15 @@ The SHA-256 fingerprint is computed and displayed automatically.
 - Regular users see their own keys
 - Admins selecting an owner see the owner's keys in addition to their own
 
+### SSH Key Sync on Owner Change
+
+When an admin reassigns a VM or LXC to a different user (via the **Owner** dialog on the instance detail page), the panel automatically:
+
+1. Removes the previous owner's SSH public key from the instance's `ciuser`/authorized keys
+2. Injects the new owner's SSH public key
+
+This keeps access credentials in sync with whoever currently owns the instance, without any manual key rotation.
+
 ### Admin Key Management
 
 Admins (users with `user:manage` permission) can view and manage SSH keys for any user:
@@ -1927,9 +1951,11 @@ GET  /api/ssh-keys/user/{user_id}   — list keys for a specific user
 
 ### Supported Languages
 
-- 🇷🇺 Russian
+- 🇷🇺 Russian (full coverage as of v1.16.0)
 - 🇺🇸 English (default)
 - 🇺🇿 Uzbek (partial)
+
+> **v1.16.0** completed a full translation sweep: all previously hardcoded or untranslated strings across the dashboard, instances, images, app store, nodes, roles, storages, scripts, certificates, graphs, wizard, bulk migrate, and access realms are now properly translated in both Russian and English.
 
 ### Switching Language
 

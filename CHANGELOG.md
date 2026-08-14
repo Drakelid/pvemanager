@@ -4,6 +4,39 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.16.0] - 2026-08-14
+
+### 🌍 i18n — Full Translation Pass
+
+A comprehensive sweep that eliminated the remaining hardcoded and untranslated strings from the UI:
+
+- **Dashboard & Instances** — action dialogs, resource cards, status labels, and bulk-operation descriptions are now fully translated (EN + RU)
+- **Images page** — image browser, download/import dialogs, mirrors manager fully translated
+- **App Store** — missing keys added for install wizard, operation states, and app detail labels
+- **Nodes** — power action labels (`Start`, `Reboot`, `Shutdown`) and common node-admin strings translated
+- **Scripts & Certs** — Scripts catalog and TLS/certificates sections added to both locales
+- **Roles** — permission labels for all RBAC entries, including `remote_migrate`, translated to Russian
+- **Graphs, Wizard, Storages** — previously hardcoded Russian strings moved to locale files and dual-translated
+- **Bulk migrate & Access realm** — new locale keys for bulk migration actions and Proxmox realm labels
+- **Critical fixes** — several strings that were silently falling back to English in the Russian UI are now correctly translated
+
+### 🔑 SSH Keys
+
+- **Swap SSH keys on owner change** — when an admin reassigns a VM/LXC to a different user, the instance now automatically receives the new owner's SSH public key (and the previous owner's key is removed), keeping access credentials in sync with the current owner
+
+### 📦 Cloud Images
+
+- **`patch-cloud-images.sh`** — new helper script that patches official cloud images to include `qemu-guest-agent`, then publishes them to a GitHub release mirror; enables live metrics and guest-agent features without requiring a post-deploy agent install
+- **amd64 image catalog** — default amd64 image entries now point to the GitHub mirror (qemu-guest-agent pre-installed) and include `sha256` checksums for integrity verification
+
+### 🐛 Bug Fixes
+
+- **VM storage overview** — loop devices (`/dev/loop*`) and system partitions (`/dev/sr*`, `/boot`, `/snap`) were included in per-disk usage cards; they are now filtered out so only data disks are shown
+- **Cloud image re-download** — cached import images were served from disk even when a checksum was provided and the remote file had changed; the cache is now invalidated when a checksum mismatch is detected
+- **Password visibility icon** — the eye icon across all password fields (login, change-password, SSH key passphrase, and API-key dialogs) was inverted: open eye was shown when the field was hidden and vice-versa; icon state now correctly reflects whether the value is visible
+
+---
+
 ## [v1.15.0] - 2026-08-13
 
 ### 🚀 One-Command Bootstrap
