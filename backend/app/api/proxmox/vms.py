@@ -6,11 +6,12 @@ from loguru import logger
 from typing import List
 import ssl
 import asyncio
+import base64
 import httpx
 import websockets
 
 from ...db import get_db
-from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive
+from ...models import ProxmoxServer, VMInstance, User, IPAMAllocation, IPAMNetwork, VMSnapshotArchive, UserSSHKey
 from ...schemas import ProxmoxServerCreate, ProxmoxServerUpdate, ProxmoxServerResponse
 from ...proxmox import ProxmoxClient, get_proxmox_resources
 from ...auth import (get_current_user, PermissionChecker, require_permission,
@@ -3584,6 +3585,84 @@ def get_vm_owner(
     }
 
 
+def _collect_owner_ssh_keys(db: Session, user_id: int | None) -> str:
+    """Собрать все SSH-ключи пользователя (профильный + библиотека)."""
+    if not user_id:
+        return ""
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return ""
+
+    keys: list[str] = []
+
+    if user.ssh_public_key:
+        keys.append(user.ssh_public_key.strip())
+
+    lib_keys = db.query(UserSSHKey).filter(UserSSHKey.user_id == user_id).all()
+    for k in lib_keys:
+        if k.public_key:
+            keys.append(k.public_key.strip())
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for key in keys:
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(key)
+
+    return "\n".join(unique)
+
+
+def _apply_ssh_keys_to_instance(
+    db: Session,
+    instance: VMInstance,
+    new_keys: str,
+) -> dict:
+    """Применить SSH-ключи к инстансу через Proxmox API (best-effort).
+
+    Для QEMU — обновляет cloud-init sshkeys.
+    Для LXC  — пишет /root/.ssh/authorized_keys через exec.
+    """
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == instance.server_id).first()
+    if not server:
+        return {"success": False, "error": "Server not found"}
+
+    try:
+        client = _get_proxmox_client(server)
+    except HTTPException:
+        return {"success": False, "error": "Cannot connect to Proxmox"}
+
+    if not client.is_connected():
+        return {"success": False, "error": "Proxmox client not connected"}
+
+    if instance.vm_type == "qemu":
+        result = client.update_cloud_init(
+            node=instance.node,
+            vmid=instance.vmid,
+            sshkeys=new_keys if new_keys else "",
+        )
+        return result
+
+    if instance.vm_type == "lxc":
+        try:
+            if new_keys:
+                encoded = base64.b64encode(new_keys.encode()).decode()
+                cmd = (
+                    "mkdir -p /root/.ssh && chmod 700 /root/.ssh && "
+                    f"echo {encoded} | base64 -d > /root/.ssh/authorized_keys && "
+                    "chmod 600 /root/.ssh/authorized_keys"
+                )
+            else:
+                cmd = "rm -f /root/.ssh/authorized_keys"
+            client.exec_in_container(instance.node, instance.vmid, ["bash", "-c", cmd])
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    return {"success": False, "error": f"Unknown vm_type: {instance.vm_type}"}
+
+
 @router.put("/api/{server_id}/vm/{vmid}/owner")
 def set_vm_owner(
     server_id: int,
@@ -3609,6 +3688,29 @@ def set_vm_owner(
         target_user = db.query(User).filter(User.id == body.user_id, User.is_active == True).first()
         if not target_user:
             raise HTTPException(status_code=404, detail="User not found")
+
+    old_owner_id = instance.owner_id
+
+    # --- SSH key swap (best-effort) ---
+    ssh_swap_result = None
+    if old_owner_id != body.user_id:
+        new_keys = _collect_owner_ssh_keys(db, body.user_id)
+        try:
+            ssh_swap_result = _apply_ssh_keys_to_instance(db, instance, new_keys)
+            if ssh_swap_result.get("success"):
+                logger.info(
+                    f"SSH keys swapped on VM {vmid}: "
+                    f"old_owner={old_owner_id} -> new_owner={body.user_id}"
+                )
+            else:
+                logger.warning(
+                    f"SSH key swap failed for VM {vmid}: {ssh_swap_result.get('error')}"
+                )
+        except Exception as e:
+            logger.warning(f"SSH key swap error for VM {vmid}: {e}")
+            ssh_swap_result = {"success": False, "error": str(e)}
+
+        instance.ssh_keys = new_keys or None
 
     instance.owner_id = body.user_id
     db.commit()
@@ -3636,7 +3738,10 @@ def set_vm_owner(
     except Exception as e:
         logger.debug(f"Failed to broadcast vm_owner_changed: {e}")
 
-    return {"ok": True, "owner_id": body.user_id}
+    response = {"ok": True, "owner_id": body.user_id}
+    if ssh_swap_result is not None:
+        response["ssh_keys_updated"] = ssh_swap_result.get("success", False)
+    return response
 
 
 
