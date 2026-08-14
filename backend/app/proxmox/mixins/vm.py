@@ -372,6 +372,9 @@ class VmMixin:
             try:
                 result = self.proxmox.nodes(node).qemu(vmid).agent('get-fsinfo').get()
                 fslist = result if isinstance(result, list) else result.get('result', [])
+                _SKIP_MOUNTPOINT_PREFIXES = ('/snap/', '/boot/')
+                _SKIP_DISK_PREFIXES = ('loop',)
+
                 disks = []
                 seen_disks: set = set()
                 for fs in fslist:
@@ -380,14 +383,19 @@ class VmMixin:
                     total = fs.get('total-bytes', 0) or 0
                     if total == 0:
                         continue
-                    # Deduplicate by disk+partition key to avoid pseudo-filesystems
-                    disk_key = fs.get('name', '') or fs.get('mountpoint', '')
+                    mountpoint = fs.get('mountpoint', '/')
+                    name = fs.get('name', '')
+                    if any(mountpoint.startswith(p) for p in _SKIP_MOUNTPOINT_PREFIXES):
+                        continue
+                    if any(name.lower().startswith(p) for p in _SKIP_DISK_PREFIXES):
+                        continue
+                    disk_key = name or mountpoint
                     if disk_key in seen_disks:
                         continue
                     seen_disks.add(disk_key)
                     disks.append({
-                        'name': fs.get('name', ''),
-                        'mountpoint': fs.get('mountpoint', '/'),
+                        'name': name,
+                        'mountpoint': mountpoint,
                         'used': fs.get('used-bytes', 0) or 0,
                         'total': total,
                     })
