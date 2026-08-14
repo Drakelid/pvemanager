@@ -73,7 +73,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
       onChange={(e) => setNic(e.target.value)}
       className="ml-1 rounded border border-border bg-background px-1 py-0.5 text-xs text-foreground focus:outline-none"
     >
-      <option value="all">Все</option>
+      <option value="all">{t('common.all')}</option>
       {nics.map((n) => (
         <option key={n} value={n}>
           {n}
@@ -120,7 +120,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
           />
           {hasCustom && (
             <Button variant="outline" size="sm" onClick={resetCustom}>
-              Сбросить
+              {t('common.reset')}
             </Button>
           )}
         </div>
@@ -133,7 +133,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
         </div>
       ) : points.length === 0 ? (
         <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
-          Нет данных
+          {t('common.no_data')}
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -190,7 +190,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
           />
           <ChartCard
             tickFormatter={xTick}
-            title="IOPS чтение"
+            title={t('graphs.iops_read')}
             data={points}
             dataKey="iops_read"
             color="hsl(180, 70%, 40%)"
@@ -199,7 +199,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
           />
           <ChartCard
             tickFormatter={xTick}
-            title="IOPS запись"
+            title={t('graphs.iops_write')}
             data={points}
             dataKey="iops_write"
             color="hsl(300, 60%, 50%)"
@@ -208,7 +208,7 @@ export default function GraphsTab({ serverId, vmid, type, node }: Props) {
           />
           <ChartCard
             tickFormatter={xTick}
-            title="Заполненность диска"
+            title={t('graphs.disk_usage_pct')}
             data={points}
             dataKey="diskpct"
             color="hsl(45, 93%, 47%)"

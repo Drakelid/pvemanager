@@ -816,7 +816,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 <SSHKeyPicker keys={availableKeys} selected={selectedKeyIds} onToggle={toggleKey} />
                 {availableKeys.length === 0 && (
                   <div>
-                    <Label>SSH Keys <span className="text-muted-foreground text-xs font-normal">(безопаснее)</span></Label>
+                    <Label>SSH Keys <span className="text-muted-foreground text-xs font-normal">{t('common.safer')}</span></Label>
                     <textarea
                       className="w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono min-h-[60px]"
                       value={config.ssh_keys}
@@ -1096,7 +1096,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                   <>
                     <div>
                       <Label>IP (CIDR)</Label>
-                      <Input value={lxcConfig.ip_address} onChange={e => setLxcConfig(p => ({ ...p, ip_address: e.target.value }))} placeholder="10.10.10.5/24 или dhcp" />
+                      <Input value={lxcConfig.ip_address} onChange={e => setLxcConfig(p => ({ ...p, ip_address: e.target.value }))} placeholder={t('wizard.ip_cidr_placeholder')} />
                     </div>
                     <div>
                       <Label>Gateway</Label>
@@ -1134,7 +1134,7 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 <SSHKeyPicker keys={availableKeys} selected={selectedKeyIds} onToggle={toggleKey} />
                 {availableKeys.length === 0 && (
                   <div>
-                    <Label>SSH Keys <span className="text-muted-foreground text-xs font-normal">(безопаснее)</span></Label>
+                    <Label>SSH Keys <span className="text-muted-foreground text-xs font-normal">{t('common.safer')}</span></Label>
                     <textarea
                       className="w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono min-h-[60px]"
                       value={lxcConfig.ssh_keys}

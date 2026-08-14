@@ -89,7 +89,7 @@ export default function ScriptEditDialog({ open, onOpenChange, script }: Props) 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>{t('scripts.name', 'Имя')}</Label>
-              <Input value={name} onChange={(e) => handleNameChange(e.target.value)} placeholder="Очистка логов" />
+              <Input value={name} onChange={(e) => handleNameChange(e.target.value)} placeholder={t('scripts.name_placeholder')} />
             </div>
             <div className="space-y-1.5">
               <Label>{t('scripts.slug', 'Slug')}</Label>

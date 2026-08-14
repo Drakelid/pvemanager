@@ -228,14 +228,14 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
             <div className="grid grid-cols-2 gap-3">
               <div><Label>{t('storages.ceph_pool')}</Label><Input value={form.pool} onChange={e => set('pool', e.target.value)} className="mt-1 font-mono" placeholder="vm-pool" /></div>
               <div><Label>{t('storages.username')}</Label><Input value={form.username} onChange={e => set('username', e.target.value)} className="mt-1" placeholder="admin" /></div>
-              <div className="col-span-2"><Label>{t('storages.monhost')}</Label><Input value={form.monhost} onChange={e => set('monhost', e.target.value)} className="mt-1 font-mono" placeholder="10.0.0.1 10.0.0.2 (внешний Ceph)" /></div>
+              <div className="col-span-2"><Label>{t('storages.monhost')}</Label><Input value={form.monhost} onChange={e => set('monhost', e.target.value)} className="mt-1 font-mono" placeholder={t('storages.monhost_placeholder')} /></div>
             </div>
           )}
           {!editing && form.type === 'cephfs' && (
             <div className="grid grid-cols-2 gap-3">
               <div><Label>{t('storages.fsname')}</Label><Input value={form.fsname} onChange={e => set('fsname', e.target.value)} className="mt-1 font-mono" placeholder="cephfs" /></div>
               <div><Label>{t('storages.username')}</Label><Input value={form.username} onChange={e => set('username', e.target.value)} className="mt-1" placeholder="admin" /></div>
-              <div className="col-span-2"><Label>{t('storages.monhost')}</Label><Input value={form.monhost} onChange={e => set('monhost', e.target.value)} className="mt-1 font-mono" placeholder="10.0.0.1 10.0.0.2 (внешний Ceph)" /></div>
+              <div className="col-span-2"><Label>{t('storages.monhost')}</Label><Input value={form.monhost} onChange={e => set('monhost', e.target.value)} className="mt-1 font-mono" placeholder={t('storages.monhost_placeholder')} /></div>
             </div>
           )}
 
