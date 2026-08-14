@@ -646,7 +646,7 @@ function ChangePasswordDialog({ open, onClose, serverId, vmid, type, node, name 
                 className="absolute right-1 top-1 h-7 w-7"
                 onClick={() => setShow((s) => !s)}
               >
-                {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {show ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
               </Button>
             </div>
           </div>

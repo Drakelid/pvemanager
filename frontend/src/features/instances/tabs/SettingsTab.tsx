@@ -432,7 +432,7 @@ function CloudInitCard({ serverId, vmid, type, node }: { serverId: number; vmid:
             <div className="relative">
               <Input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('instances.ci_password_keep')} />
               <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1 h-7 w-7" onClick={() => setShowPw(s => !s)}>
-                {showPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {showPw ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
               </Button>
             </div>
           </div>
