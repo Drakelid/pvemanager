@@ -170,6 +170,21 @@ class StorageMixin:
                 logger.debug(f"volume_exists check failed {storage}/{volid}: {e}")
                 return False
 
+        def delete_volume(self, node: str, storage: str, volid: str) -> bool:
+            """Удалить том из хранилища. volid вида 'storage:content/filename'.
+            Возвращает True при успехе, False при ошибке."""
+            if not self.proxmox:
+                return False
+            # proxmoxer принимает volume без префикса хранилища
+            volume = volid.split(':', 1)[1] if ':' in volid else volid
+            try:
+                self.proxmox.nodes(node).storage(storage).content(volume).delete()
+                logger.info(f"Deleted volume {volid} from {node}:{storage}")
+                return True
+            except Exception as e:
+                logger.warning(f"delete_volume failed {node}:{storage}/{volume}: {e}")
+                return False
+
         def get_download_target_storages(self, node: str, content: str) -> List[Dict]:
             """
             Получить активные хранилища ноды, поддерживающие указанный тип контента

@@ -886,12 +886,18 @@ def _do_image_download_sync(task_id: int, server_id: int, node: str, storage: st
         else:
             dl_filename = filename
 
-        # Идемпотентность: если файл уже есть в хранилище — не качаем повторно
+        # Идемпотентность: если файл уже есть в хранилище — не качаем повторно,
+        # но при наличии контрольной суммы удаляем кэш и перекачиваем, чтобы
+        # Proxmox проверил актуальность образа.
         existing_volid = f'{storage}:{content}/{dl_filename}'
         if client.volume_exists(node, storage, existing_volid):
-            _update_deploy_task(task_id, 'completed', f'Образ {dl_filename} уже в хранилище', 100, node=node)
-            logger.info(f"[IMG DL #{task_id}] {dl_filename} already present on {node}:{storage}")
-            return
+            if checksum:
+                logger.info(f"[IMG DL #{task_id}] Removing cached {existing_volid} to re-verify checksum")
+                client.delete_volume(node, storage, existing_volid)
+            else:
+                _update_deploy_task(task_id, 'completed', f'Образ {dl_filename} уже в хранилище', 100, node=node)
+                logger.info(f"[IMG DL #{task_id}] {dl_filename} already present on {node}:{storage}")
+                return
 
         _update_deploy_task(task_id, 'running', f'Старт загрузки {dl_filename}...', 15, node=node)
         try:
@@ -1057,10 +1063,19 @@ def _do_image_template_sync(task_id: int, server_id: int, node: str,
         filename = _normalize_import_filename(filename)
         import_volid = f'{import_storage}:import/{filename}'
 
+        need_download = True
         if client.volume_exists(node, import_storage, import_volid):
-            # Образ уже скачан прошлой попыткой — пропускаем загрузку (идемпотентность)
-            _update_deploy_task(task_id, 'running', 'Образ уже загружен, пропуск...', 40, node=node)
-        else:
+            if checksum:
+                # Есть кэшированный файл, но задана контрольная сумма — удаляем
+                # и перекачиваем: Proxmox проверит сумму при новой загрузке.
+                logger.info(f"[IMG TPL #{task_id}] Removing cached {import_volid} to re-verify checksum")
+                client.delete_volume(node, import_storage, import_volid)
+            else:
+                # Без контрольной суммы доверяем кэшу (чистая идемпотентность)
+                need_download = False
+                _update_deploy_task(task_id, 'running', 'Образ уже загружен, пропуск...', 40, node=node)
+
+        if need_download:
             _update_deploy_task(task_id, 'running', f'Загрузка образа {filename}...', 10, node=node)
             try:
                 dl_upid = client.download_url(node, import_storage, url, 'import', filename,
