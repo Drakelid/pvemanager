@@ -4,6 +4,20 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [v1.16.1] - 2026-08-17
+
+### 🎨 UI
+
+- **Inter Variable font** — the frontend now uses the variable-weight Inter font with a bumped type scale for sharper, more consistent typography across the panel
+
+### 🔧 Deployment Fixes
+
+- **`pve` CLI installs without root** — `deploy.sh` now tries `sudo` to install the CLI to `/usr/local/bin`, and falls back to `~/.local/bin` (with automatic PATH configuration) when root access is unavailable; previously the auto-install was silently skipped, leaving the `pve` command unavailable after deploy
+- **`pve` CLI file permissions** — the installed script is now set to `755` instead of relying on umask; previously `sudo cp` could leave the file without read permission for non-root users, causing "Permission denied" on every invocation
+- **SSL no longer rolls back on deploy** — `verify_nginx_running` now uses `docker compose ps --format '{{.State}}'` (returns `"running"` immediately) instead of grepping the human-readable STATUS column (which shows `"Up Xs (health: starting)"` for 30 s before the first healthcheck); with the old 20 s timeout the function always timed out, rolling back to HTTP even though the SSL certificate was successfully obtained
+
+---
+
 ## [v1.16.0] - 2026-08-14
 
 ### 🌍 i18n — Full Translation Pass
