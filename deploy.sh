@@ -1030,17 +1030,6 @@ install_pve_cli() {
         return 1
     fi
 
-    if [ "$(id -u)" -ne 0 ]; then
-        if [ "$mode" = "--auto" ]; then
-            print_warning "Не root — пропускаю авто-установку 'pve' CLI в /usr/local/bin."
-            print_info "Чтобы установить вручную: sudo bash $project_dir/deploy.sh --install-cli"
-            return 0
-        fi
-        print_error "Установка требует root-прав."
-        print_info "Выполните: sudo bash deploy.sh --install-cli"
-        return 1
-    fi
-
     # Идемпотентность: если уже установлен и указывает на ту же директорию — пропускаем
     if [ "$mode" = "--auto" ] && [ -f "$install_path" ]; then
         if grep -q "^PVE_DIR=\"$project_dir\"" "$install_path" 2>/dev/null; then
@@ -1049,24 +1038,71 @@ install_pve_cli() {
         fi
     fi
 
-    print_info "Установка pve CLI..."
-    print_info "  Источник  : $pve_source"
-    print_info "  Установка : $install_path"
-
-    # Подставить реальный путь к директории панели
+    # Prepare the patched script in a temp file
+    local tmp_cli
+    tmp_cli=$(mktemp /tmp/pve-cli-XXXXXX)
     if ! sed "s|PVE_DIR=\"/opt/pvemanager\"|PVE_DIR=\"$project_dir\"|g" \
-            "$pve_source" > "$install_path"; then
-        print_error "Не удалось записать $install_path"
+            "$pve_source" > "$tmp_cli"; then
+        rm -f "$tmp_cli"
+        print_error "Не удалось подготовить pve CLI"
         return 1
     fi
-    chmod +x "$install_path"
+    chmod +x "$tmp_cli"
 
-    print_success "pve CLI установлен в $install_path"
-    print_info "Теперь вы можете использовать команду 'pve' из любого места."
+    # Try to install to /usr/local/bin (global PATH)
+    local installed=false
+    if [ "$(id -u)" -eq 0 ]; then
+        cp "$tmp_cli" "$install_path" && installed=true
+    else
+        # Not root — try sudo (password may already be cached from docker ops)
+        if sudo cp "$tmp_cli" "$install_path" 2>/dev/null && \
+           sudo chmod +x "$install_path" 2>/dev/null; then
+            installed=true
+        fi
+    fi
+
+    if [ "$installed" = true ]; then
+        rm -f "$tmp_cli"
+        print_success "pve CLI установлен в $install_path"
+        print_info "Теперь вы можете использовать команду 'pve' из любого места."
+        if [ "$mode" != "--auto" ]; then
+            echo ""
+            "$install_path" help
+        fi
+        return 0
+    fi
+
+    # Fallback: install to ~/.local/bin (works without root)
+    local user_bin="${HOME}/.local/bin"
+    local user_install_path="$user_bin/pve"
+    mkdir -p "$user_bin"
+    cp "$tmp_cli" "$user_install_path"
+    rm -f "$tmp_cli"
+
+    print_success "pve CLI установлен в $user_install_path"
+
+    # Ensure ~/.local/bin is in PATH
+    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$user_bin"; then
+        local shell_rc=""
+        if [ -f "$HOME/.bashrc" ]; then
+            shell_rc="$HOME/.bashrc"
+        elif [ -f "$HOME/.profile" ]; then
+            shell_rc="$HOME/.profile"
+        fi
+
+        if [ -n "$shell_rc" ] && ! grep -q '\.local/bin' "$shell_rc" 2>/dev/null; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$shell_rc"
+            print_info "Добавлен ~/.local/bin в PATH ($shell_rc)"
+        fi
+
+        export PATH="$user_bin:$PATH"
+        print_warning "Для текущей сессии PATH обновлён. Для новых сессий выполните:"
+        print_info "  source $shell_rc"
+    fi
 
     if [ "$mode" != "--auto" ]; then
         echo ""
-        "$install_path" help
+        "$user_install_path" help
     fi
 }
 
