@@ -512,11 +512,17 @@ check_stale_db_volume() {
 # configuration. A bad ssl_certificate path makes nginx exit at startup, so
 # "up -d" returning 0 is not on its own proof that the site is being served.
 verify_nginx_running() {
-    local max_wait=20
+    local max_wait=60
     local waited=0
 
     while [ $waited -lt $max_wait ]; do
-        if docker compose -f compose.yml -f compose.prod.yml ps nginx 2>/dev/null | grep -qi "running\|healthy"; then
+        # Use --format to get the raw container state ("running") instead of
+        # the human-readable STATUS column ("Up Xs (health: starting)") which
+        # does NOT contain the word "running" and only shows "healthy" after
+        # the first healthcheck interval (30s) — longer than the old 20s wait.
+        local state
+        state=$(docker compose -f compose.yml -f compose.prod.yml ps nginx --format '{{.State}}' 2>/dev/null)
+        if [ "$state" = "running" ]; then
             if docker compose -f compose.yml -f compose.prod.yml exec -T nginx nginx -t >/dev/null 2>&1; then
                 return 0
             fi
