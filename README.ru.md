@@ -165,16 +165,14 @@ GITHUB_TOKEN=                     # опционально, для провер�
 |---|---|
 | [WIKI.md](WIKI.md) | Полное руководство пользователя и администратора |
 | [CHANGELOG.md](CHANGELOG.md) | История версий и примечания к выпускам |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Как внести вклад — настройка, стиль кода, процесс PR |
+| [SECURITY.md](SECURITY.md) | Политика безопасности и сообщение об уязвимостях |
 
 ---
 
 ## Участие в разработке
 
-1. Сделайте форк репозитория
-2. Создайте ветку функции: `git checkout -b feature/my-feature`
-3. Зафиксируйте изменения: `git commit -m 'feat: добавьте мою функцию'`
-4. Отправьте: `git push origin feature/my-feature`
-5. Откройте Pull Request
+Мы рады вашему вкладу! См. [CONTRIBUTING.md](CONTRIBUTING.md) — там описаны настройка окружения, стиль кода, формат коммитов и процесс PR.
 
 ---
 
@@ -188,6 +186,6 @@ GITHUB_TOKEN=                     # опционально, для провер�
 
 Сделано с ❤️ для пользователей Proxmox
 
-[Проблемы](https://git.tzim.uz/markmorado/pvemanager/issues) · [История изменений](CHANGELOG.md) · [Вики](WIKI.md)
+[Проблемы](https://git.tzim.uz/markmorado/pvemanager/issues) · [История изменений](CHANGELOG.md) · [Вики](WIKI.md) · [Участие](CONTRIBUTING.md) · [Безопасность](SECURITY.md)
 
 </div>
