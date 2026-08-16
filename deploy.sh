@@ -6,6 +6,10 @@
 set -e
 set -o pipefail
 
+# Save script path and original args for potential re-exec after docker group change
+DEPLOY_SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+DEPLOY_QUOTED_ARGS="$(printf '%q ' "$@")"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -105,12 +109,11 @@ install_docker() {
             ;;
     esac
     
-    # Add current user to docker group
-    if [ "$os" != "macos" ]; then
-        sudo usermod -aG docker $USER
-        print_warning "You may need to log out and back in for docker group changes to take effect"
+    # Add current user to docker group (activated via re-exec in check_requirements)
+    if [ "$os" != "macos" ] && [ "$(id -u)" -ne 0 ]; then
+        sudo usermod -aG docker "$USER"
     fi
-    
+
     print_success "Docker installed successfully"
 }
 
@@ -230,13 +233,23 @@ check_requirements() {
         print_warning "Docker daemon is not running. Starting..."
         sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || true
         sleep 2
-        
+
         if ! docker info &> /dev/null; then
+            # Daemon may be running but the current session lacks the docker group.
+            # `usermod -aG docker` was applied above but only takes effect in a new
+            # login session.  Re-exec the entire script under `sg docker` so the
+            # kernel picks up the supplementary GID without a logout/login cycle.
+            if sudo docker info &> /dev/null && \
+               getent group docker | grep -qw "$(id -un)" && \
+               [ -z "$_DEPLOY_REEXEC" ]; then
+                print_info "Activating docker group and restarting deploy..."
+                exec sg docker -c "_DEPLOY_REEXEC=1 bash \"$DEPLOY_SELF\" $DEPLOY_QUOTED_ARGS"
+            fi
             print_error "Cannot connect to Docker daemon. Please start Docker and try again."
             exit 1
         fi
     fi
-    
+
     print_success "Docker daemon is running"
 }
 
