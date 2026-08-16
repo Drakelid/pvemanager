@@ -73,7 +73,7 @@ function CircularGauge({ label, value }: { label: string; value: number }) {
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="font-mono text-[13px] font-bold tabular-nums">{Math.round(clamped)}</span>
+          <span className="font-mono text-sm font-bold tabular-nums">{Math.round(clamped)}</span>
         </div>
       </div>
       <span className="text-2xs font-mono text-muted-foreground tracking-wide uppercase">{label}</span>

@@ -2,9 +2,11 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-# BuildKit-кеш npm — повторные сборки переиспользуют скачанные пакеты
+# BuildKit-кеш npm — повторные сборки переиспользуют скачанные пакеты.
+# npm install вместо npm ci: кросс-платформенный lockfile (Windows-host)
+# не резолвит Linux-optional deps (@emnapi/core и др.), npm ci падает.
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefer-offline --no-audit --no-fund
+    npm install --prefer-offline --no-audit --no-fund
 
 # ── Dev stage: Vite HMR (используется compose.dev.yml) ───────────────────────
 FROM deps AS dev

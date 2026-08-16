@@ -139,7 +139,7 @@ export default function CommandPalette() {
                       onMouseEnter={() => setActiveIndex(i)}
                       onClick={() => go(item.path)}
                       className={cn(
-                        'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors',
+                        'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium transition-colors',
                         i === activeIndex
                           ? 'bg-primary/10 text-primary'
                           : 'text-foreground hover:bg-accent'

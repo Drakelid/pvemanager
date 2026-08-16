@@ -76,7 +76,7 @@ function SidebarContent() {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
+                    className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
                       isActive
                         ? 'bg-primary/10 text-primary'
                         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -118,7 +118,7 @@ function UserSection() {
               {user?.username?.[0]?.toUpperCase() ?? '?'}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-medium">{user?.username ?? 'User'}</p>
+              <p className="truncate text-sm font-medium">{user?.username ?? 'User'}</p>
               <p className="truncate text-2xs text-muted-foreground">
                 {user?.is_admin ? 'Admin' : 'User'}
               </p>

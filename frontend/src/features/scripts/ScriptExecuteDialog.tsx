@@ -35,7 +35,6 @@ export default function ScriptExecuteDialog({ script, onOpenChange }: Props) {
   // дальше поллим его до завершения (см. useScriptExecution).
   const { data: liveExec } = useScriptExecution(executionId ?? 0);
   const result: ScriptExecution | null = liveExec ?? null;
-  const isRunning = result?.status === 'running';
 
   const serverIdNum = serverId ? Number(serverId) : 0;
   const { data: nodesData } = useNodes(serverIdNum || 0);
@@ -87,7 +86,7 @@ export default function ScriptExecuteDialog({ script, onOpenChange }: Props) {
         params: paramValues,
       },
       {
-        onSuccess: (r) => setResult(r),
+        onSuccess: (r) => setExecutionId(r.id),
         onError: (e) => toast.error((e as Error).message),
       },
     );

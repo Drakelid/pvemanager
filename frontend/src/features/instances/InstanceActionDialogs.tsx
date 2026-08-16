@@ -1010,7 +1010,7 @@ function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>{t('backups.storage')}</Label>
-            <Select value={storage} onValueChange={setStorage}>
+            <Select value={storage} onValueChange={(v) => setStorage(v ?? '')}>
               <SelectTrigger>
                 <SelectValue placeholder={t('backups.select_storage')} />
               </SelectTrigger>
@@ -1031,7 +1031,7 @@ function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>{t('backups.mode')}</Label>
-              <Select value={mode} onValueChange={setMode}>
+              <Select value={mode} onValueChange={(v) => setMode(v ?? '')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="snapshot">Snapshot</SelectItem>
@@ -1042,7 +1042,7 @@ function BackupDialog({ open, onClose, serverId, vmid, type, node, name }: Omit<
             </div>
             <div className="space-y-2">
               <Label>{t('backups.compression')}</Label>
-              <Select value={compress} onValueChange={setCompress}>
+              <Select value={compress} onValueChange={(v) => setCompress(v ?? '')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="zstd">ZSTD</SelectItem>
