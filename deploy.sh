@@ -1053,7 +1053,7 @@ install_pve_cli() {
         print_error "Не удалось подготовить pve CLI"
         return 1
     fi
-    chmod +x "$tmp_cli"
+    chmod 755 "$tmp_cli"
 
     # Try to install to /usr/local/bin (global PATH)
     local installed=false
@@ -1062,7 +1062,7 @@ install_pve_cli() {
     else
         # Not root — try sudo (password may already be cached from docker ops)
         if sudo cp "$tmp_cli" "$install_path" 2>/dev/null && \
-           sudo chmod +x "$install_path" 2>/dev/null; then
+           sudo chmod 755 "$install_path" 2>/dev/null; then
             installed=true
         fi
     fi
