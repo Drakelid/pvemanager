@@ -165,16 +165,14 @@ Configured via the web interface — **Settings → Notifications**:
 |---|---|
 | [WIKI.md](WIKI.md) | Full user and administrator guide |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute — setup, code style, PR process |
+| [SECURITY.md](SECURITY.md) | Security policy and vulnerability reporting |
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit your changes: `git commit -m 'feat: add my feature'`
-4. Push: `git push origin feature/my-feature`
-5. Open a Pull Request
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, commit conventions, and the PR process.
 
 ---
 
@@ -188,6 +186,6 @@ Configured via the web interface — **Settings → Notifications**:
 
 Made with ❤️ for Proxmox users
 
-[Issues](https://git.tzim.uz/markmorado/pvemanager/issues) · [Changelog](CHANGELOG.md) · [Wiki](WIKI.md)
+[Issues](https://git.tzim.uz/markmorado/pvemanager/issues) · [Changelog](CHANGELOG.md) · [Wiki](WIKI.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
 </div>
