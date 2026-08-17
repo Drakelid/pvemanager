@@ -8,6 +8,30 @@ from pydantic import BaseModel, Field, field_validator, model_validator, EmailSt
 
 _HOSTNAME_LABEL_RE = re.compile(r'^(?!-)[A-Za-z0-9-]{1,63}(?<!-)$')
 
+_DNS_NAME_RE = re.compile(r'^[a-zA-Z](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$')
+
+
+def validate_instance_name(name: str) -> str:
+    """Validate that an instance name is a valid DNS label (RFC 952 / RFC 1123).
+
+    Proxmox requires VM/CT names to be valid DNS names: start with a letter,
+    contain only letters, digits and hyphens, end with a letter or digit,
+    max 63 characters.  Underscores, spaces and other special characters are
+    rejected.
+    """
+    name = name.strip()
+    if not name:
+        raise ValueError("Имя не может быть пустым")
+    if len(name) > 63:
+        raise ValueError("Имя не может быть длиннее 63 символов")
+    if not _DNS_NAME_RE.match(name):
+        raise ValueError(
+            "Имя должно быть валидным DNS-именем: начинаться с буквы, "
+            "содержать только латинские буквы, цифры и дефис, "
+            "заканчиваться буквой или цифрой"
+        )
+    return name
+
 
 def validate_host(v: str) -> str:
     """Validate that value is a valid IP address or hostname/FQDN."""

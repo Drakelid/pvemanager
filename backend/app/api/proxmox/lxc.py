@@ -447,6 +447,11 @@ async def deploy_lxc_from_template(
         raise HTTPException(status_code=400, detail="Необходимо указать ostemplate")
     if not req.name or len(req.name) < 1:
         raise HTTPException(status_code=400, detail="Укажите имя контейнера")
+    from ...schemas import validate_instance_name
+    try:
+        req.name = validate_instance_name(req.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Resolve owner / SSH keys
     is_admin = current_user.has_permission("user:manage") or current_user.is_admin

@@ -755,7 +755,8 @@
     "quota_exceeded_hint": "Reduce the resources above to continue.",
     "quota_used_of": "{{used}} of {{limit}}",
     "quota_projection_note": "Including the instance being created.",
-    "ip_cidr_placeholder": "10.10.10.5/24 or dhcp"
+    "ip_cidr_placeholder": "10.10.10.5/24 or dhcp",
+    "invalid_name": "Name must be a valid DNS name: start with a letter, contain only letters, digits and hyphens, end with a letter or digit (e.g. my-app-01)"
   },
   "nodes": {
     "title": "Servers",

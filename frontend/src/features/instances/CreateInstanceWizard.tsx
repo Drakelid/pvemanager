@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
@@ -32,6 +32,39 @@ import {
 import { toast } from 'sonner';
 
 type InstanceKind = 'vm' | 'lxc' | 'iso';
+
+const DNS_NAME_RE = /^[a-zA-Z](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
+function isValidDnsName(name: string): boolean {
+  return name.length > 0 && name.length <= 63 && DNS_NAME_RE.test(name);
+}
+
+function NumericInput({ value, onChange, ...props }: Omit<React.ComponentProps<typeof Input>, 'value' | 'onChange'> & {
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  const [raw, setRaw] = useState(String(value));
+  const committed = useRef(value);
+  if (value !== committed.current) {
+    committed.current = value;
+    setRaw(String(value));
+  }
+  return (
+    <Input
+      {...props}
+      type="number"
+      value={raw}
+      onChange={e => {
+        setRaw(e.target.value);
+        const n = e.target.value === '' ? 0 : Number(e.target.value);
+        if (!Number.isNaN(n)) {
+          committed.current = n;
+          onChange(n);
+        }
+      }}
+    />
+  );
+}
+
 const STEPS = ['server', 'type', 'template', 'config', 'confirm'] as const;
 type Step = (typeof STEPS)[number];
 
@@ -235,9 +268,9 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
       return !!selectedLXCTemplate;
     }
     if (step === 'config') {
-      if (kind === 'vm') return config.name.length >= 2;
-      if (kind === 'iso') return isoConfig.name.length >= 2;
-      return lxcConfig.name.length >= 2;
+      if (kind === 'vm') return isValidDnsName(config.name) && !!config.cloud_init_user.trim() && !!config.cloud_init_password.trim();
+      if (kind === 'iso') return isValidDnsName(isoConfig.name);
+      return isValidDnsName(lxcConfig.name);
     }
     return true;
   };
@@ -689,6 +722,9 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 <div>
                   <Label>{t('common.name')}</Label>
                   <Input value={config.name} onChange={e => setConfig(p => ({ ...p, name: e.target.value }))} placeholder={t('common.placeholder_vm_name')} />
+                  {config.name && !isValidDnsName(config.name) && (
+                    <p className="mt-1 text-xs text-destructive">{t('wizard.invalid_name')}</p>
+                  )}
                 </div>
                 <div>
                   <Label>{t('wizard.target_node')}</Label>
@@ -719,30 +755,27 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               <CardContent className="space-y-3">
                 <div>
                   <Label>vCPU</Label>
-                  <Input
-                    type="number"
+                  <NumericInput
                     min={selectedTemplate?.min_cores || 1}
                     value={config.cores}
-                    onChange={e => setConfig(p => ({ ...p, cores: Number(e.target.value) }))}
+                    onChange={v => setConfig(p => ({ ...p, cores: v }))}
                   />
                 </div>
                 <div>
                   <Label>{t('wizard.memory_mb')}</Label>
-                  <Input
-                    type="number"
+                  <NumericInput
                     min={selectedTemplate?.min_memory || 256}
                     step={256}
                     value={config.memory}
-                    onChange={e => setConfig(p => ({ ...p, memory: Number(e.target.value) }))}
+                    onChange={v => setConfig(p => ({ ...p, memory: v }))}
                   />
                 </div>
                 <div>
                   <Label>{t('wizard.disk_gb')}</Label>
-                  <Input
-                    type="number"
+                  <NumericInput
                     min={selectedTemplate?.min_disk || 5}
                     value={config.disk}
-                    onChange={e => setConfig(p => ({ ...p, disk: Number(e.target.value) }))}
+                    onChange={v => setConfig(p => ({ ...p, disk: v }))}
                   />
                 </div>
                 <div>
@@ -799,12 +832,22 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               <CardHeader className="pb-3"><CardTitle className="text-sm">Cloud-Init</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <Label>{t('wizard.ci_user')}</Label>
-                  <Input value={config.cloud_init_user} onChange={e => setConfig(p => ({ ...p, cloud_init_user: e.target.value }))} placeholder={t('common.placeholder_ubuntu')} />
+                  <Label>{t('wizard.ci_user')} <span className="text-destructive">*</span></Label>
+                  <Input
+                    value={config.cloud_init_user}
+                    onChange={e => setConfig(p => ({ ...p, cloud_init_user: e.target.value }))}
+                    placeholder={t('common.placeholder_ubuntu')}
+                    className={!config.cloud_init_user.trim() ? 'border-destructive' : ''}
+                  />
                 </div>
                 <div>
-                  <Label>{t('wizard.ci_password')}</Label>
-                  <Input type="password" value={config.cloud_init_password} onChange={e => setConfig(p => ({ ...p, cloud_init_password: e.target.value }))} />
+                  <Label>{t('wizard.ci_password')} <span className="text-destructive">*</span></Label>
+                  <Input
+                    type="password"
+                    value={config.cloud_init_password}
+                    onChange={e => setConfig(p => ({ ...p, cloud_init_password: e.target.value }))}
+                    className={!config.cloud_init_password.trim() ? 'border-destructive' : ''}
+                  />
                 </div>
                 {isAdmin && (
                   <SSHOwnerSelector
@@ -844,6 +887,9 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                 <div>
                   <Label>{t('common.name')}</Label>
                   <Input value={isoConfig.name} onChange={e => setIsoConfig(p => ({ ...p, name: e.target.value }))} placeholder={t('common.placeholder_vm_name')} />
+                  {isoConfig.name && !isValidDnsName(isoConfig.name) && (
+                    <p className="mt-1 text-xs text-destructive">{t('wizard.invalid_name')}</p>
+                  )}
                 </div>
                 <div>
                   <Label>{t('wizard.os_type')}</Label>
@@ -887,15 +933,15 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               <CardContent className="space-y-3">
                 <div>
                   <Label>vCPU</Label>
-                  <Input type="number" min={1} value={isoConfig.cores} onChange={e => setIsoConfig(p => ({ ...p, cores: Number(e.target.value) }))} />
+                  <NumericInput min={1} value={isoConfig.cores} onChange={v => setIsoConfig(p => ({ ...p, cores: v }))} />
                 </div>
                 <div>
                   <Label>{t('wizard.memory_mb')}</Label>
-                  <Input type="number" min={256} step={256} value={isoConfig.memory} onChange={e => setIsoConfig(p => ({ ...p, memory: Number(e.target.value) }))} />
+                  <NumericInput min={256} step={256} value={isoConfig.memory} onChange={v => setIsoConfig(p => ({ ...p, memory: v }))} />
                 </div>
                 <div>
                   <Label>{t('wizard.disk_gb')}</Label>
-                  <Input type="number" min={1} value={isoConfig.disk} onChange={e => setIsoConfig(p => ({ ...p, disk: Number(e.target.value) }))} />
+                  <NumericInput min={1} value={isoConfig.disk} onChange={v => setIsoConfig(p => ({ ...p, disk: v }))} />
                 </div>
                 <div>
                   <Label>{t('wizard.storage')}</Label>
@@ -1018,6 +1064,9 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
                     onChange={e => setLxcConfig(p => ({ ...p, name: e.target.value }))}
                     placeholder={t('common.placeholder_vm_name')}
                   />
+                  {lxcConfig.name && !isValidDnsName(lxcConfig.name) && (
+                    <p className="mt-1 text-xs text-destructive">{t('wizard.invalid_name')}</p>
+                  )}
                 </div>
                 <div>
                   <Label>{t('wizard.storage')}</Label>
@@ -1056,19 +1105,19 @@ export default function CreateInstanceWizard({ onClose }: { onClose?: () => void
               <CardContent className="space-y-3">
                 <div>
                   <Label>vCPU</Label>
-                  <Input type="number" min={1} value={lxcConfig.cores} onChange={e => setLxcConfig(p => ({ ...p, cores: Number(e.target.value) }))} />
+                  <NumericInput min={1} value={lxcConfig.cores} onChange={v => setLxcConfig(p => ({ ...p, cores: v }))} />
                 </div>
                 <div>
                   <Label>{t('wizard.memory_mb')}</Label>
-                  <Input type="number" min={64} step={128} value={lxcConfig.memory} onChange={e => setLxcConfig(p => ({ ...p, memory: Number(e.target.value) }))} />
+                  <NumericInput min={64} step={128} value={lxcConfig.memory} onChange={v => setLxcConfig(p => ({ ...p, memory: v }))} />
                 </div>
                 <div>
                   <Label>{t('wizard.swap_mb')}</Label>
-                  <Input type="number" min={0} step={128} value={lxcConfig.swap} onChange={e => setLxcConfig(p => ({ ...p, swap: Number(e.target.value) }))} />
+                  <NumericInput min={0} step={128} value={lxcConfig.swap} onChange={v => setLxcConfig(p => ({ ...p, swap: v }))} />
                 </div>
                 <div>
                   <Label>{t('wizard.disk_gb')}</Label>
-                  <Input type="number" min={1} value={lxcConfig.disk} onChange={e => setLxcConfig(p => ({ ...p, disk: Number(e.target.value) }))} />
+                  <NumericInput min={1} value={lxcConfig.disk} onChange={v => setLxcConfig(p => ({ ...p, disk: v }))} />
                 </div>
               </CardContent>
             </Card>

@@ -1072,6 +1072,12 @@ async def deploy_vm_from_template(
             raise HTTPException(status_code=404, detail="Owner user not found")
         instance_owner_id = owner.id
 
+    from ..schemas import validate_instance_name
+    try:
+        deploy_data.name = validate_instance_name(deploy_data.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # Enforce per-user resource quota (no-op if owner has no quota set)
     from ..services.quota_service import check_quota
     check_quota(db, instance_owner_id, add_cores=cores, add_memory_mb=memory, add_disk_gb=disk)

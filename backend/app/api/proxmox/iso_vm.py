@@ -316,6 +316,11 @@ async def create_vm_from_iso(
         raise HTTPException(status_code=404, detail="Proxmox сервер не найден")
     if not req.name.strip():
         raise HTTPException(status_code=400, detail="Укажите имя ВМ")
+    from ...schemas import validate_instance_name
+    try:
+        req.name = validate_instance_name(req.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not req.node:
         raise HTTPException(status_code=400, detail="Укажите ноду для размещения ВМ")
     if not req.iso:
