@@ -63,6 +63,16 @@ IMAGES=(
   "rocky-9-cloud|rocky|9|Rocky Linux 9 GenericCloud + QGA|arm64|https://download.rockylinux.org/pub/rocky/9/images/aarch64/Rocky-9-GenericCloud.latest.aarch64.qcow2"
   "alma-9-cloud|almalinux|9|AlmaLinux 9 GenericCloud + QGA|amd64|https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2"
   "alma-9-cloud|almalinux|9|AlmaLinux 9 GenericCloud + QGA|arm64|https://repo.almalinux.org/almalinux/9/cloud/aarch64/images/AlmaLinux-9-GenericCloud-latest.aarch64.qcow2"
+  "alma-10-cloud|almalinux|10|AlmaLinux 10 GenericCloud + QGA|amd64|https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-latest.x86_64.qcow2"
+  "alma-10-cloud|almalinux|10|AlmaLinux 10 GenericCloud + QGA|arm64|https://repo.almalinux.org/almalinux/10/cloud/aarch64/images/AlmaLinux-10-GenericCloud-latest.aarch64.qcow2"
+  "centos-stream-9-cloud|centos|9-stream|CentOS Stream 9 GenericCloud + QGA|amd64|https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+  "centos-stream-9-cloud|centos|9-stream|CentOS Stream 9 GenericCloud + QGA|arm64|https://cloud.centos.org/centos/9-stream/aarch64/images/CentOS-Stream-GenericCloud-9-latest.aarch64.qcow2"
+  "debian-13-cloud|debian|13|Debian 13 (Trixie) GenericCloud + QGA|amd64|https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
+  "debian-13-cloud|debian|13|Debian 13 (Trixie) GenericCloud + QGA|arm64|https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-arm64.qcow2"
+  "fedora-41-cloud|fedora|41|Fedora 41 Cloud + QGA|amd64|https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
+  "fedora-41-cloud|fedora|41|Fedora 41 Cloud + QGA|arm64|https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-41-1.4.aarch64.qcow2"
+  "ubuntu-26.04-cloud|ubuntu|26.04|Ubuntu 26.04 LTS (Resolute) Cloud + QGA|amd64|https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img"
+  "ubuntu-26.04-cloud|ubuntu|26.04|Ubuntu 26.04 LTS (Resolute) Cloud + QGA|arm64|https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-arm64.img"
 )
 
 # ── Определение пакетного менеджера и sudo ─────────────────────────────────────

@@ -15,6 +15,7 @@ LXC-шаблоны (vztmpl) здесь НЕ хардкодятся: их спи�
 from typing import Dict, List, Optional, Tuple
 
 _GH = 'https://github.com/markmorado/pvemanager-images/releases/download/2026-08-14'
+_GH2 = 'https://github.com/markmorado/pvemanager-images/releases/download/2026-08-18'
 
 # (id_base, os, version, name, icon, {arch: (url, checksum_or_None)})
 # amd64 → собственное GitHub-зеркало + sha256; arm64 → upstream без checksum
@@ -65,6 +66,46 @@ _CLOUD_IMAGES = [
             'amd64': (f'{_GH}/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2',
                       '49c75c0b49d9831338d06288e7f751f98302144218b462e5d9b2b6fe25c66f5e'),
             'arm64': ('https://repo.almalinux.org/almalinux/9/cloud/aarch64/images/AlmaLinux-9-GenericCloud-latest.aarch64.qcow2', None),
+        },
+    ),
+    (
+        'alma-10-cloud', 'almalinux', '10', 'AlmaLinux 10 GenericCloud', 'almalinux',
+        {
+            'amd64': (f'{_GH2}/AlmaLinux-10-GenericCloud-latest.x86_64.qcow2',
+                      'd0bdbc4fabb365b27e8d4a77118c1100ebdab42341312338e63724a2f9ee217f'),
+            'arm64': ('https://repo.almalinux.org/almalinux/10/cloud/aarch64/images/AlmaLinux-10-GenericCloud-latest.aarch64.qcow2', None),
+        },
+    ),
+    (
+        'centos-stream-9-cloud', 'centos', '9-stream', 'CentOS Stream 9 GenericCloud', 'centos',
+        {
+            'amd64': (f'{_GH2}/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2',
+                      '63c13542e94678b0a41d318e7758f1cf23609564b1cbaa9051616457ce771903'),
+            'arm64': ('https://cloud.centos.org/centos/9-stream/aarch64/images/CentOS-Stream-GenericCloud-9-latest.aarch64.qcow2', None),
+        },
+    ),
+    (
+        'debian-13-cloud', 'debian', '13', 'Debian 13 (Trixie) GenericCloud', 'debian',
+        {
+            'amd64': (f'{_GH2}/debian-13-genericcloud-amd64.qcow2',
+                      '42a4931fc94840d75c9a58ba4cde0bc98365d3998645872c9f4c7244f682198e'),
+            'arm64': ('https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-arm64.qcow2', None),
+        },
+    ),
+    (
+        'fedora-41-cloud', 'fedora', '41', 'Fedora 41 Cloud', 'fedora',
+        {
+            'amd64': (f'{_GH2}/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2',
+                      '6c12ad70a8b5058f032de10d463bda8c93391162e5a72a90c79dd548ecc8e378'),
+            'arm64': ('https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-41-1.4.aarch64.qcow2', None),
+        },
+    ),
+    (
+        'ubuntu-26.04-cloud', 'ubuntu', '26.04', 'Ubuntu 26.04 LTS (Resolute) Cloud', 'ubuntu',
+        {
+            'amd64': (f'{_GH2}/resolute-server-cloudimg-amd64.img',
+                      'b9cd03eb2b9b2ddd59c68c7d577a56835ba7da3d713e085336f493290daec9c8'),
+            'arm64': ('https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-arm64.img', None),
         },
     ),
 ]
