@@ -60,9 +60,9 @@ export default function TemplatesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">{t('nav.templates')}</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" onClick={() => setDownloadOpen(true)}>
             <PackagePlus className="mr-2 h-4 w-4" />{t('templates.download_ct')}
           </Button>
@@ -79,21 +79,21 @@ export default function TemplatesPage() {
           <Input className="pl-9" placeholder={t('common.search')} value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <Select value={groupFilter} onValueChange={v => { if (v !== null) setGroupFilter(v); }}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder={t('templates.all_groups')} /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder={t('templates.all_groups')} /></SelectTrigger>
           <SelectContent>
             <SelectItem value="">{t('templates.all_groups')}</SelectItem>
             {groups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={serverFilter} onValueChange={v => { if (v !== null) setServerFilter(v); }}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder={t('templates.all_servers')} /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder={t('templates.all_servers')} /></SelectTrigger>
           <SelectContent>
             <SelectItem value="">{t('templates.all_servers')}</SelectItem>
             {servers.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={typeFilter} onValueChange={v => { if (v !== null) setTypeFilter(v); }}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder={t('templates.all_types')} /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder={t('templates.all_types')} /></SelectTrigger>
           <SelectContent>
             <SelectItem value="">{t('templates.all_types')}</SelectItem>
             <SelectItem value="qemu">{t('templates.type_kvm')}</SelectItem>
@@ -115,8 +115,8 @@ export default function TemplatesPage() {
           {filtered.map(tpl => (
             <Card key={tpl.id} className="group">
               <CardContent className="p-4 space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-start gap-2">
+                  <div className="shrink-0">
                     {tpl.vm_type === 'qemu' ? (
                       <OsLogo name={tpl.name} className="h-7 w-7" />
                     ) : tpl.group_icon ? (
@@ -124,12 +124,12 @@ export default function TemplatesPage() {
                     ) : (
                       <Monitor className="h-5 w-5 text-muted-foreground" />
                     )}
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm truncate">{tpl.name}</p>
-                      <p className="text-xs text-muted-foreground">{tpl.group_name}</p>
-                    </div>
                   </div>
-                  <div className="flex items-center gap-0.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm truncate" title={tpl.name}>{tpl.name}</p>
+                    <p className="text-xs text-muted-foreground">{tpl.group_name}</p>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
                     <Button
                       variant="ghost"
                       size="sm"
