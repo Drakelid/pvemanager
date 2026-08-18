@@ -33,6 +33,7 @@ import { useGlobalRealtimeSync } from '@/hooks/use-realtime-sync';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import NotificationsDropdown from '@/components/shared/NotificationsDropdown';
+import ActiveTasksIndicator from '@/components/shared/ActiveTasksIndicator';
 import CommandPalette from '@/components/shared/CommandPalette';
 import MinimizedOpsTray from '@/components/shared/MinimizedOpsTray';
 import { navGroups, canSeeNavItem } from '@/lib/nav-items';
@@ -275,6 +276,7 @@ function TopBar() {
           <TooltipContent>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</TooltipContent>
         </Tooltip>
 
+        <ActiveTasksIndicator />
         <NotificationsDropdown />
       </div>
     </header>

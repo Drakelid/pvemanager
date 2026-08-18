@@ -1690,7 +1690,10 @@
     "server": "Server",
     "node": "Node",
     "started": "Started",
-    "progress": "Progress"
+    "progress": "Progress",
+    "active_count_one": "{{count}} active task",
+    "active_count_other": "{{count}} active tasks",
+    "no_active": "No active tasks"
   },
   "notifications": {
     "title": "Notifications",

@@ -2093,7 +2093,7 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                         raise
             except Exception as e:
                 logger.error(f"Ошибка создания LXC контейнера {vmid}: {e}")
-                return None
+                raise
 
         def clone_lxc_container(
             self,

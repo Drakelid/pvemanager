@@ -1675,7 +1675,11 @@
     "server": "Сервер",
     "node": "Узел",
     "started": "Запущено",
-    "progress": "Прогресс"
+    "progress": "Прогресс",
+    "active_count_one": "{{count}} активная задача",
+    "active_count_few": "{{count}} активные задачи",
+    "active_count_many": "{{count}} активных задач",
+    "no_active": "Нет активных задач"
   },
   "notifications": {
     "title": "Уведомления",

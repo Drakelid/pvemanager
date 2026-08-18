@@ -721,23 +721,26 @@ def poc_install(db: Session, spec: InstallSpec, on_step: StepCb = _noop) -> Inst
         on_step(f"Создание LXC VMID {vmid} на ноде {node}...", 20)
         ip_cfg = spec.ip_config or "ip=dhcp"
         net0 = f"name=eth0,bridge={spec.bridge},{ip_cfg},firewall=1"
-        upid = client.create_lxc_container(
-            node=node,
-            vmid=vmid,
-            ostemplate=spec.ostemplate,
-            hostname=spec.name,
-            cores=spec.cores,
-            memory=spec.memory,
-            swap=spec.swap,
-            storage=spec.storage,
-            rootfs_size=spec.disk,
-            net0=net0,
-            features=spec.features,       # nesting=1,keyctl=1 — критично для Docker
-            unprivileged=True,
-            start_after_create=False,
-            description=f"pvemanager-appstore: {spec.name}",
-            nameserver=spec.nameserver or settings.APPSTORE_NAMESERVER,
-        )
+        try:
+            upid = client.create_lxc_container(
+                node=node,
+                vmid=vmid,
+                ostemplate=spec.ostemplate,
+                hostname=spec.name,
+                cores=spec.cores,
+                memory=spec.memory,
+                swap=spec.swap,
+                storage=spec.storage,
+                rootfs_size=spec.disk,
+                net0=net0,
+                features=spec.features,       # nesting=1,keyctl=1 — критично для Docker
+                unprivileged=True,
+                start_after_create=False,
+                description=f"pvemanager-appstore: {spec.name}",
+                nameserver=spec.nameserver or settings.APPSTORE_NAMESERVER,
+            )
+        except Exception as e:
+            raise PocError(f"Ошибка создания контейнера: {e}") from e
         if not upid:
             raise PocError("Proxmox не вернул UPID создания контейнера")
 

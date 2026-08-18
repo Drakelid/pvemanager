@@ -12,7 +12,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from ...auth import PermissionChecker
@@ -53,6 +53,13 @@ class LXCDeployRequest(BaseModel):
     ipam_pool_id: Optional[int] = None
     password: Optional[str] = None
     ssh_keys: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v):
+        if v is not None and len(v) < 5:
+            raise ValueError("Пароль должен содержать не менее 5 символов (требование Proxmox)")
+        return v
     ssh_key_ids: Optional[List[int]] = None
     owner_id: Optional[int] = None
     nameserver: Optional[str] = None
@@ -225,26 +232,31 @@ def _do_lxc_deploy(task_id: int, req: LXCDeployRequest, user_id: int, username: 
         _update_task(task_id, "running", f"Создание LXC контейнера VMID {new_vmid}...", 35,
                      vmid=new_vmid, node=deploy_node)
         net0_str = f"name=eth0,bridge={req.bridge},{ip_config},firewall=1"
-        upid = client.create_lxc_container(
-            node=deploy_node,
-            vmid=new_vmid,
-            ostemplate=req.ostemplate,
-            hostname=req.name,
-            cores=req.cores,
-            memory=req.memory,
-            swap=req.swap,
-            storage=req.storage,
-            rootfs_size=req.disk,
-            net0=net0_str,
-            nameserver=req.nameserver,
-            searchdomain=req.searchdomain,
-            password=req.password,
-            ssh_public_keys=req.ssh_keys,
-            unprivileged=req.unprivileged,
-            start_after_create=False,  # we start manually after config
-            onboot=req.onboot,
-            description=f"Created from {req.ostemplate} by {username}",
-        )
+        try:
+            upid = client.create_lxc_container(
+                node=deploy_node,
+                vmid=new_vmid,
+                ostemplate=req.ostemplate,
+                hostname=req.name,
+                cores=req.cores,
+                memory=req.memory,
+                swap=req.swap,
+                storage=req.storage,
+                rootfs_size=req.disk,
+                net0=net0_str,
+                nameserver=req.nameserver,
+                searchdomain=req.searchdomain,
+                password=req.password,
+                ssh_public_keys=req.ssh_keys,
+                unprivileged=req.unprivileged,
+                start_after_create=False,  # we start manually after config
+                onboot=req.onboot,
+                description=f"Created from {req.ostemplate} by {username}",
+            )
+        except Exception as e:
+            _update_task(task_id, "failed", "Ошибка создания контейнера", 35,
+                         error=f"Proxmox: {e}")
+            return
         if not upid:
             _update_task(task_id, "failed", "Ошибка создания контейнера", 35,
                          error="Proxmox не вернул UPID задачи создания контейнера")
