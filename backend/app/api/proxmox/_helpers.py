@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from loguru import logger
 from typing import List, Optional
+import re
 import ssl
 import asyncio
 import httpx
@@ -16,6 +17,76 @@ from ...proxmox import ProxmoxClient, get_proxmox_resources
 from ...auth import get_current_user, PermissionChecker, require_permission, check_permission
 from ...logging_service import LoggingService
 from ...ipam_service import IPAMService
+
+
+# ==================== OS name derivation ====================
+
+# Known LXC distro slugs → human-readable display name.
+_LXC_DISTRO_NAMES = {
+    "debian": "Debian",
+    "ubuntu": "Ubuntu",
+    "alpine": "Alpine",
+    "fedora": "Fedora",
+    "centos": "CentOS",
+    "rockylinux": "Rocky Linux",
+    "rocky": "Rocky Linux",
+    "almalinux": "AlmaLinux",
+    "alma": "AlmaLinux",
+    "archlinux": "Arch Linux",
+    "arch": "Arch Linux",
+    "opensuse": "openSUSE",
+    "gentoo": "Gentoo",
+    "devuan": "Devuan",
+    "nixos": "NixOS",
+    "oracle": "Oracle Linux",
+    "oraclelinux": "Oracle Linux",
+    "kali": "Kali Linux",
+    "mint": "Linux Mint",
+    "slackware": "Slackware",
+    "void": "Void Linux",
+}
+
+
+def pretty_os_from_template(template_name: Optional[str]) -> Optional[str]:
+    """Derive a friendly OS name (e.g. "Debian 13", "Ubuntu 24.04") from an
+    LXC CT template volid/filename such as
+    ``local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst``.
+
+    Returns ``None`` if the input doesn't look like a CT template path, so the
+    caller can fall back to its previous value.
+    """
+    if not template_name:
+        return None
+
+    # Only vztmpl-style paths carry a distro/version in the filename. VM clone
+    # templates keep their own descriptive names — leave those untouched.
+    if "vztmpl" not in template_name and "/" not in template_name and ".tar" not in template_name:
+        return None
+
+    # Strip storage prefix and directory: keep just the filename.
+    base = template_name.rsplit("/", 1)[-1]
+    # Head is everything before the first underscore, e.g.
+    # "debian-13-standard", "ubuntu-24.04-standard", "centos-9-stream-default".
+    head = base.split("_", 1)[0]
+    tokens = head.split("-")
+    if not tokens:
+        return None
+
+    distro = _LXC_DISTRO_NAMES.get(tokens[0].lower())
+    if not distro:
+        return None
+
+    # First token that looks like a version number (digits, optionally dotted).
+    version = next((t for t in tokens[1:] if re.match(r"^\d+(\.\d+)*$", t)), None)
+    # Preserve edition qualifiers like "stream" (CentOS Stream) when present.
+    edition = "Stream" if "stream" in (t.lower() for t in tokens[1:]) else None
+
+    parts = [distro]
+    if version:
+        parts.append(version)
+    if edition:
+        parts.append(edition)
+    return " ".join(parts)
 
 
 # ==================== Helper Functions for User Isolation ====================

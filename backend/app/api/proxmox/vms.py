@@ -22,7 +22,7 @@ from ...ipam_service import IPAMService
 from ._helpers import (check_vm_access, require_vm_access, _get_proxmox_client,
                         get_next_vmid, archive_and_delete_snapshots,
                         save_vm_instance, get_vm_instance, soft_delete_vm_instance,
-                        can_view_all_instances)
+                        can_view_all_instances, pretty_os_from_template)
 from ...services.metrics_history import query_instance_metrics, timeframe_to_range
 
 router = APIRouter()
@@ -283,8 +283,15 @@ def get_all_virtual_machines(
             if network:
                 ip_network_name = network.name
         
-        # OS type - prefer template_name, fallback to os_type
-        os_template = vm.template_name or vm.os_type or ("QEMU/KVM" if vm.vm_type == "qemu" else "Linux")
+        # OS type - prefer a friendly name derived from the CT template file
+        # (e.g. "Debian 13" instead of the raw "local:vztmpl/debian-13-...tar.zst"),
+        # then fall back to the raw template_name / os_type.
+        os_template = (
+            pretty_os_from_template(vm.template_name)
+            or vm.template_name
+            or vm.os_type
+            or ("QEMU/KVM" if vm.vm_type == "qemu" else "Linux")
+        )
         if not vm.template_name and vm.vm_type == "lxc" and os_template:
             os_template = os_template.capitalize()
 
