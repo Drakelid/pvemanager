@@ -16,6 +16,7 @@ import {
   Package,
   Terminal,
   UserCog,
+  Waypoints,
 } from 'lucide-react';
 import { hasPermission } from './permissions';
 
@@ -64,6 +65,7 @@ export const navGroups: NavGroup[] = [
   {
     title: 'Network',
     items: [
+      { label: 'Topology', icon: Waypoints, path: '/topology', permission: 'network:view' },
       { label: 'IPAM', icon: Globe, path: '/ipam', permission: 'ipam:view' },
       { label: 'Networks', icon: Network, path: '/networks', permission: 'server:manage' },
     ],

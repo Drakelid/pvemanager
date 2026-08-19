@@ -1,0 +1,35 @@
+/* React Flow chrome follows the panel's design tokens, in both themes. */
+.topology-canvas .react-flow {
+  --xy-background-color: var(--background);
+  --xy-edge-stroke: var(--border);
+  --xy-edge-stroke-selected: var(--primary);
+  --xy-node-border-radius: var(--radius);
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-color-hover: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-minimap-background-color: var(--card);
+  --xy-minimap-mask-background-color-props: color-mix(in oklab, var(--background) 70%, transparent);
+  --xy-attribution-background-color: transparent;
+}
+
+/* Nodes bring their own card styling; the default white box would fight it. */
+.topology-canvas .react-flow__node {
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: auto;
+  font-size: inherit;
+  color: inherit;
+}
+
+.topology-canvas .react-flow__handle {
+  width: 6px;
+  height: 6px;
+  border: none;
+}
+
+.topology-canvas .react-flow__attribution {
+  opacity: 0.4;
+}

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getTasksWebSocket } from '@/lib/websocket';
 import { vmKeys } from './use-instances';
 import { nodeKeys } from './use-nodes';
+import { topologyKeys } from './use-topology';
 
 /**
  * Глобальная подписка на real-time события WebSocket, которая инвалидирует
@@ -41,11 +42,13 @@ export function useGlobalRealtimeSync() {
         old?.filter((vm) => !(vm.server_id === msg.server_id && vm.vmid === msg.vmid))
       );
       qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+      qc.invalidateQueries({ queryKey: topologyKeys.all });
     });
 
     const unsubVmCreated = ws.onType('vm_created', () => {
       qc.invalidateQueries({ queryKey: vmKeys.all });
       qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+      qc.invalidateQueries({ queryKey: topologyKeys.all });
     });
 
     const unsubVmOwnerChanged = ws.onType('vm_owner_changed', (data: unknown) => {
@@ -73,6 +76,8 @@ export function useGlobalRealtimeSync() {
       // Список VM/LXC зависит от набора серверов и их online-статуса
       qc.invalidateQueries({ queryKey: vmKeys.all });
       qc.invalidateQueries({ queryKey: vmKeys.resourcesAll });
+      // Топология рисует те же серверы/ноды — иначе граф останется старым
+      qc.invalidateQueries({ queryKey: topologyKeys.all });
     };
 
     const unsubServerAdded = ws.onType('server_added', invalidateServerCaches);

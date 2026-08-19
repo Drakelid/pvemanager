@@ -4,6 +4,18 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [Unreleased]
+
+### ✨ Network topology page
+
+- **New `/topology` page** — an interactive map of the infrastructure: panel → cluster → Proxmox node → VM/LXC, rendered with React Flow. Node cards carry live CPU/RAM meters, guests show status, IP, bridge/VLAN and tags
+- **Filters** — narrow the graph to one connection, filter guests by status (all / running / stopped), and collapse a node's guests into a single badge above a configurable threshold (remembered per browser); expand a collapsed node individually
+- **Canvas tools** — zoom, pan, fit-to-screen, fullscreen, minimap, legend and PNG/SVG export of the whole graph
+- **New API `GET /proxmox/api/network/topology`** — one aggregated request instead of fanning out over servers/nodes/SDN/VMs; gated on `network:view`, honours workspace scoping and per-owner VM isolation. Unreachable connections degrade to cached data plus a warning instead of failing the page
+- **`netN` parser** — guest NIC strings are now parsed (bridge, VLAN tag, MAC, model, firewall, rate, MTU) for both the QEMU and LXC dialects, available via `include_nics=true`
+
+---
+
 ## [v1.16.1] - 2026-08-17
 
 ### 🎨 UI

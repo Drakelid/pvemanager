@@ -861,3 +861,115 @@ class WorkspaceResponse(BaseModel):
 class WorkspaceDetail(WorkspaceResponse):
     servers: List[WorkspaceServerItem] = []
     users: List[WorkspaceUserItem] = []
+
+
+# ==================== Network topology ====================
+# Response shape for GET /proxmox/api/network/topology. Deliberately a domain
+# hierarchy (panel → cluster → node → guest) rather than ready-made graph
+# nodes/edges: the frontend derives edges from nesting, and the grouping
+# threshold changes the rendered node count client-side without a round-trip.
+# Fields the graph does not draw yet (bridges, nic.bridge/vlan_tag, tags) are
+# the groundwork for the planned "group by VLAN / by tag" views.
+
+
+class TopologyNic(BaseModel):
+    """One guest network card, parsed out of its ``netN`` config string."""
+
+    key: str
+    model: Optional[str] = None
+    mac: Optional[str] = None
+    bridge: Optional[str] = None
+    vlan_tag: Optional[int] = None
+    trunks: List[int] = []
+    firewall: bool = False
+    link_down: bool = False
+    name: Optional[str] = None
+    ip: Optional[str] = None
+    gw: Optional[str] = None
+    rate: Optional[float] = None
+    mtu: Optional[int] = None
+
+
+class TopologyBridge(BaseModel):
+    """A bridge / bond / SDN vnet a guest can be attached to."""
+
+    name: str
+    type: Optional[str] = None
+    cidr: Optional[str] = None
+    vlan_aware: bool = False
+    ports: Optional[str] = None
+    active: bool = False
+    zone: Optional[str] = None
+    ipam_network_id: Optional[int] = None
+    ipam_cidr: Optional[str] = None
+    ipam_name: Optional[str] = None
+
+
+class TopologyGuest(BaseModel):
+    id: str
+    server_id: int
+    node: str
+    vmid: int
+    type: str                      # "qemu" | "lxc"
+    name: str
+    status: str                    # running | stopped | paused | unknown
+    is_template: bool = False
+    lock: Optional[str] = None
+    cpu: Optional[float] = None
+    cores: Optional[int] = None
+    mem: Optional[int] = None
+    maxmem: Optional[int] = None
+    disk: Optional[int] = None
+    maxdisk: Optional[int] = None
+    uptime: Optional[int] = None
+    tags: List[str] = []
+    owner_id: Optional[int] = None
+    owner_username: Optional[str] = None
+    ip: Optional[str] = None
+    nics: List[TopologyNic] = []
+
+
+class TopologyNode(BaseModel):
+    id: str
+    server_id: int
+    server_name: str
+    node: str
+    status: str                    # online | offline | unknown
+    stale: bool = False            # True → rebuilt from cache, server unreachable
+    cpu: Optional[float] = None
+    maxcpu: Optional[int] = None
+    mem: Optional[int] = None
+    maxmem: Optional[int] = None
+    uptime: Optional[int] = None
+    bridges: List[TopologyBridge] = []
+    guests: List[TopologyGuest] = []
+
+
+class TopologyCluster(BaseModel):
+    id: str
+    name: str
+    kind: str                      # "cluster" | "standalone"
+    server_ids: List[int] = []
+    online: bool = False
+    nodes: List[TopologyNode] = []
+
+
+class TopologyWarning(BaseModel):
+    server_id: Optional[int] = None
+    server_name: Optional[str] = None
+    code: str                      # offline | no_credentials | error | nics_truncated
+    message: str
+
+
+class TopologyPanelSummary(BaseModel):
+    name: str = "PVEmanager"
+    cluster_count: int = 0
+    node_count: int = 0
+    guest_count: int = 0
+
+
+class NetworkTopologyResponse(BaseModel):
+    generated_at: datetime
+    panel: TopologyPanelSummary
+    clusters: List[TopologyCluster] = []
+    warnings: List[TopologyWarning] = []

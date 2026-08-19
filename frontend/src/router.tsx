@@ -25,6 +25,7 @@ const TemplatesPage = lazy(() => import('./features/templates/TemplatesPage.tsx'
 const ImagesPage = lazy(() => import('./features/images/ImagesPage.tsx'));
 const BackupsPage = lazy(() => import('./features/backups/BackupsPage.tsx'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage.tsx'));
+const TopologyPage = lazy(() => import('./features/topology/TopologyPage.tsx'));
 const IPAMDashboardPage = lazy(() => import('./features/ipam/IPAMDashboardPage.tsx'));
 const IPAMNetworksPage = lazy(() => import('./features/ipam/IPAMNetworksPage.tsx'));
 const IPAMNetworkDetailPage = lazy(() => import('./features/ipam/IPAMNetworkDetailPage.tsx'));
@@ -111,6 +112,7 @@ export const router = createBrowserRouter([
           { path: '/images', element: <Page perm="template:manage"><ImagesPage /></Page> },
           { path: '/backups', element: <Page perm="backup:view"><BackupsPage /></Page> },
           { path: '/tasks', element: <Page perm="vm:view"><TasksPage /></Page> },
+          { path: '/topology', element: <Page perm="network:view"><TopologyPage /></Page> },
           { path: '/ipam', element: <Page perm="ipam:view"><IPAMDashboardPage /></Page> },
           { path: '/ipam/networks', element: <Page perm="ipam:view"><IPAMNetworksPage /></Page> },
           { path: '/ipam/network/:id', element: <Page perm="ipam:view"><IPAMNetworkDetailPage /></Page> },

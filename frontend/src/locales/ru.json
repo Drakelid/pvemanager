@@ -23,7 +23,8 @@
     "my apps": "Мои приложения",
     "search": "Поиск разделов",
     "searchPlaceholder": "Перейти к разделу...",
-    "searchEmpty": "Ничего не найдено"
+    "searchEmpty": "Ничего не найдено",
+    "topology": "Топология"
   },
   "appstore": {
     "title": "Каталог приложений",
@@ -311,7 +312,6 @@
     "queued": "В очереди...",
     "no_data": "Нет данных",
     "confirm_delete": "Вы уверены, что хотите удалить?",
-    "no_data": "Нет данных",
     "all": "Все",
     "date": "Дата",
     "user": "Пользователь",
@@ -2007,5 +2007,75 @@
     "notafter": "Действителен до",
     "pubkey": "Ключ",
     "fingerprint": "Отпечаток"
+  },
+  "topology": {
+    "title": "Топология сети",
+    "subtitle": "Иерархическая карта кластеров, нод и гостей",
+    "empty": "Нет доступных серверов",
+    "error": "Не удалось загрузить топологию",
+    "too_many": "Слишком много объектов — включена группировка",
+    "filters": {
+      "connection": "Подключение",
+      "all_connections": "Все подключения",
+      "vm_status": "Статус VM",
+      "status_all": "Все",
+      "status_running": "Запущенные",
+      "status_stopped": "Остановленные",
+      "threshold": "Группировать VM свыше",
+      "threshold_off": "Выкл"
+    },
+    "actions": {
+      "fit": "Вписать в экран",
+      "fullscreen": "Полный экран",
+      "exit_fullscreen": "Выйти из полного экрана",
+      "export": "Экспорт",
+      "export_png": "Экспорт в PNG",
+      "export_svg": "Экспорт в SVG",
+      "refresh": "Обновить"
+    },
+    "export": {
+      "progress": "Готовим изображение…",
+      "done": "Изображение сохранено",
+      "failed": "Не удалось экспортировать",
+      "svg_hint": "SVG содержит HTML внутри; некоторые векторные редакторы отрисуют его частично"
+    },
+    "legend": {
+      "title": "Легенда",
+      "panel": "Панель",
+      "cluster": "Кластер",
+      "standalone": "Отдельный сервер",
+      "node": "Нода Proxmox",
+      "vm": "Виртуальная машина",
+      "lxc": "Контейнер",
+      "running": "Запущен",
+      "stopped": "Остановлен",
+      "stale": "Данные из кэша"
+    },
+    "node": {
+      "cpu": "CPU",
+      "ram": "RAM",
+      "clusters_count_one": "{{count}} кластер",
+      "clusters_count_few": "{{count}} кластера",
+      "clusters_count_many": "{{count}} кластеров",
+      "nodes_count_one": "{{count}} нода",
+      "nodes_count_few": "{{count}} ноды",
+      "nodes_count_many": "{{count}} нод",
+      "guests_count_one": "{{count}} гость",
+      "guests_count_few": "{{count}} гостя",
+      "guests_count_many": "{{count}} гостей"
+    },
+    "group": {
+      "count_one": "{{count}} VM",
+      "count_few": "{{count}} VM",
+      "count_many": "{{count}} VM",
+      "count_other": "{{count}} VM",
+      "expand": "Показать все",
+      "collapse": "Свернуть",
+      "breakdown": "{{running}} запущено · {{stopped}} остановлено"
+    },
+    "warning": {
+      "offline": "{{server}} недоступен — показаны данные из кэша",
+      "error": "{{server}}: {{message}}"
+    }
   }
 }

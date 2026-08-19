@@ -23,7 +23,8 @@
     "my apps": "My Apps",
     "search": "Search sections",
     "searchPlaceholder": "Jump to a section...",
-    "searchEmpty": "No results found"
+    "searchEmpty": "No results found",
+    "topology": "Topology"
   },
   "appstore": {
     "title": "App Store",
@@ -1898,5 +1899,70 @@
     "notafter": "Valid until",
     "pubkey": "Key",
     "fingerprint": "Fingerprint"
+  },
+  "topology": {
+    "title": "Network topology",
+    "subtitle": "Hierarchical map of clusters, nodes and guests",
+    "empty": "No servers available",
+    "error": "Failed to load topology",
+    "too_many": "Too many objects; grouping is enabled",
+    "filters": {
+      "connection": "Connection",
+      "all_connections": "All connections",
+      "vm_status": "VM status",
+      "status_all": "All",
+      "status_running": "Running",
+      "status_stopped": "Stopped",
+      "threshold": "Group VMs above",
+      "threshold_off": "Off"
+    },
+    "actions": {
+      "fit": "Fit to screen",
+      "fullscreen": "Fullscreen",
+      "exit_fullscreen": "Exit fullscreen",
+      "export": "Export",
+      "export_png": "Export PNG",
+      "export_svg": "Export SVG",
+      "refresh": "Refresh"
+    },
+    "export": {
+      "progress": "Rendering image…",
+      "done": "Image saved",
+      "failed": "Export failed",
+      "svg_hint": "SVG embeds HTML; some vector editors render it only partially"
+    },
+    "legend": {
+      "title": "Legend",
+      "panel": "Panel",
+      "cluster": "Cluster",
+      "standalone": "Standalone",
+      "node": "Proxmox node",
+      "vm": "Virtual machine",
+      "lxc": "Container",
+      "running": "Running",
+      "stopped": "Stopped",
+      "stale": "Cached data"
+    },
+    "node": {
+      "cpu": "CPU",
+      "ram": "RAM",
+      "clusters_count_one": "{{count}} cluster",
+      "clusters_count_other": "{{count}} clusters",
+      "nodes_count_one": "{{count}} node",
+      "nodes_count_other": "{{count}} nodes",
+      "guests_count_one": "{{count}} guest",
+      "guests_count_other": "{{count}} guests"
+    },
+    "group": {
+      "count": "{{count}} VMs",
+      "count_one": "{{count}} VM",
+      "expand": "Show all",
+      "collapse": "Collapse",
+      "breakdown": "{{running}} running · {{stopped}} stopped"
+    },
+    "warning": {
+      "offline": "{{server}} is unreachable — showing cached data",
+      "error": "{{server}}: {{message}}"
+    }
   }
 }

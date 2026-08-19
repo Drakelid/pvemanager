@@ -15,6 +15,7 @@ from .pools import router as pools_router
 from .disks import router as disks_router
 from .access import router as access_router
 from .node_admin import router as node_admin_router
+from .topology import router as topology_router
 from ._helpers import get_next_vmid, save_vm_instance, get_vm_instance
 
 router = APIRouter()
@@ -34,3 +35,4 @@ router.include_router(pools_router)
 router.include_router(disks_router)
 router.include_router(access_router)
 router.include_router(node_admin_router)
+router.include_router(topology_router)
