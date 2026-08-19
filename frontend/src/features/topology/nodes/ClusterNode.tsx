@@ -19,7 +19,7 @@ function ClusterNodeImpl({ data }: NodeProps) {
         cluster.online ? 'border-emerald-500/60' : 'border-border',
       )}
     >
-      <Handle type="target" position={Position.Left} isConnectable={false} className="!bg-border" />
+      <Handle type="target" position={Position.Top} isConnectable={false} className="!bg-border" />
       <div className="flex items-center gap-2">
         <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
         <span className="truncate text-sm font-medium">{cluster.name}</span>
@@ -40,7 +40,7 @@ function ClusterNodeImpl({ data }: NodeProps) {
           {t('topology.node.nodes_count', { count: nodeCount })} · {t('topology.node.guests_count', { count: guestCount })}
         </span>
       </div>
-      <Handle type="source" position={Position.Right} isConnectable={false} className="!bg-border" />
+      <Handle type="source" position={Position.Bottom} isConnectable={false} className="!bg-border" />
     </div>
   );
 }

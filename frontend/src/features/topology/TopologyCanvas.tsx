@@ -31,7 +31,7 @@ const nodeTypes = {
   guestGroup: GuestGroupNode,
 } as const;
 
-const defaultEdgeOptions = { type: 'smoothstep' as const, animated: false };
+const defaultEdgeOptions = { type: 'smoothstep' as const, animated: true };
 
 // Above this many nodes React Flow only mounts what is on screen, and the
 // minimap (which renders every node again) is dropped.

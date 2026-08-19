@@ -1,4 +1,4 @@
-import { getNodesBounds, getViewportForBounds, type Node } from '@xyflow/react';
+import { getViewportForBounds, type Rect } from '@xyflow/react';
 import { toPng, toSvg } from 'html-to-image';
 
 const MAX_SIDE = 4096;
@@ -12,16 +12,50 @@ const MAX_SIDE = 4096;
  *
  * The capture always covers the whole graph rather than the current viewport,
  * which is what people expect from an export button.
+ *
+ * `bounds` must come from the `useReactFlow().getNodesBounds()` hook, not the
+ * standalone `getNodesBounds` helper - the standalone version has no access to
+ * each node's measured width/height and silently treats them as zero, which
+ * undersizes the canvas and clips the last row/column of the graph.
  */
 export async function exportGraph(
-  nodes: Node[],
+  bounds: Rect,
+  hasNodes: boolean,
   format: 'png' | 'svg',
   filename: string,
 ): Promise<void> {
   const viewport = document.querySelector<HTMLElement>('.react-flow__viewport');
-  if (!viewport || nodes.length === 0) return;
+  if (!viewport || !hasNodes) return;
 
-  const bounds = getNodesBounds(nodes);
+  // Edges live inside a nested <svg> (`.react-flow__edges`). html-to-image
+  // clones any <svg> with the browser's native `cloneNode(true)` instead of
+  // its own computed-style-inlining walk (see cloneChildren in
+  // html-to-image/lib/clone-node.js, which returns early for svg elements),
+  // so nothing that comes from an external stylesheet - including React
+  // Flow's own `.react-flow__edge-path { stroke: var(--xy-edge-stroke) }` -
+  // survives into the clone. The path has no inline style of its own, so the
+  // exported edge ends up with no stroke at all. Give every edge element an
+  // explicit inline stroke (its current resolved color) right before
+  // capture, then revert once the capture is done.
+  const edgeLayer = viewport.querySelector<SVGElement>('.react-flow__edges');
+  const restoreEdgeStyles: Array<() => void> = [];
+  if (edgeLayer) {
+    const styledEls = edgeLayer.querySelectorAll<SVGElement>('path, circle, polygon, rect');
+    styledEls.forEach((el) => {
+      const computed = getComputedStyle(el);
+      const prevStroke = el.style.stroke;
+      const prevFill = el.style.fill;
+      const stroke = computed.stroke;
+      const fill = computed.fill;
+      if (stroke && stroke !== 'none') el.style.stroke = stroke;
+      if (fill && fill !== 'none') el.style.fill = fill;
+      restoreEdgeStyles.push(() => {
+        el.style.stroke = prevStroke;
+        el.style.fill = prevFill;
+      });
+    });
+  }
+
   const padding = 40;
   // Size the canvas to the graph itself, not an arbitrary minimum - forcing a
   // larger canvas than the content needs a zoom above the 2x cap to fill it,
@@ -54,7 +88,12 @@ export async function exportGraph(
     pixelRatio: format === 'png' ? 2 : 1,
   };
 
-  const dataUrl = format === 'png' ? await toPng(viewport, options) : await toSvg(viewport, options);
+  let dataUrl: string;
+  try {
+    dataUrl = format === 'png' ? await toPng(viewport, options) : await toSvg(viewport, options);
+  } finally {
+    restoreEdgeStyles.forEach((restore) => restore());
+  }
 
   const link = document.createElement('a');
   link.download = `${filename}.${format}`;

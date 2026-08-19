@@ -20,7 +20,7 @@ function GuestNodeImpl({ data }: NodeProps) {
         running ? 'border-emerald-500/50' : 'border-border',
       )}
     >
-      <Handle type="target" position={Position.Left} isConnectable={false} className="!bg-border" />
+      <Handle type="target" position={Position.Top} isConnectable={false} className="!bg-border" />
       <div className="flex items-center gap-1.5">
         <Icon className={cn('h-3.5 w-3.5 shrink-0', running ? 'text-emerald-500' : 'text-muted-foreground')} />
         <span className="truncate text-xs font-medium">{guest.name}</span>
@@ -46,7 +46,7 @@ function GuestNodeImpl({ data }: NodeProps) {
           ) : null}
         </div>
       ) : null}
-      <Handle type="source" position={Position.Right} isConnectable={false} className="!bg-border" />
+      <Handle type="source" position={Position.Bottom} isConnectable={false} className="!bg-border" />
     </div>
   );
 }

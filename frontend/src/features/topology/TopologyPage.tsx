@@ -29,7 +29,7 @@ function readStoredThreshold(): number {
 
 function TopologyView() {
   const { t } = useTranslation();
-  const { fitView } = useReactFlow();
+  const { fitView, getNodesBounds } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -95,13 +95,16 @@ function TopologyView() {
 
   const handleExport = useCallback(
     (format: 'png' | 'svg') => {
-      toast.promise(exportGraph(nodes, format, 'topology'), {
+      // getNodesBounds must come from the hook (not the standalone helper) so
+      // it reads each node's actual measured width/height instead of zero.
+      const bounds = getNodesBounds(nodes);
+      toast.promise(exportGraph(bounds, nodes.length > 0, format, 'topology'), {
         loading: t('topology.export.progress', 'Rendering image…'),
         success: t('topology.export.done', 'Image saved'),
         error: t('topology.export.failed', 'Export failed'),
       });
     },
-    [nodes, t],
+    [nodes, getNodesBounds, t],
   );
 
   const toolbar = (

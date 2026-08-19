@@ -40,7 +40,7 @@ function PveNodeImpl({ data }: NodeProps) {
         node.stale ? 'border-dashed border-amber-500/60' : online ? 'border-emerald-500/50' : 'border-border',
       )}
     >
-      <Handle type="target" position={Position.Left} isConnectable={false} className="!bg-border" />
+      <Handle type="target" position={Position.Top} isConnectable={false} className="!bg-border" />
       <div className="flex items-center gap-2">
         <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
         <span className="truncate text-sm font-medium">{node.node}</span>
@@ -71,7 +71,7 @@ function PveNodeImpl({ data }: NodeProps) {
           hint={node.maxmem ? formatBytes(node.maxmem, 0) : undefined}
         />
       </div>
-      <Handle type="source" position={Position.Right} isConnectable={false} className="!bg-border" />
+      <Handle type="source" position={Position.Bottom} isConnectable={false} className="!bg-border" />
     </div>
   );
 }

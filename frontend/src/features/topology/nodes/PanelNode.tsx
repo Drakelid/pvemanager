@@ -19,7 +19,7 @@ function PanelNodeImpl({ data }: NodeProps) {
         <span>{t('topology.node.nodes_count', { count: panel.node_count })}</span>
         <span>{t('topology.node.guests_count', { count: panel.guest_count })}</span>
       </div>
-      <Handle type="source" position={Position.Right} isConnectable={false} className="!bg-primary" />
+      <Handle type="source" position={Position.Bottom} isConnectable={false} className="!bg-primary" />
     </div>
   );
 }

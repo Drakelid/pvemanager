@@ -6,8 +6,8 @@
  * synchronous lines, deterministic, and O(n) — it can rerun on every slider
  * tick without the flicker an async layout pass introduces.
  *
- * Orientation is left-to-right: with hundreds of guests a tall column scrolls
- * far better than an endlessly wide row.
+ * Orientation is top-to-bottom: each depth level is a fixed row, siblings
+ * spread out horizontally within it.
  */
 
 export type LayoutKind = 'panel' | 'cluster' | 'pve' | 'guest' | 'guestGroup';
@@ -23,12 +23,13 @@ export interface XY {
   y: number;
 }
 
-export const COLUMN_X: Record<LayoutKind, number> = {
+/** Fixed vertical position of every depth level. */
+export const ROW_Y: Record<LayoutKind, number> = {
   panel: 0,
-  cluster: 330,
-  pve: 700,
-  guest: 1080,
-  guestGroup: 1080,
+  cluster: 200,
+  pve: 420,
+  guest: 640,
+  guestGroup: 640,
 };
 
 export const NODE_SIZE: Record<LayoutKind, { width: number; height: number }> = {
@@ -39,85 +40,85 @@ export const NODE_SIZE: Record<LayoutKind, { width: number; height: number }> = 
   guestGroup: { width: 250, height: 96 },
 };
 
-const GAP_Y = 14;
-const SUBTREE_GAP = 26;
-const COLUMN_GAP_X = 40;
+const GAP_X = 30;
+const SUBTREE_GAP = 40;
+const ROW_GAP_Y = 26;
 
 export interface LayoutOptions {
   /**
-   * Wrap a node's guests into extra columns once the list is longer than this.
+   * Wrap a node's guests into extra rows once the list is longer than this.
    * Keeps a busy node from stretching the graph into an unreadable ribbon.
    */
-  guestsPerColumn?: number;
+  guestsPerRow?: number;
 }
 
-/** How many columns a node's guest list is wrapped into. */
-function columnsFor(node: LayoutNode, opts: LayoutOptions): number {
-  if (node.kind !== 'pve' || !opts.guestsPerColumn) return 1;
-  return Math.max(1, Math.ceil(node.children.length / opts.guestsPerColumn));
+/** How many rows a node's guest list is wrapped into. */
+function rowsFor(node: LayoutNode, opts: LayoutOptions): number {
+  if (node.kind !== 'pve' || !opts.guestsPerRow) return 1;
+  return Math.max(1, Math.ceil(node.children.length / opts.guestsPerRow));
 }
 
-/** Vertical space a subtree needs, including the gaps between its children. */
-function subtreeHeight(node: LayoutNode, opts: LayoutOptions): number {
-  const own = NODE_SIZE[node.kind].height;
+/** Horizontal space a subtree needs, including the gaps between its children. */
+function subtreeWidth(node: LayoutNode, opts: LayoutOptions): number {
+  const own = NODE_SIZE[node.kind].width;
   if (node.children.length === 0) return own;
 
-  const columns = columnsFor(node, opts);
-  if (columns > 1) {
-    const perColumn = Math.ceil(node.children.length / columns);
-    const tallest = Math.max(...node.children.map((c) => subtreeHeight(c, opts)));
-    return Math.max(own, perColumn * tallest + (perColumn - 1) * GAP_Y);
+  const rows = rowsFor(node, opts);
+  if (rows > 1) {
+    const perRow = Math.ceil(node.children.length / rows);
+    const widest = Math.max(...node.children.map((c) => subtreeWidth(c, opts)));
+    return Math.max(own, perRow * widest + (perRow - 1) * GAP_X);
   }
 
-  const childrenHeight = node.children.reduce(
-    (sum, child, index) => sum + subtreeHeight(child, opts) + (index > 0 ? GAP_Y : 0),
+  const childrenWidth = node.children.reduce(
+    (sum, child, index) => sum + subtreeWidth(child, opts) + (index > 0 ? GAP_X : 0),
     0,
   );
-  return Math.max(own, childrenHeight);
+  return Math.max(own, childrenWidth);
 }
 
 /**
  * Absolute position of every node, keyed by id. Parents are centred on the
- * vertical span of their children.
+ * horizontal span of their children.
  */
 export function layoutTree(root: LayoutNode, opts: LayoutOptions = {}): Map<string, XY> {
   const positions = new Map<string, XY>();
 
-  function place(node: LayoutNode, top: number): number {
+  function place(node: LayoutNode, left: number): number {
     const size = NODE_SIZE[node.kind];
-    const height = subtreeHeight(node, opts);
-    const x = COLUMN_X[node.kind];
+    const width = subtreeWidth(node, opts);
+    const y = ROW_Y[node.kind];
 
     if (node.children.length === 0) {
-      positions.set(node.id, { x, y: top + (height - size.height) / 2 });
-      return height;
+      positions.set(node.id, { x: left + (width - size.width) / 2, y });
+      return width;
     }
 
-    const columns = columnsFor(node, opts);
+    const rows = rowsFor(node, opts);
 
-    if (columns > 1) {
+    if (rows > 1) {
       // Wrap the guest list into a block so a busy node stays readable.
-      const perColumn = Math.ceil(node.children.length / columns);
-      const childWidth = NODE_SIZE[node.children[0].kind].width;
+      const perRow = Math.ceil(node.children.length / rows);
+      const childHeight = NODE_SIZE[node.children[0].kind].height;
       node.children.forEach((child, index) => {
-        const column = Math.floor(index / perColumn);
-        const row = index % perColumn;
-        const childHeight = NODE_SIZE[child.kind].height;
+        const row = Math.floor(index / perRow);
+        const col = index % perRow;
+        const childWidth = NODE_SIZE[child.kind].width;
         positions.set(child.id, {
-          x: COLUMN_X[child.kind] + column * (childWidth + COLUMN_GAP_X),
-          y: top + row * (childHeight + GAP_Y),
+          x: left + col * (childWidth + GAP_X),
+          y: ROW_Y[child.kind] + row * (childHeight + ROW_GAP_Y),
         });
       });
     } else {
-      let cursor = top;
+      let cursor = left;
       node.children.forEach((child, index) => {
-        if (index > 0) cursor += GAP_Y;
+        if (index > 0) cursor += GAP_X;
         cursor += place(child, cursor);
       });
     }
 
-    positions.set(node.id, { x, y: top + (height - size.height) / 2 });
-    return height;
+    positions.set(node.id, { x: left + (width - size.width) / 2, y });
+    return width;
   }
 
   place(root, 0);
@@ -133,11 +134,11 @@ export function layoutTree(root: LayoutNode, opts: LayoutOptions = {}): Map<stri
       .map((c) => positions.get(c.id))
       .filter((p): p is XY => Boolean(p));
     if (clusterPositions.length > 0) {
-      const first = clusterPositions[0].y;
-      const last = clusterPositions[clusterPositions.length - 1].y;
+      const first = clusterPositions[0].x;
+      const last = clusterPositions[clusterPositions.length - 1].x;
       positions.set(root.id, {
-        x: COLUMN_X.panel,
-        y: (first + last) / 2 + (NODE_SIZE.cluster.height - NODE_SIZE.panel.height) / 2,
+        x: (first + last) / 2 + (NODE_SIZE.cluster.width - NODE_SIZE.panel.width) / 2,
+        y: ROW_Y.panel,
       });
     }
   }
@@ -147,6 +148,6 @@ export function layoutTree(root: LayoutNode, opts: LayoutOptions = {}): Map<stri
 
 function shift(node: LayoutNode, delta: number, positions: Map<string, XY>): void {
   const position = positions.get(node.id);
-  if (position) positions.set(node.id, { ...position, y: position.y + delta });
+  if (position) positions.set(node.id, { ...position, x: position.x + delta });
   for (const child of node.children) shift(child, delta, positions);
 }

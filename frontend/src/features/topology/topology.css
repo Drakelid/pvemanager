@@ -1,7 +1,7 @@
 /* React Flow chrome follows the panel's design tokens, in both themes. */
 .topology-canvas .react-flow {
   --xy-background-color: var(--background);
-  --xy-edge-stroke: var(--border);
+  --xy-edge-stroke: var(--primary);
   --xy-edge-stroke-selected: var(--primary);
   --xy-node-border-radius: var(--radius);
   --xy-controls-button-background-color: var(--card);

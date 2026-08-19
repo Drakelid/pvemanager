@@ -4,8 +4,8 @@ import type { NetworkTopology, TopologyFilters, TopologyGuest } from './types';
 
 const PANEL_ID = 'panel:root';
 // Wrapping earlier keeps the tree closer to the viewport's aspect ratio:
-// one tall column per node forces fitView to shrink everything to a ribbon.
-const GUESTS_PER_COLUMN = 6;
+// one wide row per node forces fitView to shrink everything to a ribbon.
+const GUESTS_PER_ROW = 6;
 
 export interface BuildGraphResult {
   nodes: Node[];
@@ -130,10 +130,10 @@ export function buildGraph(
     tree.children.push(clusterBranch);
   }
 
-  // A single column of dozens of guests makes the graph a thin unreadable
+  // A single row of dozens of guests makes the graph a thin unreadable
   // ribbon, so long lists wrap into a block once they exceed this.
   const positions = layoutTree(tree, {
-    guestsPerColumn: widestGuestList > GUESTS_PER_COLUMN + 2 ? GUESTS_PER_COLUMN : undefined,
+    guestsPerRow: widestGuestList > GUESTS_PER_ROW + 2 ? GUESTS_PER_ROW : undefined,
   });
   for (const node of nodes) {
     const position = positions.get(node.id);

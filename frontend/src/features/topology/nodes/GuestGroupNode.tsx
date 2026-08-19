@@ -15,7 +15,7 @@ function GuestGroupNodeImpl({ data }: GuestGroupNodeProps) {
 
   return (
     <div className="w-[250px] rounded-md border border-dashed border-primary/60 bg-card px-2.5 py-2 shadow-sm">
-      <Handle type="target" position={Position.Left} isConnectable={false} className="!bg-border" />
+      <Handle type="target" position={Position.Top} isConnectable={false} className="!bg-border" />
       <div className="flex items-center gap-1.5">
         <Layers className="h-3.5 w-3.5 shrink-0 text-primary" />
         <span className="text-xs font-medium">{t('topology.group.count', { count: total })}</span>
