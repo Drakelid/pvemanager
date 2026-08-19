@@ -1,12 +1,62 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
-import { Maximize, Minimize, Keyboard, Loader2 } from 'lucide-react';
+import {
+  Maximize,
+  Minimize,
+  Keyboard,
+  Loader2,
+  Power,
+  ChevronDown,
+  RotateCw,
+  PowerOff,
+  Zap,
+  Square,
+  ClipboardPaste,
+  Camera,
+  Scan,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
 import { vmTypeLabel } from '@/lib/format';
+import { usePowerAction } from '@/hooks/use-instances';
 import '@xterm/xterm/css/xterm.css';
+
+// X11 keysyms используемые доп. клавишами консоли (см. noVNC core/input/keysym.js)
+const KEYSYM = {
+  BackSpace: 0xff08,
+  Tab: 0xff09,
+  Escape: 0xff1b,
+  Delete: 0xffff,
+  Control_L: 0xffe3,
+  Alt_L: 0xffe9,
+  F1: 0xffbe,
+} as const;
+const FKEY_CODES = Array.from({ length: 12 }, (_, i) => ({
+  label: `F${i + 1}`,
+  keysym: KEYSYM.F1 + i,
+  code: `F${i + 1}`,
+}));
 
 
 // noVNC and xterm.js will be loaded dynamically
@@ -23,6 +73,14 @@ interface VNCData {
   auth_ticket?: string;
 }
 
+interface RFBHandle {
+  disconnect: () => void;
+  sendCtrlAltDel: () => void;
+  sendKey: (keysym: number, code: string, down?: boolean) => void;
+  clipboardPasteFrom: (text: string) => void;
+  scaleViewport: boolean;
+}
+
 export default function ConsolePage() {
   const { serverId, vmid } = useParams<{ serverId: string; vmid: string }>();
   const [searchParams] = useSearchParams();
@@ -30,18 +88,25 @@ export default function ConsolePage() {
   const node = searchParams.get('node') || '';
   const type = searchParams.get('type') || 'qemu';
   const isSerial = type === 'qemu' && searchParams.get('mode') === 'serial';
+  // Панель управления питанием/консолью доступна для VNC (qemu, не serial); для
+  // serial и LXC-терминала клавиатура и буфер обмена уже идут через сам xterm.
+  const isVnc = type === 'qemu' && !isSerial;
 
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [errorMsg, setErrorMsg] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [scaleToFit, setScaleToFit] = useState(true);
+  const [clipboardOpen, setClipboardOpen] = useState(false);
+  const [clipboardText, setClipboardText] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
-  const rfbRef = useRef<unknown>(null);
+  const rfbRef = useRef<RFBHandle | null>(null);
   const termRef = useRef<unknown>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const sid = Number(serverId);
   const vid = Number(vmid);
+  const power = usePowerAction(sid, vid, type, node);
 
   // ==================== VNC Console (QEMU) ====================
   const connectVNC = useCallback(async () => {
@@ -92,7 +157,7 @@ export default function ConsolePage() {
       });
 
       rfb.scaleViewport = true;
-      rfb.resizeSession = true;
+      rfb.resizeSession = false;
 
       rfb.addEventListener('connect', () => {
         setStatus('connected');
@@ -108,7 +173,8 @@ export default function ConsolePage() {
         }
       });
 
-      rfbRef.current = rfb;
+      rfbRef.current = rfb as RFBHandle;
+      setScaleToFit(true);
     } catch (err) {
       setStatus('error');
       setErrorMsg(err instanceof Error ? err.message : 'Failed to connect');
@@ -253,13 +319,87 @@ export default function ConsolePage() {
 
   // ==================== Send Ctrl+Alt+Del (VNC) ====================
   const sendCtrlAltDel = () => {
-    if (rfbRef.current) {
-      (rfbRef.current as { sendCtrlAltDel: () => void }).sendCtrlAltDel();
+    rfbRef.current?.sendCtrlAltDel();
+  };
+
+  // ==================== Extra keys (VNC) ====================
+  const sendKeyCombo = (keysym: number, code: string) => {
+    rfbRef.current?.sendKey(keysym, code);
+  };
+  const sendCtrlAltBackspace = () => {
+    const rfb = rfbRef.current;
+    if (!rfb) return;
+    rfb.sendKey(KEYSYM.Control_L, 'ControlLeft', true);
+    rfb.sendKey(KEYSYM.Alt_L, 'AltLeft', true);
+    rfb.sendKey(KEYSYM.BackSpace, 'Backspace', true);
+    rfb.sendKey(KEYSYM.BackSpace, 'Backspace', false);
+    rfb.sendKey(KEYSYM.Alt_L, 'AltLeft', false);
+    rfb.sendKey(KEYSYM.Control_L, 'ControlLeft', false);
+  };
+  const sendCtrlAltF = (keysym: number, code: string) => {
+    const rfb = rfbRef.current;
+    if (!rfb) return;
+    rfb.sendKey(KEYSYM.Control_L, 'ControlLeft', true);
+    rfb.sendKey(KEYSYM.Alt_L, 'AltLeft', true);
+    rfb.sendKey(keysym, code, true);
+    rfb.sendKey(keysym, code, false);
+    rfb.sendKey(KEYSYM.Alt_L, 'AltLeft', false);
+    rfb.sendKey(KEYSYM.Control_L, 'ControlLeft', false);
+  };
+
+  // ==================== Scale toggle (VNC) ====================
+  const toggleScale = () => {
+    const rfb = rfbRef.current;
+    if (!rfb) return;
+    const next = !scaleToFit;
+    rfb.scaleViewport = next;
+    setScaleToFit(next);
+  };
+
+  // ==================== Clipboard → VM (VNC) ====================
+  const sendClipboard = () => {
+    if (!clipboardText) return;
+    rfbRef.current?.clipboardPasteFrom(clipboardText);
+    setClipboardOpen(false);
+    setClipboardText('');
+  };
+
+  // ==================== Screenshot ====================
+  const takeScreenshot = () => {
+    // querySelectorAll + last(): в dev-режиме React StrictMode временно
+    // монтирует RFB дважды, оставляя осиротевший canvas первым в DOM —
+    // актуальный (живой) canvas всегда последний.
+    const canvases = containerRef.current?.querySelectorAll('canvas');
+    const canvas = canvases && canvases.length > 0 ? canvases[canvases.length - 1] : null;
+    if (!canvas) {
+      toast.error(t('console.screenshot_failed'));
+      return;
     }
+    const link = document.createElement('a');
+    link.download = `console-${type}-${vmid}-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
+
+  // ==================== Power actions ====================
+  const runPowerAction = (action: 'restart' | 'shutdown' | 'reset' | 'stop', force?: boolean) => {
+    if (
+      (action === 'reset' || (action === 'stop' && force)) &&
+      !window.confirm(action === 'reset' ? t('console.confirm_hard_reset') : t('console.confirm_hard_stop'))
+    ) {
+      return;
+    }
+    power.mutate(
+      { action, force },
+      {
+        onSuccess: () => toast.success(t('console.action_sent')),
+        onError: (err) => toast.error(err.message || t('console.action_failed')),
+      }
+    );
   };
 
   return (
-    <div className="flex h-screen flex-col bg-[#09090B]">
+    <div className="flex h-screen min-h-0 flex-col bg-[#09090B]">
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-border/30 bg-[#111113] px-3 py-1.5">
         <div className="flex items-center gap-2">
@@ -281,20 +421,103 @@ export default function ConsolePage() {
           </Badge>
         </div>
         <div className="flex items-center gap-1">
-          {type === 'qemu' && !isSerial && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-muted-foreground"
-              onClick={sendCtrlAltDel}
-            >
-              <Keyboard className="mr-1 h-3 w-3" />
-              Ctrl+Alt+Del
-            </Button>
-          )}
           {isSerial && (
             <Badge variant="secondary" className="text-2xs bg-blue-500/10 text-blue-500">serial</Badge>
           )}
+
+          {/* Power menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" />}>
+              <Power className="mr-1 h-3 w-3" />
+              {t('console.power')}
+              <ChevronDown className="ml-1 h-3 w-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56">
+              <DropdownMenuItem onClick={() => runPowerAction('restart')}>
+                <RotateCw className="h-3.5 w-3.5" />
+                {t('console.reboot')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => runPowerAction('shutdown')}>
+                <PowerOff className="h-3.5 w-3.5" />
+                {t('console.shutdown')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {type === 'qemu' && (
+                <DropdownMenuItem variant="destructive" onClick={() => runPowerAction('reset')}>
+                  <Zap className="h-3.5 w-3.5" />
+                  {t('console.hard_reset')}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem variant="destructive" onClick={() => runPowerAction('stop', true)}>
+                <Square className="h-3.5 w-3.5" />
+                {t('console.hard_stop')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {isVnc && (
+            <>
+              {/* Extra keys menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" />}>
+                  <Keyboard className="mr-1 h-3 w-3" />
+                  {t('console.extra_keys')}
+                  <ChevronDown className="ml-1 h-3 w-3" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56">
+                  <DropdownMenuItem onClick={sendCtrlAltDel}>{t('console.ctrl_alt_del')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={sendCtrlAltBackspace}>{t('console.ctrl_alt_backspace')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => sendKeyCombo(KEYSYM.Tab, 'Tab')}>Tab</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => sendKeyCombo(KEYSYM.Escape, 'Escape')}>Esc</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Ctrl+Alt+F1…F12</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {FKEY_CODES.map((k) => (
+                        <DropdownMenuItem key={k.label} onClick={() => sendCtrlAltF(k.keysym, k.code)}>
+                          {k.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Scale toggle */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                title={scaleToFit ? t('console.actual_size') : t('console.scale_to_fit')}
+                onClick={toggleScale}
+              >
+                <Scan className="h-3.5 w-3.5" />
+              </Button>
+
+              {/* Clipboard */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                title={t('console.clipboard')}
+                onClick={() => setClipboardOpen(true)}
+              >
+                <ClipboardPaste className="h-3.5 w-3.5" />
+              </Button>
+
+              {/* Screenshot */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                title={t('console.screenshot')}
+                onClick={takeScreenshot}
+              >
+                <Camera className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          )}
+
           <Button
             variant="ghost"
             size="icon"
@@ -306,8 +529,35 @@ export default function ConsolePage() {
         </div>
       </div>
 
+      <Dialog open={clipboardOpen} onOpenChange={setClipboardOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardPaste className="h-4 w-4" /> {t('console.clipboard_title')}
+            </DialogTitle>
+            <DialogDescription>{t('console.clipboard_desc')}</DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={clipboardText}
+            onChange={(e) => setClipboardText(e.target.value)}
+            placeholder={t('console.clipboard_placeholder')}
+            rows={5}
+            className="w-full min-w-0 resize-none rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClipboardOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={sendClipboard} disabled={!clipboardText}>
+              {t('console.send')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Console viewport */}
-      <div className="relative flex-1">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {status === 'connecting' && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#09090B]">
             <div className="flex flex-col items-center gap-3 text-muted-foreground">
@@ -340,8 +590,7 @@ export default function ConsolePage() {
 
         <div
           ref={containerRef}
-          className="h-full w-full"
-          style={{ minHeight: 'calc(100vh - 40px)' }}
+          className="h-full w-full overflow-hidden"
         />
       </div>
     </div>

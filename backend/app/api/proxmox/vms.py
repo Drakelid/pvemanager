@@ -3949,16 +3949,17 @@ def control_vm(
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    """Управление VM (start/stop/restart/shutdown)"""
-    if action not in ['start', 'stop', 'restart', 'shutdown']:
+    """Управление VM (start/stop/restart/shutdown/reset)"""
+    if action not in ['start', 'stop', 'restart', 'shutdown', 'reset']:
         raise HTTPException(status_code=400, detail="Invalid action")
-    
+
     # Проверка прав в зависимости от действия
     permission_map = {
         'start': 'vm:start',
         'stop': 'vm:stop',
         'shutdown': 'vm:stop',
         'restart': 'vm:restart',
+        'reset': 'vm:restart',
     }
     if not current_user.has_permission(permission_map[action]):
         raise HTTPException(
@@ -4000,6 +4001,9 @@ def control_vm(
         elif action == 'shutdown':
             upid = client.shutdown_vm(node, vmid)
             success = bool(upid)
+        elif action == 'reset':
+            upid = client.reset_vm(node, vmid)
+            success = bool(upid)
         else:  # restart
             upid = client.restart_vm(node, vmid)
             success = bool(upid)
@@ -4007,7 +4011,7 @@ def control_vm(
         action_name = 'kill' if action == 'stop' and force else action
         if success:
             # Immediately update vm_instances cache so page refresh returns correct status
-            expected_status = 'running' if action in ('start', 'restart') else 'stopped'
+            expected_status = 'running' if action in ('start', 'restart', 'reset') else 'stopped'
             try:
                 cached_vm = db.query(VMInstance).filter(
                     VMInstance.server_id == server_id,
@@ -4026,6 +4030,7 @@ def control_vm(
                     'start': f"Запуск VM {vm_name or vmid}",
                     'stop': f"Остановка VM {vm_name or vmid}",
                     'restart': f"Перезапуск VM {vm_name or vmid}",
+                    'reset': f"Жёсткий сброс VM {vm_name or vmid}",
                 }
                 try:
                     ProxmoxTaskService.register(

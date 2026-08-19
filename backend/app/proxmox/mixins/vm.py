@@ -41,6 +41,18 @@ class VmMixin:
                 logger.error(f"Ошибка перезапуска VM {vmid} на {node}: {e}")
                 return None
 
+        def reset_vm(self, node: str, vmid: int) -> Optional[str]:
+            """Жёсткий сброс VM (аналог кнопки Reset — без ACPI, без остановки/старта заново)."""
+            if not self.proxmox:
+                return None
+
+            try:
+                upid = self.proxmox.nodes(node).qemu(vmid).status.reset.post()
+                return upid if isinstance(upid, str) else None
+            except Exception as e:
+                logger.error(f"Ошибка жёсткого сброса VM {vmid} на {node}: {e}")
+                return None
+
         def _wait_vm_stopped(self, node: str, vmid: int, timeout: int) -> bool:
             """Опрашивать статус ВМ, пока не 'stopped' или не выйдет timeout секунд."""
             deadline = time.time() + timeout
