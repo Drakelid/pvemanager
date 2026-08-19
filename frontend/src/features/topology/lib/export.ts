@@ -22,13 +22,16 @@ export async function exportGraph(
   if (!viewport || nodes.length === 0) return;
 
   const bounds = getNodesBounds(nodes);
-  const padding = 80;
+  const padding = 40;
   // Size the canvas to the graph itself, not an arbitrary minimum - forcing a
   // larger canvas than the content needs a zoom above the 2x cap to fill it,
   // so small graphs end up tiny in a mostly-empty image.
   const width = Math.min(MAX_SIDE, Math.max(1, Math.round(bounds.width + padding * 2)));
   const height = Math.min(MAX_SIDE, Math.max(1, Math.round(bounds.height + padding * 2)));
-  const transform = getViewportForBounds(bounds, width, height, 0.2, 2, padding / 2);
+  // getViewportForBounds's padding is a fraction of width/height unless given
+  // as a "px" string - a bare number here (e.g. 40) is read as 4000% padding,
+  // which collapses the zoom to the floor and leaves the graph tiny.
+  const transform = getViewportForBounds(bounds, width, height, 0.2, 2, `${padding}px`);
 
   const background =
     getComputedStyle(document.documentElement).getPropertyValue('--background').trim() || '#0a0a0a';
