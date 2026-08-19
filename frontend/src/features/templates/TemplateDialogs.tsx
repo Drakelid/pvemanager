@@ -159,7 +159,8 @@ export function DownloadCTDialog({ open, onClose }: { open: boolean; onClose: ()
                   <SelectTrigger className="mt-1"><SelectValue placeholder={t('templates.select_template')} /></SelectTrigger>
                   <SelectContent className="max-h-72">
                     {available.map(a => (
-                      <SelectItem key={a.template} value={a.template}>{a.template}{a.headline ? ` — ${a.headline}` : ''}</SelectItem>
+                      // Show the friendly name only; the raw file name stays in the tooltip.
+                      <SelectItem key={a.template} value={a.template} title={a.template}>{a.headline || a.template}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
