@@ -12,9 +12,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useVMConfig, useUpdateConfig, useResizeDisk, useMoveDisk, useVMStatus } from '@/hooks/use-instances';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { useVMConfig, useUpdateConfig, useResizeDisk, useMoveDisk, useVMStatus, usePowerAction } from '@/hooks/use-instances';
 import { useLXCStorages } from '@/hooks/use-lxc-templates';
 import { Checkbox } from '@/components/ui/checkbox';
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface Props {
@@ -269,6 +278,8 @@ export function DiskResizeCard({ serverId, vmid, type, node }: Props) {
 
 // ==================== Move disk to another storage ====================
 
+type MoveStage = 'confirm' | 'stopping' | 'moving' | 'starting' | 'error';
+
 export function DiskMoveCard({ serverId, vmid, type, node }: Props) {
   const { t } = useTranslation();
   const { data: config } = useVMConfig(serverId, vmid, type, node);
@@ -276,10 +287,12 @@ export function DiskMoveCard({ serverId, vmid, type, node }: Props) {
   // иначе Proxmox отклонит задачу переноса уже после запуска.
   const { data: storages = [] } = useLXCStorages(serverId, node, type === 'lxc' ? 'rootdir' : 'images');
   const moveDisk = useMoveDisk(serverId, vmid, type, node);
+  const power = usePowerAction(serverId, vmid, type, node);
   // move_volume для LXC (в отличие от QEMU move_disk) не работает на запущенном контейнере —
   // Proxmox отклоняет задачу с "cannot move volumes of a running container".
   const { data: status } = useVMStatus(serverId, vmid, type, node);
-  const blockedByRunning = type === 'lxc' && status?.status === 'running';
+  const isRunning = status?.status === 'running';
+  const blockedByRunning = type === 'lxc' && isRunning;
 
   const diskDevices = useMemo(() => {
     if (!config) return [] as string[];
@@ -292,21 +305,79 @@ export function DiskMoveCard({ serverId, vmid, type, node }: Props) {
   const [moveDiskDev, setMoveDiskDev] = useState('');
   const [moveStorage, setMoveStorage] = useState('');
   const [moveDelete, setMoveDelete] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [stage, setStage] = useState<MoveStage>('confirm');
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     if (diskDevices.length && !diskDevices.includes(moveDiskDev)) setMoveDiskDev(diskDevices[0]);
   }, [diskDevices, moveDiskDev]);
 
-  const doMove = () => {
-    if (!moveDiskDev || !moveStorage) return;
-    moveDisk.mutate(
-      { disk: moveDiskDev, target_storage: moveStorage, delete: moveDelete },
-      {
-        onSuccess: () => { toast.success(t('instances.disk_moved')); setMoveStorage(''); },
-        onError: (e: Error) => toast.error(e.message),
-      }
-    );
+  const prefix = type === 'lxc' ? 'container' : 'vm';
+  const fetchStatus = () =>
+    apiClient
+      .get<{ status: string }>(`/proxmox/api/${serverId}/${prefix}/${vmid}/status?node=${node}`)
+      .then((r) => r.status);
+
+  const waitForStatus = async (target: string, timeoutMs = 60000, intervalMs = 1500) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if ((await fetchStatus()) === target) return true;
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    return false;
   };
+
+  const runMove = () =>
+    moveDisk.mutateAsync({ disk: moveDiskDev, target_storage: moveStorage, delete: moveDelete });
+
+  const openConfirm = () => {
+    if (!moveDiskDev || !moveStorage) return;
+    setErrorMsg('');
+    setStage('confirm');
+    setDialogOpen(true);
+  };
+
+  // Прямой перенос — контейнер/VM уже в подходящем состоянии.
+  const confirmDirectMove = async () => {
+    setStage('moving');
+    try {
+      await runMove();
+      setDialogOpen(false);
+      toast.success(t('instances.disk_moved'));
+      setMoveStorage('');
+    } catch (e) {
+      setStage('error');
+      setErrorMsg((e as Error).message);
+    }
+  };
+
+  // Согласованный сценарий для запущенного LXC: стоп -> перенос -> запуск обратно.
+  const confirmStopAndMove = async () => {
+    setStage('stopping');
+    try {
+      await power.mutateAsync({ action: 'stop' });
+      const stopped = await waitForStatus('stopped');
+      if (!stopped) throw new Error(t('instances.disk_move_stop_timeout'));
+
+      setStage('moving');
+      await runMove();
+
+      setStage('starting');
+      await power.mutateAsync({ action: 'start' });
+
+      setDialogOpen(false);
+      toast.success(t('instances.disk_moved'));
+      setMoveStorage('');
+    } catch (e) {
+      // Даже если перенос упал, возвращаем контейнер в исходное состояние.
+      try { await power.mutateAsync({ action: 'start' }); } catch { /* уже могло стартовать */ }
+      setStage('error');
+      setErrorMsg((e as Error).message);
+    }
+  };
+
+  const busy = stage === 'stopping' || stage === 'moving' || stage === 'starting';
 
   return (
     <Card>
@@ -334,20 +405,58 @@ export function DiskMoveCard({ serverId, vmid, type, node }: Props) {
           <Checkbox checked={moveDelete} onChange={(e) => setMoveDelete(e.target.checked)} />
           <span>{t('instances.disk_move_delete')}</span>
         </label>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={doMove}
-          disabled={!moveDiskDev || !moveStorage || moveDisk.isPending || blockedByRunning}
-          title={blockedByRunning ? t('instances.disk_move_stop_required') : undefined}
-        >
-          {moveDisk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <Button size="sm" variant="outline" onClick={openConfirm} disabled={!moveDiskDev || !moveStorage}>
           {t('instances.disk_move')}
         </Button>
         {blockedByRunning && (
-          <p className="text-xs text-warning">{t('instances.disk_move_stop_required')}</p>
+          <p className="text-xs text-muted-foreground">{t('instances.disk_move_stop_hint')}</p>
         )}
       </CardContent>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open && !busy) setDialogOpen(false); }}>
+        <DialogContent showCloseButton={!busy}>
+          <DialogHeader>
+            <DialogTitle>{t('instances.disk_move_confirm_title')}</DialogTitle>
+            <DialogDescription>
+              {blockedByRunning
+                ? t('instances.disk_move_confirm_running', { dev: moveDiskDev, storage: moveStorage })
+                : t('instances.disk_move_confirm_plain', { dev: moveDiskDev, storage: moveStorage })}
+            </DialogDescription>
+          </DialogHeader>
+
+          {stage === 'stopping' && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />{t('instances.disk_move_stage_stopping')}
+            </p>
+          )}
+          {stage === 'moving' && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />{t('instances.disk_move_stage_moving')}
+            </p>
+          )}
+          {stage === 'starting' && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />{t('instances.disk_move_stage_starting')}
+            </p>
+          )}
+          {stage === 'error' && (
+            <p className="text-sm text-destructive">{errorMsg}</p>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={blockedByRunning ? confirmStopAndMove : confirmDirectMove}
+            >
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {blockedByRunning ? t('instances.disk_move_stop_and_move') : t('instances.disk_move')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
