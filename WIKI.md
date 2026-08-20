@@ -262,6 +262,7 @@ This section summarizes key API endpoints. All require JWT authentication.
 ### Backups & Storages
 
 - `GET /api/backups/storages/{server_id}` — list storages
+- `GET /api/backups/scan-nfs/{server_id}?server=<ip>` — scan an NFS server for available exports
 - `POST /api/backups/storages/{server_id}` — add storage
 - `PUT /api/backups/storages/{server_id}/{storage_id}` — update storage
 - `DELETE /api/backups/storages/{server_id}/{storage_id}` — delete storage
@@ -2173,6 +2174,7 @@ curl -H "Authorization: Bearer eyJ..." \
 | GET | `/logs/api/logs` | Get audit logs |
 | GET | `/logs/api/stats` | Get log statistics |
 | GET | `/api/backups/storages/{server_id}` | List Proxmox storages |
+| GET | `/api/backups/scan-nfs/{server_id}` | Scan NFS server for exports |
 | POST | `/api/backups/create` | Create VM/LXC backup |
 | POST | `/api/backups/restore` | Restore VM/LXC from backup |
 | GET | `/api/backups/list/{server_id}` | List backup files |

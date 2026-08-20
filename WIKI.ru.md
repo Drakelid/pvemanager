@@ -261,6 +261,7 @@ CORS_ORIGINS=*
 ### Резервные копии и хранилища
 
 - `GET /api/backups/storages/{server_id}` — список хранилищ
+- `GET /api/backups/scan-nfs/{server_id}?server=<ip>` — сканировать NFS-сервер на доступные экспорты
 - `POST /api/backups/storages/{server_id}` — добавить хранилище
 - `PUT /api/backups/storages/{server_id}/{storage_id}` — обновить хранилище
 - `DELETE /api/backups/storages/{server_id}/{storage_id}` — удалить хранилище
@@ -2086,6 +2087,7 @@ curl -H "Authorization: Bearer eyJ..." \
 | GET | `/logs/api/logs` | Получить логи аудита |
 | GET | `/logs/api/stats` | Статистика логов |
 | GET | `/api/backups/storages/{server_id}` | Список хранилищ Proxmox |
+| GET | `/api/backups/scan-nfs/{server_id}` | Сканировать NFS-сервер на экспорты |
 | POST | `/api/backups/create` | Создать копию VM/LXC |
 | POST | `/api/backups/restore` | Восстановить VM/LXC из копии |
 | GET | `/api/backups/list/{server_id}` | Список файлов копий |

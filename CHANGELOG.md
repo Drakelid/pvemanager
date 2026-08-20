@@ -4,6 +4,15 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [Unreleased]
+
+### 🔍 NFS storage dialog — scan for available exports
+
+- **Added a "scan exports" button** next to the server field when adding an NFS storage — calls Proxmox's `GET /nodes/{node}/scan/nfs` and turns the export path field from a free-text input into a select populated with the exports actually found on the target server, instead of requiring the path to be typed by hand and guessed
+- New endpoint `GET /api/backups/scan-nfs/{server_id}?server=<ip>` on the backend, running the scan through the server's first available node
+
+---
+
 ## [v1.17.0] - 2026-08-20
 
 ### 💾 Move LXC container disks to another storage
