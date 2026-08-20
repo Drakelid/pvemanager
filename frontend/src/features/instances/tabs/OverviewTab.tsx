@@ -217,7 +217,7 @@ export default function OverviewTab({ serverId, vmid, type, node }: Props) {
           <ArrowDown className="h-4 w-4 text-muted-foreground" />
           {t('common.io_rates')}
         </h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2">
           <IoRateCard
             label={t('common.disk_read_rate')}
             value={status?.diskread_rate}
@@ -229,18 +229,6 @@ export default function OverviewTab({ serverId, vmid, type, node }: Props) {
             value={status?.diskwrite_rate}
             icon={HardDrive}
             color="text-orange-500"
-          />
-          <IoRateCard
-            label={t('common.net_in_rate')}
-            value={status?.netin_rate}
-            icon={ArrowDown}
-            color="text-blue-500"
-          />
-          <IoRateCard
-            label={t('common.net_out_rate')}
-            value={status?.netout_rate}
-            icon={ArrowUp}
-            color="text-violet-500"
           />
         </div>
       </div>
