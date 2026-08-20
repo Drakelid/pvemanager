@@ -6,6 +6,17 @@ All notable changes to PVEmanager will be documented in this file.
 
 ## [Unreleased]
 
+### 💾 Move LXC container disks to another storage
+
+- **Disk move now works for LXC**, not just QEMU VMs — the Move disk action was previously hardcoded to the VM `move_disk` API and unreachable for containers (no Hardware tab, and the disk-row detector only matched VM device names). `rootfs`/`mp\d+` are now recognized as LXC disk devices, and a **Move disk** card was added to the Settings tab for LXC instances
+- New endpoint `POST /api/{server_id}/container/{vmid}/disk/move` calls Proxmox's `lxc/{vmid}/move_volume`; the target storage list is filtered by supported content type (`rootdir` for LXC, `images` for VM) instead of showing every storage
+- **Blocked on running containers with a guided flow** — Proxmox rejects `move_volume` on a running LXC (`move_disk` works live for QEMU, `move_volume` does not for LXC). Attempting it now opens a confirmation dialog that stops the container, moves the disk, and restarts it, showing progress at each step; the container is always restarted even if the move itself fails. VMs and already-stopped containers still get a plain confirm dialog
+
+### 📊 Instance list — collapsible metrics panel
+
+- **CPU/RAM/Disk/Net/Disk I/O/Uptime moved out of the always-visible table columns** into a per-row panel that expands when you click the instance name, matching the disclosure pattern from VMmanager. The panel adds a **Parameters** link straight into the instance's Settings tab and clearer stat cards for network/disk throughput
+- vCPU/RAM bars widened and enlarged (bar width and label/detail font size) for easier at-a-glance reading in the collapsed panel
+
 ### ✨ Network topology page
 
 - **New `/topology` page** — an interactive map of the infrastructure: panel → cluster → Proxmox node → VM/LXC, rendered with React Flow. Node cards carry live CPU/RAM meters, guests show status, IP, bridge/VLAN and tags
