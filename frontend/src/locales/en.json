@@ -492,6 +492,7 @@
     "disk_move": "Move disk",
     "disk_move_delete": "Delete source after move",
     "disk_moved": "Disk move started",
+    "disk_move_stop_required": "Moving an LXC volume requires the container to be stopped",
     "disk_add": "Add disk",
     "disk_added": "Disk {{dev}} added",
     "disk_bus": "Bus",

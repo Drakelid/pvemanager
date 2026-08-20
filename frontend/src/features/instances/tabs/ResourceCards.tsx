@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useVMConfig, useUpdateConfig, useResizeDisk, useMoveDisk } from '@/hooks/use-instances';
+import { useVMConfig, useUpdateConfig, useResizeDisk, useMoveDisk, useVMStatus } from '@/hooks/use-instances';
 import { useLXCStorages } from '@/hooks/use-lxc-templates';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
@@ -276,6 +276,10 @@ export function DiskMoveCard({ serverId, vmid, type, node }: Props) {
   // иначе Proxmox отклонит задачу переноса уже после запуска.
   const { data: storages = [] } = useLXCStorages(serverId, node, type === 'lxc' ? 'rootdir' : 'images');
   const moveDisk = useMoveDisk(serverId, vmid, type, node);
+  // move_volume для LXC (в отличие от QEMU move_disk) не работает на запущенном контейнере —
+  // Proxmox отклоняет задачу с "cannot move volumes of a running container".
+  const { data: status } = useVMStatus(serverId, vmid, type, node);
+  const blockedByRunning = type === 'lxc' && status?.status === 'running';
 
   const diskDevices = useMemo(() => {
     if (!config) return [] as string[];
@@ -330,10 +334,19 @@ export function DiskMoveCard({ serverId, vmid, type, node }: Props) {
           <Checkbox checked={moveDelete} onChange={(e) => setMoveDelete(e.target.checked)} />
           <span>{t('instances.disk_move_delete')}</span>
         </label>
-        <Button size="sm" variant="outline" onClick={doMove} disabled={!moveDiskDev || !moveStorage || moveDisk.isPending}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={doMove}
+          disabled={!moveDiskDev || !moveStorage || moveDisk.isPending || blockedByRunning}
+          title={blockedByRunning ? t('instances.disk_move_stop_required') : undefined}
+        >
           {moveDisk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t('instances.disk_move')}
         </Button>
+        {blockedByRunning && (
+          <p className="text-xs text-warning">{t('instances.disk_move_stop_required')}</p>
+        )}
       </CardContent>
     </Card>
   );
