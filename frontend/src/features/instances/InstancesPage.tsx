@@ -98,15 +98,25 @@ import type { VMInstance } from '@/types';
 import { toast } from 'sonner';
 
 // ==================== Inline Progress Bar ====================
-function InlineProgress({ value, max, className }: { value: number; max: number; className?: string }) {
+function InlineProgress({
+  value,
+  max,
+  barClassName = 'w-16',
+  textClassName = 'text-xs',
+}: {
+  value: number;
+  max: number;
+  barClassName?: string;
+  textClassName?: string;
+}) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   const color = pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-primary';
   return (
     <div className="flex items-center gap-2">
-      <div className={`h-1.5 w-16 overflow-hidden rounded-full bg-muted ${className}`}>
+      <div className={`h-1.5 overflow-hidden rounded-full bg-muted ${barClassName}`}>
         <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-xs tabular-nums text-muted-foreground">{pct.toFixed(0)}%</span>
+      <span className={`${textClassName} tabular-nums text-muted-foreground`}>{pct.toFixed(0)}%</span>
     </div>
   );
 }
@@ -276,13 +286,13 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
 function MetricRow({ label, value, max, detail }: { label: string; value: number | null | undefined; max: number; detail: string }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="w-16 shrink-0 text-sm font-medium text-muted-foreground">{label}</span>
       {value != null && max ? (
-        <InlineProgress value={value} max={max} />
+        <InlineProgress value={value} max={max} barClassName="w-32 sm:w-44" textClassName="text-sm" />
       ) : (
-        <span className="text-xs text-muted-foreground">—</span>
+        <span className="text-sm text-muted-foreground">—</span>
       )}
-      <span className="text-xs text-muted-foreground">{detail}</span>
+      <span className="text-sm text-muted-foreground">{detail}</span>
     </div>
   );
 }
