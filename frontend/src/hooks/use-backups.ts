@@ -70,6 +70,15 @@ export function useDeleteProxmoxJob(serverId: number) {
   });
 }
 
+export function useScanNfsExports(serverId: number) {
+  return useMutation({
+    mutationFn: (server: string) =>
+      apiClient.get<{ exports: { path: string }[] }>(
+        `/proxmox/api/backups/scan-nfs/${serverId}?server=${encodeURIComponent(server)}`
+      ),
+  });
+}
+
 export function useCreateStorage(serverId: number) {
   const qc = useQueryClient();
   return useMutation({

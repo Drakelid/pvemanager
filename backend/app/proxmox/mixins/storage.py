@@ -239,6 +239,16 @@ class StorageMixin:
                 logger.error(f"Ошибка получения статусов хранилищ с {self.host}: {e}")
             return status
 
+        def scan_nfs_exports(self, node: str, server: str) -> List[Dict]:
+            """
+            Получить список NFS-экспортов удалённого сервера через
+            GET /nodes/{node}/scan/nfs — для выбора export в диалоге добавления
+            хранилища вместо ручного ввода пути.
+            """
+            if not self.proxmox:
+                return []
+            return self.proxmox.nodes(node).scan.nfs.get(server=server)
+
         def get_node_storages(self, node: str, content: str = None) -> List[Dict]:
             """Get storages available on a specific node, optionally filtered by content type"""
             if not self.proxmox:

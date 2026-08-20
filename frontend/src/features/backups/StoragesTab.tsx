@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Pencil, Trash2, Database, CalendarClock, Power, PowerOff, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Database, CalendarClock, Power, PowerOff, AlertTriangle, Search } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -15,6 +15,7 @@ import {
   useBackupStorages, useProxmoxBackupJobs,
   useCreateStorage, useUpdateStorage, useDeleteStorage,
   useCreateProxmoxJob, useUpdateProxmoxJob, useDeleteProxmoxJob,
+  useScanNfsExports,
   type ProxmoxJobInput,
 } from '@/hooks/use-backups';
 import { formatBytes } from '@/lib/format';
@@ -88,6 +89,8 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
   const { t } = useTranslation();
   const createStorage = useCreateStorage(serverId);
   const updateStorage = useUpdateStorage(serverId);
+  const scanNfs = useScanNfsExports(serverId);
+  const [nfsExports, setNfsExports] = useState<string[]>([]);
   const [form, setForm] = useState<StorageForm>(() => editing ? {
     ...emptyForm,
     storage: editing.storage,
@@ -101,6 +104,20 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
     datastore: editing.datastore || '',
   } : emptyForm);
   const set = <K extends keyof StorageForm>(k: K, v: StorageForm[K]) => setForm(p => ({ ...p, [k]: v }));
+
+  const handleScanNfs = () => {
+    if (!form.server.trim()) { toast.error(t('storages.server_required')); return; }
+    setNfsExports([]);
+    scanNfs.mutate(form.server.trim(), {
+      onSuccess: (data) => {
+        const paths = (data.exports ?? []).map(e => e.path).filter(Boolean);
+        setNfsExports(paths);
+        if (paths.length === 0) toast.error(t('storages.no_exports_found'));
+        else if (!paths.includes(form.export)) set('export', paths[0]);
+      },
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
 
   const submit = () => {
     if (!editing && !form.storage.trim()) { toast.error(t('storages.id_required')); return; }
@@ -185,8 +202,27 @@ function StorageDialog({ serverId, open, onOpenChange, editing }: {
           )}
           {!editing && form.type === 'nfs' && (
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>{t('storages.server')}</Label><Input value={form.server} onChange={e => set('server', e.target.value)} className="mt-1" placeholder="10.0.0.5" /></div>
-              <div><Label>{t('storages.export')}</Label><Input value={form.export} onChange={e => set('export', e.target.value)} className="mt-1" placeholder="/exports/backup" /></div>
+              <div>
+                <Label>{t('storages.server')}</Label>
+                <div className="mt-1 flex gap-1.5">
+                  <Input value={form.server} onChange={e => { set('server', e.target.value); setNfsExports([]); }} placeholder="10.0.0.5" />
+                  <Button type="button" variant="outline" size="icon" className="shrink-0" title={t('storages.scan_exports')}
+                    disabled={scanNfs.isPending} onClick={handleScanNfs}>
+                    <Search className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div>
+                <Label>{t('storages.export')}</Label>
+                {nfsExports.length > 0 ? (
+                  <Select value={form.export} onValueChange={v => v && set('export', v)}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>{nfsExports.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
+                  </Select>
+                ) : (
+                  <Input value={form.export} onChange={e => set('export', e.target.value)} className="mt-1" placeholder="/exports/backup" />
+                )}
+              </div>
             </div>
           )}
           {!editing && form.type === 'cifs' && (

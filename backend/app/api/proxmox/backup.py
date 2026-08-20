@@ -53,6 +53,35 @@ def get_storages(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/backups/scan-nfs/{server_id}")
+def scan_nfs(
+    server_id: int,
+    server: str,
+    node: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("backup:manage")),
+):
+    """Scan an NFS server for available exports, to populate the storage-add dialog."""
+    pve_server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not pve_server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    try:
+        client = _get_proxmox_client(pve_server)
+        target_node = node
+        if not target_node:
+            nodes = client.get_nodes()
+            if not nodes:
+                raise HTTPException(status_code=400, detail="No nodes available to scan from")
+            target_node = nodes[0]["node"]
+        exports = client.scan_nfs_exports(target_node, server)
+        return JSONResponse(content={"exports": exports})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error scanning NFS exports on {server} for server {server_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/api/backups/storages/{server_id}")
 async def create_storage(
     server_id: int,
