@@ -1930,6 +1930,46 @@ async def resize_container_disk(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/api/{server_id}/container/{vmid}/disk/move")
+async def move_container_disk(
+    server_id: int,
+    vmid: int,
+    node: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("server:manage"))
+):
+    """Переместить том контейнера в другое хранилище (move_volume)."""
+    server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Proxmox server not found")
+
+    data = await request.json()
+    disk = data.get('disk')
+    target_storage = data.get('target_storage')
+    if not disk or not target_storage:
+        raise HTTPException(status_code=400, detail="Требуются параметры disk и target_storage")
+
+    try:
+        client = _get_proxmox_client(server)
+        if not client.is_connected():
+            raise HTTPException(status_code=503, detail="Failed to connect to Proxmox server")
+
+        result = client.move_container_disk(
+            node, vmid, disk, target_storage,
+            delete=bool(data.get('delete', True)),
+        )
+        if result.get('success'):
+            logger.info(f"User {current_user.username} moved volume {disk} of container {vmid} to {target_storage}")
+            return JSONResponse(content={"status": "success", "upid": result.get('upid')})
+        raise HTTPException(status_code=400, detail=result.get('error', 'Failed'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error moving container {vmid} disk: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/api/{server_id}/container/{vmid}/config")
 def get_container_config(
     server_id: int,

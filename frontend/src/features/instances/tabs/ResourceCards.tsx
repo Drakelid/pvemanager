@@ -12,7 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useVMConfig, useUpdateConfig, useResizeDisk } from '@/hooks/use-instances';
+import { useVMConfig, useUpdateConfig, useResizeDisk, useMoveDisk } from '@/hooks/use-instances';
+import { useLXCStorages } from '@/hooks/use-lxc-templates';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 
 interface Props {
@@ -260,6 +262,78 @@ export function DiskResizeCard({ serverId, vmid, type, node }: Props) {
             )}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ==================== Move disk to another storage ====================
+
+export function DiskMoveCard({ serverId, vmid, type, node }: Props) {
+  const { t } = useTranslation();
+  const { data: config } = useVMConfig(serverId, vmid, type, node);
+  // Только хранилища, поддерживающие нужный тип контента (rootdir для LXC, images для VM) —
+  // иначе Proxmox отклонит задачу переноса уже после запуска.
+  const { data: storages = [] } = useLXCStorages(serverId, node, type === 'lxc' ? 'rootdir' : 'images');
+  const moveDisk = useMoveDisk(serverId, vmid, type, node);
+
+  const diskDevices = useMemo(() => {
+    if (!config) return [] as string[];
+    const re = type === 'lxc' ? /^(rootfs|mp\d+)$/ : /^(scsi\d+|sata\d+|virtio\d+|ide\d+)$/;
+    return Object.entries(config)
+      .filter(([k, v]) => re.test(k) && typeof v === 'string' && !v.includes('media=cdrom'))
+      .map(([k]) => k);
+  }, [config, type]);
+
+  const [moveDiskDev, setMoveDiskDev] = useState('');
+  const [moveStorage, setMoveStorage] = useState('');
+  const [moveDelete, setMoveDelete] = useState(true);
+
+  useEffect(() => {
+    if (diskDevices.length && !diskDevices.includes(moveDiskDev)) setMoveDiskDev(diskDevices[0]);
+  }, [diskDevices, moveDiskDev]);
+
+  const doMove = () => {
+    if (!moveDiskDev || !moveStorage) return;
+    moveDisk.mutate(
+      { disk: moveDiskDev, target_storage: moveStorage, delete: moveDelete },
+      {
+        onSuccess: () => { toast.success(t('instances.disk_moved')); setMoveStorage(''); },
+        onError: (e: Error) => toast.error(e.message),
+      }
+    );
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold">{t('instances.disk_move')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>{t('instances.disk_device')}</Label>
+            <Select value={moveDiskDev} onValueChange={(v) => v && setMoveDiskDev(v)}>
+              <SelectTrigger><SelectValue placeholder={t('instances.disk_device')} /></SelectTrigger>
+              <SelectContent>{diskDevices.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('instances.migrate_target_storage')}</Label>
+            <Select value={moveStorage} onValueChange={(v) => v && setMoveStorage(v)}>
+              <SelectTrigger><SelectValue placeholder={t('instances.migrate_target_storage')} /></SelectTrigger>
+              <SelectContent>{storages.map((s) => <SelectItem key={s.storage} value={s.storage}>{s.storage} ({s.type})</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-xs">
+          <Checkbox checked={moveDelete} onChange={(e) => setMoveDelete(e.target.checked)} />
+          <span>{t('instances.disk_move_delete')}</span>
+        </label>
+        <Button size="sm" variant="outline" onClick={doMove} disabled={!moveDiskDev || !moveStorage || moveDisk.isPending}>
+          {moveDisk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {t('instances.disk_move')}
+        </Button>
       </CardContent>
     </Card>
   );

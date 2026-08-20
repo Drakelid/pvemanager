@@ -1541,6 +1541,34 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
             logger.info(f"Диск {disk} LXC {vmid} изменен на {size}")
             return True
 
+        def move_container_disk(self, node: str, vmid: int, disk: str, target_storage: str,
+                                delete: bool = True) -> Dict:
+            """Переместить том LXC контейнера в другое хранилище (POST lxc/{vmid}/move_volume).
+
+            Args:
+                disk: имя тома (rootfs, mp0, mp1, ...)
+                target_storage: целевое хранилище
+                delete: удалить исходный том после копирования
+            Returns:
+                {"success": bool, "upid"?: str, "error"?: str}
+            """
+            if not self.proxmox:
+                return {"success": False, "error": "Not connected"}
+            try:
+                params = {"volume": disk, "storage": target_storage, "delete": 1 if delete else 0}
+                upid = self.proxmox.nodes(node).lxc(vmid).move_volume.post(**params)
+                if isinstance(upid, str):
+                    if not self.wait_for_task(node, upid, timeout=3600):
+                        status = self.get_task_status(node, upid) or {}
+                        reason = status.get("exitstatus") or "move_volume task failed"
+                        logger.error(f"Move тома {disk} LXC {vmid} провалился: {reason}")
+                        return {"success": False, "error": f"Proxmox: {reason}"}
+                logger.info(f"Том {disk} LXC {vmid} перемещён в {target_storage}")
+                return {"success": True, "upid": upid if isinstance(upid, str) else None}
+            except Exception as e:
+                logger.error(f"Ошибка перемещения тома {disk} LXC {vmid}: {e}")
+                return {"success": False, "error": str(e)}
+
         def get_vm_interfaces(self, node: str, vmid: int) -> List[Dict]:
             """
             Получить сетевые интерфейсы VM через QEMU guest agent

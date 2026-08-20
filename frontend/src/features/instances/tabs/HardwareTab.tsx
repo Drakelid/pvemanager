@@ -326,21 +326,23 @@ function DiskManagementCard({ serverId, vmid, type, node }: Props) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const { data: config } = useVMConfig(serverId, vmid, type, node);
-  const { data: storages = [] } = useLXCStorages(serverId, node);
-  const moveDisk = useMoveDisk(serverId, vmid, node);
+  // Только хранилища, поддерживающие нужный тип контента (rootdir для LXC, images для VM) —
+  // иначе Proxmox отклонит задачу переноса уже после запуска.
+  const { data: storages = [] } = useLXCStorages(serverId, node, type === 'lxc' ? 'rootdir' : 'images');
+  const moveDisk = useMoveDisk(serverId, vmid, type, node);
   const addDisk = useAddDisk(serverId, vmid, node);
   const detachDisk = useDetachDisk(serverId, vmid, node);
 
   // Реальные дисковые устройства (без cd-rom и cloudinit)
   const disks = useMemo(() => {
     if (!config) return [] as string[];
-    const re = /^(scsi\d+|sata\d+|virtio\d+|ide\d+)$/;
+    const re = type === 'lxc' ? /^(rootfs|mp\d+)$/ : /^(scsi\d+|sata\d+|virtio\d+|ide\d+)$/;
     return Object.entries(config)
       .filter(([k, v]) => re.test(k) && typeof v === 'string'
         && !v.includes('media=cdrom') && !v.includes('cloudinit')
         && !v.startsWith('/dev/'))  // проброшенные физдиски — управляются в блоке «Проброс устройств»
       .map(([k]) => k);
-  }, [config]);
+  }, [config, type]);
 
   const [moveDiskDev, setMoveDiskDev] = useState('');
   const [moveStorage, setMoveStorage] = useState('');

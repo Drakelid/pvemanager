@@ -10,7 +10,7 @@ import { useVMConfig, useUpdateConfig, useVMOwner, useSetVMOwner, useExecuteScri
 import { useProfile } from '@/hooks/use-settings';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { ComputeResourcesCard, DiskResizeCard } from './ResourceCards';
+import { ComputeResourcesCard, DiskResizeCard, DiskMoveCard } from './ResourceCards';
 
 interface Props {
   serverId: number;
@@ -735,6 +735,8 @@ export default function SettingsTab({ serverId, vmid, type, node }: Props) {
       {type !== 'lxc' && <VmOptionsCard serverId={serverId} vmid={vmid} type={type} node={node} />}
 
       {type === 'lxc' && <DiskResizeCard serverId={serverId} vmid={vmid} type={type} node={node} />}
+
+      {type === 'lxc' && <DiskMoveCard serverId={serverId} vmid={vmid} type={type} node={node} />}
 
       <SavedConfigCard serverId={serverId} vmid={vmid} />
 

@@ -592,11 +592,12 @@ export function useUpdateCloudInit(serverId: number, vmid: number, node: string)
   });
 }
 
-export function useMoveDisk(serverId: number, vmid: number, node: string) {
+export function useMoveDisk(serverId: number, vmid: number, type: string, node: string) {
   const qc = useQueryClient();
+  const prefix = type === 'lxc' ? 'container' : 'vm';
   return useMutation({
     mutationFn: (body: { disk: string; target_storage: string; delete?: boolean; format?: string }) =>
-      apiClient.post(`/proxmox/api/${serverId}/vm/${vmid}/disk/move?node=${node}`, body),
+      apiClient.post(`/proxmox/api/${serverId}/${prefix}/${vmid}/disk/move?node=${node}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: vmKeys.config(serverId, vmid) }),
   });
 }
