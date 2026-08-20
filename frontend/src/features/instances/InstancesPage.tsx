@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { Fragment, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -46,6 +46,10 @@ import {
   Settings2,
   Archive,
   Cpu,
+  ChevronDown,
+  ChevronUp,
+  Globe,
+  Network,
 } from 'lucide-react';
 import InstanceActionDialogs, { PowerConfirmDialog, type InstanceAction, type PowerAction } from './InstanceActionDialogs';
 import BulkMigrateDialog from './BulkMigrateDialog';
@@ -268,6 +272,155 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
   );
 }
 
+// ==================== Metric row (label + progress bar + detail) ====================
+function MetricRow({ label, value, max, detail }: { label: string; value: number | null | undefined; max: number; detail: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
+      {value != null && max ? (
+        <InlineProgress value={value} max={max} />
+      ) : (
+        <span className="text-xs text-muted-foreground">—</span>
+      )}
+      <span className="text-xs text-muted-foreground">{detail}</span>
+    </div>
+  );
+}
+
+// ==================== Info item (label + value) ====================
+function InfoItem({ label, value, mono, icon: Icon }: { label: string; value: string; mono?: boolean; icon?: typeof Globe }) {
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`flex items-center gap-1 ${mono ? 'font-mono text-sm' : 'text-sm'}`}>
+        {Icon && <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />}
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ==================== Expandable instance metrics panel ====================
+function InstanceMetricsPanel({ vm, nodeLabelName }: { vm: VMInstance; nodeLabelName: string }) {
+  const { t } = useTranslation();
+  const isQemu = vm.type === 'qemu';
+  const owner =
+    vm.owner_user?.email || vm.owner_user?.full_name || vm.owner_user?.username || vm.owner || '—';
+  const os = vm.os || vm.os_template || '—';
+  const isRunning = vm.status === 'running';
+
+  return (
+    <div className="border-t bg-muted/30">
+      <div className="flex flex-wrap items-center gap-4 border-b px-4 py-2 text-sm">
+        <Link
+          to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=settings`}
+          className="flex items-center gap-1.5 text-primary hover:underline"
+        >
+          <Settings2 className="h-3.5 w-3.5" /> {t('instances.parameters', 'Параметры')}
+        </Link>
+        <Link
+          to={`/console/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+        >
+          <Terminal className="h-3.5 w-3.5" /> {t('common.console', 'Console')}
+        </Link>
+      </div>
+      <div className="grid gap-6 p-4 sm:grid-cols-2">
+        <div className="space-y-2.5">
+          <MetricRow
+            label="vCPU"
+            value={vm.cpu != null ? vm.cpu * 100 : null}
+            max={100}
+            detail={vm.cores ? `${vm.cores} vCPU` : '—'}
+          />
+          <MetricRow
+            label="RAM"
+            value={vm.mem ?? null}
+            max={vm.maxmem || 0}
+            detail={vm.mem != null && vm.maxmem ? `${formatBytes(vm.mem)} / ${formatBytes(vm.maxmem)}` : '—'}
+          />
+          {!isQemu && (
+            <MetricRow
+              label="Storage"
+              value={vm.disk ?? null}
+              max={vm.maxdisk || 0}
+              detail={vm.disk != null && vm.maxdisk ? `${formatBytes(vm.disk)} / ${formatBytes(vm.maxdisk)}` : '—'}
+            />
+          )}
+        </div>
+        <div className="grid grid-cols-2 content-start gap-x-6 gap-y-3">
+          <InfoItem label={t('instances.ip_address', 'IP-адрес')} value={vm.ip_address || '—'} mono icon={Globe} />
+          <InfoItem label={t('common.node', 'Узел')} value={nodeLabelName} />
+          <InfoItem label={t('instances.os_config', 'ОС')} value={os} />
+          <InfoItem label={t('instances.owner', 'Владелец')} value={owner} />
+          <InfoItem label={t('instances.uptime', 'Аптайм')} value={vm.uptime ? formatUptime(vm.uptime) : '—'} />
+        </div>
+      </div>
+      {isRunning && (
+        <div className="grid gap-3 border-t px-4 py-4 sm:grid-cols-2">
+          <IoStatCard
+            icon={Network}
+            label={t('instances.network', 'Сеть')}
+            rows={[
+              { icon: ArrowDown, iconClass: 'text-primary', label: t('instances.net_in', 'Входящий'), value: vm.netin_rate },
+              { icon: ArrowUp, iconClass: 'text-violet-500', label: t('instances.net_out', 'Исходящий'), value: vm.netout_rate },
+            ]}
+          />
+          <IoStatCard
+            icon={HardDrive}
+            label={t('instances.disk_io', 'Диск I/O')}
+            rows={[
+              { badge: 'R', badgeClass: 'text-cyan-500', label: t('instances.disk_read', 'Чтение'), value: vm.diskread_rate },
+              { badge: 'W', badgeClass: 'text-orange-500', label: t('instances.disk_write', 'Запись'), value: vm.diskwrite_rate },
+            ]}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==================== I/O stat card (network / disk throughput) ====================
+type IoStatRow = {
+  label: string;
+  value?: number;
+  icon?: typeof ArrowDown;
+  iconClass?: string;
+  badge?: string;
+  badgeClass?: string;
+};
+
+function IoStatCard({ icon: Icon, label, rows }: { icon: typeof Network; label: string; rows: IoStatRow[] }) {
+  return (
+    <div className="rounded-lg border bg-background p-3">
+      <div className="mb-2.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <Icon className="h-4 w-4" /> {label}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center gap-2">
+            {row.icon ? (
+              <row.icon className={`h-4 w-4 shrink-0 ${row.iconClass}`} />
+            ) : (
+              <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm bg-muted text-[10px] font-bold ${row.badgeClass}`}>
+                {row.badge}
+              </span>
+            )}
+            <div className="leading-tight">
+              <div className="text-sm font-semibold tabular-nums">
+                {row.value != null ? `${formatBytes(row.value)}/s` : '—'}
+              </div>
+              <div className="text-2xs text-muted-foreground">{row.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ==================== Instances Page ====================
 export default function InstancesPage() {
   const { t } = useTranslation();
@@ -376,6 +529,15 @@ export default function InstancesPage() {
     }
   });
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((rowId: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  }, []);
 
   // Reset every filter that can reference a server/node identity when the
   // active workspace changes — those values belong to whatever workspace was
@@ -668,7 +830,7 @@ export default function InstancesPage() {
   // component types, so a new columns array remounts EVERY cell — which closes
   // an open row dropdown menu the moment vms/servers/tasks data refreshes.
   // Cells still see fresh values: any store/query update re-renders the table.
-  const cellCtx = { deployTasks, overlayByVm, bulkOverlayByVm, serverNameById, nodeLabel };
+  const cellCtx = { deployTasks, overlayByVm, bulkOverlayByVm, serverNameById, nodeLabel, expandedRows, toggleExpand };
   const cellCtxRef = useRef(cellCtx);
   cellCtxRef.current = cellCtx;
 
@@ -727,11 +889,20 @@ export default function InstancesPage() {
               </div>
             );
           }
+          const rowId = vmRowId(vm);
+          const isExpanded = cellCtxRef.current.expandedRows.has(rowId);
           return (
-            <Link
-              to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`}
-              className="group flex items-center gap-2"
+            <button
+              type="button"
+              onClick={() => cellCtxRef.current.toggleExpand(rowId)}
+              className="group flex items-center gap-2 text-left"
+              aria-expanded={isExpanded}
             >
+              {isExpanded ? (
+                <ChevronUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              )}
               <StatusDot status={vm.status} pulse />
               <div>
                 <span className="font-medium text-foreground group-hover:text-primary transition-colors">
@@ -739,7 +910,7 @@ export default function InstancesPage() {
                 </span>
                 <span className="ml-2 text-xs text-muted-foreground">#{vm.vmid}</span>
               </div>
-            </Link>
+            </button>
           );
         },
       },
@@ -904,124 +1075,6 @@ export default function InstancesPage() {
           );
         },
         size: 200,
-      },
-      {
-        id: 'cpu',
-        header: 'CPU',
-        cell: ({ row }) => {
-          const vm = row.original;
-          if (vm._deployTaskId) return <span className="text-xs text-muted-foreground">—</span>;
-          if (!vm.cpu && vm.cpu !== 0) return <span className="text-xs text-muted-foreground">—</span>;
-          return <InlineProgress value={vm.cpu * 100} max={100} />;
-        },
-        size: 120,
-      },
-      {
-        id: 'memory',
-        header: t('dashboard.memory', 'Memory'),
-        cell: ({ row }) => {
-          const vm = row.original;
-          if (vm._deployTaskId || !vm.mem || !vm.maxmem) return <span className="text-xs text-muted-foreground">—</span>;
-          return (
-            <Tooltip>
-              <TooltipTrigger>
-                <InlineProgress value={vm.mem} max={vm.maxmem} />
-              </TooltipTrigger>
-              <TooltipContent>{formatBytes(vm.mem)} / {formatBytes(vm.maxmem)}</TooltipContent>
-            </Tooltip>
-          );
-        },
-        size: 120,
-      },
-      {
-        id: 'disk',
-        header: 'Disk',
-        cell: ({ row }) => {
-          const vm = row.original;
-          if (vm._deployTaskId) return <span className="text-xs text-muted-foreground">—</span>;
-          // For QEMU, cluster/resources 'disk' = disk I/O bytes (not usage) → not meaningful as %
-          if (vm.type !== 'lxc' || (!vm.disk && !vm.maxdisk)) return <span className="text-xs text-muted-foreground">—</span>;
-          return (
-            <Tooltip>
-              <TooltipTrigger>
-                <InlineProgress value={vm.disk || 0} max={vm.maxdisk || 0} />
-              </TooltipTrigger>
-              <TooltipContent>{formatBytes(vm.disk || 0)} / {formatBytes(vm.maxdisk || 0)}</TooltipContent>
-            </Tooltip>
-          );
-        },
-        size: 120,
-      },
-      {
-        id: 'net_io',
-        header: () => (
-          <span className="flex items-center gap-1">
-            <ArrowDown className="h-3 w-3 text-primary" />
-            <ArrowUp className="h-3 w-3 text-violet-500" />
-            Net
-          </span>
-        ),
-        cell: ({ row }) => {
-          const vm = row.original;
-          if (vm._deployTaskId || vm.status !== 'running') return <span className="text-xs text-muted-foreground">—</span>;
-          const inRate = vm.netin_rate;
-          const outRate = vm.netout_rate;
-          if (inRate == null && outRate == null) return <span className="text-xs text-muted-foreground">—</span>;
-          const fmt = (v?: number) => v != null ? `${formatBytes(v)}/s` : '—';
-          return (
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-1">
-                <ArrowDown className="h-3 w-3 shrink-0 text-primary" />
-                <span className="text-xs tabular-nums">{fmt(inRate)}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <ArrowUp className="h-3 w-3 shrink-0 text-violet-500" />
-                <span className="text-xs tabular-nums">{fmt(outRate)}</span>
-              </div>
-            </div>
-          );
-        },
-        size: 110,
-      },
-      {
-        id: 'disk_io',
-        header: () => (
-          <span className="flex items-center gap-1">
-            <HardDrive className="h-3 w-3 text-muted-foreground" />
-            Disk I/O
-          </span>
-        ),
-        cell: ({ row }) => {
-          const vm = row.original;
-          if (vm._deployTaskId || vm.status !== 'running') return <span className="text-xs text-muted-foreground">—</span>;
-          const readRate = vm.diskread_rate;
-          const writeRate = vm.diskwrite_rate;
-          if (readRate == null && writeRate == null) return <span className="text-xs text-muted-foreground">—</span>;
-          const fmt = (v?: number) => v != null ? `${formatBytes(v)}/s` : '—';
-          return (
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-1">
-                <span className="text-2xs text-cyan-500 font-medium w-3">R</span>
-                <span className="text-xs tabular-nums">{fmt(readRate)}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-2xs text-orange-500 font-medium w-3">W</span>
-                <span className="text-xs tabular-nums">{fmt(writeRate)}</span>
-              </div>
-            </div>
-          );
-        },
-        size: 110,
-      },
-      {
-        id: 'uptime',
-        header: 'Uptime',
-        cell: ({ row }) => {
-          if (row.original._deployTaskId) return <span className="text-xs text-muted-foreground">—</span>;
-          const up = row.original.uptime;
-          return <span className="text-xs text-muted-foreground">{up ? formatUptime(up) : '—'}</span>;
-        },
-        size: 80,
       },
       {
         id: 'actions',
@@ -1311,18 +1364,33 @@ export default function InstancesPage() {
               <TableBody>
                 {table.getRowModel().rows.map((row) => {
                   const isGhost = !!row.original._deployTaskId;
+                  const isExpanded = !isGhost && expandedRows.has(row.id);
                   return (
-                    <TableRow
-                      key={row.id}
-                      data-state={row.getIsSelected() && 'selected'}
-                      className={isGhost ? 'opacity-70 bg-primary/5 border-l-2 border-l-primary' : undefined}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
+                    <Fragment key={row.id}>
+                      <TableRow
+                        data-state={row.getIsSelected() && 'selected'}
+                        className={isGhost ? 'opacity-70 bg-primary/5 border-l-2 border-l-primary' : undefined}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={row.getVisibleCells().length} className="p-0">
+                            <InstanceMetricsPanel
+                              vm={row.original}
+                              nodeLabelName={
+                                (row.original.server_id != null ? serverNameById.get(row.original.server_id) : undefined) ??
+                                row.original.node
+                              }
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
                   );
                 })}
               </TableBody>
