@@ -4,7 +4,7 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
-## [Unreleased]
+## [v1.17.0] - 2026-08-20
 
 ### 💾 Move LXC container disks to another storage
 
