@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Link } from 'react-router';
 import { Box, Monitor } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -14,9 +15,10 @@ function GuestNodeImpl({ data }: NodeProps) {
   const extraTags = guest.tags.length - VISIBLE_TAGS;
 
   return (
-    <div
+    <Link
+      to={`/instances/${guest.server_id}/${guest.vmid}?node=${guest.node}&type=${guest.type}`}
       className={cn(
-        'w-[250px] rounded-md border bg-card px-2.5 py-2 shadow-sm',
+        'block w-[250px] rounded-md border bg-card px-2.5 py-2 shadow-sm transition-colors hover:border-primary/60 hover:bg-accent/40',
         running ? 'border-emerald-500/50' : 'border-border',
       )}
     >
@@ -47,7 +49,7 @@ function GuestNodeImpl({ data }: NodeProps) {
         </div>
       ) : null}
       <Handle type="source" position={Position.Bottom} isConnectable={false} className="!bg-border" />
-    </div>
+    </Link>
   );
 }
 
