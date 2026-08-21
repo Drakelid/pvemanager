@@ -6,6 +6,14 @@ All notable changes to PVEmanager will be documented in this file.
 
 ## [Unreleased]
 
+### 🖥️ LXC console — failed termproxy tasks and the black screen
+
+- **⚠️ Breaking change: `GET /api/{server_id}/container/{vmid}/terminal` has been removed.** The WebSocket endpoint `/proxmox/ws/terminal/{server_id}/{node}/{vmid}` creates the termproxy session itself, so the REST call was unused by the panel and left an orphaned session on the node on every invocation. External clients should open the WebSocket directly
+- **Opening an LXC console no longer leaves a failed task on the node** — `failed waiting for client: timed out` / `TASK ERROR: command '/usr/bin/termproxy 5900 ... vzctlconsole<id>' failed`. The console page created a termproxy session over REST (using only the `node` field of the response and discarding port and ticket), then a second one over the WebSocket endpoint and attached to that one. Nobody ever attached to the first, so Proxmox waited ~10 s for a client and failed the task
+- **Console no longer shows a black screen with a "connected" badge in dev** — React StrictMode mounts the effect twice and the connect helpers are async, so effect cleanup ran before they had assigned `wsRef`/`termRef` and cleaned up nothing. Two xterm instances ended up in the same container: the one filling the viewport was orphaned while the live one was pushed out of the overflow-hidden area. Sessions now carry a cancellation guard, and both mount and the reconnect button go through a single entry point that tears the previous session down first. The same guard was applied to the node shell page
+
+---
+
 ### 🔍 NFS storage dialog — scan for available exports
 
 - **Added a "scan exports" button** next to the server field when adding an NFS storage — calls Proxmox's `GET /nodes/{node}/scan/nfs` and turns the export path field from a free-text input into a select populated with the exports actually found on the target server, instead of requiring the path to be typed by hand and guessed
