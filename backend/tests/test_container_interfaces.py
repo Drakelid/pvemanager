@@ -103,3 +103,23 @@ def test_include_live_false_skips_live_endpoint():
     # Stopped container: querying /interfaces would only produce a 500.
     assert _client_with_mock(px).get_container_interfaces("pve1", 130, include_live=False) == []
     lxc.interfaces.get.assert_not_called()
+
+
+def test_execute_script_sends_bytes_not_wide_chars():
+    """Скрипт с кириллицей не должен ронять Perl-обработчик Proxmox.
+
+    PVE кодирует input-data в base64 средствами Perl и падает с
+    "Wide character in subroutine entry" на любой строке с не-ASCII.
+    Отдаём UTF-8 байты, представленные как latin-1.
+    """
+    px = MagicMock()
+    agent = px.nodes.return_value.qemu.return_value.agent
+    agent.exec.post.return_value = {"pid": 1}
+    agent("exec-status").get.return_value = {"exited": 1, "exitcode": 0, "out-data": "ok"}
+
+    script = "#!/bin/sh\n# комментарий с кириллицей\necho ok\n"
+    _client_with_mock(px).execute_script("prod", 102, script)
+
+    sent = agent.exec.post.call_args.kwargs["input-data"]
+    assert all(ord(ch) < 256 for ch in sent), "в API уходят широкие символы"
+    assert sent.encode("latin-1").decode("utf-8") == script

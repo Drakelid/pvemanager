@@ -1852,9 +1852,16 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 #
                 # Proxmox API сам кодирует input-data в base64 перед передачей
                 # guest agent'у, поэтому передаем сырое содержимое скрипта.
+                # Proxmox кодирует input-data в base64 силами Perl, а тот падает
+                # с "Wide character in subroutine entry" на любой строке с
+                # не-ASCII — например на комментариях кириллицей. Отдаём те же
+                # UTF-8 байты, представленные как latin-1: в JSON уходят байты,
+                # гость получает корректный UTF-8.
+                payload = script_content.encode('utf-8').decode('latin-1')
+
                 exec_result = self.proxmox.nodes(node).qemu(vmid).agent.exec.post(
                     command=[interpreter],
-                    **{'input-data': script_content}
+                    **{'input-data': payload}
                 )
 
                 if 'pid' not in exec_result:
