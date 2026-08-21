@@ -73,6 +73,14 @@ interface VNCData {
   auth_ticket?: string;
 }
 
+// Сессия консоли переживает один проход эффекта: connect* асинхронны, а React
+// StrictMode в dev монтирует эффект дважды. Без флага отмены вторая пара
+// xterm/RFB ложится в тот же контейнер поверх первой — «осиротевший» терминал
+// остаётся в DOM и занимает видимую область, из-за чего экран выглядит пустым.
+interface SessionGuard {
+  cancelled: boolean;
+}
+
 interface RFBHandle {
   disconnect: () => void;
   sendCtrlAltDel: () => void;
@@ -108,12 +116,37 @@ export default function ConsolePage() {
   const vid = Number(vmid);
   const power = usePowerAction(sid, vid, type, node);
 
+  const guardRef = useRef<SessionGuard | null>(null);
+
+  // Освобождает ресурсы текущей сессии (RFB / xterm / WebSocket / keepalive).
+  const cleanupSession = useCallback(() => {
+    if (rfbRef.current) {
+      try { rfbRef.current.disconnect(); } catch { /* */ }
+      rfbRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (keepaliveRef.current) {
+      clearInterval(keepaliveRef.current);
+      keepaliveRef.current = null;
+    }
+    if (termRef.current) {
+      const t = termRef.current as { terminal: { dispose: () => void }; cleanup: () => void };
+      t.cleanup();
+      t.terminal.dispose();
+      termRef.current = null;
+    }
+  }, []);
+
   // ==================== VNC Console (QEMU) ====================
-  const connectVNC = useCallback(async () => {
+  const connectVNC = useCallback(async (guard: SessionGuard) => {
     try {
       const data = await apiClient.get<VNCData>(
         `/proxmox/api/${sid}/vm/${vid}/vnc?node=${node}`
       );
+      if (guard.cancelled) return;
 
       // Dynamic import noVNC. The package ships CJS, so depending on bundler
       // interop the result can be: { default: RFB }, { default: { default: RFB, __esModule: true } },
@@ -149,7 +182,7 @@ export default function ConsolePage() {
 
       const wsUrl = `${wsProto}//${window.location.host}/proxmox/ws/vnc/${sid}/${data.node}/qemu/${vid}?${params}`;
 
-      if (!containerRef.current) return;
+      if (guard.cancelled || !containerRef.current) return;
 
       // Pass URL string to RFB, NOT an open WebSocket
       const rfb = new RFB(containerRef.current, wsUrl, {
@@ -160,10 +193,12 @@ export default function ConsolePage() {
       rfb.resizeSession = false;
 
       rfb.addEventListener('connect', () => {
+        if (guard.cancelled) return;
         setStatus('connected');
       });
 
       rfb.addEventListener('disconnect', (e: CustomEvent) => {
+        if (guard.cancelled) return;
         if (e.detail?.clean) {
           setStatus('error');
           setErrorMsg('Connection closed');
@@ -176,6 +211,7 @@ export default function ConsolePage() {
       rfbRef.current = rfb as RFBHandle;
       setScaleToFit(true);
     } catch (err) {
+      if (guard.cancelled) return;
       setStatus('error');
       setErrorMsg(err instanceof Error ? err.message : 'Failed to connect');
     }
@@ -183,7 +219,7 @@ export default function ConsolePage() {
 
   // ==================== xterm.js session (LXC terminal / VM serial) ====================
   // Общая обвязка xterm + WebSocket. wsPath — путь до нужного ws-эндпоинта Proxmox-прокси.
-  const setupXtermSession = useCallback(async (wsPath: string) => {
+  const setupXtermSession = useCallback(async (wsPath: string, guard: SessionGuard) => {
     // Dynamic import xterm.js
     const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
       import('@xterm/xterm'),
@@ -191,7 +227,7 @@ export default function ConsolePage() {
       import('@xterm/addon-web-links'),
     ]);
 
-    if (!containerRef.current) return;
+    if (guard.cancelled || !containerRef.current) return;
 
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
@@ -219,9 +255,12 @@ export default function ConsolePage() {
     const wsUrl = `${wsProto}//${window.location.host}${wsPath}${tokenParam}`;
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
-    wsRef.current = ws;
 
     ws.onopen = () => {
+      if (guard.cancelled) {
+        ws.close();
+        return;
+      }
       setStatus('connected');
       const { cols, rows } = terminal;
       ws.send(`1:${cols}:${rows}:`);
@@ -231,11 +270,20 @@ export default function ConsolePage() {
     };
 
     ws.onmessage = (event) => {
+      if (guard.cancelled) return;
       if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
       else terminal.write(event.data);
     };
-    ws.onclose = () => { setStatus('error'); setErrorMsg('Terminal connection closed'); };
-    ws.onerror = () => { setStatus('error'); setErrorMsg('Terminal connection error'); };
+    ws.onclose = () => {
+      if (guard.cancelled) return;
+      setStatus('error');
+      setErrorMsg('Terminal connection closed');
+    };
+    ws.onerror = () => {
+      if (guard.cancelled) return;
+      setStatus('error');
+      setErrorMsg('Terminal connection error');
+    };
 
     terminal.onData((data: string) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -249,62 +297,75 @@ export default function ConsolePage() {
 
     const handleResize = () => fitAddon.fit();
     window.addEventListener('resize', handleResize);
+
+    // Сессию могли отменить, пока грузились чанки xterm. Убираем за собой сами и
+    // НЕ трогаем refs: они уже могут указывать на актуальную сессию. Иначе в
+    // контейнере остаётся невидимый терминал поверх живого — чёрный экран.
+    if (guard.cancelled) {
+      window.removeEventListener('resize', handleResize);
+      terminal.dispose();
+      ws.close();
+      return;
+    }
+
+    wsRef.current = ws;
     termRef.current = { terminal, fitAddon, cleanup: () => window.removeEventListener('resize', handleResize) };
   }, []);
 
   // ==================== Terminal Console (LXC) ====================
-  const connectTerminal = useCallback(async () => {
+  const connectTerminal = useCallback(async (guard: SessionGuard) => {
     try {
-      const data = await apiClient.get<VNCData>(
-        `/proxmox/api/${sid}/container/${vid}/terminal?node=${node}`
-      );
-      await setupXtermSession(`/proxmox/ws/terminal/${sid}/${data.node}/${vid}`);
+      // Termproxy-сессию создаёт сам ws-эндпоинт. Отдельный REST-вызов
+      // (GET .../container/{vmid}/terminal) поднимал бы на ноде вторую
+      // termproxy-сессию, к которой никто не подключается: Proxmox ждёт клиента
+      // ~10 секунд и завершает задачу с «failed waiting for client: timed out».
+      await setupXtermSession(`/proxmox/ws/terminal/${sid}/${node}/${vid}`, guard);
     } catch (err) {
+      if (guard.cancelled) return;
       setStatus('error');
       setErrorMsg(err instanceof Error ? err.message : 'Failed to connect');
     }
   }, [sid, vid, node, setupXtermSession]);
 
   // ==================== Serial Console (QEMU) ====================
-  const connectSerial = useCallback(async () => {
+  const connectSerial = useCallback(async (guard: SessionGuard) => {
     try {
       // Убедиться, что у VM есть serial0 (добавит при отсутствии)
       await apiClient.post(`/proxmox/api/${sid}/vm/${vid}/serial/enable?node=${node}`);
-      await setupXtermSession(`/proxmox/ws/serial/${sid}/${node}/${vid}`);
+      if (guard.cancelled) return;
+      await setupXtermSession(`/proxmox/ws/serial/${sid}/${node}/${vid}`, guard);
     } catch (err) {
+      if (guard.cancelled) return;
       setStatus('error');
       setErrorMsg(err instanceof Error ? err.message : 'Failed to connect');
     }
   }, [sid, vid, node, setupXtermSession]);
 
   // ==================== Connect on mount ====================
+  // Старт новой сессии: старая помечается отменённой и полностью убирается,
+  // чтобы в контейнере всегда был ровно один живой терминал/RFB.
+  const startSession = useCallback(() => {
+    if (guardRef.current) guardRef.current.cancelled = true;
+    cleanupSession();
+
+    const guard: SessionGuard = { cancelled: false };
+    guardRef.current = guard;
+    setStatus('connecting');
+    setErrorMsg('');
+
+    if (isSerial) connectSerial(guard);
+    else if (type === 'qemu') connectVNC(guard);
+    else connectTerminal(guard);
+  }, [isSerial, type, connectSerial, connectVNC, connectTerminal, cleanupSession]);
+
   useEffect(() => {
-    if (isSerial) {
-      connectSerial();
-    } else if (type === 'qemu') {
-      connectVNC();
-    } else {
-      connectTerminal();
-    }
+    startSession();
 
     return () => {
-      // Cleanup
-      if (rfbRef.current) {
-        try { (rfbRef.current as { disconnect: () => void }).disconnect(); } catch { /* */ }
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (keepaliveRef.current) {
-        clearInterval(keepaliveRef.current);
-      }
-      if (termRef.current) {
-        const t = termRef.current as { terminal: { dispose: () => void }; cleanup: () => void };
-        t.cleanup();
-        t.terminal.dispose();
-      }
+      if (guardRef.current) guardRef.current.cancelled = true;
+      cleanupSession();
     };
-  }, [type, isSerial, connectVNC, connectTerminal, connectSerial]);
+  }, [startSession, cleanupSession]);
 
   // ==================== Fullscreen ====================
   const toggleFullscreen = () => {
@@ -574,13 +635,7 @@ export default function ConsolePage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setStatus('connecting');
-                  setErrorMsg('');
-                  if (isSerial) connectSerial();
-                  else if (type === 'qemu') connectVNC();
-                  else connectTerminal();
-                }}
+                onClick={startSession}
               >
                 {t('console.reconnect')}
               </Button>

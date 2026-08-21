@@ -25,10 +25,30 @@ export default function NodeShellPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const termRef = useRef<{ terminal: { dispose: () => void }; cleanup: () => void } | null>(null);
+  // Флаг отмены: connect() асинхронен, а React StrictMode в dev монтирует эффект
+  // дважды — без него второй xterm ложится в контейнер поверх первого и видимой
+  // остаётся «осиротевшая» пустая сессия.
+  const guardRef = useRef<{ cancelled: boolean } | null>(null);
 
   const sid = Number(serverId);
 
-  const connect = useCallback(async () => {
+  const cleanupSession = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (keepaliveRef.current) {
+      clearInterval(keepaliveRef.current);
+      keepaliveRef.current = null;
+    }
+    if (termRef.current) {
+      termRef.current.cleanup();
+      termRef.current.terminal.dispose();
+      termRef.current = null;
+    }
+  }, []);
+
+  const connect = useCallback(async (guard: { cancelled: boolean }) => {
     try {
       const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
         import('@xterm/xterm'),
@@ -36,7 +56,7 @@ export default function NodeShellPage() {
         import('@xterm/addon-web-links'),
       ]);
 
-      if (!containerRef.current) return;
+      if (guard.cancelled || !containerRef.current) return;
 
       const fitAddon = new FitAddon();
       const webLinksAddon = new WebLinksAddon();
@@ -65,9 +85,12 @@ export default function NodeShellPage() {
       const wsUrl = `${wsProto}//${window.location.host}/proxmox/ws/node-shell/${sid}/${node}?${params}`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
-      wsRef.current = ws;
 
       ws.onopen = () => {
+        if (guard.cancelled) {
+          ws.close();
+          return;
+        }
         setStatus('connected');
         const { cols, rows } = terminal;
         ws.send(`1:${cols}:${rows}:`);
@@ -77,6 +100,7 @@ export default function NodeShellPage() {
       };
 
       ws.onmessage = (event) => {
+        if (guard.cancelled) return;
         if (event.data instanceof ArrayBuffer) {
           terminal.write(new Uint8Array(event.data));
         } else {
@@ -85,10 +109,12 @@ export default function NodeShellPage() {
       };
 
       ws.onclose = () => {
+        if (guard.cancelled) return;
         setStatus('error');
         setErrorMsg(t('console.terminal_closed', 'Соединение с терминалом закрыто'));
       };
       ws.onerror = () => {
+        if (guard.cancelled) return;
         setStatus('error');
         setErrorMsg(t('console.terminal_error', 'Ошибка соединения с терминалом'));
       };
@@ -106,24 +132,43 @@ export default function NodeShellPage() {
 
       const handleResize = () => fitAddon.fit();
       window.addEventListener('resize', handleResize);
+
+      // Сессию могли отменить, пока грузились чанки xterm. Убираем за собой сами
+      // и не трогаем refs — они уже могут указывать на актуальную сессию.
+      if (guard.cancelled) {
+        window.removeEventListener('resize', handleResize);
+        terminal.dispose();
+        ws.close();
+        return;
+      }
+
+      wsRef.current = ws;
       termRef.current = { terminal, cleanup: () => window.removeEventListener('resize', handleResize) };
     } catch (err) {
+      if (guard.cancelled) return;
       setStatus('error');
       setErrorMsg(err instanceof Error ? err.message : 'Failed to connect');
     }
   }, [sid, node, cmd, t]);
 
+  const startSession = useCallback(() => {
+    if (guardRef.current) guardRef.current.cancelled = true;
+    cleanupSession();
+
+    const guard = { cancelled: false };
+    guardRef.current = guard;
+    setStatus('connecting');
+    setErrorMsg('');
+    connect(guard);
+  }, [connect, cleanupSession]);
+
   useEffect(() => {
-    connect();
+    startSession();
     return () => {
-      if (wsRef.current) wsRef.current.close();
-      if (keepaliveRef.current) clearInterval(keepaliveRef.current);
-      if (termRef.current) {
-        termRef.current.cleanup();
-        termRef.current.terminal.dispose();
-      }
+      if (guardRef.current) guardRef.current.cancelled = true;
+      cleanupSession();
     };
-  }, [connect]);
+  }, [startSession, cleanupSession]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -182,11 +227,7 @@ export default function NodeShellPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setStatus('connecting');
-                  setErrorMsg('');
-                  connect();
-                }}
+                onClick={startSession}
               >
                 {t('console.reconnect', 'Переподключиться')}
               </Button>
