@@ -223,9 +223,15 @@ This section summarizes key API endpoints. All require JWT authentication.
 - `GET /ipam/api/networks` — list networks
 - `POST /ipam/api/networks` — create network
 - `DELETE /ipam/api/networks/{id}` — delete network
-- `GET /ipam/api/allocations` — list IP allocations
+- `GET /ipam/api/allocations` — list IP allocations (filters: `network_id`, `pool_id`, `status`, `proxmox_server_id`, `proxmox_vmid`)
 - `POST /ipam/api/allocations` — create IP allocation
 - `DELETE /ipam/api/allocations/{id}` — release IP
+- `GET /ipam/api/guests/{server_id}/{vmid}/addresses` — all addresses of an instance
+- `POST /ipam/api/guests/{server_id}/{vmid}/addresses` — give the instance an extra address
+- `POST /ipam/api/guests/{server_id}/{vmid}/addresses/{id}/apply` — retry applying it to the guest
+- `POST /ipam/api/guests/{server_id}/{vmid}/addresses/{id}/primary` — mark it primary
+- `DELETE /ipam/api/guests/{server_id}/{vmid}/addresses/{id}` — remove from the guest and release
+- `POST /ipam/api/link-allocations` — scan guests and register their addresses
 
 ### Notifications
 
@@ -380,6 +386,7 @@ This section summarizes key API endpoints. All require JWT authentication.
 - Dynamic server and node selectors in network creation forms
 - Automatic IP allocation
 - IP reservation and release
+- **Several addresses per instance** — a primary address plus extra ones applied inside the guest as aliases
 - Allocation history
 
 ### Notifications
@@ -1159,6 +1166,41 @@ Pool: Web Servers
 Start: 192.168.1.10
 End: 192.168.1.50
 ```
+
+### Several addresses per instance
+
+A guest holds one **primary** address plus any number of extra ones. The primary address is the one written into the guest's NIC configuration (`net0` for LXC, `ipconfig0` for QEMU) — it is what the IP column of the instance list shows. Extra addresses are added **inside** the guest as aliases on an existing interface.
+
+Manage them on the **Network** tab of an instance, in the **IP addresses** card:
+
+| Action | What happens |
+|--------|--------------|
+| Add IP | Allocates an address (next free in a network/pool, or one you type) and applies it to the chosen interface |
+| Apply | Retries applying an address that could not be pushed to the guest earlier |
+| Make primary | Moves the primary flag; the IP column and the instance cache follow it |
+| Release | Removes the address from the guest, then frees it in IPAM |
+
+The primary address is not releasable from this card — it belongs to the NIC configuration and is changed through the network device instead.
+
+### How an extra address is applied
+
+The address is brought up with `ip addr add` and the guest's networking is **never restarted**, so a running guest keeps its connectivity. Delivery reuses the script engine:
+
+- **LXC** — `pct exec` over SSH to the node (needs the server password or an SSH key for `root@node`)
+- **QEMU** — the guest agent, which must allow `guest-exec` (some images ship with it blocked in `/etc/sysconfig/qemu-ga` or `/etc/default/qemu-guest-agent`)
+
+Proxmox regenerates the guest network configuration on **every start** of a guest, wiping anything written into the native stack. To make an address survive a reboot, PVEmanager installs a small oneshot systemd unit (`pvemanager-aliases.service`) that re-adds the recorded addresses after `network-online.target`; `/etc/systemd` is not touched by Proxmox. The native stack is configured as well when it is recognised — ifupdown, netplan, NetworkManager or sysconfig/network-scripts for RHEL-based guests.
+
+### Address states
+
+| State | Meaning |
+|-------|---------|
+| 🟢 applied | Up in the guest and recorded so it returns after a reboot |
+| 🟡 runtime_only | Up in the guest, but no known network stack and no systemd — will be lost on reboot |
+| 🟠 pending | Reserved in IPAM, not pushed to the guest yet (guest stopped, no guest agent, no SSH to the node) — press **Apply** later |
+| 🔴 failed | The script ran and returned an error; the reason is shown next to the address |
+
+An address is always reserved in IPAM even when it cannot be applied, so it is never handed out to somebody else in the meantime.
 
 ### IP Status
 

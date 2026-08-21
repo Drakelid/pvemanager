@@ -4,7 +4,36 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
-## [Unreleased]
+## [v1.18.0] - 2026-08-22
+
+### 🌐 Several IP addresses per instance
+
+- **An instance is no longer limited to one address** — a guest can hold a primary address plus any number of extra ones. Previously every lookup assumed "one guest → one allocation": `find_allocation_by_resource()` returned the first row it saw, `release_ip_by_vmid()` freed a single address (leaving the rest occupied forever after a guest was deleted), and the link tool skipped guests that already had an allocation
+- **New "IP addresses" card on the instance Network tab** — lists every address of the guest with its state, and lets you add one (next free in a network/pool or entered by hand), retry applying it, mark it primary or release it. The IP column of the instance list shows the primary address with a **+N** badge for the rest, and the allocations table marks the primary one
+- **Extra addresses are applied inside the guest as aliases** — through the existing script engine, so LXC goes over `pct exec` and VMs over the QEMU guest agent. The address is brought up with `ip addr add` and never restarts guest networking, so a running guest keeps its connectivity
+- **Addresses survive a guest reboot** — Proxmox regenerates the guest network configuration on every start (pve-container rewrites `/etc/network/interfaces`, `ifcfg` or the NetworkManager keyfile from `netN`), which wiped any alias added to the native stack. A small oneshot systemd unit re-adds the recorded addresses after `network-online.target`; `/etc/systemd` is not touched by Proxmox. The native stacks (ifupdown, netplan, NetworkManager, sysconfig/network-scripts for RHEL-based guests) are still written, so the reported state can be composite, e.g. `nm+systemd`
+- **An address is reserved even when it cannot be applied** — a stopped guest, a missing guest agent or no SSH access to the node leaves the allocation in `pending` with the reason shown, and the **Apply** button retries it later. An unrecognised network stack degrades to `runtime_only`, which warns that the address will not survive a reboot
+- **New endpoints** — `GET/POST /ipam/api/guests/{server_id}/{vmid}/addresses`, `POST …/{allocation_id}/apply`, `POST …/{allocation_id}/primary`, `DELETE …/{allocation_id}`; the allocations list accepts `proxmox_server_id` / `proxmox_vmid` filters, and the instance list exposes `ips[]` next to the primary `ip`
+- **Migration 43** adds `is_primary`, `assignment_kind`, `target_interface` and the `apply_*` columns to `ipam_allocations` and marks existing rows as primary. The first address of a guest is now flagged automatically, no matter which of the six allocation paths issued it
+- **Releasing an address removes it from the guest first**, then frees it in IPAM; the primary address stays owned by the NIC config and is not releasable from this card
+
+### 🔍 IPAM address discovery fixes
+
+- **LXC containers finally show their IP** — `get_container_interfaces()` looked for `ipconfigN` keys, which exist only on QEMU cloud-init guests. LXC keeps the address inside the `netN` string, so the method never returned anything and the IP column stayed empty for every container. The `netN` parser is used now, with a fallback to `/nodes/{node}/lxc/{vmid}/interfaces` for DHCP guests
+- **"Scan & link" registers every address of a guest**, not just the first one, and no longer skips guests that already have an allocation — a changed or added address used to stay unnoticed forever
+- **The MAC address is carried over** into the allocation when linking, taken from the interface the address was found on
+- **A duplicate address can no longer be stolen from a live guest** — when two guests advertise the same IP (typically a stale `ip=` left in the config of a stopped container), the owner is kept and the conflict is reported instead of silently reassigning the record
+- **Allocations are no longer matched by resource name** — two guests named alike on different servers made one guest display the other's address
+- **IPAM history no longer fails on datetime values**, which used to abort re-linking with a 500
+- **Guest IP is re-checked at most once every 5 minutes per guest** instead of on every cache sync (every 10 s), removing hundreds of pointless Proxmox calls per minute
+
+### 🐛 Other fixes
+
+- **Scripts with non-ASCII text run on VMs again** — Proxmox base64-encodes the guest agent payload in Perl, which dies with `Wide character in subroutine entry` as soon as the script contains non-ASCII (a Cyrillic comment is enough). The payload is now handed over as bytes
+- **Next-free-IP search can scan the whole subnet** when a network has no auto-assign pool, skipping node addresses and cached guest addresses so it never hands out an address that is already live
+
+---
+
 
 ### 🖥️ LXC console — failed termproxy tasks and the black screen
 

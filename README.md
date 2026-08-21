@@ -4,7 +4,7 @@
 
 **Modern web panel for managing Proxmox servers, virtual machines and LXC containers**
 
-[![Version](https://img.shields.io/badge/version-1.17.0-blue?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.18.0-blue?style=flat-square)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](compose.yml)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](backend/)
@@ -34,6 +34,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 - **SDN support** — manage Software-Defined Networking zones, VNets, and subnets; edit zones and VNets; auto-create IPAM networks for subnets
 - **Node networking** — manage node-level network interfaces (bridges, bonds, VLANs); apply/revert pending config
 - **Networks page** — unified UI for SDN and node interface management
+- **Several IP addresses per instance** — a guest can hold a primary address plus extra ones, managed from its Network tab; extras are applied inside the guest as aliases (`pct exec` for LXC, guest agent for VMs) and survive a reboot
 
 ### App Store
 - **Self-hosted app catalog** — one-click install of self-hosted apps, each into its own unprivileged LXC running Docker Compose (1 app = 1 LXC); multi-source catalog — `runtipi/runtipi-appstore` (~265 apps) plus optional `getumbrel/umbrel-apps` (~380 apps), selectable via `APPSTORE_SOURCES`
@@ -64,7 +65,7 @@ PVEmanager is a self-hosted web panel that provides a unified interface for mana
 
 ### Other
 - **Command palette** — `Ctrl+K` palette with search over a unified navigation registry for keyboard-driven jumps to any page
-- **IPAM** — IP Address Management with allocation history and orphan detection
+- **IPAM** — IP Address Management with allocation history, orphan detection and several addresses per instance
 - **Multilingual** — Russian and English interface; language preference is per-user account
 - **Encrypted credentials** — sensitive fields stored encrypted in the database
 - **Styled confirmation dialogs** — all destructive actions use a consistent themed modal instead of the native browser `confirm()`
