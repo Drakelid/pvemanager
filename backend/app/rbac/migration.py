@@ -137,12 +137,10 @@ NEW_DEFAULT_ROLES = [
             "template:view": True,
             "storage:view": True,
             "firewall:view": True,
-            "network:view": True,
             "node:view": True,
             "pool:view": True,
             "backup:view": True,
             "backup:create": True,
-            "ipam:view": True,
             "user:view": True,
             "log:view": True,
             "log:export": True,
@@ -172,10 +170,8 @@ NEW_DEFAULT_ROLES = [
             "template:view": True,
             "storage:view": True,
             "firewall:view": True,
-            "network:view": True,
             "node:view": True,
             "pool:view": True,
-            "ipam:view": True,
             # No setting:view — that grants the panel-wide settings page. A
             # user's own profile lives at /profile and needs no permission.
             "notification:view": True,
@@ -195,10 +191,8 @@ NEW_DEFAULT_ROLES = [
             "template:view": True,
             "storage:view": True,
             "firewall:view": True,
-            "network:view": True,
             "node:view": True,
             "pool:view": True,
-            "ipam:view": True,
         }
     },
 ]
@@ -489,7 +483,10 @@ def ensure_default_roles_new_format(conn) -> None:
 # custom roles do not silently lose access after the split.
 GRANULAR_BACKFILL = [
     # (umbrella permission, [granular permissions implied by it])
-    ("server:view", ["firewall:view", "network:view", "node:view", "storage:view"]),
+    # network:view/manage is deliberately NOT implied by server:view - the
+    # network topology and node/SDN interface config are admin-only, not part
+    # of the baseline "can see servers" umbrella.
+    ("server:view", ["firewall:view", "node:view", "storage:view"]),
     ("vm:view", ["pool:view", "firewall:view"]),
     ("server:manage", [
         "firewall:view", "firewall:manage",

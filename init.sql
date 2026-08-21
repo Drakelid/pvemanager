@@ -507,7 +507,6 @@ INSERT INTO roles (name, display_name, description, permissions, is_system, is_a
     "template:view": true,
     "storage:view": true,
     "backup:view": true, "backup:create": true,
-    "ipam:view": true,
     "user:view": true,
     "log:view": true, "log:export": true,
     "setting:view": true,
@@ -523,7 +522,6 @@ INSERT INTO roles (name, display_name, description, permissions, is_system, is_a
     "lxc:view": true, "lxc:start": true, "lxc:stop": true, "lxc:restart": true, "lxc:console": true,
     "template:view": true,
     "storage:view": true,
-    "ipam:view": true,
     "notification:view": true, "notification:manage": true
 }', TRUE, TRUE),
 ('demo', 'Demo User', 'Read-only access for demonstration', '{
@@ -532,8 +530,7 @@ INSERT INTO roles (name, display_name, description, permissions, is_system, is_a
     "vm:view": true,
     "lxc:view": true,
     "template:view": true,
-    "storage:view": true,
-    "ipam:view": true
+    "storage:view": true
 }', TRUE, TRUE)
 ON CONFLICT (name) DO NOTHING;
 
