@@ -1,4 +1,5 @@
 import time
+import ipaddress
 import urllib3
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +11,7 @@ from functools import lru_cache
 from contextlib import asynccontextmanager
 import base64
 
+from .net_parser import parse_guest_nics
 from .mixins.vm import VmMixin
 from .mixins.lxc import LxcMixin
 from .mixins.cluster import ClusterMixin
@@ -1642,62 +1644,89 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.debug(f"netstat unavailable for node {node}: {e}")
                 return []
 
-        def get_container_interfaces(self, node: str, vmid: int) -> List[Dict]:
+        def get_container_interfaces(self, node: str, vmid: int,
+                                     include_live: bool = True) -> List[Dict]:
             """
-            Получить сетевые интерфейсы контейнера
-            
+            Получить сетевые интерфейсы контейнера с их IP адресами.
+
+            LXC держит адрес внутри строки netN
+            ("name=eth0,bridge=vmbr0,hwaddr=..,ip=10.0.0.5/24"); ключа ipconfigN у
+            контейнеров не бывает — это cloud-init QEMU. При ip=dhcp статики в
+            конфиге нет вовсе, поэтому фактические адреса запущенного контейнера
+            дочитываются из /nodes/{node}/lxc/{vmid}/interfaces.
+
             Args:
                 node: Имя ноды
                 vmid: ID контейнера
-            
+                include_live: опрашивать ли /interfaces (бесполезно для остановленного CT)
+
             Returns:
-                Список интерфейсов с IP адресами
+                Список интерфейсов: {'name', 'hardware_address', 'ips': [{'address', 'type', 'prefix'}]}
             """
             if not self.proxmox:
                 return []
-            
+
+            interfaces: Dict[str, Dict] = {}
+
+            def _slot(name: str, mac: str = '') -> Dict:
+                iface = interfaces.setdefault(
+                    name, {'name': name, 'hardware_address': '', 'ips': []}
+                )
+                if mac and not iface['hardware_address']:
+                    iface['hardware_address'] = mac
+                return iface
+
+            def _add_ip(iface: Dict, value: str) -> None:
+                """Принимает '10.0.0.5/24' либо '10.0.0.5'; мусор и dhcp игнорирует."""
+                addr, _, prefix = (value or '').strip().partition('/')
+                if not addr or addr in ('dhcp', 'manual', 'auto'):
+                    return
+                try:
+                    ip_obj = ipaddress.ip_address(addr)
+                except ValueError:
+                    return
+                if ip_obj.is_loopback or ip_obj.is_link_local:
+                    return
+                if any(existing['address'] == addr for existing in iface['ips']):
+                    return
+                iface['ips'].append({
+                    'address': addr,
+                    'type': 'ipv6' if ip_obj.version == 6 else 'ipv4',
+                    'prefix': int(prefix) if prefix.isdigit() else (128 if ip_obj.version == 6 else 32),
+                })
+
+            # 1) Статика из конфига контейнера
             try:
-                # Для LXC можем получить IP из конфигурации
                 config = self.proxmox.nodes(node).lxc(vmid).config.get()
-                interfaces = []
-                
-                # Проверяем net0, net1 и т.д.
-                for i in range(10):
-                    net_key = f'net{i}'
-                    if net_key in config:
-                        net_config = config[net_key]
-                        # Парсим строку конфигурации сети
-                        iface_info = {'name': f'eth{i}', 'ips': []}
-                        
-                        # Пытаемся извлечь MAC адрес
-                        if 'hwaddr=' in net_config:
-                            mac = net_config.split('hwaddr=')[1].split(',')[0]
-                            iface_info['hardware_address'] = mac
-                        
-                        interfaces.append(iface_info)
-                
-                # Также проверяем IP из конфигурации
-                for i in range(10):
-                    ipconfig_key = f'ipconfig{i}'
-                    if ipconfig_key in config and interfaces and i < len(interfaces):
-                        ipconfig = config[ipconfig_key]
-                        # Парсим ip=192.168.1.10/24,gw=192.168.1.1
-                        if 'ip=' in ipconfig:
-                            ip_part = ipconfig.split('ip=')[1].split(',')[0]
-                            if ip_part != 'dhcp':
-                                # Разделяем IP и префикс
-                                if '/' in ip_part:
-                                    ip, prefix = ip_part.split('/')
-                                    interfaces[i]['ips'].append({
-                                        'address': ip,
-                                        'type': 'ipv4',
-                                        'prefix': int(prefix)
-                                    })
-                
-                return [iface for iface in interfaces if iface.get('ips')]
+                for nic in parse_guest_nics(config):
+                    iface = _slot(nic.name or f'eth{nic.index}', nic.mac or '')
+                    _add_ip(iface, nic.ip or '')
+                    _add_ip(iface, nic.ip6 or '')
             except Exception as e:
-                logger.debug(f"Не удалось получить сетевые интерфейсы контейнера {vmid}: {e}")
-                return []
+                logger.debug(f"Не удалось прочитать конфиг контейнера {vmid}: {e}")
+
+            # 2) Живые адреса — единственный источник для DHCP-контейнеров.
+            # Если статика уже найдена, лишний запрос не делаем: у остановленного
+            # контейнера этот эндпоинт всё равно отдаёт ошибку.
+            has_static_v4 = any(
+                ip_info['type'] == 'ipv4'
+                for iface in interfaces.values() for ip_info in iface['ips']
+            )
+            if not has_static_v4 and include_live:
+                try:
+                    for iface_data in (self.proxmox.nodes(node).lxc(vmid).interfaces.get() or []):
+                        name = iface_data.get('name') or ''
+                        if not name or name == 'lo':
+                            continue
+                        iface = _slot(name, (iface_data.get('hwaddr') or '').upper())
+                        _add_ip(iface, iface_data.get('inet') or '')
+                        _add_ip(iface, iface_data.get('inet6') or '')
+                except Exception as e:
+                    logger.debug(
+                        f"Интерфейсы контейнера {vmid} недоступны (возможно, остановлен): {e}"
+                    )
+
+            return [iface for iface in interfaces.values() if iface['ips']]
 
         def execute_command(self, node: str, vmid: int, command: str, timeout: int = 30) -> Dict:
             """
