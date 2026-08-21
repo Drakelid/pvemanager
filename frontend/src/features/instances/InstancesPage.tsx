@@ -1031,16 +1031,33 @@ export default function InstancesPage() {
       },
       {
         id: 'ip',
-        accessorKey: 'ip_address',
+        // Поиск идёт по всем адресам гостя, а показывается основной
+        accessorFn: (vm) => [vm.ip_address, ...(vm.ips ?? []).map((a) => a.ip)]
+          .filter(Boolean)
+          .join(' '),
         filterFn: 'includesString',
         meta: { filter: 'text' },
         header: 'IP',
-        cell: ({ getValue }) => {
-          const ip = getValue<string>();
-          return ip ? (
-            <span className="font-mono text-xs">{ip}</span>
-          ) : (
-            <span className="text-xs text-muted-foreground">—</span>
+        cell: ({ row }) => {
+          const vm = row.original;
+          const primary = vm.ip_address;
+          const extra = (vm.ips ?? []).filter((a) => a.ip !== primary);
+          if (!primary) {
+            return <span className="text-xs text-muted-foreground">—</span>;
+          }
+          return (
+            <span className="flex items-center gap-1.5">
+              <span className="font-mono text-xs">{primary}</span>
+              {extra.length > 0 && (
+                <Badge
+                  variant="secondary"
+                  className="text-2xs"
+                  title={extra.map((a) => a.ip).join(', ')}
+                >
+                  {t('ipam.extra_addresses', { defaultValue: 'ещё {{count}}', count: extra.length })}
+                </Badge>
+              )}
+            </span>
           );
         },
         size: 130,

@@ -1838,6 +1838,48 @@ def migrate_app_operations_server_id(conn):
         logger.info("✓ app_operations.server_id already exists")
 
 
+def migrate_ipam_multi_ip(conn):
+    """Migration 43: несколько IP-адресов на одного гостя.
+
+    Раньше на (server_id, vmid) подразумевалась ровно одна аллокация. Теперь
+    их может быть несколько: один основной (net0/ipconfig0, попадает в колонку
+    IP) и произвольное число алиасов, навешенных внутри гостя. Колонки
+    apply_* хранят состояние применения алиаса к живому гостю.
+    """
+    if not table_exists(conn, 'ipam_allocations'):
+        logger.info("Table ipam_allocations does not exist, skipping multi-IP migration")
+        return
+
+    added = False
+    for column, ddl in (
+        ('is_primary', 'BOOLEAN NOT NULL DEFAULT FALSE'),
+        ('assignment_kind', "VARCHAR(10) NOT NULL DEFAULT 'primary'"),
+        ('target_interface', 'VARCHAR(20)'),
+        ('apply_status', 'VARCHAR(20)'),
+        ('apply_error', 'TEXT'),
+        ('applied_at', 'TIMESTAMP WITH TIME ZONE'),
+    ):
+        if add_column_if_not_exists(conn, 'ipam_allocations', column, ddl):
+            added = True
+
+    if added:
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_ipam_alloc_primary "
+            "ON ipam_allocations(proxmox_server_id, proxmox_vmid, is_primary)"
+        ))
+        # Всё, что существовало до этой миграции, было единственным адресом
+        # своего гостя — значит основным. Записи без привязки к гостю
+        # (ручные брони) основными не считаем.
+        conn.execute(text("""
+            UPDATE ipam_allocations
+            SET is_primary = TRUE, assignment_kind = 'primary'
+            WHERE proxmox_vmid IS NOT NULL AND is_primary = FALSE
+        """))
+        logger.info("✓ Added multi-IP columns to ipam_allocations")
+    else:
+        logger.info("✓ ipam_allocations multi-IP columns already exist")
+
+
 def migrate_setting_view_panel_only(conn):
     """Migration 42: drop setting:view where it was only granting the profile page.
 
@@ -2245,6 +2287,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"setting:view split migration: {e}")
+                conn.rollback()
+
+            # Migration 43: several IP addresses per guest
+            try:
+                migrate_ipam_multi_ip(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"IPAM multi-IP migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

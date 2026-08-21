@@ -5,6 +5,7 @@ Uses APScheduler for periodic tasks
 
 import asyncio
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 from loguru import logger
@@ -108,12 +109,17 @@ class MonitoringWorker:
     # задачу failed. Транзитный сетевой сбой не должен «убивать» живую задачу.
     UPID_FAIL_THRESHOLD = 3
 
+    # Как часто перепроверять IP гостя у Proxmox. Синк идёт каждые 10 секунд,
+    # а адрес меняется редко — без троттлинга это сотни лишних запросов в минуту.
+    IP_DETECT_TTL = 300
+
     def __init__(self):
         self.last_vm_states: Dict[str, str] = {}  # vm_id -> status
         self.last_resource_alerts: Dict[str, float] = {}  # resource_id -> last_alert_time
         self.last_server_states: Dict[int, bool] = {}  # server_id -> is_online
         self.last_server_alerts: Dict[int, float] = {}  # server_id -> last_alert_time
         self.upid_fail_counts: Dict[int, int] = {}  # ProxmoxTask.id -> consecutive fetch failures
+        self.last_ip_detect: Dict[tuple, float] = {}  # (server_id, vmid) -> monotonic time
     
     def _create_proxmox_client(self, server: ProxmoxServer) -> ProxmoxClient:
         """Create ProxmoxClient from server model, raising if auth is missing."""
@@ -619,18 +625,20 @@ class MonitoringWorker:
                 IPAMAllocation.status.in_(['allocated', 'reserved'])
             ).all()
             
-            # Build IPAM lookups
+            # Build IPAM lookups.
+            # Только по идентификатору гостя: сопоставление по имени давало чужой
+            # адрес одноимённым гостям на разных серверах (два разных "wireguard").
+            # У гостя может быть несколько адресов — в кэш инстанса пишем
+            # основной (is_primary); без флага берём самую раннюю запись.
             ipam_by_server_vmid = {}  # (server_id, vmid) -> allocation
-            ipam_by_name = {}  # hostname/resource_name -> allocation
-            
+
             for alloc in ipam_allocations:
                 if alloc.proxmox_server_id and alloc.proxmox_vmid:
-                    ipam_by_server_vmid[(alloc.proxmox_server_id, alloc.proxmox_vmid)] = alloc
-                if alloc.hostname:
-                    ipam_by_name[alloc.hostname.lower()] = alloc
-                if alloc.resource_name:
-                    ipam_by_name[alloc.resource_name.lower()] = alloc
-            
+                    key = (alloc.proxmox_server_id, alloc.proxmox_vmid)
+                    current = ipam_by_server_vmid.get(key)
+                    if current is None or (alloc.is_primary and not current.is_primary):
+                        ipam_by_server_vmid[key] = alloc
+
             # Detect clusters: servers that see multiple nodes are part of a cluster
             # Group servers by their node set
             server_nodes = {}  # server_id -> set of node names
@@ -749,26 +757,34 @@ class MonitoringWorker:
                     all_seen.add((server_id, vmid))
                     
                     # Get IP from IPAM
-                    ipam_alloc = (
-                        ipam_by_server_vmid.get((server_id, vmid)) or 
-                        ipam_by_name.get(vm_name.lower())
-                    )
+                    ipam_alloc = ipam_by_server_vmid.get((server_id, vmid))
                     ip_address = ipam_alloc.ip_address if ipam_alloc else None
 
-                    # If no IPAM IP, try to detect from Proxmox (LXC config or QEMU guest agent)
-                    if not ip_address:
+                    # If no IPAM IP, try to detect from Proxmox (LXC config or QEMU guest agent).
+                    # Троттлим: адрес гостя меняется куда реже, чем идёт синк.
+                    detect_key = (server_id, vmid)
+                    detect_due = (time.monotonic() - self.last_ip_detect.get(detect_key, 0.0)) >= self.IP_DETECT_TTL
+                    if not ip_address and detect_due:
+                        self.last_ip_detect[detect_key] = time.monotonic()
                         try:
                             px_client = server_clients.get(server_id)
                             if px_client and node_name:
                                 if vm_type == 'lxc':
-                                    config = px_client.proxmox.nodes(node_name).lxc(vmid).config.get()
-                                    for i in range(4):
-                                        ipconfig = config.get(f'ipconfig{i}', '')
-                                        if 'ip=' in str(ipconfig):
-                                            ip_part = str(ipconfig).split('ip=')[1].split(',')[0]
-                                            if ip_part and ip_part != 'dhcp':
-                                                ip_address = ip_part.split('/')[0] if '/' in ip_part else ip_part
+                                    # Статика из netN + живые адреса запущенного
+                                    # контейнера (DHCP виден только там)
+                                    for iface in px_client.get_container_interfaces(
+                                        node_name, vmid,
+                                        include_live=vm_data.get('status') == 'running',
+                                    ):
+                                        for ip_info in iface.get('ips') or []:
+                                            if ip_info.get('type') != 'ipv4':
+                                                continue
+                                            addr = ip_info.get('address', '')
+                                            if addr:
+                                                ip_address = addr
                                                 break
+                                        if ip_address:
+                                            break
                                 elif vm_type == 'qemu' and vm_data.get('status') == 'running':
                                     result = px_client.proxmox.nodes(node_name).qemu(vmid).agent('network-get-interfaces').get()
                                     if result and 'result' in result:
@@ -862,6 +878,11 @@ class MonitoringWorker:
                 db.rollback()
                 return
             
+            # Не копим троттлинг-метки по гостям, которых больше нет
+            self.last_ip_detect = {
+                key: seen_at for key, seen_at in self.last_ip_detect.items() if key in all_seen
+            }
+
             # Mark VMs that no longer exist as deleted
             # Get all active VMs from synced servers
             synced_server_ids = set(server.id for server in servers)

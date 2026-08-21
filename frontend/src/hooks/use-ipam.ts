@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import type { IPAMNetwork, IPAMPool, IPAMAllocation } from '@/types';
+import type {
+  IPAMNetwork,
+  IPAMPool,
+  IPAMAllocation,
+  GuestAddress,
+  GuestAddressApplyStatus,
+} from '@/types';
 
 export const ipamKeys = {
   networks: ['ipam-networks'] as const,
@@ -251,11 +257,17 @@ export function useCleanupOrphans() {
   });
 }
 
+export interface IPAMLinkSkipped {
+  ip_address: string;
+  resource_name: string;
+  reason: string;
+}
+
 export function useLinkAllocations() {
   const invalidate = useInvalidateIPAM();
   return useMutation({
     mutationFn: (body?: { server_id?: number; network_id?: number }) =>
-      apiClient.post<{ linked: unknown[]; not_found: unknown[] }>('/ipam/api/link-allocations', body ?? {}),
+      apiClient.post<{ linked: unknown[]; not_found: IPAMLinkSkipped[] }>('/ipam/api/link-allocations', body ?? {}),
     onSuccess: () => invalidate(),
   });
 }
@@ -281,5 +293,97 @@ export function useNextAvailableIP() {
 export function useIPHistoryLookup() {
   return useMutation({
     mutationFn: (ip: string) => apiClient.get<unknown[]>(`/ipam/api/history/ip/${encodeURIComponent(ip)}`),
+  });
+}
+
+
+// ==================== Адреса инстанса (несколько IP на гостя) ====================
+
+export interface GuestAddressApplyResult {
+  address: GuestAddress;
+  applied: boolean;
+  apply_status: GuestAddressApplyStatus;
+  persist?: string | null;
+  error?: string | null;
+}
+
+export const guestAddressKey = (serverId: number, vmid: number) =>
+  ['guest-addresses', serverId, vmid] as const;
+
+export function useGuestAddresses(serverId: number, vmid: number, enabled = true) {
+  return useQuery({
+    queryKey: guestAddressKey(serverId, vmid),
+    queryFn: () =>
+      apiClient.get<{ addresses: GuestAddress[]; count: number }>(
+        `/ipam/api/guests/${serverId}/${vmid}/addresses`,
+      ),
+    enabled: enabled && serverId > 0 && vmid > 0,
+  });
+}
+
+/** Инвалидация адресов гостя + всего, что показывает IP инстанса. */
+function useInvalidateGuestAddresses(serverId: number, vmid: number) {
+  const qc = useQueryClient();
+  const invalidateIPAM = useInvalidateIPAM();
+  return () => {
+    qc.invalidateQueries({ queryKey: guestAddressKey(serverId, vmid) });
+    qc.invalidateQueries({ queryKey: ['instances'] });
+    qc.invalidateQueries({ queryKey: ['vms'] });
+    invalidateIPAM();
+  };
+}
+
+export function useAddGuestAddress(serverId: number, vmid: number) {
+  const invalidate = useInvalidateGuestAddresses(serverId, vmid);
+  return useMutation({
+    mutationFn: (body: {
+      network_id: number;
+      pool_id?: number;
+      ip_address?: string;
+      target_interface?: string;
+      make_primary?: boolean;
+      hostname?: string;
+      notes?: string;
+    }) =>
+      apiClient.post<GuestAddressApplyResult>(
+        `/ipam/api/guests/${serverId}/${vmid}/addresses`,
+        body,
+      ),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useApplyGuestAddress(serverId: number, vmid: number) {
+  const invalidate = useInvalidateGuestAddresses(serverId, vmid);
+  return useMutation({
+    mutationFn: (allocationId: number) =>
+      apiClient.post<GuestAddressApplyResult>(
+        `/ipam/api/guests/${serverId}/${vmid}/addresses/${allocationId}/apply`,
+        {},
+      ),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useSetPrimaryGuestAddress(serverId: number, vmid: number) {
+  const invalidate = useInvalidateGuestAddresses(serverId, vmid);
+  return useMutation({
+    mutationFn: (allocationId: number) =>
+      apiClient.post<{ address: GuestAddress }>(
+        `/ipam/api/guests/${serverId}/${vmid}/addresses/${allocationId}/primary`,
+        {},
+      ),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useRemoveGuestAddress(serverId: number, vmid: number) {
+  const invalidate = useInvalidateGuestAddresses(serverId, vmid);
+  return useMutation({
+    mutationFn: (allocationId: number) =>
+      apiClient.delete<{ released: string; removed_from_guest: boolean; error?: string | null }>(
+        `/ipam/api/guests/${serverId}/${vmid}/addresses/${allocationId}`,
+      ),
+    onSuccess: () => invalidate(),
   });
 }

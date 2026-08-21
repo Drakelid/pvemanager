@@ -643,6 +643,13 @@ class IPAMAllocationResponse(IPAMAllocationBase):
     last_seen: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    # Multi-IP: гость может держать несколько адресов
+    is_primary: bool = False
+    assignment_kind: str = "primary"
+    target_interface: Optional[str] = None
+    apply_status: Optional[str] = None
+    apply_error: Optional[str] = None
+    applied_at: Optional[datetime] = None
     # Extended info
     network_name: Optional[str] = None
     pool_name: Optional[str] = None

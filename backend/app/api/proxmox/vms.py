@@ -164,20 +164,26 @@ def get_all_virtual_machines(
     ipam_networks = db.query(IPAMNetwork).all()
     network_map = {n.id: n for n in ipam_networks}
     
-    # Build IPAM lookups
+    # Build IPAM lookups.
+    # Только по идентификатору гостя: сопоставление по имени давало чужой адрес
+    # одноимённым гостям на разных серверах (два разных "wireguard").
+    # У гостя может быть несколько адресов: в ipam_by_vmid кладём основной
+    # (он идёт в колонку IP), в ipam_all_by_vmid — весь список для поля ips.
     ipam_by_vmid = {}
-    ipam_by_name = {}
-    
+    ipam_all_by_vmid = {}
+
     for alloc in ipam_allocations:
         if alloc.proxmox_server_id and alloc.proxmox_vmid:
-            ipam_by_vmid[(alloc.proxmox_server_id, alloc.proxmox_vmid)] = alloc
+            key = (alloc.proxmox_server_id, alloc.proxmox_vmid)
+            ipam_all_by_vmid.setdefault(key, []).append(alloc)
+            current = ipam_by_vmid.get(key)
+            # Основной — тот, у кого стоит флаг; иначе самая ранняя запись
+            # (аллокации старше миграции multi-IP флага не имеют).
+            if current is None or (alloc.is_primary and not current.is_primary):
+                ipam_by_vmid[key] = alloc
         elif alloc.resource_id:
-            ipam_by_vmid[(None, alloc.resource_id)] = alloc
-        if alloc.hostname:
-            ipam_by_name[alloc.hostname.lower()] = alloc
-        if alloc.resource_name:
-            ipam_by_name[alloc.resource_name.lower()] = alloc
-    
+            ipam_by_vmid.setdefault((None, alloc.resource_id), alloc)
+
     # Build base query for cached VMs (not deleted, not templates)
     # joinedload(owner) avoids an N+1 query when rendering the owner column.
     query = db.query(VMInstance).options(joinedload(VMInstance.owner)).filter(
@@ -267,14 +273,29 @@ def get_all_virtual_machines(
         
         # Get IP from IPAM or cache
         ipam_alloc = (
-            ipam_by_vmid.get((vm.server_id, vm.vmid)) or 
-            ipam_by_vmid.get((None, vm.vmid)) or
-            ipam_by_name.get(vm.name.lower())
+            ipam_by_vmid.get((vm.server_id, vm.vmid)) or
+            ipam_by_vmid.get((None, vm.vmid))
         )
         
         ip_address = ipam_alloc.ip_address if ipam_alloc else (vm.ip_address or "")
         ip_hostname = ipam_alloc.hostname if ipam_alloc else ""
         owner = ipam_alloc.allocated_by if ipam_alloc else ""
+
+        # Полный список адресов гостя: основной первым, дальше алиасы
+        guest_allocs = sorted(
+            ipam_all_by_vmid.get((vm.server_id, vm.vmid), []),
+            key=lambda a: (not bool(a.is_primary), a.id),
+        )
+        ip_list = [
+            {
+                "ip": a.ip_address,
+                "is_primary": bool(a.is_primary),
+                "assignment_kind": a.assignment_kind,
+                "target_interface": a.target_interface,
+                "apply_status": a.apply_status,
+            }
+            for a in guest_allocs
+        ]
         
         # Get network name from IPAM
         ip_network_name = ""
@@ -312,8 +333,11 @@ def get_all_virtual_machines(
             "cores": vm.cores or 0,
             "memory": vm.memory or 0,
             "disk": live.get('disk') or 0,
+            # ip/ip_address — основной адрес (обратная совместимость),
+            # ips — все адреса гостя
             "ip": ip_address,
             "ip_address": ip_address,
+            "ips": ip_list,
             "ip_hostname": ip_network_name,
             "os": os_template,
             "os_template": os_template,

@@ -235,7 +235,20 @@ function UnlinkedCard() {
 
   const handleLink = () => {
     link.mutate(undefined, {
-      onSuccess: (r) => toast.success(`${t('ipam.linked')}: ${r.linked?.length ?? 0}`),
+      onSuccess: (r) => {
+        toast.success(`${t('ipam.linked')}: ${r.linked?.length ?? 0}`);
+        // Пропуски (дубль IP, недоступный сервер, адрес вне сетей IPAM) иначе
+        // видны только в логах бэкенда — показываем причины первых записей.
+        const skipped = r.not_found ?? [];
+        if (skipped.length > 0) {
+          toast.warning(t('ipam.link_skipped', { count: skipped.length }), {
+            description: skipped
+              .slice(0, 3)
+              .map((s) => `${s.resource_name}: ${s.reason}`)
+              .join('\n'),
+          });
+        }
+      },
       onError: (e: Error) => toast.error(e.message),
     });
   };

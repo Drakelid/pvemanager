@@ -116,6 +116,14 @@ export interface VMInstance {
   netin_rate?: number;
   netout_rate?: number;
   ip_address?: string;
+  /** Все адреса гостя; ip_address — основной из этого списка */
+  ips?: Array<{
+    ip: string;
+    is_primary: boolean;
+    assignment_kind?: 'primary' | 'alias';
+    target_interface?: string | null;
+    apply_status?: GuestAddressApplyStatus | null;
+  }>;
   tags?: string;
   template?: boolean;
   description?: string;
@@ -397,8 +405,39 @@ export interface IPAMAllocation {
   fqdn?: string;
   allocation_type?: string;
   notes?: string;
+  /** Основной адрес гостя — он попадает в колонку IP списка инстансов */
+  is_primary?: boolean;
+  /** primary — задан конфигом NIC, alias — навешен внутри гостя */
+  assignment_kind?: 'primary' | 'alias';
+  target_interface?: string | null;
+  apply_status?: GuestAddressApplyStatus | null;
+  apply_error?: string | null;
+  applied_at?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Состояние применения alias-адреса к живому гостю */
+export type GuestAddressApplyStatus = 'applied' | 'runtime_only' | 'pending' | 'failed';
+
+/** Один адрес инстанса на вкладке «Сеть» */
+export interface GuestAddress {
+  id: number;
+  ip_address: string;
+  prefix?: string | null;
+  network_id: number;
+  network_name?: string | null;
+  gateway?: string | null;
+  mac_address?: string | null;
+  status: string;
+  is_primary: boolean;
+  assignment_kind: 'primary' | 'alias';
+  target_interface?: string | null;
+  apply_status?: GuestAddressApplyStatus | null;
+  apply_error?: string | null;
+  applied_at?: string | null;
+  hostname?: string | null;
+  notes?: string | null;
 }
 
 // ==================== Template Types ====================

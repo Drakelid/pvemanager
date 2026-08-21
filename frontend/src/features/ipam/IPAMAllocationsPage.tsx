@@ -44,7 +44,9 @@ export default function IPAMAllocationsPage() {
         a.ip_address?.toLowerCase().includes(s) ||
         a.resource_name?.toLowerCase().includes(s) ||
         a.mac_address?.toLowerCase().includes(s) ||
-        a.description?.toLowerCase().includes(s)
+        a.description?.toLowerCase().includes(s) ||
+        // поиск по VMID, чтобы собрать все адреса одного гостя
+        String(a.proxmox_vmid ?? '').includes(s)
       );
     }
     return true;
@@ -108,12 +110,25 @@ export default function IPAMAllocationsPage() {
             <TableBody>
               {filtered.map(a => (
                 <TableRow key={a.id}>
-                  <TableCell className="font-mono">{a.ip_address}</TableCell>
+                  <TableCell className="font-mono">
+                    <span className="flex items-center gap-1.5">
+                      {a.ip_address}
+                      {/* У гостя может быть несколько адресов — помечаем основной */}
+                      {a.is_primary && (
+                        <Badge variant="secondary" className="text-2xs">{t('ipam.primary')}</Badge>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={a.status === 'allocated' ? 'default' : a.status === 'reserved' ? 'secondary' : 'outline'}>{a.status}</Badge>
                   </TableCell>
                   <TableCell className="text-xs">{a.network_name || '—'}</TableCell>
-                  <TableCell className="text-xs">{a.resource_name || '—'}</TableCell>
+                  <TableCell className="text-xs">
+                    {a.resource_name || '—'}
+                    {a.proxmox_vmid != null && (
+                      <span className="ml-1 text-muted-foreground">#{a.proxmox_vmid}</span>
+                    )}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{a.mac_address || '—'}</TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{a.description || '—'}</TableCell>
                   <TableCell>

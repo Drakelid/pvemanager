@@ -10,12 +10,29 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, text
 
-from .models import IPAMNetwork, IPAMPool, IPAMAllocation, IPAMHistory
+from .models import (
+    IPAMNetwork, IPAMPool, IPAMAllocation, IPAMHistory, VMInstance, ProxmoxServer
+)
 
 
 def utcnow() -> datetime:
     """Get current UTC time as timezone-aware datetime"""
     return datetime.now(timezone.utc)
+
+
+def _json_safe(value: Any) -> Any:
+    """Привести значение к JSON-сериализуемому виду для колонок истории.
+
+    old_value/new_value — JSON-колонки, а в diff попадают и datetime-поля
+    (last_seen, expires_at): без конвертации INSERT падает на json.dumps.
+    """
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
 
 
 logger = logging.getLogger(__name__)
@@ -142,7 +159,8 @@ class IPAMService:
         self, 
         network_id: int, 
         pool_id: Optional[int] = None,
-        prefer_sequential: bool = True
+        prefer_sequential: bool = True,
+        allow_network_scan: bool = False
     ) -> Optional[str]:
         """
         Get the next available IP address from a network or specific pool.
@@ -151,6 +169,9 @@ class IPAMService:
             network_id: Network ID
             pool_id: Optional specific pool ID
             prefer_sequential: If True, prefer sequential IPs; if False, can use any gap
+            allow_network_scan: искать по всей подсети, когда auto-assign пулов
+                нет. Нужно там, где адрес выдаётся точечно (доп. IP инстанса),
+                а не по политике пула.
             
         Returns:
             Available IP address string or None if no IPs available
@@ -179,7 +200,7 @@ class IPAMService:
                 IPAMPool.auto_assign == True
             ).order_by(IPAMPool.id).all()
         
-        if not pools:
+        if not pools and not allow_network_scan:
             logger.warning(f"No active auto-assign pools found for network {network_id}")
             return None
         
@@ -213,7 +234,34 @@ class IPAMService:
             except ValueError as e:
                 logger.error(f"Invalid IP range in pool {pool.id}: {e}")
                 continue
-        
+
+        # Пулов нет (или в них всё занято) — при явном разрешении идём по всей
+        # подсети: адрес и сеть/broadcast исключает сам ip_network.hosts().
+        if allow_network_scan and not pool_id:
+            # Вне пула в подсети живут адреса, которых нет в IPAM: сами ноды
+            # Proxmox и гости, чей адрес известен панели только из кэша.
+            # Без этого скан спокойно предложил бы адрес работающей ноды.
+            known = set(occupied)
+            known.update(
+                row[0] for row in self.db.query(VMInstance.ip_address).filter(
+                    VMInstance.ip_address.isnot(None),
+                    VMInstance.deleted_at.is_(None)
+                ).all() if row[0]
+            )
+            known.update(
+                row[0] for row in self.db.query(ProxmoxServer.ip_address).filter(
+                    ProxmoxServer.ip_address.isnot(None)
+                ).all() if row[0]
+            )
+            try:
+                for ip_obj in ipaddress.ip_network(network.network, strict=False).hosts():
+                    ip = str(ip_obj)
+                    if ip not in known:
+                        logger.info(f"Found available IP: {ip} in network {network.network}")
+                        return ip
+            except ValueError as e:
+                logger.error(f"Invalid network {network.network}: {e}")
+
         logger.warning(f"No available IPs found in network {network_id}")
         return None
     
@@ -234,7 +282,11 @@ class IPAMService:
         allocation_type: str = "static",
         status: str = "allocated",
         allocated_by: Optional[str] = None,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
+        is_primary: bool = False,
+        assignment_kind: str = "primary",
+        target_interface: Optional[str] = None,
+        apply_status: Optional[str] = None
     ) -> Tuple[Optional[IPAMAllocation], Optional[str]]:
         """
         Allocate an IP address.
@@ -310,7 +362,11 @@ class IPAMService:
             hostname=hostname,
             fqdn=fqdn,
             allocated_by=allocated_by,
-            notes=notes
+            notes=notes,
+            is_primary=is_primary,
+            assignment_kind=assignment_kind,
+            target_interface=target_interface,
+            apply_status=apply_status
         )
         
         self.db.add(allocation)
@@ -436,46 +492,51 @@ class IPAMService:
         reason: Optional[str] = None
     ) -> Tuple[bool, Optional[str]]:
         """
-        Release IP allocation by Proxmox VM/container ID.
-        Used when VM/container is deleted.
-        
-        Args:
-            proxmox_server_id: Proxmox server ID
-            proxmox_vmid: VM/container ID
-            released_by: Username performing the release
-            reason: Reason for release
-            
+        Release every IP allocation of a Proxmox VM/container.
+        Used when the VM/container is deleted.
+
+        У гостя может быть несколько адресов (основной + алиасы), поэтому
+        освобождаются все: иначе после удаления гостя часть адресов навсегда
+        оставалась бы занятой.
+
         Returns:
-            Tuple of (success, error message or released IP)
+            Tuple of (success, comma-separated released IPs or error message)
         """
-        # First try to find by proxmox_server_id and proxmox_vmid
-        allocation = self.find_allocation_by_resource(proxmox_server_id, proxmox_vmid)
-        
+        allocations = self.find_allocations_by_resource(proxmox_server_id, proxmox_vmid)
+
         # Fallback: search by resource_id if proxmox fields are not set.
         # ВАЖНО: только среди записей БЕЗ proxmox_server_id — иначе удаление
         # VM с vmid=100 на сервере A освобождало IP виртуалки с тем же vmid
         # на сервере B (записи с заполненным server_id находит основной поиск).
-        if not allocation:
-            allocation = self.db.query(IPAMAllocation).filter(
+        if not allocations:
+            allocations = self.db.query(IPAMAllocation).filter(
                 IPAMAllocation.resource_id == proxmox_vmid,
                 IPAMAllocation.proxmox_server_id.is_(None),
                 IPAMAllocation.status.in_(['allocated', 'reserved'])
-            ).first()
-            if allocation:
-                logger.debug(f"Found allocation by resource_id={proxmox_vmid} (legacy)")
-        
-        if not allocation:
+            ).all()
+            if allocations:
+                logger.debug(f"Found allocation(s) by resource_id={proxmox_vmid} (legacy)")
+
+        if not allocations:
             logger.debug(f"No IPAM allocation found for server {proxmox_server_id}, vmid {proxmox_vmid}")
             return False, None  # Not an error, just no allocation to release
-        
-        ip_address = allocation.ip_address
-        success, error = self.release_ip(ip_address, released_by, reason)
-        
-        if success:
-            logger.info(f"Auto-released IP {ip_address} for deleted VM/container {proxmox_vmid}")
-            return True, ip_address
-        
-        return False, error
+
+        released, errors = [], []
+        for allocation in allocations:
+            ip_address = allocation.ip_address
+            success, error = self.release_ip(ip_address, released_by, reason)
+            if success:
+                released.append(ip_address)
+            else:
+                errors.append(error or ip_address)
+
+        if released:
+            logger.info(
+                f"Auto-released IP(s) {', '.join(released)} for deleted VM/container {proxmox_vmid}"
+            )
+            return True, ", ".join(released)
+
+        return False, "; ".join(errors) if errors else None
     
     def update_allocation(
         self,
@@ -537,17 +598,65 @@ class IPAMService:
         
         return allocation, None
     
+    def find_allocations_by_resource(
+        self,
+        proxmox_server_id: int,
+        proxmox_vmid: int
+    ) -> List[IPAMAllocation]:
+        """Все активные адреса гостя: основной первым, дальше по дате выдачи."""
+        rows = self.db.query(IPAMAllocation).filter(
+            IPAMAllocation.proxmox_server_id == proxmox_server_id,
+            IPAMAllocation.proxmox_vmid == proxmox_vmid,
+            IPAMAllocation.status.in_(['allocated', 'reserved'])
+        ).all()
+        return sorted(rows, key=lambda a: (not bool(a.is_primary), a.id))
+
     def find_allocation_by_resource(
         self,
         proxmox_server_id: int,
         proxmox_vmid: int
     ) -> Optional[IPAMAllocation]:
-        """Find active allocation by Proxmox VM/container"""
-        return self.db.query(IPAMAllocation).filter(
+        """Основной адрес гостя (у гостя их может быть несколько).
+
+        Если флаг is_primary нигде не проставлен — например, записи старше
+        миграции multi-IP, — берём самую раннюю аллокацию.
+        """
+        rows = self.find_allocations_by_resource(proxmox_server_id, proxmox_vmid)
+        return rows[0] if rows else None
+
+    def set_primary(
+        self,
+        proxmox_server_id: int,
+        proxmox_vmid: int,
+        allocation_id: int,
+        changed_by: Optional[str] = None
+    ) -> Tuple[Optional[IPAMAllocation], Optional[str]]:
+        """Сделать адрес основным, сняв флаг с прежнего. Основной ровно один."""
+        rows = self.db.query(IPAMAllocation).filter(
             IPAMAllocation.proxmox_server_id == proxmox_server_id,
-            IPAMAllocation.proxmox_vmid == proxmox_vmid,
-            IPAMAllocation.status.in_(['allocated', 'reserved'])
-        ).first()
+            IPAMAllocation.proxmox_vmid == proxmox_vmid
+        ).all()
+        target = next((a for a in rows if a.id == allocation_id), None)
+        if not target:
+            return None, "Allocation does not belong to this guest"
+
+        for row in rows:
+            row.is_primary = (row.id == allocation_id)
+
+        self._log_history(
+            ip_address=target.ip_address,
+            network_id=target.network_id,
+            action="modified",
+            new_value={'is_primary': True},
+            resource_type=target.resource_type,
+            resource_id=target.resource_id,
+            resource_name=target.resource_name,
+            performed_by=changed_by,
+            notes="Marked as primary address"
+        )
+        self.db.commit()
+        self.db.refresh(target)
+        return target, None
     
     def release_all_by_server(self, proxmox_server_id: int, released_by: str = None) -> int:
         """
@@ -675,7 +784,17 @@ class IPAMService:
         return True, None
     
     # ==================== Sync & Scan Operations ====================
-    
+
+    def _guest_exists(self, server_id: Optional[int], vmid: Optional[int]) -> bool:
+        """Существует ли ещё гость, за которым числится аллокация."""
+        if server_id is None or vmid is None:
+            return False
+        return self.db.query(VMInstance.id).filter(
+            VMInstance.server_id == server_id,
+            VMInstance.vmid == vmid,
+            VMInstance.deleted_at.is_(None)
+        ).first() is not None
+
     def sync_from_proxmox_vm(
         self,
         network_id: int,
@@ -686,18 +805,36 @@ class IPAMService:
         ip_address: str,
         node: str,
         mac_address: Optional[str] = None,
-        synced_by: str = "system"
+        synced_by: str = "system",
+        target_interface: Optional[str] = None,
+        assignment_kind: str = "primary"
     ) -> Tuple[Optional[IPAMAllocation], Optional[str]]:
         """
         Sync/create allocation for a Proxmox VM.
         Called when discovering VMs from Proxmox.
+
+        Гость может иметь несколько адресов: первый заведённый становится
+        основным, последующие — обычными записями того же гостя.
         """
         # Check if already allocated
         existing = self.db.query(IPAMAllocation).filter(
             IPAMAllocation.ip_address == ip_address
         ).first()
-        
+
         if existing:
+            # Два живых гостя с одним адресом (например, устаревший ip= в конфиге
+            # остановленного контейнера) не должны молча отбирать аллокацию друг
+            # у друга: владелец сохраняется, конфликт возвращается вызывающему.
+            belongs_to_other = (
+                existing.proxmox_vmid is not None
+                and (existing.proxmox_server_id, existing.proxmox_vmid) != (proxmox_server_id, vmid)
+            )
+            if belongs_to_other and self._guest_exists(existing.proxmox_server_id, existing.proxmox_vmid):
+                return None, (
+                    f"IP {ip_address} is already linked to "
+                    f"{existing.resource_name or 'unknown'} (VMID {existing.proxmox_vmid}) — "
+                    f"duplicate address, resolve it in Proxmox first"
+                )
             # Update existing allocation
             if existing.proxmox_vmid != vmid or existing.proxmox_server_id != proxmox_server_id:
                 return self.update_allocation(
@@ -725,7 +862,14 @@ class IPAMService:
                 self.db.commit()
                 return existing, None
         
-        # Create new allocation
+        # Create new allocation. Основным делаем первый адрес гостя —
+        # именно он попадёт в колонку IP списка инстансов.
+        has_primary = self.db.query(IPAMAllocation).filter(
+            IPAMAllocation.proxmox_server_id == proxmox_server_id,
+            IPAMAllocation.proxmox_vmid == vmid,
+            IPAMAllocation.is_primary.is_(True)
+        ).first() is not None
+
         return self.allocate_ip(
             ip_address=ip_address,
             network_id=network_id,
@@ -736,7 +880,10 @@ class IPAMService:
             proxmox_node=node,
             mac_address=mac_address,
             allocated_by=synced_by,
-            notes="Auto-synced from Proxmox"
+            notes="Auto-synced from Proxmox",
+            is_primary=not has_primary,
+            assignment_kind="primary" if not has_primary else assignment_kind,
+            target_interface=target_interface
         )
     
     def detect_conflicts(self, network_id: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -801,8 +948,8 @@ class IPAMService:
             ip_address=ip_address,
             network_id=network_id,
             action=action,
-            old_value=old_value,
-            new_value=new_value,
+            old_value=_json_safe(old_value),
+            new_value=_json_safe(new_value),
             resource_type=resource_type,
             resource_id=resource_id,
             resource_name=resource_name,

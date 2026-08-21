@@ -87,6 +87,21 @@ class IPAMAllocation(Base):
     
     status = Column(String(20), default="allocated", nullable=False)
     allocation_type = Column(String(20), default="static", nullable=False)
+
+    # Гость может держать несколько адресов: ровно один из них основной
+    # (живёт в net0/ipconfig0 и показывается в колонке IP), остальные
+    # навешиваются алиасами на интерфейс уже внутри гостя.
+    is_primary = Column(Boolean, default=False, nullable=False)
+    assignment_kind = Column(String(10), default="primary", nullable=False)  # primary | alias
+    target_interface = Column(String(20), nullable=True)  # eth0, ens18, ...
+
+    # Состояние применения алиаса к живому гостю.
+    # applied — поднят и закреплён в конфиге ОС; runtime_only — поднят, но
+    # стек не распознан и ребут его не переживёт; pending — гость был
+    # недоступен; failed — скрипт вернул ошибку.
+    apply_status = Column(String(20), nullable=True)
+    apply_error = Column(Text, nullable=True)
+    applied_at = Column(DateTime(timezone=True), nullable=True)
     
     hostname = Column(String(255), nullable=True, index=True)
     fqdn = Column(String(255), nullable=True)
@@ -106,6 +121,7 @@ class IPAMAllocation(Base):
         Index('idx_ipam_alloc_network', 'network_id'),
         Index('idx_ipam_alloc_resource', 'resource_type', 'resource_id'),
         Index('idx_ipam_alloc_proxmox', 'proxmox_server_id', 'proxmox_vmid'),
+        Index('idx_ipam_alloc_primary', 'proxmox_server_id', 'proxmox_vmid', 'is_primary'),
         Index('idx_ipam_alloc_status', 'status'),
     )
 

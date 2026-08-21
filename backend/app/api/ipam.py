@@ -5,7 +5,7 @@ IP Address Management endpoints for networks, pools, and allocations.
 
 import logging
 import ipaddress as ipaddress_module
-from typing import List, Optional
+from typing import List, NamedTuple, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import or_
@@ -21,6 +21,8 @@ from ..schemas import (
     IPAMHistoryResponse, IPAMAutoAllocateRequest
 )
 from ..ipam_service import IPAMService
+from ..services import guest_ip_service
+from .proxmox._helpers import require_vm_access
 from ..auth import get_current_user, PermissionChecker
 
 logger = logging.getLogger(__name__)
@@ -382,6 +384,8 @@ def get_allocations(
     pool_id: Optional[int] = None,
     status: Optional[str] = None,
     resource_type: Optional[str] = None,
+    proxmox_server_id: Optional[int] = None,
+    proxmox_vmid: Optional[int] = None,
     search: Optional[str] = None,
     limit: int = Query(default=100, le=1000),
     offset: int = 0,
@@ -402,6 +406,13 @@ def get_allocations(
     
     if resource_type:
         query = query.filter(IPAMAllocation.resource_type == resource_type)
+
+    # Фильтр по конкретному гостю: у него может быть несколько адресов
+    if proxmox_server_id is not None:
+        query = query.filter(IPAMAllocation.proxmox_server_id == proxmox_server_id)
+
+    if proxmox_vmid is not None:
+        query = query.filter(IPAMAllocation.proxmox_vmid == proxmox_vmid)
     
     if search:
         search_filter = f"%{search}%"
@@ -789,13 +800,29 @@ async def cleanup_orphan_allocations(
     }
 
 
-def _extract_primary_ipv4(interfaces: list, parsed_networks: list):
-    """Extract first IPv4 that belongs to any IPAM network from interface list."""
+class DiscoveredAddress(NamedTuple):
+    """Адрес гостя, найденный в одной из известных IPAM-сетей."""
+    ip: str
+    network: object          # IPAMNetwork
+    mac: Optional[str]       # MAC интерфейса, если он известен
+    interface: Optional[str]  # имя интерфейса гостя (eth0, ens18, ...)
+
+
+def _extract_ipv4s(interfaces: list, parsed_networks: list) -> List[DiscoveredAddress]:
+    """Все IPv4 гостя, попадающие в известные IPAM-сети, в порядке обнаружения.
+
+    Гость может держать несколько адресов, поэтому возвращается список, а не
+    первое совпадение. Loopback и link-local отбрасываются.
+    """
+    found: List[DiscoveredAddress] = []
+    seen = set()
     for iface in interfaces:
         for ip_info in iface.get('ips', []):
             if ip_info.get('type') != 'ipv4':
                 continue
             addr = ip_info.get('address', '')
+            if not addr or addr in seen:
+                continue
             try:
                 ip_obj = ipaddress_module.ip_address(addr)
             except ValueError:
@@ -804,8 +831,15 @@ def _extract_primary_ipv4(interfaces: list, parsed_networks: list):
                 continue
             for net, net_obj in parsed_networks:
                 if ip_obj in net_obj:
-                    return addr, net
-    return None, None
+                    seen.add(addr)
+                    found.append(DiscoveredAddress(
+                        ip=addr,
+                        network=net,
+                        mac=(iface.get('hardware_address') or '').upper() or None,
+                        interface=iface.get('name') or None,
+                    ))
+                    break
+    return found
 
 
 @router.get("/api/unlinked")
@@ -814,21 +848,26 @@ def get_unlinked_allocations(
     current_user: User = Depends(PermissionChecker("ipam:manage"))
 ):
     """
-    Return VM instances that have no IPAM allocation linked to them (by vmid+server_id).
-    Only VMs whose cached ip_address falls within an active IPAM network are included.
+    Return VM instances whose current address is not registered in IPAM.
+
+    У гостя может быть несколько адресов, поэтому «связан» определяется не по
+    наличию хоть какой-то аллокации, а по конкретному адресу: если в кэше
+    инстанса стоит IP, которого нет среди его аллокаций, гость показывается
+    как несвязанный. Учитываются только адреса из активных IPAM-сетей.
     """
     unlinked = []
 
     # All live VMs
     vms = db.query(VMInstance).filter(VMInstance.deleted_at.is_(None)).all()
 
-    # Pre-load all linked (proxmox_server_id, proxmox_vmid) pairs for fast lookup
-    linked_pairs = set(
-        (a.proxmox_server_id, a.proxmox_vmid)
-        for a in db.query(IPAMAllocation.proxmox_server_id, IPAMAllocation.proxmox_vmid).filter(
-            IPAMAllocation.proxmox_vmid.isnot(None)
-        ).all()
-    )
+    # (server_id, vmid) -> множество уже учтённых адресов гостя
+    linked_ips = {}
+    for alloc in db.query(
+        IPAMAllocation.proxmox_server_id, IPAMAllocation.proxmox_vmid, IPAMAllocation.ip_address
+    ).filter(IPAMAllocation.proxmox_vmid.isnot(None)).all():
+        linked_ips.setdefault((alloc.proxmox_server_id, alloc.proxmox_vmid), set()).add(
+            alloc.ip_address
+        )
 
     servers_map = {s.id: s for s in db.query(ProxmoxServer).all()}
 
@@ -841,11 +880,10 @@ def get_unlinked_allocations(
             pass
 
     for vm in vms:
-        if (vm.server_id, vm.vmid) in linked_pairs:
-            continue
-
         # Skip VMs with no IP or an IP outside all IPAM networks
         if not vm.ip_address:
+            continue
+        if vm.ip_address in linked_ips.get((vm.server_id, vm.vmid), ()):
             continue
         try:
             vm_ip = ipaddress_module.ip_address(vm.ip_address)
@@ -972,9 +1010,9 @@ def link_allocations_to_vms(
             continue
 
         for vm in server_vms:
-            # Skip already linked
-            if (server_id, vm.vmid) in linked_pairs:
-                continue
+            # Уже связанных больше не пропускаем: у гостя может появиться
+            # второй адрес или смениться существующий — и то, и другое раньше
+            # оставалось незамеченным навсегда.
 
             # For this VM, further filter networks by proxmox_node if set
             # (e.g. network tagged to pve1 should not match VMs on pve2)
@@ -997,40 +1035,59 @@ def link_allocations_to_vms(
                 logger.debug(f"[IPAM link] Cannot get interfaces for {vm.name}/{vm.vmid}: {e}")
                 interfaces = []
 
-            # Find first IPv4 in one of this VM's applicable IPAM networks
-            ip_found, matching_network = _extract_primary_ipv4(interfaces, vm_networks)
+            # Все IPv4 гостя, попадающие в его IPAM-сети
+            discovered = _extract_ipv4s(interfaces, vm_networks)
 
-            if not ip_found:
+            if not discovered:
                 not_found.append({'ip_address': '-', 'resource_name': vm.name,
                                   'reason': 'no_ip_in_ipam_network'})
                 continue
 
-            alloc, error = service.sync_from_proxmox_vm(
-                network_id=matching_network.id,
-                proxmox_server_id=server_id,
-                vmid=vm.vmid,
-                vm_name=vm.name,
-                vm_type=vm.vm_type,
-                ip_address=ip_found,
-                node=vm.node,
-                synced_by=synced_by
-            )
+            already_linked = {
+                a.ip_address for a in
+                service.find_allocations_by_resource(server_id, vm.vmid)
+            }
 
-            if alloc:
-                # Update the cached ip_address in vm_instances as well
-                vm.ip_address = ip_found
-                linked_pairs.add((server_id, vm.vmid))  # avoid double-linking
-                linked.append({
-                    'ip_address': ip_found,
-                    'resource_name': vm.name,
-                    'vmid': vm.vmid,
-                    'server_id': server_id
-                })
-                logger.info(f"[IPAM link] Linked {ip_found} -> VM {vm.vmid} ({vm.name}) on {server.name}")
-            else:
-                not_found.append({'ip_address': ip_found, 'resource_name': vm.name,
-                                  'reason': error or 'sync_error'})
-                logger.warning(f"[IPAM link] Failed {ip_found} for {vm.name}: {error}")
+            for found in discovered:
+                if found.ip in already_linked:
+                    continue  # этот адрес гостя уже учтён
+
+                alloc, error = service.sync_from_proxmox_vm(
+                    network_id=found.network.id,
+                    proxmox_server_id=server_id,
+                    vmid=vm.vmid,
+                    vm_name=vm.name,
+                    vm_type=vm.vm_type,
+                    ip_address=found.ip,
+                    node=vm.node,
+                    mac_address=found.mac,
+                    synced_by=synced_by,
+                    target_interface=found.interface,
+                    # Адреса сверх первого — алиасы: их поднимают внутри
+                    # гостя, а не через net0/ipconfig0.
+                    assignment_kind='alias',
+                )
+
+                if alloc:
+                    already_linked.add(found.ip)
+                    linked_pairs.add((server_id, vm.vmid))
+                    # Кэш инстанса показывает основной адрес
+                    if alloc.is_primary:
+                        vm.ip_address = found.ip
+                    linked.append({
+                        'ip_address': found.ip,
+                        'resource_name': vm.name,
+                        'vmid': vm.vmid,
+                        'server_id': server_id,
+                        'is_primary': bool(alloc.is_primary),
+                    })
+                    logger.info(
+                        f"[IPAM link] Linked {found.ip} -> VM {vm.vmid} ({vm.name}) on {server.name}"
+                    )
+                else:
+                    not_found.append({'ip_address': found.ip, 'resource_name': vm.name,
+                                      'reason': error or 'sync_error'})
+                    logger.warning(f"[IPAM link] Failed {found.ip} for {vm.name}: {error}")
 
     if linked:
         try:
@@ -1047,3 +1104,261 @@ def link_allocations_to_vms(
         'not_found_count': len(not_found)
     }
 
+
+# ==================== Guest addresses (несколько IP на инстанс) ====================
+#
+# Основной адрес гостя задаётся конфигом Proxmox (net0 / ipconfig0) и здесь
+# только помечается флагом. Дополнительные навешиваются алиасами внутри гостя
+# силами services/guest_ip_service.py.
+
+
+class GuestAddressCreate(BaseModel):
+    network_id: int
+    pool_id: Optional[int] = None
+    ip_address: Optional[str] = None        # пусто -> следующий свободный в сети/пуле
+    target_interface: Optional[str] = None  # пусто -> интерфейс основного адреса
+    make_primary: bool = False
+    hostname: Optional[str] = None
+    notes: Optional[str] = None
+
+
+def _allocation_payload(db: Session, alloc: IPAMAllocation) -> dict:
+    network = db.query(IPAMNetwork).filter(IPAMNetwork.id == alloc.network_id).first()
+    prefix = None
+    if network and network.network and '/' in network.network:
+        prefix = network.network.split('/')[1]
+    return {
+        'id': alloc.id,
+        'ip_address': alloc.ip_address,
+        'prefix': prefix,
+        'network_id': alloc.network_id,
+        'network_name': network.name if network else None,
+        'gateway': network.gateway if network else None,
+        'mac_address': alloc.mac_address,
+        'status': alloc.status,
+        'is_primary': bool(alloc.is_primary),
+        'assignment_kind': alloc.assignment_kind,
+        'target_interface': alloc.target_interface,
+        'apply_status': alloc.apply_status,
+        'apply_error': alloc.apply_error,
+        'applied_at': alloc.applied_at,
+        'hostname': alloc.hostname,
+        'notes': alloc.notes,
+    }
+
+
+def _guest_or_404(db: Session, server_id: int, vmid: int) -> VMInstance:
+    guest = db.query(VMInstance).filter(
+        VMInstance.server_id == server_id,
+        VMInstance.vmid == vmid,
+        VMInstance.deleted_at.is_(None)
+    ).first()
+    if not guest:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    return guest
+
+
+def _guest_allocation_or_404(db: Session, server_id: int, vmid: int,
+                             allocation_id: int) -> IPAMAllocation:
+    allocation = db.query(IPAMAllocation).filter(
+        IPAMAllocation.id == allocation_id,
+        IPAMAllocation.proxmox_server_id == server_id,
+        IPAMAllocation.proxmox_vmid == vmid
+    ).first()
+    if not allocation:
+        raise HTTPException(status_code=404, detail="Address not found for this instance")
+    return allocation
+
+
+def _refresh_primary_cache(db: Session, service: IPAMService, guest: VMInstance) -> None:
+    """Кэш инстанса показывает основной адрес — он же в колонке IP списка."""
+    primary = service.find_allocation_by_resource(guest.server_id, guest.vmid)
+    if primary:
+        guest.ip_address = primary.ip_address
+    db.commit()
+
+
+@router.get("/api/guests/{server_id}/{vmid}/addresses")
+def list_guest_addresses(
+    server_id: int,
+    vmid: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("ipam:view"))
+):
+    """Все IP-адреса инстанса: основной первым, затем алиасы."""
+    require_vm_access(db, current_user, server_id, vmid)
+    service = IPAMService(db)
+    rows = service.find_allocations_by_resource(server_id, vmid)
+    return {
+        'addresses': [_allocation_payload(db, a) for a in rows],
+        'count': len(rows),
+    }
+
+
+@router.post("/api/guests/{server_id}/{vmid}/addresses")
+def add_guest_address(
+    server_id: int,
+    vmid: int,
+    body: GuestAddressCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
+):
+    """Выдать инстансу дополнительный адрес и навесить его на интерфейс.
+
+    Адрес резервируется в IPAM в любом случае: если гость недоступен, запись
+    остаётся со статусом pending, и её можно применить позже.
+    """
+    require_vm_access(db, current_user, server_id, vmid)
+    guest = _guest_or_404(db, server_id, vmid)
+    service = IPAMService(db)
+
+    network = db.query(IPAMNetwork).filter(IPAMNetwork.id == body.network_id).first()
+    if not network:
+        raise HTTPException(status_code=404, detail="IPAM network not found")
+
+    ip_address = body.ip_address
+    if not ip_address:
+        # Доп. адрес выдаётся точечно, поэтому при отсутствии auto-assign пула
+        # ищем свободный по всей подсети, а не отказываем.
+        ip_address = service.get_next_available_ip(
+            body.network_id, body.pool_id, allow_network_scan=True
+        )
+        if not ip_address:
+            raise HTTPException(status_code=409, detail="No free IP left in this network/pool")
+
+    interface = body.target_interface
+    if not interface:
+        primary = service.find_allocation_by_resource(server_id, vmid)
+        server = db.query(ProxmoxServer).filter(ProxmoxServer.id == server_id).first()
+        try:
+            client = ProxmoxClient.from_server(server)
+            interface = guest_ip_service.resolve_interface(
+                client, guest.vm_type, guest.node, vmid,
+                primary_ip=primary.ip_address if primary else None,
+            )
+        except Exception as e:
+            logger.debug(f"[guest-ip] fallback interface for {vmid}: {e}")
+            interface = guest_ip_service.DEFAULT_INTERFACE
+
+    allocation, error = service.allocate_ip(
+        ip_address=ip_address,
+        network_id=body.network_id,
+        pool_id=body.pool_id,
+        resource_type=guest.vm_type,
+        resource_name=guest.name,
+        hostname=body.hostname,
+        proxmox_server_id=server_id,
+        proxmox_vmid=vmid,
+        proxmox_node=guest.node,
+        allocated_by=current_user.username,
+        notes=body.notes,
+        assignment_kind="alias",
+        target_interface=interface,
+        apply_status=guest_ip_service.PENDING,
+    )
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    apply_result = guest_ip_service.apply_address(db, allocation)
+
+    if body.make_primary:
+        service.set_primary(server_id, vmid, allocation.id, changed_by=current_user.username)
+
+    _refresh_primary_cache(db, service, guest)
+    db.refresh(allocation)
+
+    return {
+        'address': _allocation_payload(db, allocation),
+        'applied': apply_result.success,
+        'apply_status': apply_result.status,
+        'persist': apply_result.persist,
+        'error': apply_result.error,
+    }
+
+
+@router.post("/api/guests/{server_id}/{vmid}/addresses/{allocation_id}/apply")
+def apply_guest_address(
+    server_id: int,
+    vmid: int,
+    allocation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
+):
+    """Повторить применение адреса — например, после включения гостя."""
+    require_vm_access(db, current_user, server_id, vmid)
+    allocation = _guest_allocation_or_404(db, server_id, vmid, allocation_id)
+
+    result = guest_ip_service.apply_address(db, allocation)
+    db.refresh(allocation)
+    return {
+        'address': _allocation_payload(db, allocation),
+        'applied': result.success,
+        'apply_status': result.status,
+        'persist': result.persist,
+        'error': result.error,
+    }
+
+
+@router.post("/api/guests/{server_id}/{vmid}/addresses/{allocation_id}/primary")
+def set_guest_primary_address(
+    server_id: int,
+    vmid: int,
+    allocation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
+):
+    """Пометить адрес основным — он показывается в колонке IP списка инстансов."""
+    require_vm_access(db, current_user, server_id, vmid)
+    guest = _guest_or_404(db, server_id, vmid)
+    _guest_allocation_or_404(db, server_id, vmid, allocation_id)
+
+    service = IPAMService(db)
+    allocation, error = service.set_primary(
+        server_id, vmid, allocation_id, changed_by=current_user.username
+    )
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    _refresh_primary_cache(db, service, guest)
+    return {'address': _allocation_payload(db, allocation)}
+
+
+@router.delete("/api/guests/{server_id}/{vmid}/addresses/{allocation_id}")
+def remove_guest_address(
+    server_id: int,
+    vmid: int,
+    allocation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(PermissionChecker("ipam:manage"))
+):
+    """Снять адрес с гостя и освободить его в IPAM."""
+    require_vm_access(db, current_user, server_id, vmid)
+    guest = _guest_or_404(db, server_id, vmid)
+    allocation = _guest_allocation_or_404(db, server_id, vmid, allocation_id)
+
+    if allocation.assignment_kind != "alias":
+        raise HTTPException(
+            status_code=400,
+            detail="Primary address comes from the NIC config — change it on the Network tab",
+        )
+
+    ip_address = allocation.ip_address
+    interface = allocation.target_interface or guest_ip_service.DEFAULT_INTERFACE
+
+    service = IPAMService(db)
+    released, error = service.release_ip(
+        ip_address, released_by=current_user.username,
+        reason=f"Removed from {guest.name} ({vmid})",
+    )
+    if not released:
+        raise HTTPException(status_code=400, detail=error or "Failed to release IP")
+
+    # Аллокации уже нет — синхронизация снимет адрес с интерфейса гостя.
+    result = guest_ip_service.sync_interface(db, server_id, vmid, interface)
+
+    _refresh_primary_cache(db, service, guest)
+    return {
+        'released': ip_address,
+        'removed_from_guest': result.success,
+        'error': result.error,
+    }
