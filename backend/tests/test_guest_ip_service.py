@@ -216,3 +216,25 @@ def test_unknown_guest_is_pending_not_crash(guest, monkeypatch):
 
     assert result.status == guest_ip_service.PENDING
     assert recorder.calls == []
+
+
+def test_combined_persist_marker_is_understood(guest, monkeypatch):
+    """Скрипт сообщает составной способ закрепления: родной стек + systemd."""
+    allocation = guest["add_alias"]("10.10.10.90")
+    _patch(monkeypatch, script_engine.ExecResult(
+        True, "PVEMANAGER_PERSIST=nm+systemd\nPVEMANAGER_OK=1\n", 0))
+
+    result = guest_ip_service.apply_address(guest["db"], allocation)
+
+    assert result.persist == "nm+systemd"
+    assert result.status == guest_ip_service.APPLIED
+    assert allocation.apply_status == guest_ip_service.APPLIED
+
+
+def test_plain_systemd_persist_is_applied(guest, monkeypatch):
+    allocation = guest["add_alias"]("10.10.10.90")
+    _patch(monkeypatch, script_engine.ExecResult(
+        True, "PVEMANAGER_PERSIST=systemd\nPVEMANAGER_OK=1\n", 0))
+
+    assert guest_ip_service.apply_address(guest["db"], allocation).status == \
+        guest_ip_service.APPLIED

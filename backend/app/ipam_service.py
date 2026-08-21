@@ -283,7 +283,7 @@ class IPAMService:
         status: str = "allocated",
         allocated_by: Optional[str] = None,
         notes: Optional[str] = None,
-        is_primary: bool = False,
+        is_primary: Optional[bool] = None,
         assignment_kind: str = "primary",
         target_interface: Optional[str] = None,
         apply_status: Optional[str] = None
@@ -344,6 +344,16 @@ class IPAMService:
         # Build FQDN if not provided
         if not fqdn and hostname and network.dns_domain:
             fqdn = f"{hostname}.{network.dns_domain}"
+
+        # Первый адрес гостя становится основным сам: адрес выдаётся из шести
+        # разных мест (мастер создания, шаблоны, ISO, appstore, ручная выдача),
+        # и требовать флаг от каждого — значит рано или поздно его забыть.
+        if is_primary is None:
+            is_primary = (
+                assignment_kind == "primary"
+                and proxmox_vmid is not None
+                and not self._has_primary(proxmox_server_id, proxmox_vmid)
+            )
         
         # Create allocation
         allocation = IPAMAllocation(
@@ -785,6 +795,16 @@ class IPAMService:
     
     # ==================== Sync & Scan Operations ====================
 
+    def _has_primary(self, server_id: Optional[int], vmid: Optional[int]) -> bool:
+        """Есть ли у гостя адрес, помеченный основным."""
+        if vmid is None:
+            return False
+        return self.db.query(IPAMAllocation.id).filter(
+            IPAMAllocation.proxmox_server_id == server_id,
+            IPAMAllocation.proxmox_vmid == vmid,
+            IPAMAllocation.is_primary.is_(True)
+        ).first() is not None
+
     def _guest_exists(self, server_id: Optional[int], vmid: Optional[int]) -> bool:
         """Существует ли ещё гость, за которым числится аллокация."""
         if server_id is None or vmid is None:
@@ -862,13 +882,9 @@ class IPAMService:
                 self.db.commit()
                 return existing, None
         
-        # Create new allocation. Основным делаем первый адрес гостя —
-        # именно он попадёт в колонку IP списка инстансов.
-        has_primary = self.db.query(IPAMAllocation).filter(
-            IPAMAllocation.proxmox_server_id == proxmox_server_id,
-            IPAMAllocation.proxmox_vmid == vmid,
-            IPAMAllocation.is_primary.is_(True)
-        ).first() is not None
+        # Create new allocation. Основным первый адрес гостя пометит сам
+        # allocate_ip — именно он попадёт в колонку IP списка инстансов.
+        has_primary = self._has_primary(proxmox_server_id, vmid)
 
         return self.allocate_ip(
             ip_address=ip_address,

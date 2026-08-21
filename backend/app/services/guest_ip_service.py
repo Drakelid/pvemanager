@@ -37,7 +37,9 @@ RUNTIME_ONLY = "runtime_only"  # поднят, но стек не распозн
 PENDING = "pending"            # гость недоступен, попробуем позже
 FAILED = "failed"              # скрипт отработал с ошибкой
 
-_PERSIST_RE = re.compile(r"^PVEMANAGER_PERSIST=(\w+)$", re.MULTILINE)
+# Значение может быть составным ("nm+systemd"), когда родной стек
+# дополнен подстраховкой systemd-юнитом.
+_PERSIST_RE = re.compile(r"^PVEMANAGER_PERSIST=([\w+]+)$", re.MULTILINE)
 _OK_RE = re.compile(r"^PVEMANAGER_OK=1$", re.MULTILINE)
 _IFACE_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,15}$")
 

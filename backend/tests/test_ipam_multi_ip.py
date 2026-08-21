@@ -255,3 +255,48 @@ def test_network_scan_skips_node_and_cached_guest_ips(env):
         env["network"].id, None, allow_network_scan=True)
 
     assert ip not in ("10.10.10.1", "10.10.10.2", "10.10.10.3")
+
+
+def test_first_address_of_a_guest_becomes_primary_automatically(env):
+    """Мастер создания инстанса не передаёт is_primary — флаг ставится сам."""
+    first, error = env["service"].allocate_ip(
+        ip_address="10.10.10.60", network_id=env["network"].id, resource_type="lxc",
+        resource_name="gitea", proxmox_server_id=env["server"].id, proxmox_vmid=109,
+        proxmox_node="dev", allocated_by="wizard",
+    )
+    assert error is None and first.is_primary is True
+
+    second, error = env["service"].allocate_ip(
+        ip_address="10.10.10.61", network_id=env["network"].id, resource_type="lxc",
+        resource_name="gitea", proxmox_server_id=env["server"].id, proxmox_vmid=109,
+        proxmox_node="dev", allocated_by="wizard",
+    )
+    assert error is None and second.is_primary is False
+
+
+def test_alias_never_claims_primary_by_itself(env):
+    alias, error = env["service"].allocate_ip(
+        ip_address="10.10.10.62", network_id=env["network"].id,
+        proxmox_server_id=env["server"].id, proxmox_vmid=109, allocated_by="tester",
+        assignment_kind="alias", target_interface="eth0",
+    )
+    assert error is None and alias.is_primary is False
+
+
+def test_explicit_flag_still_wins(env):
+    env["allocate"]("10.10.10.63", primary=True, kind="primary")
+    forced, error = env["service"].allocate_ip(
+        ip_address="10.10.10.64", network_id=env["network"].id,
+        proxmox_server_id=env["server"].id, proxmox_vmid=109, allocated_by="tester",
+        is_primary=False,
+    )
+    assert error is None and forced.is_primary is False
+
+
+def test_reservation_without_a_guest_is_not_primary(env):
+    """Ручная бронь без привязки к гостю основной быть не может."""
+    manual, error = env["service"].allocate_ip(
+        ip_address="10.10.10.65", network_id=env["network"].id,
+        resource_name="reserved by hand", allocated_by="admin",
+    )
+    assert error is None and manual.is_primary is False

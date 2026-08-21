@@ -31,6 +31,11 @@ FAKE_IFUP = """#!/bin/sh
 exit 0
 """
 
+FAKE_SYSTEMCTL = """#!/bin/sh
+echo "$*" >> "$FAKE_LOG/systemctl.log"
+exit 0
+"""
+
 
 @pytest.fixture
 def sandbox(tmp_path):
@@ -41,7 +46,8 @@ def sandbox(tmp_path):
     for path in (root, bindir, logdir):
         path.mkdir(parents=True)
 
-    for name, body in (("ip", FAKE_IP), ("nmcli", FAKE_NMCLI), ("ifup", FAKE_IFUP)):
+    for name, body in (("ip", FAKE_IP), ("nmcli", FAKE_NMCLI), ("ifup", FAKE_IFUP),
+                       ("systemctl", FAKE_SYSTEMCTL)):
         target = bindir / name
         target.write_text(body)
         target.chmod(0o755)
@@ -57,7 +63,7 @@ def sandbox(tmp_path):
             "ADDRESSES": addresses,
         }
         # Прячем инструменты, которых в этом сценарии быть не должно
-        for name in ("ip", "nmcli", "ifup"):
+        for name in ("ip", "nmcli", "ifup", "systemctl"):
             path = bindir / name
             hidden = bindir / f"{name}.hidden"
             if name in tools and hidden.exists():
@@ -296,3 +302,75 @@ def test_missing_iface_is_rejected(sandbox):
 
     assert result.returncode == 2
     assert "missing IFACE" in result.stdout
+
+
+def test_script_is_ascii_only():
+    """Скрипт уезжает в гостя через API Proxmox, который спотыкается на
+    не-ASCII, и его маркер попадает в системные конфиги — держим файл в ASCII."""
+    raw = SCRIPT.read_bytes()
+    non_ascii = [b for b in raw if b > 127]
+    assert not non_ascii, f"в скрипте {len(non_ascii)} не-ASCII байт"
+
+
+# --- systemd-подстраховка ------------------------------------------------------
+
+def test_systemd_unit_is_installed_alongside_native_stack(sandbox):
+    """Proxmox переписывает сетевой конфиг гостя при каждом старте, поэтому
+    адреса восстанавливает ещё и oneshot-юнит — /etc/systemd он не трогает."""
+    root = sandbox["root"]
+    _mkdirs(root, "etc/sysconfig/network-scripts", "etc/systemd/system")
+
+    result = sandbox["run"](addresses="10.10.10.90/24", tools=("ip", "systemctl"))
+
+    assert sandbox["persist_of"](result) == "sysconfig+systemd"
+    unit = (root / "etc/systemd/system/pvemanager-aliases.service").read_text()
+    assert "After=network-online.target" in unit
+    assert "ExecStart=/usr/local/sbin/pvemanager-aliases" in unit
+    helper = root / "usr/local/sbin/pvemanager-aliases"
+    assert "ip addr add" in helper.read_text()
+    assert "enable pvemanager-aliases.service" in sandbox["log"]("systemctl")
+
+
+def test_systemd_unit_alone_when_no_native_stack(sandbox):
+    root = sandbox["root"]
+    _mkdirs(root, "etc/systemd/system")
+
+    result = sandbox["run"](addresses="10.10.10.90/24", tools=("ip", "systemctl"))
+
+    assert sandbox["persist_of"](result) == "systemd"
+    assert (root / "etc/systemd/system/pvemanager-aliases.service").exists()
+
+
+def test_systemd_unit_removed_when_last_address_goes(sandbox):
+    root = sandbox["root"]
+    _mkdirs(root, "etc/systemd/system")
+
+    sandbox["run"](addresses="10.10.10.90/24", tools=("ip", "systemctl"))
+    result = sandbox["run"](addresses="", tools=("ip", "systemctl"))
+
+    assert sandbox["persist_of"](result) == "none"
+    assert not (root / "etc/systemd/system/pvemanager-aliases.service").exists()
+    assert not (root / "usr/local/sbin/pvemanager-aliases").exists()
+    assert "disable pvemanager-aliases.service" in sandbox["log"]("systemctl")
+
+
+def test_systemd_unit_stays_while_another_interface_has_addresses(sandbox):
+    """Опустошили eth0, но на eth1 адрес остался — юнит нужен дальше."""
+    root = sandbox["root"]
+    _mkdirs(root, "etc/systemd/system")
+
+    sandbox["run"](addresses="10.10.10.90/24", iface="eth0", tools=("ip", "systemctl"))
+    sandbox["run"](addresses="10.10.10.91/24", iface="eth1", tools=("ip", "systemctl"))
+    sandbox["run"](addresses="", iface="eth0", tools=("ip", "systemctl"))
+
+    assert (root / "etc/systemd/system/pvemanager-aliases.service").exists()
+
+
+def test_without_systemd_persist_has_no_suffix(sandbox):
+    root = sandbox["root"]
+    _mkdirs(root, "etc/sysconfig/network-scripts", "etc/systemd/system")
+
+    result = sandbox["run"](addresses="10.10.10.90/24", tools=("ip",))
+
+    assert sandbox["persist_of"](result) == "sysconfig"
+    assert not (root / "etc/systemd/system/pvemanager-aliases.service").exists()
