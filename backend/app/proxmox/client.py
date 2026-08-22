@@ -35,6 +35,27 @@ async def _run_in_executor(func, *args, **kwargs):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(proxmox_executor, lambda: func(*args, **kwargs))
 
+# qemu-guest-agent в образах RHEL-семейства (Rocky Linux, AlmaLinux, CentOS
+# Stream, Fedora) собран с урезанным набором RPC. Ограничение задаётся в
+# /etc/sysconfig/qemu-ga, откуда systemd-юнит берёт аргументы агента:
+# FILTER_RPC_ARGS с allow-list без guest-exec (актуальные пакеты) либо
+# BLOCK_RPCS / BLACKLIST_RPC с block-list (пакеты постарше). Proxmox отдаёт
+# это как "The command guest-exec has been disabled for this instance" — по
+# такому тексту не догадаться, что и где чинить, поэтому дописываем инструкцию.
+def agent_error_hint(error: str) -> str:
+    """Дополнить ошибку guest agent подсказкой, если в госте запрещён RPC."""
+    low = (error or '').lower()
+    if 'has been disabled' in low and 'guest-exec' in low:
+        return (
+            f'{error}. В гостевой ОС запрещён RPC guest-exec — так по умолчанию '
+            'собран qemu-guest-agent в Rocky Linux, AlmaLinux, CentOS Stream и '
+            'Fedora. Внутри ВМ очистите в /etc/sysconfig/qemu-ga значение '
+            'FILTER_RPC_ARGS (в пакетах постарше — BLOCK_RPCS или '
+            'BLACKLIST_RPC) и выполните systemctl restart qemu-guest-agent'
+        )
+    return error
+
+
 def get_proxmox_resources(host: str, user: str = "root@pam", 
                          password: str = None, token_name: str = None, 
                          token_value: str = None, verify_ssl: bool = False,
@@ -1774,7 +1795,7 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.error(f"Failed to execute command on VM {vmid}: {e}")
                 return {
                     'success': False,
-                    'error': str(e),
+                    'error': agent_error_hint(str(e)),
                     'stdout': '',
                     'stderr': '',
                     'exit_code': -1
@@ -1879,7 +1900,7 @@ class ProxmoxClient(VmMixin, LxcMixin, ClusterMixin, StorageMixin, NetworkMixin,
                 logger.error(f"Failed to execute script on VM {vmid}: {e}")
                 return {
                     'success': False,
-                    'error': str(e),
+                    'error': agent_error_hint(str(e)),
                     'stdout': '',
                     'stderr': '',
                     'exit_code': -1

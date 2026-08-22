@@ -739,6 +739,7 @@ Either action that changes boot order applies it via a **hybrid reboot**: a grac
 The bundled amd64 image catalog points to a **GitHub mirror** that contains cloud images pre-patched with `qemu-guest-agent`. This means:
 
 - Live per-VM metrics (CPU, memory, disk fill, I/O rates) work immediately after deploy — no post-install agent setup needed
+- RHEL-family images (Rocky Linux, AlmaLinux, CentOS Stream, Fedora) get their RPC restriction cleared: the stock `qemu-guest-agent` package there runs the agent with an allow-list that omits `guest-exec`, `guest-exec-status` and `guest-file-*` (`FILTER_RPC_ARGS` in `/etc/sysconfig/qemu-ga`), which broke script execution, extra IP addresses and filesystem growth after a disk resize in such VMs
 - Images include a **sha256 checksum** for integrity verification; if the cached file no longer matches the published checksum, the panel re-downloads it automatically
 
 To rebuild or update the mirror yourself, run the included helper script on a Linux host with QEMU installed:
@@ -747,7 +748,7 @@ To rebuild or update the mirror yourself, run the included helper script on a Li
 bash patch-cloud-images.sh
 ```
 
-It downloads the upstream `.qcow2`, installs `qemu-guest-agent` via `virt-customize`, and publishes the patched image as a GitHub Release.
+It downloads the upstream `.qcow2`, installs `qemu-guest-agent` via `virt-customize`, clears the RPC blocklist (turn it off with `UNBLOCK_RPC=0`), and publishes the patched image as a GitHub Release.
 
 ### Custom Mirrors (Admin Only)
 
@@ -1187,7 +1188,7 @@ The primary address is not releasable from this card — it belongs to the NIC c
 The address is brought up with `ip addr add` and the guest's networking is **never restarted**, so a running guest keeps its connectivity. Delivery reuses the script engine:
 
 - **LXC** — `pct exec` over SSH to the node (needs the server password or an SSH key for `root@node`)
-- **QEMU** — the guest agent, which must allow `guest-exec` (some images ship with it blocked in `/etc/sysconfig/qemu-ga` or `/etc/default/qemu-guest-agent`)
+- **QEMU** — the guest agent, which must allow `guest-exec` (some images ship with it blocked in `/etc/sysconfig/qemu-ga` or `/etc/default/qemu-guest-agent`, see [Installing Guest Agent](#installing-guest-agent); the bundled catalog images already have it unblocked)
 
 Proxmox regenerates the guest network configuration on **every start** of a guest, wiping anything written into the native stack. To make an address survive a reboot, PVEmanager installs a small oneshot systemd unit (`pvemanager-aliases.service`) that re-adds the recorded addresses after `network-online.target`; `/etc/systemd` is not touched by Proxmox. The native stack is configured as well when it is recognised — ifupdown, netplan, NetworkManager or sysconfig/network-scripts for RHEL-based guests.
 
@@ -1227,11 +1228,20 @@ apt install qemu-guest-agent
 systemctl enable --now qemu-guest-agent
 ```
 
-**CentOS/RHEL/AlmaLinux:**
+**CentOS/RHEL/AlmaLinux/Rocky/Fedora:**
 ```bash
-yum install qemu-guest-agent
+dnf install qemu-guest-agent
 systemctl enable --now qemu-guest-agent
 ```
+
+On these distributions the agent blocks `guest-exec` by default — the panel gets `The command guest-exec has been disabled for this instance`, and command execution, extra IP addresses and filesystem growth stop working. To unblock:
+
+```bash
+sed -i -e 's/^FILTER_RPC_ARGS=.*/FILTER_RPC_ARGS=/' -e 's/^BLACKLIST_RPC=.*/BLACKLIST_RPC=/' -e 's/^BLOCK_RPCS=.*/BLOCK_RPCS=/' /etc/sysconfig/qemu-ga
+systemctl restart qemu-guest-agent
+```
+
+The layout of `/etc/sysconfig/qemu-ga` changed across releases, so the command clears all three variants: `FILTER_RPC_ARGS` (current packages — an allow-list that simply omits `guest-exec`), `BLOCK_RPCS` (qemu-ga 8.1+) and `BLACKLIST_RPC` (before 8.1). An empty value means no restrictions at all, the same as on Debian/Ubuntu where no filter is configured; lines that do not exist are left alone.
 
 **Windows:**
 Download [virtio-win drivers](https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/)

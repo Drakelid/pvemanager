@@ -123,3 +123,34 @@ def test_execute_script_sends_bytes_not_wide_chars():
     sent = agent.exec.post.call_args.kwargs["input-data"]
     assert all(ord(ch) < 256 for ch in sent), "в API уходят широкие символы"
     assert sent.encode("latin-1").decode("utf-8") == script
+
+
+def test_blocked_guest_exec_explains_how_to_fix():
+    """Образы RHEL-семейства запрещают guest-exec — ошибка должна это объяснять.
+
+    Proxmox отдаёт лишь "The command guest-exec has been disabled for this
+    instance"; по такому тексту не догадаться, что чинить нужно
+    /etc/sysconfig/qemu-ga внутри гостя.
+    """
+    px = MagicMock()
+    px.nodes.return_value.qemu.return_value.agent.exec.post.side_effect = RuntimeError(
+        "500 Internal Server Error: QEMU guest agent command failed - "
+        "The command guest-exec has been disabled for this instance"
+    )
+
+    result = _client_with_mock(px).execute_script("prod", 103, "echo ok")
+
+    assert result["success"] is False
+    assert "/etc/sysconfig/qemu-ga" in result["error"]
+    assert "FILTER_RPC_ARGS" in result["error"]
+
+
+def test_unrelated_agent_error_is_not_annotated():
+    px = MagicMock()
+    px.nodes.return_value.qemu.return_value.agent.exec.post.side_effect = RuntimeError(
+        "500 QEMU guest agent is not running"
+    )
+
+    result = _client_with_mock(px).execute_script("prod", 104, "echo ok")
+
+    assert result["error"] == "500 QEMU guest agent is not running"

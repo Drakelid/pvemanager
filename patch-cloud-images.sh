@@ -5,7 +5,8 @@
 # Что делает:
 #   1) скачивает cloud-образы из curated-каталога (см. backend/app/catalog/builtin.py)
 #   2) прогоняет каждый через virt-customize: ставит qemu-guest-agent, включает
-#      сервис и (опц.) обнуляет machine-id
+#      сервис, снимает блокировку guest-exec (RHEL-семейство) и (опц.) обнуляет
+#      machine-id
 #   3) считает sha256 и пишет sha256sums.txt
 #   4) генерирует mirrors.json — готовый список для добавления через
 #      POST /api/images/mirrors (или ручного ввода в UI)
@@ -21,6 +22,7 @@
 # Пример:
 #   BASE_URL="https://mirror.lan/pve-images" ./patch-cloud-images.sh
 #   INCLUDE_ARM64=1 OUTDIR=/srv/images ./patch-cloud-images.sh
+#   ONLY="rocky alma centos fedora" ./patch-cloud-images.sh   # только RHEL-семейство
 #
 # Установка: скопируйте файл на машину-патчер и запустите. Скрипт самодостаточен.
 
@@ -31,6 +33,10 @@ OUTDIR="${OUTDIR:-./patched-images}"     # куда складывать гот�
 INSTALL_PKG="${INSTALL_PKG:-qemu-guest-agent}"
 INCLUDE_ARM64="${INCLUDE_ARM64:-0}"      # 1 — патчить и arm64 (нужен qemu-user-static)
 RESET_MACHINE_ID="${RESET_MACHINE_ID:-1}" # 1 — обнулить /etc/machine-id (уникальный id у клонов)
+UNBLOCK_RPC="${UNBLOCK_RPC:-1}"          # 1 — снять блокировку guest-exec/guest-file-* в qemu-ga
+ONLY="${ONLY:-}"                         # фильтр образов по id/os, через пробел или запятую
+                                         #   напр. ONLY="rocky alma centos fedora"
+                                         #   пусто — собирать весь каталог
 FORCE_DOWNLOAD="${FORCE_DOWNLOAD:-0}"    # 1 — перекачать образы даже если уже скачаны
 AUTO_INSTALL="${AUTO_INSTALL:-1}"        # 1 — доустановить недостающие зависимости самому
 BASE_URL="${BASE_URL:-}"                 # публичный префикс зеркала для url в mirrors.json
@@ -105,6 +111,19 @@ pm_install() {
   esac
 }
 
+# Подходит ли образ под фильтр ONLY (совпадение подстроки с id или os)
+match_only() {
+  local id="$1" os="$2" pat
+  if [ -z "$ONLY" ]; then
+    return 0
+  fi
+  for pat in $(echo "$ONLY" | tr ',' ' '); do
+    case "$id" in *"$pat"*) return 0 ;; esac
+    case "$os" in *"$pat"*) return 0 ;; esac
+  done
+  return 1
+}
+
 # ── Preflight ──────────────────────────────────────────────────────────────────
 step "Проверка окружения"
 
@@ -155,17 +174,36 @@ fi
 
 mkdir -p "$RAW_DIR"
 
+# ── Снятие блокировки RPC у guest agent ───────────────────────────────────────
+# Rocky / AlmaLinux / CentOS Stream / Fedora ставят qemu-guest-agent с
+# урезанным набором RPC — в /etc/sysconfig/qemu-ga, откуда systemd-юнит берёт
+# аргументы командной строки агента. Разметка файла менялась трижды:
+#   FILTER_RPC_ARGS="--allow-rpcs=..." — актуальные пакеты (RHEL 9/10, Fedora):
+#                                        allow-list, где guest-exec просто нет
+#   BLOCK_RPCS=...                     — qemu-ga 8.1+, block-list
+#   BLACKLIST_RPC=...                  — qemu-ga < 8.1, block-list
+# Пустое значение любой из них = агент без ограничений, как в Debian/Ubuntu,
+# где фильтра нет вовсе. Без этого панель не может выполнить скрипт в ВМ,
+# навесить дополнительный IP и расширить ФС после ресайза диска: агент
+# отвечает "The command guest-exec has been disabled for this instance".
+# Закомментированные строки не трогаем, в Debian/Ubuntu файла нет вообще.
+QGA_UNBLOCK_CMD='f=/etc/sysconfig/qemu-ga; if [ -f "$f" ]; then sed -i -e "s/^[[:space:]]*FILTER_RPC_ARGS=.*/FILTER_RPC_ARGS=/" -e "s/^[[:space:]]*BLACKLIST_RPC=.*/BLACKLIST_RPC=/" -e "s/^[[:space:]]*BLOCK_RPCS=.*/BLOCK_RPCS=/" "$f"; echo "qemu-ga RPC unblocked:" $(grep -E "^(FILTER_RPC_ARGS|BLACKLIST_RPC|BLOCK_RPCS)=" "$f"); else echo "qemu-ga: no /etc/sysconfig/qemu-ga, nothing to unblock"; fi'
+
 # ── Обход каталога ─────────────────────────────────────────────────────────────
 SUMS_FILE="$OUTDIR/sha256sums.txt"
 : > "$SUMS_FILE"
 declare -a MIRROR_ROWS=()   # строки для mirrors.json: os|version|arch|name|file|sha
-FAILED=0; DONE=0; SKIPPED=0
+FAILED=0; DONE=0; SKIPPED=0; FILTERED=0
 
 for row in "${IMAGES[@]}"; do
   IFS='|' read -r id os version name arch url <<< "$row"
 
   if [ "$arch" = "arm64" ] && [ "$INCLUDE_ARM64" != "1" ]; then
     SKIPPED=$((SKIPPED+1)); continue
+  fi
+
+  if ! match_only "$id" "$os"; then
+    FILTERED=$((FILTERED+1)); continue
   fi
 
   file="$(basename "$url")"
@@ -193,7 +231,14 @@ for row in "${IMAGES[@]}"; do
   info "virt-customize: ставлю $INSTALL_PKG"
   VC_ARGS=(-a "$out" --install "$INSTALL_PKG"
            --run-command "systemctl enable ${INSTALL_PKG}.service")
-  [ "$RESET_MACHINE_ID" = "1" ] && VC_ARGS+=(--run-command "truncate -s 0 /etc/machine-id")
+  # if, а не `[ ... ] && ...`: при set -e ложное условие в конце AND-списка
+  # завершает скрипт.
+  if [ "$UNBLOCK_RPC" = "1" ]; then
+    VC_ARGS+=(--run-command "$QGA_UNBLOCK_CMD")
+  fi
+  if [ "$RESET_MACHINE_ID" = "1" ]; then
+    VC_ARGS+=(--run-command "truncate -s 0 /etc/machine-id")
+  fi
   if ! LIBGUESTFS_BACKEND="${LIBGUESTFS_BACKEND:-direct}" virt-customize "${VC_ARGS[@]}"; then
     err "virt-customize не смог обработать $out — пропускаю."
     rm -f "$out"; FAILED=$((FAILED+1)); continue
@@ -210,8 +255,12 @@ done
 # ── mirrors.json ───────────────────────────────────────────────────────────────
 step "Генерация mirrors.json"
 MIRRORS_FILE="$OUTDIR/mirrors.json"
+# Тот же set -e: с заданным BASE_URL ложное условие оборвало бы скрипт
+# ровно перед генерацией mirrors.json.
 url_prefix="${BASE_URL%/}"
-[ -z "$url_prefix" ] && url_prefix="REPLACE_ME"
+if [ -z "$url_prefix" ]; then
+  url_prefix="REPLACE_ME"
+fi
 
 {
   echo "["
@@ -237,8 +286,15 @@ url_prefix="${BASE_URL%/}"
 # ── Итог ───────────────────────────────────────────────────────────────────────
 step "Итог"
 ok    "Готово образов: $DONE"
-[ "$SKIPPED" -gt 0 ] && info "Пропущено arm64: $SKIPPED (INCLUDE_ARM64=1 чтобы включить)"
-[ "$FAILED"  -gt 0 ] && warn "С ошибками: $FAILED"
+if [ "$SKIPPED" -gt 0 ]; then
+  info "Пропущено arm64: $SKIPPED (INCLUDE_ARM64=1 чтобы включить)"
+fi
+if [ "$FILTERED" -gt 0 ]; then
+  info "Отфильтровано по ONLY=\"$ONLY\": $FILTERED"
+fi
+if [ "$FAILED" -gt 0 ]; then
+  warn "С ошибками: $FAILED"
+fi
 echo
 info "Готовые образы:   $OUTDIR/"
 info "Контрольные суммы: $SUMS_FILE"

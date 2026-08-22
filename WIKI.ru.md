@@ -738,6 +738,7 @@ RAM: 512 МБ – 128 ГБ
 Встроенный каталог образов amd64 ссылается на **GitHub-зеркало**, содержащее облачные образы с предустановленным `qemu-guest-agent`. Это даёт:
 
 - Живые метрики на ВМ (CPU, память, заполнение диска, скорости I/O) сразу после деплоя — дополнительная установка агента не нужна
+- В образах RHEL-семейства (Rocky Linux, AlmaLinux, CentOS Stream, Fedora) снято штатное ограничение RPC: пакет `qemu-guest-agent` там оставляет агенту allow-list без `guest-exec`, `guest-exec-status` и `guest-file-*` (`FILTER_RPC_ARGS` в `/etc/sysconfig/qemu-ga`), из-за чего в таких ВМ не работали выполнение скриптов, дополнительные IP-адреса и расширение ФС после ресайза диска
 - Образы включают контрольную сумму **sha256**; если закешированный файл не совпадает с опубликованной суммой, панель скачает его повторно автоматически
 
 Чтобы собрать или обновить зеркало самостоятельно, запустите вспомогательный скрипт на Linux-хосте с установленным QEMU:
@@ -746,7 +747,7 @@ RAM: 512 МБ – 128 ГБ
 bash patch-cloud-images.sh
 ```
 
-Скрипт скачивает исходный `.qcow2`, устанавливает `qemu-guest-agent` через `virt-customize` и публикует патченный образ как GitHub Release.
+Скрипт скачивает исходный `.qcow2`, устанавливает `qemu-guest-agent` через `virt-customize`, снимает блокировку RPC (отключается через `UNBLOCK_RPC=0`) и публикует патченный образ как GitHub Release.
 
 ### Кастомные зеркала (только админ)
 
@@ -1186,7 +1187,7 @@ End: 192.168.1.50
 Адрес поднимается командой `ip addr add`, сеть гостя при этом **не перезапускается**, поэтому работающий гость не теряет связь. Доставка использует тот же движок скриптов, что и раздел Scripts:
 
 - **LXC** — `pct exec` по SSH к ноде (нужен пароль сервера либо SSH-ключ для `root@node`)
-- **QEMU** — guest agent, в котором должен быть разрешён `guest-exec` (в некоторых образах он заблокирован в `/etc/sysconfig/qemu-ga` или `/etc/default/qemu-guest-agent`)
+- **QEMU** — guest agent, в котором должен быть разрешён `guest-exec` (в некоторых образах он заблокирован в `/etc/sysconfig/qemu-ga` или `/etc/default/qemu-guest-agent`, см. [Установка Guest Agent](#установка-guest-agent); в образах встроенного каталога блокировка уже снята)
 
 Proxmox пересоздаёт сетевую конфигурацию гостя при **каждом старте**, стирая всё, что было записано в родной стек. Чтобы адрес пережил перезагрузку, PVEmanager устанавливает небольшой oneshot systemd-юнит (`pvemanager-aliases.service`), который заново поднимает записанные адреса после `network-online.target`; каталог `/etc/systemd` Proxmox не трогает. Родной стек настраивается дополнительно, если он распознан — ifupdown, netplan, NetworkManager или sysconfig/network-scripts для RHEL-подобных гостей.
 
@@ -1226,11 +1227,20 @@ apt install qemu-guest-agent
 systemctl enable --now qemu-guest-agent
 ```
 
-**CentOS/RHEL/AlmaLinux:**
+**CentOS/RHEL/AlmaLinux/Rocky/Fedora:**
 ```bash
-yum install qemu-guest-agent
+dnf install qemu-guest-agent
 systemctl enable --now qemu-guest-agent
 ```
+
+В этих дистрибутивах агент по умолчанию запрещает `guest-exec` — панель получает `The command guest-exec has been disabled for this instance`, и выполнение команд, выдача дополнительных IP и расширение ФС не работают. Разблокировать:
+
+```bash
+sed -i -e 's/^FILTER_RPC_ARGS=.*/FILTER_RPC_ARGS=/' -e 's/^BLACKLIST_RPC=.*/BLACKLIST_RPC=/' -e 's/^BLOCK_RPCS=.*/BLOCK_RPCS=/' /etc/sysconfig/qemu-ga
+systemctl restart qemu-guest-agent
+```
+
+Разметка `/etc/sysconfig/qemu-ga` менялась от версии к версии, поэтому команда чистит все три варианта: `FILTER_RPC_ARGS` (актуальные пакеты — allow-list, в котором `guest-exec` просто отсутствует), `BLOCK_RPCS` (qemu-ga 8.1+) и `BLACKLIST_RPC` (до 8.1). Пустое значение = агент без ограничений, как в Debian/Ubuntu, где фильтра нет вовсе; отсутствующие строки sed просто не найдёт.
 
 **Windows:**
 Скачайте [virtio-win drivers](https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/)

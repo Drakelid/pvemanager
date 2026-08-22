@@ -4,6 +4,16 @@ All notable changes to PVEmanager will be documented in this file.
 
 ---
 
+## [Unreleased]
+
+### 🐛 Fixes
+
+- **`guest-exec` is unblocked in the Rocky Linux, AlmaLinux, CentOS Stream and Fedora images** — the RHEL-family `qemu-guest-agent` package runs the agent with an allow-list that omits `guest-exec`, `guest-exec-status` and `guest-file-*` (`FILTER_RPC_ARGS` in `/etc/sysconfig/qemu-ga`; older packages expressed the same thing through `BLOCK_RPCS`/`BLACKLIST_RPC`). Because of it, script execution, extra IP addresses and filesystem growth after a disk resize did not work in such VMs
+- **Five mirror images were rebuilt** — release `2026-08-22`, and the bundled catalog now points at it; Ubuntu and Debian are untouched and stay in the previous releases, so older panel versions keep working
+- **`patch-cloud-images.sh` clears the restriction while building** (turn it off with `UNBLOCK_RPC=0`) and can build part of the catalog — `ONLY="rocky alma centos fedora"`. And when the panel hits the block, it spells out what to fix inside the guest
+
+---
+
 ## [v1.18.0] - 2026-08-22
 
 ### 🌐 Several IP addresses per instance
