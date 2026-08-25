@@ -1214,7 +1214,6 @@
     "select_group": "Выберите группу",
     "group_updated": "Группа обновлена",
     "tab_os": "Операционные системы",
-    "tab_vm_images": "Образы VM",
     "tab_lxc": "Шаблоны LXC",
     "tab_iso": "ISO-образы",
     "tab_repositories": "Репозитории",

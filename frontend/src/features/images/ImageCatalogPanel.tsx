@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useServers, useNodes } from '@/hooks/use-nodes';
-import { useImageCatalog, useImageLXCTemplates, useNodeArch, useNodeIsos } from '@/hooks/use-image-catalog';
+import { useImageCatalog, useImageLXCTemplates, useNodeIsos } from '@/hooks/use-image-catalog';
 import { useProfile } from '@/hooks/use-settings';
 import { formatBytes } from '@/lib/format';
 import DownloadImageDialog, { type SelectedImage } from './DownloadImageDialog';
@@ -22,15 +22,13 @@ import DownloadIsoDialog, { type IsoSource } from './DownloadIsoDialog';
 import MirrorsManager from './MirrorsManager';
 import type { CatalogImage } from '@/types';
 
-export type ImageCatalogSection = 'vm-images' | 'lxc' | 'iso' | 'repositories';
+export type ImageCatalogSection = 'lxc' | 'iso' | 'repositories';
 
 export default function ImageCatalogPanel({ section }: { section: ImageCatalogSection }) {
   const { t } = useTranslation();
   const [serverId, setServerId] = useState<number | null>(null);
   const [node, setNode] = useState<string>('');
   const [search, setSearch] = useState('');
-  // По умолчанию показываем amd64 (доминирующая платформа PVE); уточняется по арх ноды
-  const [archFilter, setArchFilter] = useState<string>('amd64');
   const [selected, setSelected] = useState<SelectedImage | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isoSource, setIsoSource] = useState<IsoSource | null>(null);
@@ -44,7 +42,6 @@ export default function ImageCatalogPanel({ section }: { section: ImageCatalogSe
 
   const { data: catalog } = useImageCatalog();
   const { data: lxcRepo = [] } = useImageLXCTemplates(serverId ?? undefined, node || undefined);
-  const { data: nodeArch } = useNodeArch(serverId ?? undefined, node || undefined);
   const { data: nodeIsosResp } = useNodeIsos(serverId ?? undefined, node || undefined);
 
   // Авто-выбор первого сервера и ноды
@@ -54,20 +51,6 @@ export default function ImageCatalogPanel({ section }: { section: ImageCatalogSe
   useEffect(() => {
     if (!node && nodes.length > 0) setNode(nodes[0].node);
   }, [nodes, node]);
-  // Подстроить фильтр архитектуры под выбранную ноду (если арх определилась)
-  useEffect(() => {
-    if (nodeArch?.arch) setArchFilter(nodeArch.arch);
-  }, [nodeArch?.arch, node]);
-
-  const cloudImages = useMemo<CatalogImage[]>(() => {
-    const all = [...(catalog?.builtin ?? []), ...(catalog?.mirrors ?? [])];
-    return all.filter((img) => {
-      if (img.kind !== 'qcow2') return false;
-      if (archFilter && img.arch !== archFilter) return false;
-      const q = search.toLowerCase();
-      return !q || `${img.name} ${img.os ?? ''} ${img.version ?? ''}`.toLowerCase().includes(q);
-    });
-  }, [catalog, archFilter, search]);
 
   // ISO во встроенном каталоге нет — ссылки на дистрибутивы живут в зеркалах пользователя.
   const isoImages = useMemo<CatalogImage[]>(() => {
@@ -101,7 +84,7 @@ export default function ImageCatalogPanel({ section }: { section: ImageCatalogSe
   };
 
   const canDownload = serverId != null && !!node;
-  const needsContext = section === 'vm-images' || section === 'lxc' || section === 'iso';
+  const needsContext = section === 'lxc' || section === 'iso';
 
   return (
     <div className="space-y-4">
@@ -124,43 +107,6 @@ export default function ImageCatalogPanel({ section }: { section: ImageCatalogSe
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input className="pl-9" placeholder={t('images.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          {section === 'vm-images' && (
-            <Select value={archFilter || '__all__'} onValueChange={(v) => { if (v !== null) setArchFilter(v === '__all__' ? '' : v); }}>
-              <SelectTrigger className="w-[150px]"><SelectValue placeholder={t('images.arch')} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">{t('images.arch_all')}</SelectItem>
-                <SelectItem value="amd64">amd64</SelectItem>
-                <SelectItem value="arm64">arm64</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-      )}
-
-      {/* Cloud-образы (qcow2 → шаблон ВМ) */}
-      {section === 'vm-images' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {cloudImages.map((img) => (
-            <Card key={img.id}>
-              <CardContent className="flex items-center gap-3 p-4">
-                <OsLogo name={img.os || img.name} />
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate">{img.name}</div>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <Badge variant="secondary">{img.arch}</Badge>
-                    {img.source === 'mirror' && <Badge variant="outline">{t('images.mirror_badge')}</Badge>}
-                  </div>
-                </div>
-                <Button size="sm" disabled={!canDownload}
-                  onClick={() => openDownload({ source_id: img.id, kind: 'qcow2', name: img.name, arch: String(img.arch) })}>
-                  <Download className="h-4 w-4" />
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-          {cloudImages.length === 0 && (
-            <div className="text-sm text-muted-foreground col-span-full">{t('images.no_images_filter')}</div>
-          )}
         </div>
       )}
 

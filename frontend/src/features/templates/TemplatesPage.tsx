@@ -5,7 +5,7 @@ import { useHasPermission } from '@/lib/permissions';
 import OsTemplatesTab from './OsTemplatesTab';
 import ImageCatalogPanel from '@/features/images/ImageCatalogPanel';
 
-type TabValue = 'os' | 'vm-images' | 'lxc' | 'iso' | 'repositories';
+type TabValue = 'os' | 'lxc' | 'iso' | 'repositories';
 
 export default function TemplatesPage() {
   const { t } = useTranslation();
@@ -19,7 +19,6 @@ export default function TemplatesPage() {
       <Tabs value={tab} onValueChange={(v) => { if (v) setTab(v as TabValue); }}>
         <TabsList>
           <TabsTrigger value="os">{t('templates.tab_os')}</TabsTrigger>
-          {canManageImages && <TabsTrigger value="vm-images">{t('templates.tab_vm_images')}</TabsTrigger>}
           {canManageImages && <TabsTrigger value="lxc">{t('templates.tab_lxc')}</TabsTrigger>}
           {canManageImages && <TabsTrigger value="iso">{t('templates.tab_iso')}</TabsTrigger>}
           {canManageImages && <TabsTrigger value="repositories">{t('templates.tab_repositories')}</TabsTrigger>}
@@ -28,11 +27,6 @@ export default function TemplatesPage() {
         <TabsContent value="os">
           <OsTemplatesTab />
         </TabsContent>
-        {canManageImages && (
-          <TabsContent value="vm-images">
-            <ImageCatalogPanel section="vm-images" />
-          </TabsContent>
-        )}
         {canManageImages && (
           <TabsContent value="lxc">
             <ImageCatalogPanel section="lxc" />
