@@ -64,15 +64,19 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
         #      templates and LXC clones from a template VMID.
         #   2) ostemplate-file (LXC only, cached.template_name like "local:vztmpl/...tar.zst")
         tpl = None
-        ostemplate_file = None
+        ostemplate_file = None  # LXC: CT template archive, e.g. "local:vztmpl/debian-13-...tar.zst"
+        iso_volid = None        # QEMU: install ISO, e.g. "local:iso/ubuntu-24.04.iso"
         if cached.template_id:
             tpl = db.query(OSTemplate).filter(OSTemplate.id == cached.template_id).first()
             if not tpl or not tpl.vmid:
                 _update_deploy_task(task_id, 'failed', 'Шаблон не найден', 0,
                                     error='Шаблон не найден или некорректен')
                 return
-        elif is_lxc and cached.template_name and ':' in cached.template_name:
-            ostemplate_file = cached.template_name
+        elif cached.template_name and ':' in cached.template_name:
+            if is_lxc:
+                ostemplate_file = cached.template_name
+            else:
+                iso_volid = cached.template_name
         else:
             _update_deploy_task(task_id, 'failed', 'Шаблон не привязан', 0,
                                 error='У инстанса не сохранён шаблон, переустановка недоступна')
@@ -247,6 +251,90 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
                 client.wait_for_task(node, upid, timeout=600)
             except Exception:
                 pass
+        elif iso_volid:
+            # ---- QEMU: re-create blank VM for ISO install with same VMID ----
+            _update_deploy_task(task_id, 'running',
+                                f'Создание ВМ для установки с {iso_volid.split("/")[-1]}...',
+                                50, vmid=vmid, node=node)
+
+            # Extract storage/disk size/bus from the previous main boot disk
+            # (e.g. "local-lvm:vm-118-disk-0,size=32G")
+            storage = 'local-lvm'
+            disk_size_gb = 32
+            disk_bus = 'scsi'
+            try:
+                for key in ('scsi0', 'virtio0', 'sata0'):
+                    disk_val = prev_cfg.get(key)
+                    if not disk_val or 'media=cdrom' in disk_val or 'cloudinit' in disk_val:
+                        continue
+                    storage = disk_val.split(':', 1)[0]
+                    disk_bus = re.match(r'([a-z]+)', key).group(1)
+                    if 'size=' in disk_val:
+                        sz = disk_val.split('size=')[1].split(',')[0].strip()
+                        if sz.endswith('G'):
+                            disk_size_gb = int(float(sz[:-1]))
+                        elif sz.endswith('T'):
+                            disk_size_gb = int(float(sz[:-1])) * 1024
+                        elif sz.endswith('M'):
+                            disk_size_gb = max(1, int(sz[:-1]) // 1024)
+                    break
+            except Exception:
+                pass
+
+            net0_val = prev_cfg.get('net0', '') or ''
+            net_model = 'virtio'
+            bridge = 'vmbr0'
+            try:
+                if net0_val:
+                    net_model = net0_val.split(',', 1)[0].split('=')[0]
+                    m = re.search(r'bridge=([^,]+)', net0_val)
+                    if m:
+                        bridge = m.group(1)
+            except Exception:
+                pass
+
+            bios = 'ovmf' if prev_cfg.get('bios') == 'ovmf' else 'seabios'
+            tpm_enabled = any(k.startswith('tpmstate') for k in prev_cfg)
+            ostype = prev_cfg.get('ostype', 'l26')
+            try:
+                onboot = bool(int(prev_cfg.get('onboot', 0)))
+            except Exception:
+                onboot = False
+
+            try:
+                upid = client.create_vm_from_iso(
+                    node=node,
+                    vmid=vmid,
+                    name=name,
+                    memory=memory_mb or 2048,
+                    cores=cores or 2,
+                    disk_storage=storage,
+                    disk_size=disk_size_gb,
+                    iso_volid=iso_volid,
+                    bridge=bridge,
+                    ostype=ostype,
+                    disk_bus=disk_bus,
+                    net_model=net_model,
+                    bios=bios,
+                    tpm=tpm_enabled,
+                    onboot=onboot,
+                    description=description or f'Reinstalled from {iso_volid}',
+                )
+            except Exception as e:
+                _update_deploy_task(task_id, 'failed', 'Ошибка создания ВМ', 50,
+                                    error=f'Create failed: {e}')
+                return
+            if not upid:
+                _update_deploy_task(task_id, 'failed', 'Ошибка создания ВМ', 50,
+                                    error='Proxmox не вернул UPID задачи создания ВМ')
+                return
+
+            _update_deploy_task(task_id, 'running', 'Ожидание завершения создания...', 75,
+                                vmid=vmid, node=node)
+            try:
+                client.wait_for_task(node, upid, timeout=300)
+            except Exception:
+                pass
         else:
             # ---- Clone-from-template (VM or LXC with template_id) ----
             _update_deploy_task(task_id, 'running', f'Клонирование из шаблона {tpl.name}...', 50, vmid=vmid, node=node)
@@ -363,6 +451,7 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
                 'template_id': tpl.id if tpl else None,
                 'template_vmid': template_vmid,
                 'ostemplate': ostemplate_file,
+                'iso_volid': iso_volid,
             }, success=True,
         )
 

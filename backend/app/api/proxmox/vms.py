@@ -763,8 +763,9 @@ def reinstall_vm_endpoint(
         tpl = db.query(OSTemplate).filter(OSTemplate.id == cached.template_id).first()
         if not tpl or not tpl.vmid:
             raise HTTPException(status_code=400, detail="Template not found or invalid")
-    elif is_lxc and cached.template_name and ':' in cached.template_name:
+    elif cached.template_name and ':' in cached.template_name:
         # LXC created from CT template file (e.g. local:vztmpl/debian-13-...tar.zst)
+        # or QEMU VM created from an install ISO (e.g. local:iso/ubuntu-24.04.iso)
         tpl = None
     else:
         raise HTTPException(status_code=400, detail="VM has no associated template; reinstall is not available")
@@ -941,7 +942,18 @@ async def delete_vm(
                 if isinstance(disk_info, dict):
                     size_str = disk_info.get('size', '0G')
                     disk_size = int(size_str.replace('G', '')) if isinstance(size_str, str) else None
-                
+
+                # save_vm_instance() безусловно перезаписывает template_id/template_name
+                # у уже существующей записи; этот вызов их не знает (Proxmox config их не
+                # содержит), поэтому явно переносим текущие значения — иначе привязка к
+                # шаблону теряется навсегда, если удаление после этого не состоится
+                # (VM осталась, а "переустановить из шаблона" сломалась).
+                prev_instance = db.query(VMInstance).filter(
+                    VMInstance.server_id == server_id,
+                    VMInstance.vmid == vmid,
+                    VMInstance.deleted_at.is_(None),
+                ).first()
+
                 save_vm_instance(
                     db=db,
                     server_id=server_id,
@@ -954,7 +966,9 @@ async def delete_vm(
                     disk_size=disk_size,
                     ip_address=ip_address,
                     ip_prefix=ip_prefix,
-                    description=config.get('description')
+                    description=config.get('description'),
+                    template_id=prev_instance.template_id if prev_instance else None,
+                    template_name=prev_instance.template_name if prev_instance else None,
                 )
                 logger.info(f"Saved VM {vmid} configuration before deletion")
             except Exception as e:
