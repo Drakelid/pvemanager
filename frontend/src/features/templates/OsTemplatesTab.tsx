@@ -111,7 +111,9 @@ export default function OsTemplatesTab() {
       accessorKey: 'vm_type',
       filterFn: multiSelectFilter,
       meta: { filter: 'select', formatOption: (v: string) => (v === 'lxc' ? t('templates.type_lxc') : t('templates.type_kvm')) },
-      header: t('common.type'),
+      header: ({ column }) => (
+        <SortHeader label={t('common.type')} onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} />
+      ),
       cell: ({ getValue }) => {
         const type = getValue<string>();
         return (
