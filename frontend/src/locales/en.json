@@ -1232,6 +1232,7 @@
     "select_group": "Select group",
     "group_updated": "Group updated",
     "tab_os": "Operating Systems",
+    "tab_vm_images": "VM Images",
     "tab_lxc": "LXC Templates",
     "tab_iso": "ISO Images",
     "tab_repositories": "Repositories",
