@@ -1212,7 +1212,15 @@
     "group": "Группа",
     "edit_group": "Изменить группу",
     "select_group": "Выберите группу",
-    "group_updated": "Группа обновлена"
+    "group_updated": "Группа обновлена",
+    "tab_os": "Операционные системы",
+    "tab_vm_images": "Образы VM",
+    "tab_lxc": "Шаблоны LXC",
+    "tab_iso": "ISO-образы",
+    "tab_repositories": "Репозитории",
+    "col_id": "id",
+    "col_updated": "Обновлён",
+    "col_size": "Размер"
   },
   "storages": {
     "title": "Хранилища",

@@ -22,7 +22,6 @@ const NodesPage = lazy(() => import('./features/nodes/NodesPage.tsx'));
 const NodeDetailPage = lazy(() => import('./features/nodes/NodeDetailPage.tsx'));
 const ClusterPage = lazy(() => import('./features/cluster/ClusterPage.tsx'));
 const TemplatesPage = lazy(() => import('./features/templates/TemplatesPage.tsx'));
-const ImagesPage = lazy(() => import('./features/images/ImagesPage.tsx'));
 const BackupsPage = lazy(() => import('./features/backups/BackupsPage.tsx'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage.tsx'));
 const TopologyPage = lazy(() => import('./features/topology/TopologyPage.tsx'));
@@ -109,7 +108,7 @@ export const router = createBrowserRouter([
           { path: '/appstore/:appId', element: <Page perm="app:view"><AppDetailPage /></Page> },
           { path: '/my-apps', element: <Page perm="app:view"><MyAppsPage /></Page> },
           { path: '/scripts', element: <Page perm="script:view"><ScriptsPage /></Page> },
-          { path: '/images', element: <Page perm="template:manage"><ImagesPage /></Page> },
+          { path: '/images', element: <Navigate to="/templates" replace /> },
           { path: '/backups', element: <Page perm="backup:view"><BackupsPage /></Page> },
           { path: '/tasks', element: <Page perm="vm:view"><TasksPage /></Page> },
           { path: '/topology', element: <Page perm="network:view"><TopologyPage /></Page> },

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, Download, HardDriveDownload, Package, ChevronDown, Disc } from 'lucide-react';
+import { Search, Download } from 'lucide-react';
 import { OsLogo } from '@/features/templates/OsLogo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,9 @@ import DownloadIsoDialog, { type IsoSource } from './DownloadIsoDialog';
 import MirrorsManager from './MirrorsManager';
 import type { CatalogImage } from '@/types';
 
-export default function ImagesPage() {
+export type ImageCatalogSection = 'vm-images' | 'lxc' | 'iso' | 'repositories';
+
+export default function ImageCatalogPanel({ section }: { section: ImageCatalogSection }) {
   const { t } = useTranslation();
   const [serverId, setServerId] = useState<number | null>(null);
   const [node, setNode] = useState<string>('');
@@ -31,15 +33,8 @@ export default function ImagesPage() {
   const [archFilter, setArchFilter] = useState<string>('amd64');
   const [selected, setSelected] = useState<SelectedImage | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [cloudOpen, setCloudOpen] = useState(() => localStorage.getItem('images-cloud-open') !== '0');
-  const [lxcOpen, setLxcOpen] = useState(() => localStorage.getItem('images-lxc-open') !== '0');
-  const [isoOpen, setIsoOpen] = useState(() => localStorage.getItem('images-iso-open') !== '0');
   const [isoSource, setIsoSource] = useState<IsoSource | null>(null);
   const [isoDialogOpen, setIsoDialogOpen] = useState(false);
-
-  const toggleCloud = () => setCloudOpen((v) => { localStorage.setItem('images-cloud-open', v ? '0' : '1'); return !v; });
-  const toggleLxc = () => setLxcOpen((v) => { localStorage.setItem('images-lxc-open', v ? '0' : '1'); return !v; });
-  const toggleIso = () => setIsoOpen((v) => { localStorage.setItem('images-iso-open', v ? '0' : '1'); return !v; });
 
   const { data: servers = [] } = useServers();
   const { data: profile } = useProfile();
@@ -97,7 +92,7 @@ export default function ImagesPage() {
 
   const lxcTemplates = useMemo(() => {
     const q = search.toLowerCase();
-    return lxcRepo.filter((t) => !q || `${t.template} ${t.os ?? ''} ${t.headline ?? ''}`.toLowerCase().includes(q));
+    return lxcRepo.filter((tpl) => !q || `${tpl.template} ${tpl.os ?? ''} ${tpl.headline ?? ''}`.toLowerCase().includes(q));
   }, [lxcRepo, search]);
 
   const openDownload = (img: SelectedImage) => {
@@ -106,53 +101,44 @@ export default function ImagesPage() {
   };
 
   const canDownload = serverId != null && !!node;
+  const needsContext = section === 'vm-images' || section === 'lxc' || section === 'iso';
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <HardDriveDownload className="h-6 w-6" />
-          <h1 className="text-2xl font-bold">{t('images.title')}</h1>
+    <div className="space-y-4">
+      {needsContext && (
+        <div className="flex flex-wrap gap-3">
+          <Select value={serverId != null ? String(serverId) : ''} onValueChange={(v) => { if (v !== null) { setServerId(Number(v)); setNode(''); } }}>
+            <SelectTrigger className="w-[200px]"><SelectValue placeholder={t('images.server')} /></SelectTrigger>
+            <SelectContent>
+              {servers.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={node} onValueChange={(v) => { if (v) setNode(v); }}>
+            <SelectTrigger className="w-[180px]"><SelectValue placeholder={t('images.node')} /></SelectTrigger>
+            <SelectContent>
+              {nodes.length === 0 && <SelectItem value="__empty__" disabled>{t('images.no_nodes')}</SelectItem>}
+              {nodes.map((n) => <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-9" placeholder={t('images.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          {section === 'vm-images' && (
+            <Select value={archFilter || '__all__'} onValueChange={(v) => { if (v !== null) setArchFilter(v === '__all__' ? '' : v); }}>
+              <SelectTrigger className="w-[150px]"><SelectValue placeholder={t('images.arch')} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">{t('images.arch_all')}</SelectItem>
+                <SelectItem value="amd64">amd64</SelectItem>
+                <SelectItem value="arm64">arm64</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
         </div>
-      </div>
-
-      {/* Контекст: сервер + нода */}
-      <div className="flex flex-wrap gap-3">
-        <Select value={serverId != null ? String(serverId) : ''} onValueChange={(v) => { if (v !== null) { setServerId(Number(v)); setNode(''); } }}>
-          <SelectTrigger className="w-[200px]"><SelectValue placeholder={t('images.server')} /></SelectTrigger>
-          <SelectContent>
-            {servers.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={node} onValueChange={(v) => { if (v) setNode(v); }}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder={t('images.node')} /></SelectTrigger>
-          <SelectContent>
-            {nodes.length === 0 && <SelectItem value="__empty__" disabled>{t('images.no_nodes')}</SelectItem>}
-            {nodes.map((n) => <SelectItem key={n.node} value={n.node}>{n.node}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder={t('images.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Select value={archFilter || '__all__'} onValueChange={(v) => { if (v !== null) setArchFilter(v === '__all__' ? '' : v); }}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder={t('images.arch')} /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">{t('images.arch_all')}</SelectItem>
-            <SelectItem value="amd64">amd64</SelectItem>
-            <SelectItem value="arm64">arm64</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      )}
 
       {/* Cloud-образы (qcow2 → шаблон ВМ) */}
-      <section className="space-y-3">
-        <button type="button" onClick={toggleCloud}
-          className="flex w-full items-center gap-2 text-lg font-semibold">
-          <ChevronDown className={`h-5 w-5 transition-transform ${cloudOpen ? '' : '-rotate-90'}`} />
-          <Package className="h-5 w-5" /> {t('images.cloud_section')}
-        </button>
-        {cloudOpen && (
+      {section === 'vm-images' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {cloudImages.map((img) => (
             <Card key={img.id}>
@@ -176,23 +162,18 @@ export default function ImagesPage() {
             <div className="text-sm text-muted-foreground col-span-full">{t('images.no_images_filter')}</div>
           )}
         </div>
-        )}
-      </section>
+      )}
 
       {/* ISO-образы (установочные) */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <button type="button" onClick={toggleIso}
-            className="flex items-center gap-2 text-lg font-semibold">
-            <ChevronDown className={`h-5 w-5 transition-transform ${isoOpen ? '' : '-rotate-90'}`} />
-            <Disc className="h-5 w-5" /> {t('images.iso_section')}
-          </button>
-          <Button size="sm" variant="outline" disabled={!canDownload}
-            onClick={() => openIsoDownload(null)}>
-            <Download className="mr-2 h-4 w-4" /> {t('images.download_by_url')}
-          </Button>
-        </div>
-        {isoOpen && (<>
+      {section === 'iso' && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button size="sm" variant="outline" disabled={!canDownload}
+              onClick={() => openIsoDownload(null)}>
+              <Download className="mr-2 h-4 w-4" /> {t('images.download_by_url')}
+            </Button>
+          </div>
+
           {!canDownload && (
             <div className="text-sm text-muted-foreground">{t('images.select_server_node')}</div>
           )}
@@ -243,41 +224,43 @@ export default function ImagesPage() {
               {t('images.no_iso_links')}
             </div>
           )}
-        </>)}
-      </section>
+        </div>
+      )}
 
       {/* LXC-шаблоны (репозиторий Proxmox) */}
-      <section className="space-y-3">
-        <button type="button" onClick={toggleLxc}
-          className="flex w-full items-center gap-2 text-lg font-semibold">
-          <ChevronDown className={`h-5 w-5 transition-transform ${lxcOpen ? '' : '-rotate-90'}`} />
-          <Package className="h-5 w-5" /> {t('images.lxc_section')}
-        </button>
-        {lxcOpen && (<>
-        {!canDownload && (
-          <div className="text-sm text-muted-foreground">{t('images.select_server_node_list')}</div>
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {lxcTemplates.map((t) => (
-            <Card key={t.template}>
-              <CardContent className="flex items-center gap-3 p-4">
-                <OsLogo name={t.os || t.template} />
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate" title={t.template}>{t.headline || t.template}</div>
-                  <div className="text-xs text-muted-foreground truncate">{t.template}</div>
-                </div>
-                <Button size="sm" disabled={!canDownload}
-                  onClick={() => openDownload({ kind: 'vztmpl', name: t.template, template: t.template })}>
-                  <Download className="h-4 w-4" />
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+      {section === 'lxc' && (
+        <div className="space-y-3">
+          {!canDownload && (
+            <div className="text-sm text-muted-foreground">{t('images.select_server_node_list')}</div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {lxcTemplates.map((tpl) => (
+              <Card key={tpl.template}>
+                <CardContent className="flex items-center gap-3 p-4">
+                  <OsLogo name={tpl.os || tpl.template} />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium truncate" title={tpl.template}>{tpl.headline || tpl.template}</div>
+                    <div className="text-xs text-muted-foreground truncate">{tpl.template}</div>
+                  </div>
+                  <Button size="sm" disabled={!canDownload}
+                    onClick={() => openDownload({ kind: 'vztmpl', name: tpl.template, template: tpl.template })}>
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
-        </>)}
-      </section>
+      )}
 
-      {isAdmin && <MirrorsManager />}
+      {/* Репозитории / зеркала */}
+      {section === 'repositories' && (
+        isAdmin ? (
+          <MirrorsManager />
+        ) : (
+          <div className="text-sm text-muted-foreground py-8 text-center">{t('common.access_denied')}</div>
+        )
+      )}
 
       <DownloadImageDialog
         open={dialogOpen}
