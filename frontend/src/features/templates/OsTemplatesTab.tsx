@@ -129,7 +129,9 @@ export default function OsTemplatesTab() {
       accessorFn: (tpl) => tpl.group_name || '',
       filterFn: multiSelectFilter,
       meta: { filter: 'select' },
-      header: t('templates.group'),
+      header: ({ column }) => (
+        <SortHeader label={t('templates.group')} onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} />
+      ),
       cell: ({ getValue }) => {
         const v = getValue<string>();
         return v ? <span className="text-sm">{v}</span> : <span className="text-muted-foreground">—</span>;
@@ -141,7 +143,9 @@ export default function OsTemplatesTab() {
       accessorFn: (tpl) => tpl.server_name || '',
       filterFn: multiSelectFilter,
       meta: { filter: 'select' },
-      header: t('templates.server'),
+      header: ({ column }) => (
+        <SortHeader label={t('templates.server')} onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} />
+      ),
       cell: ({ getValue }) => {
         const v = getValue<string>();
         return v ? <span className="text-sm text-muted-foreground">{v}</span> : <span className="text-muted-foreground">—</span>;
