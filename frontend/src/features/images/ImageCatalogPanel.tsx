@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, Download } from 'lucide-react';
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getPaginationRowModel,
+  flexRender,
+  type ColumnDef,
+  type SortingState,
+} from '@tanstack/react-table';
+import { Search, Download, ArrowUpDown, ChevronLeft, ChevronRight, HardDriveDownload } from 'lucide-react';
 import { OsLogo } from '@/features/templates/OsLogo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useServers, useNodes } from '@/hooks/use-nodes';
 import { useImageCatalog, useImageLXCTemplates, useNodeArch, useNodeIsos } from '@/hooks/use-image-catalog';
 import { useProfile } from '@/hooks/use-settings';
@@ -21,6 +31,15 @@ import DownloadImageDialog, { type SelectedImage } from './DownloadImageDialog';
 import DownloadIsoDialog, { type IsoSource } from './DownloadIsoDialog';
 import MirrorsManager from './MirrorsManager';
 import type { CatalogImage } from '@/types';
+
+function SortHeader({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={onClick}>
+      {label}
+      <ArrowUpDown className="ml-1 h-3 w-3" />
+    </Button>
+  );
+}
 
 export type ImageCatalogSection = 'vm-images' | 'lxc' | 'iso' | 'repositories';
 
@@ -50,6 +69,15 @@ export default function ImageCatalogPanel({ section }: { section: ImageCatalogSe
   // Авто-выбор первого сервера и ноды
   useEffect(() => {
     if (serverId == null && servers.length > 0) setServerId(servers[0].id);
+  }, [servers, serverId]);
+  // Сбросить протухший выбор сервера, если его нет в списке активной рабочей
+  // области (например, после переключения рабочей области) — иначе выбор
+  // молча остаётся, а Select показывает голый id сервера вместо имени.
+  useEffect(() => {
+    if (serverId != null && servers.length > 0 && !servers.some((s) => s.id === serverId)) {
+      setServerId(null);
+      setNode('');
+    }
   }, [servers, serverId]);
   useEffect(() => {
     if (!node && nodes.length > 0) setNode(nodes[0].node);
@@ -103,6 +131,61 @@ export default function ImageCatalogPanel({ section }: { section: ImageCatalogSe
   const canDownload = serverId != null && !!node;
   const needsContext = section === 'vm-images' || section === 'lxc' || section === 'iso';
 
+  const [sorting, setSorting] = useState<SortingState>([]);
+
+  const cloudImageColumns = useMemo<ColumnDef<CatalogImage>[]>(() => [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => (
+        <SortHeader label={t('common.name')} onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} />
+      ),
+      cell: ({ row }) => {
+        const img = row.original;
+        return (
+          <div className="flex items-center gap-2">
+            <OsLogo name={img.os || img.name} className="h-6 w-6" />
+            <span className="font-medium truncate" title={img.name}>{img.name}</span>
+            {img.source === 'mirror' && <Badge variant="outline" className="text-2xs font-normal">{t('images.mirror_badge')}</Badge>}
+          </div>
+        );
+      },
+      size: 320,
+    },
+    {
+      accessorKey: 'arch',
+      header: t('images.arch'),
+      cell: ({ getValue }) => <Badge variant="secondary" className="font-normal">{getValue<string>()}</Badge>,
+      size: 110,
+    },
+    {
+      id: 'actions',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const img = row.original;
+        return (
+          <div className="flex justify-end">
+            <Button size="sm" disabled={!canDownload}
+              onClick={() => openDownload({ source_id: img.id, kind: 'qcow2', name: img.name, arch: String(img.arch) })}>
+              <Download className="h-4 w-4" />
+            </Button>
+          </div>
+        );
+      },
+      size: 70,
+    },
+  ], [t, canDownload]);
+
+  const cloudImagesTable = useReactTable({
+    data: cloudImages,
+    columns: cloudImageColumns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: { pagination: { pageSize: 50 } },
+  });
+
   return (
     <div className="space-y-4">
       {needsContext && (
@@ -139,27 +222,69 @@ export default function ImageCatalogPanel({ section }: { section: ImageCatalogSe
 
       {/* Cloud-образы (qcow2 → шаблон ВМ) */}
       {section === 'vm-images' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {cloudImages.map((img) => (
-            <Card key={img.id}>
-              <CardContent className="flex items-center gap-3 p-4">
-                <OsLogo name={img.os || img.name} />
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate">{img.name}</div>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <Badge variant="secondary">{img.arch}</Badge>
-                    {img.source === 'mirror' && <Badge variant="outline">{t('images.mirror_badge')}</Badge>}
-                  </div>
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="p-0">
+              {cloudImages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                  <HardDriveDownload className="mb-3 h-10 w-10 opacity-40" />
+                  <p className="text-sm font-medium">{t('images.no_images_filter')}</p>
                 </div>
-                <Button size="sm" disabled={!canDownload}
-                  onClick={() => openDownload({ source_id: img.id, kind: 'qcow2', name: img.name, arch: String(img.arch) })}>
-                  <Download className="h-4 w-4" />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    {cloudImagesTable.getHeaderGroups().map((headerGroup) => (
+                      <TableRow key={headerGroup.id}>
+                        {headerGroup.headers.map((header) => {
+                          const sorted = header.column.getIsSorted();
+                          const ariaSort = !header.column.getCanSort()
+                            ? undefined
+                            : sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none';
+                          return (
+                            <TableHead key={header.id} style={{ width: header.getSize() }} aria-sort={ariaSort}>
+                              {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                            </TableHead>
+                          );
+                        })}
+                      </TableRow>
+                    ))}
+                  </TableHeader>
+                  <TableBody>
+                    {cloudImagesTable.getRowModel().rows.map((row) => (
+                      <TableRow key={row.id}>
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {cloudImages.length > 0 && (
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>
+                {t('instances.showing', 'Showing')} {cloudImagesTable.getState().pagination.pageIndex * cloudImagesTable.getState().pagination.pageSize + 1}–
+                {Math.min(
+                  (cloudImagesTable.getState().pagination.pageIndex + 1) * cloudImagesTable.getState().pagination.pageSize,
+                  cloudImages.length,
+                )}{' '}
+                {t('instances.of', 'of')} {cloudImages.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => cloudImagesTable.previousPage()} disabled={!cloudImagesTable.getCanPreviousPage()}>
+                  <ChevronLeft className="h-4 w-4" />
                 </Button>
-              </CardContent>
-            </Card>
-          ))}
-          {cloudImages.length === 0 && (
-            <div className="text-sm text-muted-foreground col-span-full">{t('images.no_images_filter')}</div>
+                <span className="px-2 tabular-nums">{cloudImagesTable.getState().pagination.pageIndex + 1} / {Math.max(cloudImagesTable.getPageCount(), 1)}</span>
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => cloudImagesTable.nextPage()} disabled={!cloudImagesTable.getCanNextPage()}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       )}
