@@ -98,7 +98,11 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
         cores = cached.cores
         memory = cached.memory
         description = cached.description
-        memory_mb = int(memory) // (1024 * 1024) if memory else None
+        # VMInstance.memory уже хранится в МБ (см. _bytes_to_mb в monitoring_worker) —
+        # раньше здесь их ошибочно ещё раз делили на 1024*1024, получая 0, из-за чего
+        # шаг "Re-apply config" ниже молча пропускал memory и VM оставалась с
+        # памятью шаблона вместо своей прежней.
+        memory_mb = int(memory) if memory else None
 
         _update_deploy_task(task_id, 'running', 'Подключение к Proxmox...', 10, vmid=vmid, node=node)
         client = _connect(server)
@@ -382,11 +386,13 @@ def _do_reinstall_sync(task_id: int, server_id: int, vmid: int, node: str,
             logger.warning(f"[REINSTALL #{task_id}] re-apply config failed: {_ce}")
 
         # 5) Restore disk size
-        disk_size_bytes = cached.disk_size
-        if disk_size_bytes and disk_size_bytes > 0:
+        # VMInstance.disk_size уже хранится в ГБ (см. _bytes_to_gb в monitoring_worker) —
+        # раньше здесь их ошибочно делили ещё раз на 1024**3, получая 0, из-за чего
+        # ресайз ниже всегда пропускался и диск оставался того размера, что задал шаблон.
+        disk_size_gb = cached.disk_size
+        if disk_size_gb and disk_size_gb > 0:
             _update_deploy_task(task_id, 'running', 'Восстановление размера диска...', 92, vmid=vmid, node=node)
             try:
-                disk_size_gb = disk_size_bytes // (1024 ** 3)
                 if is_lxc:
                     lxc_cfg = client.get_container_config(node, vmid)
                     current_size_gb = 0
