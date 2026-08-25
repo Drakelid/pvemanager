@@ -499,6 +499,14 @@ export default function StoragesTab() {
   useEffect(() => {
     if (serverId === 0 && servers.length > 0) setServerId(servers[0].id);
   }, [servers, serverId]);
+  // Сбросить протухший выбор сервера, если его нет в списке активной рабочей
+  // области (например, после переключения рабочей области) — иначе выбор
+  // молча остаётся, а Select показывает голый id сервера вместо имени.
+  useEffect(() => {
+    if (serverId !== 0 && servers.length > 0 && !servers.some((s) => s.id === serverId)) {
+      setServerId(0);
+    }
+  }, [servers, serverId]);
 
   const { data: storagesData, isLoading } = useBackupStorages(serverId);
   const { data: jobsData } = useProxmoxBackupJobs(serverId);
