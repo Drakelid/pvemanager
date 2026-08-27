@@ -58,18 +58,19 @@ services:
       # For system updates
       - .:/project:rw
     restart: unless-stopped
-    environment:
-      - DATABASE_URL=postgresql://pvemanager:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/pvemanager
-      - PYTHONPATH=/app
-      - TZ=${TZ:-Asia/Tashkent}
-      - PROJECT_ROOT=/project
-      # Отключить проверку обновлений для приватных репозиториев
-      - DISABLE_UPDATE_CHECK=${DISABLE_UPDATE_CHECK:-false}
-      # GitHub token для доступа к приватным репозиториям (опционально)
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      # Оптимизация для production
-      - UVICORN_WORKERS=1
-      - UVICORN_TIMEOUT_KEEP_ALIVE=30
+  environment:
+    - DATABASE_URL=postgresql://pvemanager:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/pvemanager
+    - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+    - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+    - FERNET_KEY=${FERNET_KEY:-}
+    - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    - PYTHONPATH=/app
+    - TZ=${TZ:-Europe/Oslo}
+    - PROJECT_ROOT=/project
+    - DISABLE_UPDATE_CHECK=${DISABLE_UPDATE_CHECK:-false}
+    - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    - UVICORN_WORKERS=1
+    - UVICORN_TIMEOUT_KEEP_ALIVE=30
     networks:
       - pvemanager-network
     healthcheck:
