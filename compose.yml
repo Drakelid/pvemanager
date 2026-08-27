@@ -41,7 +41,7 @@ services:
     pull_policy: build
     container_name: pvemanager-app
     ports:
-      - "8000:8000"
+      - "8001:8000"
     env_file:
       - path: ./backend/.env
         required: false
