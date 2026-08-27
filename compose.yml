@@ -1,12 +1,12 @@
 services:
   db:
     image: postgres:16-alpine
-    container_name: pvemanager-db
     environment:
       POSTGRES_DB: pvemanager
       POSTGRES_USER: pvemanager
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — run deploy.sh or bootstrap.sh to generate .env}
-      TZ: ${TZ:-Asia/Tashkent}
+      # Coolify generates and persists this value on the first deployment.
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+      TZ: ${TZ:-Europe/Oslo}
       # Оптимизация для быстрого старта
       POSTGRES_INITDB_ARGS: "--no-sync"
     volumes:
@@ -39,38 +39,32 @@ services:
       dockerfile: Dockerfile
     image: pvemanager-app:latest
     pull_policy: build
-    container_name: pvemanager-app
-    ports:
-      - "8001:8000"
-    env_file:
-      - path: ./backend/.env
-        required: false
+    # The API remains private. Coolify exposes the frontend, whose nginx
+    # proxies API traffic to app:8000 over the deployment's private network.
+    # No host port means no port-8000 collision between deployments.
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - ~/.ssh:/root/.ssh:ro
-      - ./logs:/app/logs
-      - ./VERSION:/app/VERSION:ro
-      - /etc/localtime:/etc/localtime:ro
+      - logs:/app/logs
       # App Store: кэш логотипов/данных каталога (persist across rebuilds)
       - appstore_data:/app/data
-      # For system updates
-      - .:/project:rw
+    environment:
+      DATABASE_URL: postgresql://pvemanager:${SERVICE_PASSWORD_64_POSTGRES}@db:5432/pvemanager
+      SECRET_KEY: ${SERVICE_HEX_64_APP}
+      ADMIN_PASSWORD: ${SERVICE_PASSWORD_64_ADMIN}
+      # Fernet requires a URL-safe base64-encoded 32-byte key.
+      FERNET_KEY: ${SERVICE_REALBASE64_32_FERNET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      PYTHONPATH: /app
+      TZ: ${TZ:-Europe/Oslo}
+      DISABLE_UPDATE_CHECK: ${DISABLE_UPDATE_CHECK:-true}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      UVICORN_WORKERS: "1"
+      UVICORN_TIMEOUT_KEEP_ALIVE: "30"
     restart: unless-stopped
-  environment:
-    - DATABASE_URL=postgresql://pvemanager:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/pvemanager
-    - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
-    - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
-    - FERNET_KEY=${FERNET_KEY:-}
-    - CORS_ORIGINS=${CORS_ORIGINS:-*}
-    - PYTHONPATH=/app
-    - TZ=${TZ:-Europe/Oslo}
-    - PROJECT_ROOT=/project
-    - DISABLE_UPDATE_CHECK=${DISABLE_UPDATE_CHECK:-false}
-    - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-    - UVICORN_WORKERS=1
-    - UVICORN_TIMEOUT_KEEP_ALIVE=30
     networks:
       - pvemanager-network
     healthcheck:
@@ -95,9 +89,12 @@ services:
       dockerfile: Dockerfile
     image: pvemanager-frontend:latest
     pull_policy: build
-    container_name: pvemanager-frontend
-    ports:
-      - "3001:80"
+    # Assign the public domain to this service in Coolify.
+    expose:
+      - "80"
+    environment:
+      # Creates a persistent generated domain and routes it to this service.
+      SERVICE_URL_FRONTEND: /
     depends_on:
       app:
         condition: service_healthy
