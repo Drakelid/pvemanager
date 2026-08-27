@@ -1,6 +1,10 @@
 services:
   db:
-    image: postgres:16-alpine
+    build:
+      context: .
+      dockerfile: postgres.Dockerfile
+    image: pvemanager-db:latest
+    pull_policy: build
     environment:
       POSTGRES_DB: pvemanager
       POSTGRES_USER: pvemanager
@@ -10,8 +14,7 @@ services:
       # Оптимизация для быстрого старта
       POSTGRES_INITDB_ARGS: "--no-sync"
     volumes:
-      - db_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - db_data_v2:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pvemanager -d pvemanager"]
@@ -108,7 +111,7 @@ services:
           memory: 128M
 
 volumes:
-  db_data:
+  db_data_v2:
   logs:
   appstore_data:
 
