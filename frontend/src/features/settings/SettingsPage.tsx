@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,16 +29,31 @@ import CoolifySettingsTab from './CoolifySettingsTab';
  */
 export default function SettingsPage() {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canEditPanel = useHasPermission('setting:update');
   const canManageSecurity = useHasPermission('setting:manage');
   const canManageCoolify = useHasPermission('coolify:manage');
   // The SMTP/Telegram endpoints check `is_admin` literally, not a permission.
   const isAdmin = useHasPermission();
+  const requestedTab = searchParams.get('tab');
+  const allowedTabs = new Set([
+    'panel', 'about',
+    ...(canManageSecurity ? ['security'] : []),
+    ...(isAdmin ? ['notifications'] : []),
+    ...(canManageCoolify ? ['coolify'] : []),
+  ]);
+  const activeTab = requestedTab && allowedTabs.has(requestedTab) ? requestedTab : 'panel';
+
+  const setTab = (tab: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">{t('nav.settings')}</h1>
-      <Tabs defaultValue="panel">
+      <Tabs value={activeTab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="panel">{t('settings.panel')}</TabsTrigger>
           {canManageSecurity && <TabsTrigger value="security">{t('settings.security')}</TabsTrigger>}

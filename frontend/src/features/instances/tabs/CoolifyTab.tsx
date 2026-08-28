@@ -45,7 +45,7 @@ export default function CoolifyTab({ serverId, vmid }: { serverId: number; vmid:
         <Button variant="outline" size="icon" title={t('common.refresh')} disabled={serversFetching} onClick={() => refetchServers()}><RefreshCw className={`h-4 w-4 ${serversFetching ? 'animate-spin' : ''}`} /></Button>
         <Button disabled={!selected || updateMapping.isPending} onClick={() => updateMapping.mutate(selected, { onSuccess: () => toast.success(t('coolify.mapping_saved')), onError: e => toast.error(e.message) })}>{t('common.save')}</Button>
       </div>
-      {(serversError || (!serversLoading && servers.length === 0)) && <Button variant="link" className="h-auto p-0" render={<Link to="/settings" />}>{t('coolify.open_settings')}</Button>}
+      {(serversError || (!serversLoading && servers.length === 0)) && <Button variant="link" className="h-auto p-0" render={<Link to="/settings?tab=coolify" />}>{t('coolify.open_settings')}</Button>}
     </div>}
   </CardContent></Card>;
 
