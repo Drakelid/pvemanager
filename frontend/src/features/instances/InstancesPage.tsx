@@ -187,7 +187,7 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=settings`} />}>
-            <Settings2 className="mr-2 h-4 w-4" /> {t('instances.parameters', 'Параметры')}
+            <Settings2 className="mr-2 h-4 w-4" /> {t('instances.parameters', 'Settings')}
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link to={`/console/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`} target="_blank" rel="noopener noreferrer" />}>
             <Terminal className="mr-2 h-4 w-4" /> {t('common.console', 'Console')}
@@ -212,51 +212,51 @@ function RowActionMenu({ vm }: { vm: VMInstance }) {
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => setDialog('migrate')}>
-          <ArrowRightLeft className="mr-2 h-4 w-4" /> {t('instances.migrate', 'Мигрировать')}
+          <ArrowRightLeft className="mr-2 h-4 w-4" /> {t('instances.migrate', 'Migrate')}
         </DropdownMenuItem>
         {hasRemoteMigrateTargets && (
           <DropdownMenuItem onClick={() => setDialog('remote-migrate')}>
-            <ArrowRightLeft className="mr-2 h-4 w-4" /> {t('instances.remote_migrate', 'Миграция на другой кластер')}
+            <ArrowRightLeft className="mr-2 h-4 w-4" /> {t('instances.remote_migrate', 'Migrate to another cluster')}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onClick={() => setDialog('clone')}>
-          <Copy className="mr-2 h-4 w-4" /> {t('common.clone', 'Клонировать')}
+          <Copy className="mr-2 h-4 w-4" /> {t('common.clone', 'Clone')}
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=${isQemu ? 'hardware' : 'settings'}`} />}>
-            <Cpu className="mr-2 h-4 w-4" /> {t('instances.edit_resources', 'Изменить ресурсы')}
+            <Cpu className="mr-2 h-4 w-4" /> {t('instances.edit_resources', 'Edit resources')}
         </DropdownMenuItem>
         {isQemu && (
           <DropdownMenuItem onClick={() => setDialog('iso')}>
-            <Disc className="mr-2 h-4 w-4" /> {t('common.iso', 'ISO образ')}
+            <Disc className="mr-2 h-4 w-4" /> {t('common.iso', 'ISO image')}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onClick={() => setDialog('change-password')}>
-          <KeyRound className="mr-2 h-4 w-4" /> {t('common.changePassword', 'Изменить пароль')}
+          <KeyRound className="mr-2 h-4 w-4" /> {t('common.changePassword', 'Change password')}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setDialog('notes')}>
-          <FileText className="mr-2 h-4 w-4" /> {t('common.notes', 'Примечание')}
+          <FileText className="mr-2 h-4 w-4" /> {t('common.notes', 'Notes')}
         </DropdownMenuItem>
         {isQemu && (
           <DropdownMenuItem onClick={() => setDialog('execute')}>
-            <Terminal className="mr-2 h-4 w-4" /> {t('common.runCommand', 'Запуск команд')}
+            <Terminal className="mr-2 h-4 w-4" /> {t('common.runCommand', 'Run command')}
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => setDialog('backup')}>
-          <Archive className="mr-2 h-4 w-4" /> {t('instances.backup_now', 'Создать резервную копию')}
+          <Archive className="mr-2 h-4 w-4" /> {t('instances.backup_now', 'Create backup')}
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=snapshots`} />}>
             <Camera className="mr-2 h-4 w-4" /> {t('common.snapshots', 'Snapshots')}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setDialog('reinstall')}>
-          <Sparkles className="mr-2 h-4 w-4" /> {t('common.reinstall', 'Переустановить')}
+          <Sparkles className="mr-2 h-4 w-4" /> {t('common.reinstall', 'Reinstall')}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
           render={<Link to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=destroy`} />}
         >
-            <Trash2 className="mr-2 h-4 w-4" /> {t('common.delete', 'Удалить')}
+            <Trash2 className="mr-2 h-4 w-4" /> {t('common.delete', 'Delete')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -326,7 +326,7 @@ function InstanceMetricsPanel({ vm, nodeLabelName }: { vm: VMInstance; nodeLabel
           to={`/instances/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}&tab=settings`}
           className="flex items-center gap-1.5 text-primary hover:underline"
         >
-          <Settings2 className="h-3.5 w-3.5" /> {t('instances.parameters', 'Параметры')}
+          <Settings2 className="h-3.5 w-3.5" /> {t('instances.parameters', 'Settings')}
         </Link>
         <Link
           to={`/console/${vm.server_id}/${vm.vmid}?node=${vm.node}&type=${vm.type}`}
@@ -361,29 +361,29 @@ function InstanceMetricsPanel({ vm, nodeLabelName }: { vm: VMInstance; nodeLabel
           )}
         </div>
         <div className="grid grid-cols-2 content-start gap-x-6 gap-y-3">
-          <InfoItem label={t('instances.ip_address', 'IP-адрес')} value={vm.ip_address || '—'} mono icon={Globe} />
-          <InfoItem label={t('common.node', 'Узел')} value={nodeLabelName} />
-          <InfoItem label={t('instances.os_config', 'ОС')} value={os} />
-          <InfoItem label={t('instances.owner', 'Владелец')} value={owner} />
-          <InfoItem label={t('instances.uptime', 'Аптайм')} value={vm.uptime ? formatUptime(vm.uptime) : '—'} />
+          <InfoItem label={t('instances.ip_address', 'IP address')} value={vm.ip_address || '—'} mono icon={Globe} />
+          <InfoItem label={t('common.node', 'Node')} value={nodeLabelName} />
+          <InfoItem label={t('instances.os_config', 'OS / Config')} value={os} />
+          <InfoItem label={t('instances.owner', 'Owner')} value={owner} />
+          <InfoItem label={t('instances.uptime', 'Uptime')} value={vm.uptime ? formatUptime(vm.uptime) : '—'} />
         </div>
       </div>
       {isRunning && (
         <div className="grid gap-3 border-t px-4 py-4 sm:grid-cols-2">
           <IoStatCard
             icon={Network}
-            label={t('instances.network', 'Сеть')}
+            label={t('instances.network', 'Network')}
             rows={[
-              { icon: ArrowDown, iconClass: 'text-primary', label: t('instances.net_in', 'Входящий'), value: vm.netin_rate },
-              { icon: ArrowUp, iconClass: 'text-violet-500', label: t('instances.net_out', 'Исходящий'), value: vm.netout_rate },
+              { icon: ArrowDown, iconClass: 'text-primary', label: t('instances.net_in', 'Incoming'), value: vm.netin_rate },
+              { icon: ArrowUp, iconClass: 'text-violet-500', label: t('instances.net_out', 'Outgoing'), value: vm.netout_rate },
             ]}
           />
           <IoStatCard
             icon={HardDrive}
-            label={t('instances.disk_io', 'Диск I/O')}
+            label={t('instances.disk_io', 'Disk I/O')}
             rows={[
-              { badge: 'R', badgeClass: 'text-cyan-500', label: t('instances.disk_read', 'Чтение'), value: vm.diskread_rate },
-              { badge: 'W', badgeClass: 'text-orange-500', label: t('instances.disk_write', 'Запись'), value: vm.diskwrite_rate },
+              { badge: 'R', badgeClass: 'text-cyan-500', label: t('instances.disk_read', 'Read'), value: vm.diskread_rate },
+              { badge: 'W', badgeClass: 'text-orange-500', label: t('instances.disk_write', 'Write'), value: vm.diskwrite_rate },
             ]}
           />
         </div>
@@ -446,12 +446,12 @@ export default function InstancesPage() {
   // Human-readable label for an in-flight bulk action (status overlay / progress).
   const bulkActionLabel = useCallback((action: string) => {
     switch (action) {
-      case 'start': return t('instances.status_starting', 'Запуск');
-      case 'stop': return t('instances.status_stopping', 'Остановка');
-      case 'restart': return t('instances.status_restarting', 'Перезагрузка');
-      case 'shutdown': return t('instances.status_shutting_down', 'Выключение');
-      case 'delete': return t('instances.status_deleting', 'Удаление');
-      case 'migrate': return t('instances.status_migrating', 'Миграция');
+      case 'start': return t('instances.status_starting', 'Starting');
+      case 'stop': return t('instances.status_stopping', 'Stopping');
+      case 'restart': return t('instances.status_restarting', 'Restarting');
+      case 'shutdown': return t('instances.status_shutting_down', 'Shutting down');
+      case 'delete': return t('instances.status_deleting', 'Deleting');
+      case 'migrate': return t('instances.status_migrating', 'Migrating');
       default: return action;
     }
   }, [t]);
@@ -481,7 +481,7 @@ export default function InstancesPage() {
           if (data.status === 'completed') {
             if (data.error_message) {
               toast.warning(
-                t('instances.deploy_completed_with_warnings', 'ВМ создана, но часть настроек не применилась'),
+                t('instances.deploy_completed_with_warnings', 'VM created, but some settings were not applied'),
                 { description: data.error_message, duration: 15000 },
               );
             }
@@ -796,7 +796,7 @@ export default function InstancesPage() {
     // Пропускаем инстансы, уже находящиеся на целевой ноде.
     const toMigrate = selectedVMs.filter((vm) => vm.node !== targetNode);
     if (!toMigrate.length) {
-      toast.info(t('instances.nothing_to_migrate', 'Все выбранные инстансы уже на целевой ноде'));
+      toast.info(t('instances.nothing_to_migrate', 'All selected instances are already on the target node'));
       setMigrateOpen(false);
       return;
     }
@@ -983,7 +983,7 @@ export default function InstancesPage() {
                 <Badge
                   variant="secondary"
                   className="bg-warning/10 text-warning text-2xs gap-1"
-                  title={t('instances.locked_hint', 'Заблокировано Proxmox — операция выполняется')}
+                  title={t('instances.locked_hint', 'Locked by Proxmox — operation in progress')}
                 >
                   <Lock className="h-3 w-3" />
                   {vm.lock}
@@ -1054,7 +1054,7 @@ export default function InstancesPage() {
                   className="text-2xs"
                   title={extra.map((a) => a.ip).join(', ')}
                 >
-                  {t('ipam.extra_addresses', { defaultValue: 'ещё {{count}}', count: extra.length })}
+                  {t('ipam.extra_addresses', { defaultValue: '{{count}} more', count: extra.length })}
                 </Badge>
               )}
             </span>
@@ -1262,29 +1262,29 @@ export default function InstancesPage() {
       {/* Bulk actions toolbar */}
       {selectedVMs.length > 0 && (
         <div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-2">
-          <span className="text-sm font-medium">{t('instances.selected_count', '{{count}} выбрано', { count: selectedVMs.length })}</span>
+          <span className="text-sm font-medium">{t('instances.selected_count', '{{count}} selected', { count: selectedVMs.length })}</span>
           <Button variant="outline" size="sm" onClick={() => handleBulk('start')} disabled={bulkOp.isPending}>
-            <Play className="mr-1 h-3 w-3" /> {t('common.start', 'Запустить')}
+            <Play className="mr-1 h-3 w-3" /> {t('common.start', 'Start')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => handleBulk('restart')} disabled={bulkOp.isPending}>
-            <RotateCcw className="mr-1 h-3 w-3" /> {t('common.restart', 'Перезагрузить')}
+            <RotateCcw className="mr-1 h-3 w-3" /> {t('common.restart', 'Restart')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => handleBulk('stop')} disabled={bulkOp.isPending}>
-            <Square className="mr-1 h-3 w-3" /> {t('common.stop', 'Остановить')}
+            <Square className="mr-1 h-3 w-3" /> {t('common.stop', 'Stop')}
           </Button>
           <Button
             variant="outline" size="sm"
             onClick={() => setMigrateOpen(true)}
             disabled={bulkOp.isPending || !bulkServerId}
-            title={!bulkServerId ? t('instances.migrate_same_server', 'Выберите инстансы одного сервера') : undefined}
+            title={!bulkServerId ? t('instances.migrate_same_server', 'Select instances from the same server') : undefined}
           >
-            <ArrowRightLeft className="mr-1 h-3 w-3" /> {t('instances.migrate', 'Мигрировать')}
+            <ArrowRightLeft className="mr-1 h-3 w-3" /> {t('instances.migrate', 'Migrate')}
           </Button>
           <Button variant="destructive" size="sm" onClick={() => handleBulk('delete')} disabled={bulkOp.isPending}>
-            <Trash2 className="mr-1 h-3 w-3" /> {t('common.delete', 'Удалить')}
+            <Trash2 className="mr-1 h-3 w-3" /> {t('common.delete', 'Delete')}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setRowSelection({})}>
-            {t('common.clear', 'Очистить')}
+            {t('common.clear', 'Clear')}
           </Button>
         </div>
       )}
@@ -1319,7 +1319,7 @@ export default function InstancesPage() {
             </span>
             {task.failed > 0 && (
               <span className="text-xs text-danger">
-                {task.failed} {t('instances.bulk_failed', 'с ошибкой')}
+                {task.failed} {t('instances.bulk_failed', 'failed')}
               </span>
             )}
           </div>
