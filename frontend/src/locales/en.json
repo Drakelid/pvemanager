@@ -2078,6 +2078,22 @@
     "no_resources": "No applications or services were found on this Coolify server.",
     "deploy": "Deploy",
     "logs": "Logs",
-    "action_sent": "Coolify action sent"
+    "action_sent": "Coolify action sent",
+    "connect_instance": "Connect this instance to Coolify",
+    "connect": "Connect",
+    "mapping_admin_required": "A Coolify administrator must map this instance before resources can be managed.",
+    "attention": "Needs attention",
+    "search_resources": "Search applications and services...",
+    "showing_resources": "Showing {{shown}} of {{total}} resources",
+    "resources_load_failed": "Could not load Coolify resources",
+    "no_matching_resources": "No resources match the current search or filter.",
+    "remove_mapping_confirm": "Remove the Coolify mapping from this instance?",
+    "stop_confirm": "Stop {{name}}? The application or service will become unavailable.",
+    "action_sent_named": "{{action}} sent to {{name}}",
+    "logs_copied": "Logs copied to clipboard",
+    "no_logs": "No logs were returned.",
+    "retry": "Retry",
+    "copy": "Copy",
+    "actions": { "start": "Start", "stop": "Stop", "restart": "Restart", "deploy": "Deploy" }
   }
 }

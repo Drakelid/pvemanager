@@ -2183,6 +2183,22 @@
     "no_resources": "На этом сервере Coolify не найдено приложений или сервисов.",
     "deploy": "Развернуть",
     "logs": "Логи",
-    "action_sent": "Команда Coolify отправлена"
+    "action_sent": "Команда Coolify отправлена",
+    "connect_instance": "Подключить экземпляр к Coolify",
+    "connect": "Подключить",
+    "mapping_admin_required": "Администратор Coolify должен связать этот экземпляр, прежде чем ресурсами можно будет управлять.",
+    "attention": "Требует внимания",
+    "search_resources": "Поиск приложений и сервисов...",
+    "showing_resources": "Показано {{shown}} из {{total}} ресурсов",
+    "resources_load_failed": "Не удалось загрузить ресурсы Coolify",
+    "no_matching_resources": "Нет ресурсов, соответствующих поиску или фильтру.",
+    "remove_mapping_confirm": "Удалить связь Coolify с этим экземпляром?",
+    "stop_confirm": "Остановить {{name}}? Приложение или сервис станет недоступен.",
+    "action_sent_named": "Команда «{{action}}» отправлена для {{name}}",
+    "logs_copied": "Логи скопированы в буфер обмена",
+    "no_logs": "Логи отсутствуют.",
+    "retry": "Повторить",
+    "copy": "Копировать",
+    "actions": { "start": "Запуск", "stop": "Остановка", "restart": "Перезапуск", "deploy": "Развертывание" }
   }
 }

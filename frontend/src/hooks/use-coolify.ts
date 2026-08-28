@@ -5,9 +5,9 @@ export interface CoolifySettings {
   configured: boolean; name: string; base_url: string; verify_ssl: boolean;
   enabled: boolean; token_configured: boolean;
 }
-export interface CoolifyServer { uuid: string; name: string; description?: string }
+export interface CoolifyServer { uuid: string; name: string; description?: string; ip?: string; settings?: { is_reachable?: boolean; is_usable?: boolean; is_build_server?: boolean } }
 export interface CoolifyResource {
-  uuid: string; name: string; type: string; status?: string; description?: string; fqdn?: string;
+  uuid: string; name: string; type: string; status?: string; description?: string; fqdn?: string; created_at?: string; updated_at?: string;
 }
 
 const keys = {
