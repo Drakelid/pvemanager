@@ -2377,31 +2377,27 @@ def get_vm_vnc(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        # Для VNC ОБЯЗАТЕЛЬНО нужен password auth, API token не работает с vncwebsocket
-        # Получаем auth ticket и создаём VNC proxy в одной сессии
-        password_to_use = server.password if server.password else None
-        auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
-        
-        if not password_to_use:
-            raise HTTPException(status_code=400, detail="VNC requires password authentication. Please add password to server settings.")
-        
-        # 1. Получаем auth ticket
-        auth_response = requests.post(
-            f"https://{server.ip_address}:8006/api2/json/access/ticket",
-            data={
-                "username": auth_username,
-                "password": password_to_use
-            },
-            verify=server.verify_ssl,
-            timeout=10
-        )
-        
-        if auth_response.status_code != 200:
-            raise HTTPException(status_code=401, detail="Failed to authenticate to Proxmox")
-        
-        auth_data = auth_response.json().get("data", {})
-        auth_ticket = auth_data.get("ticket")
-        csrf_token = auth_data.get("CSRFPreventionToken")
+        if server.use_password and server.password:
+            auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
+            auth_response = requests.post(
+                f"https://{server.ip_address}:8006/api2/json/access/ticket",
+                data={"username": auth_username, "password": server.password},
+                verify=server.verify_ssl,
+                timeout=10,
+            )
+            if auth_response.status_code != 200:
+                raise HTTPException(status_code=401, detail="Failed to authenticate to Proxmox")
+            auth_data = auth_response.json().get("data", {})
+            auth_ticket = auth_data.get("ticket")
+            request_headers = {"CSRFPreventionToken": auth_data.get("CSRFPreventionToken")}
+            request_cookies = {"PVEAuthCookie": auth_ticket}
+        elif server.api_token_name and server.api_token_value:
+            token_id = server.api_user if "!" in server.api_user else f"{server.api_user}!{server.api_token_name}"
+            request_headers = {"Authorization": f"PVEAPIToken={token_id}={server.api_token_value}"}
+            request_cookies = None
+            auth_ticket = None
+        else:
+            raise HTTPException(status_code=400, detail="No Proxmox console credentials configured")
         
         # 2. Создаём VNC proxy с этим же ticket
         # generate-password=1: Proxmox 8.x возвращает случайный VNC пароль для VNCAuth;
@@ -2409,10 +2405,8 @@ def get_vm_vnc(
         vnc_response = requests.post(
             f"https://{server.ip_address}:8006/api2/json/nodes/{node}/qemu/{vmid}/vncproxy",
             data={"websocket": 1, "generate-password": 1},
-            headers={
-                "CSRFPreventionToken": csrf_token
-            },
-            cookies={"PVEAuthCookie": auth_ticket},
+            headers=request_headers,
+            cookies=request_cookies,
             verify=server.verify_ssl,
             timeout=10
         )
@@ -2464,40 +2458,35 @@ def get_container_vnc(
         raise HTTPException(status_code=404, detail="Proxmox server not found")
     
     try:
-        # Для VNC ОБЯЗАТЕЛЬНО нужен password auth
-        password_to_use = server.password if server.password else None
-        auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
-        
-        if not password_to_use:
-            raise HTTPException(status_code=400, detail="VNC requires password authentication. Please add password to server settings.")
-        
-        # 1. Получаем auth ticket
-        auth_response = requests.post(
-            f"https://{server.ip_address}:8006/api2/json/access/ticket",
-            data={
-                "username": auth_username,
-                "password": password_to_use
-            },
-            verify=server.verify_ssl,
-            timeout=10
-        )
-        
-        if auth_response.status_code != 200:
-            raise HTTPException(status_code=401, detail="Failed to authenticate to Proxmox")
-        
-        auth_data = auth_response.json().get("data", {})
-        auth_ticket = auth_data.get("ticket")
-        csrf_token = auth_data.get("CSRFPreventionToken")
+        if server.use_password and server.password:
+            auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
+            auth_response = requests.post(
+                f"https://{server.ip_address}:8006/api2/json/access/ticket",
+                data={"username": auth_username, "password": server.password},
+                verify=server.verify_ssl,
+                timeout=10,
+            )
+            if auth_response.status_code != 200:
+                raise HTTPException(status_code=401, detail="Failed to authenticate to Proxmox")
+            auth_data = auth_response.json().get("data", {})
+            auth_ticket = auth_data.get("ticket")
+            request_headers = {"CSRFPreventionToken": auth_data.get("CSRFPreventionToken")}
+            request_cookies = {"PVEAuthCookie": auth_ticket}
+        elif server.api_token_name and server.api_token_value:
+            token_id = server.api_user if "!" in server.api_user else f"{server.api_user}!{server.api_token_name}"
+            request_headers = {"Authorization": f"PVEAPIToken={token_id}={server.api_token_value}"}
+            request_cookies = None
+            auth_ticket = None
+        else:
+            raise HTTPException(status_code=400, detail="No Proxmox console credentials configured")
         
         # 2. Создаём VNC proxy с этим же ticket
         # LXC vncproxy не поддерживает generate-password; используем ticket как VNCAuth пароль
         vnc_response = requests.post(
             f"https://{server.ip_address}:8006/api2/json/nodes/{node}/lxc/{vmid}/vncproxy",
             data={"websocket": 1},
-            headers={
-                "CSRFPreventionToken": csrf_token
-            },
-            cookies={"PVEAuthCookie": auth_ticket},
+            headers=request_headers,
+            cookies=request_cookies,
             verify=server.verify_ssl,
             timeout=10
         )
@@ -2599,8 +2588,9 @@ async def vnc_websocket_proxy(
         logger.info(f"Using PVEAuthCookie for WebSocket auth")
     elif not server.use_password and server.api_token_name and server.api_token_value:
         # Для API token - но это обычно не работает для VNC WebSocket в Proxmox
-        extra_headers.append(("Authorization", f"PVEAPIToken={server.api_user}!{server.api_token_name}={server.api_token_value}"))
-        logger.info("Using API token for WebSocket auth (may not work for VNC)")
+        token_id = server.api_user if "!" in server.api_user else f"{server.api_user}!{server.api_token_name}"
+        extra_headers.append(("Authorization", f"PVEAPIToken={token_id}={server.api_token_value}"))
+        logger.info("Using API token for VNC WebSocket authentication")
     else:
         logger.error("No auth_ticket provided and no API token available")
         await websocket.close(code=1008, reason="No authentication available for VNC")
@@ -3006,40 +2996,57 @@ async def terminal_websocket_fixed(
     try:
         # Шаг 1: Auth ticket
         async with httpx.AsyncClient(verify=False, timeout=10) as client:
-            if not server.password:
-                await websocket.close(code=1011, reason="Terminal requires password authentication")
-                return
+            if server.use_password and server.password:
+                auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
+                auth_resp = await client.post(
+                    f"https://{server.ip_address}:8006/api2/json/access/ticket",
+                    data={"username": auth_username, "password": server.password},
+                )
+                if auth_resp.status_code != 200:
+                    logger.error(f"Terminal password auth failed: {auth_resp.status_code} {auth_resp.text}")
+                    await websocket.close(code=1011, reason="Proxmox authentication failed")
+                    return
 
-            auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
-            auth_resp = await client.post(
-                f"https://{server.ip_address}:8006/api2/json/access/ticket",
-                data={"username": auth_username, "password": server.password}
-            )
-            if auth_resp.status_code != 200:
-                logger.error(f"Auth failed: {auth_resp.status_code} {auth_resp.text}")
-                await websocket.close(code=1011, reason="Authentication failed")
+                auth_data = auth_resp.json()["data"]
+                ticket = auth_data["ticket"]
+                term_headers = {"CSRFPreventionToken": auth_data["CSRFPreventionToken"]}
+                term_cookies = {"PVEAuthCookie": ticket}
+                websocket_headers = [("Cookie", f"PVEAuthCookie={ticket}")]
+            elif server.api_token_name and server.api_token_value:
+                token_id = (
+                    server.api_user
+                    if "!" in server.api_user
+                    else f"{server.api_user}!{server.api_token_name}"
+                )
+                authorization = f"PVEAPIToken={token_id}={server.api_token_value}"
+                term_headers = {"Authorization": authorization}
+                term_cookies = None
+                websocket_headers = [("Authorization", authorization)]
+            else:
+                await websocket.close(code=1011, reason="No Proxmox console credentials configured")
                 return
-
-            auth_data = auth_resp.json()["data"]
-            ticket = auth_data["ticket"]
-            csrf_token = auth_data["CSRFPreventionToken"]
-            logger.info(f"✅ Auth ticket obtained for {auth_username}")
 
             # Шаг 2: Termproxy
             term_resp = await client.post(
                 f"https://{server.ip_address}:8006/api2/json/nodes/{node}/lxc/{vmid}/termproxy",
-                headers={"CSRFPreventionToken": csrf_token},
-                cookies={"PVEAuthCookie": ticket}
+                headers=term_headers,
+                cookies=term_cookies,
             )
             if term_resp.status_code != 200:
                 logger.error(f"Termproxy failed: {term_resp.status_code} - {term_resp.text}")
-                await websocket.close(code=1011, reason="Failed to create terminal session")
+                reason = (
+                    "Proxmox does not allow console access with this API token"
+                    if term_resp.status_code in (401, 403)
+                    else "Failed to create terminal session"
+                )
+                await websocket.close(code=1011, reason=reason)
                 return
 
             term_data = term_resp.json()["data"]
             vncticket = term_data["ticket"]
             port = term_data["port"]
-            logger.info(f"✅ Termproxy response: port={port}, ticket_prefix={vncticket[:30]}...")
+            termproxy_user = term_data["user"]
+            logger.info(f"Terminal proxy created for {termproxy_user} on port {port}")
 
         # Шаг 3: WebSocket к Proxmox — идентично VNC handler
         proxmox_ws_url = (
@@ -3054,7 +3061,7 @@ async def terminal_websocket_fixed(
         proxmox_ws = await websockets.connect(
             proxmox_ws_url,
             ssl=ssl_context,
-            extra_headers=[("Cookie", f"PVEAuthCookie={ticket}")],
+            extra_headers=websocket_headers,
             subprotocols=["binary"],
             max_size=None,
             ping_interval=None,
@@ -3065,8 +3072,7 @@ async def terminal_websocket_fixed(
         # CRITICAL: Proxmox termproxy requires auth handshake first.
         # Send "USERNAME:VNCTICKET\n" as the very first message.
         # Proxmox responds with "OK" (bytes 0x4F 0x4B), optionally followed by initial terminal data.
-        await proxmox_ws.send(f"{auth_username}:{vncticket}\n")
-        logger.info(f"✅ Sent termproxy auth: {auth_username}:***")
+        await proxmox_ws.send(f"{termproxy_user}:{vncticket}\n")
 
         try:
             ok_raw = await asyncio.wait_for(proxmox_ws.recv(), timeout=10.0)

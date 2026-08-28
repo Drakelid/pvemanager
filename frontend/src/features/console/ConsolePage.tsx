@@ -274,10 +274,10 @@ export default function ConsolePage() {
       if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
       else terminal.write(event.data);
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (guard.cancelled) return;
       setStatus('error');
-      setErrorMsg('Terminal connection closed');
+      setErrorMsg(event.reason || 'Terminal connection closed');
     };
     ws.onerror = () => {
       if (guard.cancelled) return;
