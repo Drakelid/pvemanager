@@ -1781,9 +1781,11 @@
   "console": {
     "connecting": "Connecting to console...",
     "reconnect": "Reconnect",
+    "connect": "Connect",
     "connected": "Connected",
     "error": "Error",
     "terminal_closed": "Terminal connection closed",
+    "proxmox_password_hint": "Enter the Proxmox PAM password for this session. It will not be stored.",
     "terminal_error": "Terminal connection error",
     "power": "Power",
     "reboot": "Reboot",

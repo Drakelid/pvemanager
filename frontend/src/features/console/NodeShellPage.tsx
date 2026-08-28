@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
 import { Maximize, Minimize, Loader2, PackageCheck, TerminalSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
 import '@xterm/xterm/css/xterm.css';
 
@@ -20,6 +21,8 @@ export default function NodeShellPage() {
 
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [errorMsg, setErrorMsg] = useState('');
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -29,6 +32,7 @@ export default function NodeShellPage() {
   // дважды — без него второй xterm ложится в контейнер поверх первого и видимой
   // остаётся «осиротевшая» пустая сессия.
   const guardRef = useRef<{ cancelled: boolean } | null>(null);
+  const sessionPasswordRef = useRef<string | null>(null);
 
   const sid = Number(serverId);
 
@@ -82,6 +86,7 @@ export default function NodeShellPage() {
       const authToken = apiClient.getToken();
       const params = new URLSearchParams({ cmd });
       if (authToken) params.set('token', authToken);
+      if (sessionPasswordRef.current) params.set('password_auth', 'true');
       const wsUrl = `${wsProto}//${window.location.host}/proxmox/ws/node-shell/${sid}/${node}?${params}`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
@@ -92,6 +97,10 @@ export default function NodeShellPage() {
           return;
         }
         setStatus('connected');
+        if (sessionPasswordRef.current) {
+          ws.send(JSON.stringify({ password: sessionPasswordRef.current }));
+          sessionPasswordRef.current = null;
+        }
         const { cols, rows } = terminal;
         ws.send(`1:${cols}:${rows}:`);
         keepaliveRef.current = setInterval(() => {
@@ -110,6 +119,10 @@ export default function NodeShellPage() {
 
       ws.onclose = (event) => {
         if (guard.cancelled) return;
+        if (event.code === 4001 || /password|authentication/i.test(event.reason)) {
+          sessionPasswordRef.current = null;
+          setNeedsPassword(true);
+        }
         setStatus('error');
         setErrorMsg(event.reason || t('console.terminal_closed', 'Terminal connection closed'));
       };
@@ -161,6 +174,15 @@ export default function NodeShellPage() {
     setErrorMsg('');
     connect(guard);
   }, [connect, cleanupSession]);
+
+  const authenticateAndReconnect = (event: FormEvent) => {
+    event.preventDefault();
+    if (!passwordInput) return;
+    sessionPasswordRef.current = passwordInput;
+    setPasswordInput('');
+    setNeedsPassword(false);
+    startSession();
+  };
 
   useEffect(() => {
     startSession();
@@ -224,13 +246,28 @@ export default function NodeShellPage() {
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#09090B]">
             <div className="flex flex-col items-center gap-3 text-center">
               <p className="text-sm text-red-500">{errorMsg}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={startSession}
-              >
-                {t('console.reconnect', 'Reconnect')}
-              </Button>
+              {needsPassword ? (
+                <form className="flex w-72 flex-col gap-2" onSubmit={authenticateAndReconnect}>
+                  <Input
+                    type="password"
+                    value={passwordInput}
+                    onChange={(event) => setPasswordInput(event.target.value)}
+                    placeholder={t('auth.password_placeholder', 'Enter password')}
+                    autoComplete="current-password"
+                    autoFocus
+                  />
+                  <Button type="submit" variant="outline" size="sm" disabled={!passwordInput}>
+                    {t('console.connect', 'Connect')}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    {t('console.proxmox_password_hint', 'Enter the Proxmox PAM password for this session. It will not be stored.')}
+                  </p>
+                </form>
+              ) : (
+                <Button variant="outline" size="sm" onClick={startSession}>
+                  {t('console.reconnect', 'Reconnect')}
+                </Button>
+              )}
             </div>
           </div>
         )}

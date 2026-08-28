@@ -3321,6 +3321,7 @@ async def node_shell_websocket(
     server_id: int,
     node: str,
     cmd: str = Query("upgrade"),  # upgrade | login
+    password_auth: bool = Query(False),
     token: str = Query(None),     # JWT панели (?token=) — браузеры не шлют заголовки на WS
     db: Session = Depends(get_db)
 ):
@@ -3360,14 +3361,28 @@ async def node_shell_websocket(
     try:
         # Шаг 1: Auth ticket (termproxy требует пароль, не API-токен)
         async with httpx.AsyncClient(verify=False, timeout=10) as client:
-            if not server.password:
-                await websocket.close(code=1011, reason="Node shell requires password authentication")
+            password_to_use = server.password
+            if password_auth:
+                try:
+                    auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+                except (asyncio.TimeoutError, ValueError):
+                    await websocket.close(code=4001, reason="Proxmox password was not provided")
+                    return
+
+                supplied_password = auth_message.get("password") if isinstance(auth_message, dict) else None
+                if not isinstance(supplied_password, str) or not supplied_password or len(supplied_password) > 1024:
+                    await websocket.close(code=4001, reason="Invalid Proxmox password")
+                    return
+                password_to_use = supplied_password
+
+            if not password_to_use:
+                await websocket.close(code=4001, reason="Proxmox password required")
                 return
 
             auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
             auth_resp = await client.post(
                 f"https://{server.ip_address}:8006/api2/json/access/ticket",
-                data={"username": auth_username, "password": server.password}
+                data={"username": auth_username, "password": password_to_use}
             )
             if auth_resp.status_code != 200:
                 logger.error(f"Auth failed: {auth_resp.status_code} {auth_resp.text}")
