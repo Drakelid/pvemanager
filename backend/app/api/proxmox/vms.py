@@ -3362,6 +3362,7 @@ async def node_shell_websocket(
         # Шаг 1: Auth ticket (termproxy требует пароль, не API-токен)
         async with httpx.AsyncClient(verify=False, timeout=10) as client:
             password_to_use = server.password
+            auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
             if password_auth:
                 try:
                     auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
@@ -3389,7 +3390,6 @@ async def node_shell_websocket(
                 await websocket.close(code=4001, reason="Proxmox password required")
                 return
 
-            auth_username = server.api_user.split("!")[0] if "!" in server.api_user else server.api_user
             auth_resp = await client.post(
                 f"https://{server.ip_address}:8006/api2/json/access/ticket",
                 data={"username": auth_username, "password": password_to_use}
