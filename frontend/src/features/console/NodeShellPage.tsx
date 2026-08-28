@@ -108,15 +108,15 @@ export default function NodeShellPage() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (guard.cancelled) return;
         setStatus('error');
-        setErrorMsg(t('console.terminal_closed', 'Соединение с терминалом закрыто'));
+        setErrorMsg(event.reason || t('console.terminal_closed', 'Terminal connection closed'));
       };
       ws.onerror = () => {
         if (guard.cancelled) return;
         setStatus('error');
-        setErrorMsg(t('console.terminal_error', 'Ошибка соединения с терминалом'));
+        setErrorMsg(t('console.terminal_error', 'Terminal connection error'));
       };
 
       terminal.onData((data: string) => {
@@ -215,7 +215,7 @@ export default function NodeShellPage() {
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#09090B]">
             <div className="flex flex-col items-center gap-3 text-muted-foreground">
               <Loader2 className="h-8 w-8 animate-spin" />
-              <p className="text-sm">{t('console.connecting', 'Подключение…')}</p>
+              <p className="text-sm">{t('console.connecting', 'Connecting…')}</p>
             </div>
           </div>
         )}
@@ -229,7 +229,7 @@ export default function NodeShellPage() {
                 size="sm"
                 onClick={startSession}
               >
-                {t('console.reconnect', 'Переподключиться')}
+                {t('console.reconnect', 'Reconnect')}
               </Button>
             </div>
           </div>

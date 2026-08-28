@@ -3393,6 +3393,7 @@ async def node_shell_websocket(
             term_data = term_resp.json()["data"]
             vncticket = term_data["ticket"]
             port = term_data["port"]
+            termproxy_user = term_data["user"]
             logger.info(f"✅ Node termproxy: node={node}, cmd={cmd}, port={port}")
 
         # Шаг 3: WebSocket к Proxmox (node-level vncwebsocket)
@@ -3415,8 +3416,10 @@ async def node_shell_websocket(
             close_timeout=5
         )
 
-        # Auth handshake: "USERNAME:VNCTICKET\n" → "OK"
-        await proxmox_ws.send(f"{auth_username}:{vncticket}\n")
+        # Proxmox returns the exact auth identity bound to this VNC ticket.
+        # It may differ from the configured API username after token/realm
+        # normalization, so it must be used verbatim for the handshake.
+        await proxmox_ws.send(f"{termproxy_user}:{vncticket}\n")
         try:
             ok_raw = await asyncio.wait_for(proxmox_ws.recv(), timeout=10.0)
         except asyncio.TimeoutError:
