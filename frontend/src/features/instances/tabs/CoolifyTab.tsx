@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Play, RefreshCw, Rocket, ScrollText, Square } from 'lucide-react';
 import { toast } from 'sonner';
@@ -16,7 +17,7 @@ export default function CoolifyTab({ serverId, vmid }: { serverId: number; vmid:
   const canControl = useHasPermission('coolify:control');
   const canDeploy = useHasPermission('coolify:deploy');
   const { data: mapping, isLoading } = useCoolifyMapping(serverId, vmid);
-  const { data: servers = [] } = useCoolifyServers(canManage);
+  const { data: servers = [], isLoading: serversLoading, isFetching: serversFetching, error: serversError, refetch: refetchServers } = useCoolifyServers(canManage);
   const updateMapping = useUpdateCoolifyMapping(serverId, vmid);
   const [selected, setSelected] = useState('');
   const mapped = mapping?.coolify_server_uuid || '';
@@ -29,12 +30,22 @@ export default function CoolifyTab({ serverId, vmid }: { serverId: number; vmid:
   if (isLoading) return <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />;
   if (!mapped) return <Card><CardHeader><CardTitle className="text-sm">{t('coolify.integration')}</CardTitle></CardHeader><CardContent className="space-y-4">
     <p className="text-sm text-muted-foreground">{t('coolify.not_mapped')}</p>
-    {canManage && <div className="flex max-w-xl gap-2">
-      <Select value={selected} onValueChange={value => setSelected(String(value || ''))}>
-        <SelectTrigger><SelectValue placeholder={t('coolify.select_server')} /></SelectTrigger>
-        <SelectContent>{servers.map(server => <SelectItem key={server.uuid} value={server.uuid}>{server.name}</SelectItem>)}</SelectContent>
-      </Select>
-      <Button disabled={!selected || updateMapping.isPending} onClick={() => updateMapping.mutate(selected, { onSuccess: () => toast.success(t('coolify.mapping_saved')), onError: e => toast.error(e.message) })}>{t('common.save')}</Button>
+    {canManage && <div className="max-w-xl space-y-3">
+      {serversError && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+        <p className="font-medium text-destructive">{t('coolify.servers_load_failed')}</p>
+        <p className="mt-1 text-muted-foreground">{serversError.message}</p>
+        <p className="mt-1 text-muted-foreground">{t('coolify.read_permission_help')}</p>
+      </div>}
+      {!serversError && !serversLoading && servers.length === 0 && <div className="rounded-md border p-3 text-sm text-muted-foreground">{t('coolify.no_servers')}</div>}
+      <div className="flex gap-2">
+        <Select value={selected} onValueChange={value => setSelected(String(value || ''))} disabled={serversLoading || !!serversError || servers.length === 0}>
+          <SelectTrigger><SelectValue placeholder={serversLoading ? t('common.loading') : t('coolify.select_server')} /></SelectTrigger>
+          <SelectContent>{servers.map(server => <SelectItem key={server.uuid} value={server.uuid}>{server.name || server.uuid}</SelectItem>)}</SelectContent>
+        </Select>
+        <Button variant="outline" size="icon" title={t('common.refresh')} disabled={serversFetching} onClick={() => refetchServers()}><RefreshCw className={`h-4 w-4 ${serversFetching ? 'animate-spin' : ''}`} /></Button>
+        <Button disabled={!selected || updateMapping.isPending} onClick={() => updateMapping.mutate(selected, { onSuccess: () => toast.success(t('coolify.mapping_saved')), onError: e => toast.error(e.message) })}>{t('common.save')}</Button>
+      </div>
+      {(serversError || (!serversLoading && servers.length === 0)) && <Button variant="link" className="h-auto p-0" render={<Link to="/settings" />}>{t('coolify.open_settings')}</Button>}
     </div>}
   </CardContent></Card>;
 
