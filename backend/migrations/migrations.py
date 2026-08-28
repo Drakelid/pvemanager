@@ -1939,6 +1939,37 @@ def migrate_setting_view_panel_only(conn):
         logger.info("✓ No roles needed the setting:view split")
 
 
+def migrate_coolify_permissions(conn):
+    """Migration 44: grant Coolify access to existing built-in roles once."""
+    if not table_exists(conn, 'roles') or not table_exists(conn, 'panel_settings'):
+        return
+    marker = 'migration_coolify_permissions_v1'
+    if conn.execute(text("SELECT 1 FROM panel_settings WHERE key = :key"), {"key": marker}).fetchone():
+        return
+
+    grants = {
+        'admin': ('coolify:view', 'coolify:control', 'coolify:deploy', 'coolify:manage'),
+        'moderator': ('coolify:view', 'coolify:control', 'coolify:deploy'),
+        'user': ('coolify:view', 'coolify:control', 'coolify:deploy'),
+    }
+    for role_id, role_name, permissions in conn.execute(text("SELECT id, name, permissions FROM roles")).fetchall():
+        if role_name not in grants:
+            continue
+        perms = permissions if isinstance(permissions, dict) else json.loads(permissions or '{}')
+        changed = False
+        for permission in grants[role_name]:
+            if permission not in perms:
+                perms[permission] = True
+                changed = True
+        if changed:
+            conn.execute(text("UPDATE roles SET permissions = :permissions WHERE id = :id"), {
+                "permissions": json.dumps(perms), "id": role_id,
+            })
+    conn.execute(text("INSERT INTO panel_settings (key, value, description) VALUES (:key, 'done', :description)"), {
+        "key": marker, "description": "Coolify permissions added to built-in roles",
+    })
+
+
 def run_all_migrations(engine, db_session=None):
     """
     Run all migrations in order.
@@ -2295,6 +2326,14 @@ def run_all_migrations(engine, db_session=None):
                 conn.commit()
             except Exception as e:
                 logger.warning(f"IPAM multi-IP migration: {e}")
+                conn.rollback()
+
+            # Migration 44: Coolify permissions for existing built-in roles
+            try:
+                migrate_coolify_permissions(conn)
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Coolify permissions migration: {e}")
                 conn.rollback()
 
         logger.info("=" * 50)

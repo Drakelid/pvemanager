@@ -9,6 +9,7 @@ from .misc import Notification, NotificationPreference, BackupJob, AuditLog
 from .catalog import ImageMirror
 from .appstore import CatalogApp, InstalledApp, AppOperation
 from .scripts import ScriptCatalog, ScriptGitRepo, ScriptExecution
+from .coolify import CoolifyConnection, CoolifyInstanceMapping
 
 __all__ = [
     'Base', 'utcnow',
@@ -22,4 +23,5 @@ __all__ = [
     'ImageMirror',
     'CatalogApp', 'InstalledApp', 'AppOperation',
     'ScriptCatalog', 'ScriptGitRepo', 'ScriptExecution',
+    'CoolifyConnection', 'CoolifyInstanceMapping',
 ]

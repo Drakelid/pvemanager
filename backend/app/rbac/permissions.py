@@ -751,6 +751,35 @@ def _create_permissions() -> PermissionRegistry:
         requires=["app:view"]
     ))
 
+    # Coolify integration permissions
+    registry.register(Permission(
+        resource="coolify", action="view",
+        display_name="View Coolify Resources",
+        description="View Coolify applications and services mapped to an instance",
+        category="Coolify"
+    ))
+    registry.register(Permission(
+        resource="coolify", action="control",
+        display_name="Control Coolify Resources",
+        description="Start, stop, and restart mapped Coolify resources",
+        category="Coolify",
+        requires=["coolify:view"]
+    ))
+    registry.register(Permission(
+        resource="coolify", action="deploy",
+        display_name="Deploy Coolify Resources",
+        description="Trigger deployments for mapped Coolify resources",
+        category="Coolify",
+        requires=["coolify:view"]
+    ))
+    registry.register(Permission(
+        resource="coolify", action="manage",
+        display_name="Manage Coolify Integration",
+        description="Configure Coolify credentials and instance mappings",
+        category="Coolify",
+        requires=["coolify:view"]
+    ))
+
     # Script catalog permissions (bash-скрипты на нодах/гостях)
     registry.register(Permission(
         resource="script", action="view",

@@ -112,6 +112,10 @@ NEW_DEFAULT_ROLES = [
             # Notifications
             "notification:view": True,
             "notification:manage": True,
+            "coolify:view": True,
+            "coolify:control": True,
+            "coolify:deploy": True,
+            "coolify:manage": True,
         }
     },
     {
@@ -147,6 +151,9 @@ NEW_DEFAULT_ROLES = [
             "setting:view": True,
             "notification:view": True,
             "notification:manage": True,
+            "coolify:view": True,
+            "coolify:control": True,
+            "coolify:deploy": True,
         }
     },
     {
@@ -167,6 +174,9 @@ NEW_DEFAULT_ROLES = [
             "lxc:stop": True,
             "lxc:restart": True,
             "lxc:console": True,
+            "coolify:view": True,
+            "coolify:control": True,
+            "coolify:deploy": True,
             "template:view": True,
             "storage:view": True,
             "firewall:view": True,

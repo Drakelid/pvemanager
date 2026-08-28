@@ -2156,5 +2156,29 @@
       "offline": "{{server}} недоступен — показаны данные из кэша",
       "error": "{{server}}: {{message}}"
     }
+  },
+  "coolify": {
+    "title": "Coolify",
+    "integration": "Интеграция Coolify",
+    "settings_help": "Подключите PVEmanager к Coolify с помощью API-токена с ограниченными правами. После сохранения токен шифруется и не отправляется в браузер.",
+    "name": "Имя подключения",
+    "url": "URL Coolify",
+    "api_token": "API-токен",
+    "token_preserved": "Оставьте пустым, чтобы сохранить текущий токен",
+    "verify_ssl": "Проверять TLS-сертификат",
+    "enabled": "Включить интеграцию",
+    "saved": "Настройки Coolify сохранены",
+    "test_connection": "Проверить подключение",
+    "test_success": "Подключение установлено (серверов: {{count}})",
+    "not_mapped": "Этот экземпляр Proxmox не связан с сервером Coolify.",
+    "select_server": "Выберите сервер Coolify",
+    "mapping_saved": "Привязка сервера Coolify сохранена",
+    "mapped_server": "Связанный сервер",
+    "remove_mapping": "Удалить привязку",
+    "resources": "Приложения и сервисы",
+    "no_resources": "На этом сервере Coolify не найдено приложений или сервисов.",
+    "deploy": "Развернуть",
+    "logs": "Логи",
+    "action_sent": "Команда Coolify отправлена"
   }
 }

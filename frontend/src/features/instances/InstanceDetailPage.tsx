@@ -44,11 +44,14 @@ import HardwareTab from './tabs/HardwareTab';
 import FirewallTab from './tabs/FirewallTab';
 import SettingsTab from './tabs/SettingsTab';
 import DestroyTab from './tabs/DestroyTab';
+import CoolifyTab from './tabs/CoolifyTab';
+import { useHasPermission } from '@/lib/permissions';
 
 export default function InstanceDetailPage() {
   const { serverId, vmid } = useParams<{ serverId: string; vmid: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useTranslation();
+  const canViewCoolify = useHasPermission('coolify:view');
 
   const node = searchParams.get('node') || '';
   const type = searchParams.get('type') || 'qemu';
@@ -252,6 +255,7 @@ export default function InstanceDetailPage() {
             <TabsTrigger value="hardware">{t('instances.hardware', 'Hardware')}</TabsTrigger>
           )}
           <TabsTrigger value="firewall">{t('instances.firewall', 'Firewall')}</TabsTrigger>
+          {canViewCoolify && <TabsTrigger value="coolify">{t('coolify.title')}</TabsTrigger>}
           <TabsTrigger value="settings">{t('nav.settings', 'Settings')}</TabsTrigger>
           <TabsTrigger value="destroy" className="text-destructive data-[state=active]:text-destructive">
             {t('instances.destroy', 'Destroy')}
@@ -278,6 +282,7 @@ export default function InstanceDetailPage() {
         <TabsContent value="firewall" className="mt-4">
           <FirewallTab serverId={sid} vmid={vid} type={type} node={node} />
         </TabsContent>
+        {canViewCoolify && <TabsContent value="coolify" className="mt-4"><CoolifyTab serverId={sid} vmid={vid} /></TabsContent>}
         <TabsContent value="settings" className="mt-4">
           <SettingsTab serverId={sid} vmid={vid} type={type} node={node} />
         </TabsContent>

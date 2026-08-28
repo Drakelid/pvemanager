@@ -2051,5 +2051,29 @@
       "offline": "{{server}} is unreachable — showing cached data",
       "error": "{{server}}: {{message}}"
     }
+  },
+  "coolify": {
+    "title": "Coolify",
+    "integration": "Coolify integration",
+    "settings_help": "Connect PVEmanager to Coolify with a scoped API token. The token is encrypted and never sent to the browser after saving.",
+    "name": "Connection name",
+    "url": "Coolify URL",
+    "api_token": "API token",
+    "token_preserved": "Leave blank to keep the saved token",
+    "verify_ssl": "Verify TLS certificate",
+    "enabled": "Enable integration",
+    "saved": "Coolify settings saved",
+    "test_connection": "Test connection",
+    "test_success": "Connected successfully ({{count}} servers found)",
+    "not_mapped": "This Proxmox instance is not mapped to a Coolify server.",
+    "select_server": "Select a Coolify server",
+    "mapping_saved": "Coolify server mapping saved",
+    "mapped_server": "Mapped server",
+    "remove_mapping": "Remove mapping",
+    "resources": "Applications and services",
+    "no_resources": "No applications or services were found on this Coolify server.",
+    "deploy": "Deploy",
+    "logs": "Logs",
+    "action_sent": "Coolify action sent"
   }
 }

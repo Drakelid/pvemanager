@@ -18,6 +18,7 @@ import {
 import { useTelegramBotInfo } from '@/hooks/use-notifications';
 import { useConfirm } from '@/components/shared/ConfirmDialog';
 import { useHasPermission } from '@/lib/permissions';
+import CoolifySettingsTab from './CoolifySettingsTab';
 
 /**
  * Panel-wide configuration, reachable with `setting:view`. Each tab is gated on
@@ -29,6 +30,7 @@ export default function SettingsPage() {
   const { t } = useTranslation();
   const canEditPanel = useHasPermission('setting:update');
   const canManageSecurity = useHasPermission('setting:manage');
+  const canManageCoolify = useHasPermission('coolify:manage');
   // The SMTP/Telegram endpoints check `is_admin` literally, not a permission.
   const isAdmin = useHasPermission();
 
@@ -40,11 +42,13 @@ export default function SettingsPage() {
           <TabsTrigger value="panel">{t('settings.panel')}</TabsTrigger>
           {canManageSecurity && <TabsTrigger value="security">{t('settings.security')}</TabsTrigger>}
           {isAdmin && <TabsTrigger value="notifications">{t('settings.notification_channels')}</TabsTrigger>}
+          {canManageCoolify && <TabsTrigger value="coolify">{t('coolify.title')}</TabsTrigger>}
           <TabsTrigger value="about">{t('settings.about')}</TabsTrigger>
         </TabsList>
         <TabsContent value="panel"><PanelTab canEdit={canEditPanel} /></TabsContent>
         {canManageSecurity && <TabsContent value="security"><SecurityTab /></TabsContent>}
         {isAdmin && <TabsContent value="notifications"><NotificationChannelsCards /></TabsContent>}
+        {canManageCoolify && <TabsContent value="coolify"><CoolifySettingsTab /></TabsContent>}
         <TabsContent value="about"><AboutTab /></TabsContent>
       </Tabs>
     </div>
