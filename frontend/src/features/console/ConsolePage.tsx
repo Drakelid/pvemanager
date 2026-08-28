@@ -84,8 +84,7 @@ interface SessionGuard {
 interface RFBHandle {
   disconnect: () => void;
   sendCtrlAltDel: () => void;
-  sendKey: (keysym: number, code: string, down?: boolean) => void;
-  clipboardPasteFrom: (text: string) => void;
+  sendKey: (keysym: number, code?: string, down?: boolean) => void;
   scaleViewport: boolean;
 }
 
@@ -417,12 +416,41 @@ export default function ConsolePage() {
     setScaleToFit(next);
   };
 
-  // ==================== Clipboard → VM (VNC) ====================
-  const sendClipboard = () => {
-    if (!clipboardText) return;
-    rfbRef.current?.clipboardPasteFrom(clipboardText);
+  // QEMU's VNC server doesn't expose a guest clipboard channel. Inject the
+  // pasted text as keysyms instead, which works in firmware, installers, and
+  // guest operating systems without SPICE tools or a guest agent.
+  const sendClipboard = async () => {
+    const rfb = rfbRef.current;
+    if (!clipboardText || !rfb || status !== 'connected') {
+      toast.error(t('console.clipboard_unavailable'));
+      return;
+    }
+
+    const text = clipboardText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     setClipboardOpen(false);
     setClipboardText('');
+
+    for (const [index, character] of Array.from(text).entries()) {
+      if (character === '\n') {
+        rfb.sendKey(0xff0d, 'Enter');
+      } else if (character === '\t') {
+        rfb.sendKey(KEYSYM.Tab, 'Tab');
+      } else {
+        const codePoint = character.codePointAt(0);
+        if (codePoint == null) continue;
+        const keysym = codePoint <= 0xff ? codePoint : 0x01000000 | codePoint;
+        // Omitting the physical key code makes noVNC send the keysym through
+        // the legacy key-event path. An empty code would be treated as an
+        // invalid QEMU extended-key event by servers that advertise it.
+        rfb.sendKey(keysym);
+      }
+
+      // Yield periodically so large pastes don't freeze the UI or overrun the
+      // VNC WebSocket's outbound buffer.
+      if ((index + 1) % 64 === 0) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      }
+    }
   };
 
   // ==================== Screenshot ====================
