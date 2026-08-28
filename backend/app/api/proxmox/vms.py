@@ -3370,10 +3370,20 @@ async def node_shell_websocket(
                     return
 
                 supplied_password = auth_message.get("password") if isinstance(auth_message, dict) else None
+                supplied_username = auth_message.get("username") if isinstance(auth_message, dict) else None
                 if not isinstance(supplied_password, str) or not supplied_password or len(supplied_password) > 1024:
                     await websocket.close(code=4001, reason="Invalid Proxmox password")
                     return
+                if (
+                    not isinstance(supplied_username, str)
+                    or not supplied_username
+                    or len(supplied_username) > 128
+                    or any(char.isspace() for char in supplied_username)
+                ):
+                    await websocket.close(code=4001, reason="Invalid Proxmox username")
+                    return
                 password_to_use = supplied_password
+                auth_username = supplied_username
 
             if not password_to_use:
                 await websocket.close(code=4001, reason="Proxmox password required")

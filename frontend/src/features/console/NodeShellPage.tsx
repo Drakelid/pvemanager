@@ -22,6 +22,7 @@ export default function NodeShellPage() {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [errorMsg, setErrorMsg] = useState('');
   const [needsPassword, setNeedsPassword] = useState(false);
+  const [usernameInput, setUsernameInput] = useState('root@pam');
   const [passwordInput, setPasswordInput] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -32,7 +33,7 @@ export default function NodeShellPage() {
   // дважды — без него второй xterm ложится в контейнер поверх первого и видимой
   // остаётся «осиротевшая» пустая сессия.
   const guardRef = useRef<{ cancelled: boolean } | null>(null);
-  const sessionPasswordRef = useRef<string | null>(null);
+  const sessionCredentialsRef = useRef<{ username: string; password: string } | null>(null);
 
   const sid = Number(serverId);
 
@@ -86,7 +87,7 @@ export default function NodeShellPage() {
       const authToken = apiClient.getToken();
       const params = new URLSearchParams({ cmd });
       if (authToken) params.set('token', authToken);
-      if (sessionPasswordRef.current) params.set('password_auth', 'true');
+      if (sessionCredentialsRef.current) params.set('password_auth', 'true');
       const wsUrl = `${wsProto}//${window.location.host}/proxmox/ws/node-shell/${sid}/${node}?${params}`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
@@ -97,9 +98,9 @@ export default function NodeShellPage() {
           return;
         }
         setStatus('connected');
-        if (sessionPasswordRef.current) {
-          ws.send(JSON.stringify({ password: sessionPasswordRef.current }));
-          sessionPasswordRef.current = null;
+        if (sessionCredentialsRef.current) {
+          ws.send(JSON.stringify(sessionCredentialsRef.current));
+          sessionCredentialsRef.current = null;
         }
         const { cols, rows } = terminal;
         ws.send(`1:${cols}:${rows}:`);
@@ -120,7 +121,7 @@ export default function NodeShellPage() {
       ws.onclose = (event) => {
         if (guard.cancelled) return;
         if (event.code === 4001 || /password|authentication/i.test(event.reason)) {
-          sessionPasswordRef.current = null;
+          sessionCredentialsRef.current = null;
           setNeedsPassword(true);
         }
         setStatus('error');
@@ -177,8 +178,9 @@ export default function NodeShellPage() {
 
   const authenticateAndReconnect = (event: FormEvent) => {
     event.preventDefault();
-    if (!passwordInput) return;
-    sessionPasswordRef.current = passwordInput;
+    const username = usernameInput.trim();
+    if (!username || !passwordInput) return;
+    sessionCredentialsRef.current = { username, password: passwordInput };
     setPasswordInput('');
     setNeedsPassword(false);
     startSession();
@@ -249,18 +251,25 @@ export default function NodeShellPage() {
               {needsPassword ? (
                 <form className="flex w-72 flex-col gap-2" onSubmit={authenticateAndReconnect}>
                   <Input
+                    type="text"
+                    value={usernameInput}
+                    onChange={(event) => setUsernameInput(event.target.value)}
+                    placeholder={t('console.proxmox_username_placeholder', 'Proxmox username (for example root@pam)')}
+                    autoComplete="username"
+                    autoFocus
+                  />
+                  <Input
                     type="password"
                     value={passwordInput}
                     onChange={(event) => setPasswordInput(event.target.value)}
                     placeholder={t('auth.password_placeholder', 'Enter password')}
                     autoComplete="current-password"
-                    autoFocus
                   />
-                  <Button type="submit" variant="outline" size="sm" disabled={!passwordInput}>
+                  <Button type="submit" variant="outline" size="sm" disabled={!usernameInput.trim() || !passwordInput}>
                     {t('console.connect', 'Connect')}
                   </Button>
                   <p className="text-xs text-muted-foreground">
-                    {t('console.proxmox_password_hint', 'Enter the Proxmox PAM password for this session. It will not be stored.')}
+                    {t('console.proxmox_credentials_hint', 'Enter Proxmox credentials for this session. They will not be stored. Upgrades require root@pam.')}
                   </p>
                 </form>
               ) : (
